@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emotv"
+version = "0.1.0"
+description = "Sistema experimental de análisis y clasificación de expresiones emocionales mediante visión por computadora"
+requires-python = ">=3.11"
+
+dependencies = [
+    "opencv-python",
+    "numpy",
+    "psutil",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
