@@ -6,6 +6,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# Importamos la configuración centralizada
+from emotv.config import (
+    YUNET_PATH,
+    YUNET_CONFIDENCE_THRESHOLD,
+    YUNET_NMS_THRESHOLD,
+    # FORCE_CPU_BACKEND  # Ya no se usa porque no es soportado por FaceDetectorYN
+)
+
 
 @dataclass(frozen=True)
 class FaceDetection:
@@ -48,42 +56,76 @@ class YuNetFaceDetector:
 
     def __init__(
         self,
-        model_path: str | Path,
+        model_path: str | Path | None = None,
         input_size: tuple[int, int] = (640, 480),
-        confidence_threshold: float = 0.6,
-        nms_threshold: float = 0.3,
+        confidence_threshold: float | None = None,
+        nms_threshold: float | None = None,
         top_k: int = 5000,
     ) -> None:
-        self.model_path = Path(model_path)
-        self.input_size = input_size
-        self.confidence_threshold = confidence_threshold
-        self.nms_threshold = nms_threshold
-        self.top_k = top_k
+        """
+        Inicializa el detector YuNet.
 
+        Args:
+            model_path:
+                Ruta al archivo .onnx. Si es None, usa la ruta definida en config.
+            input_size:
+                Tamaño (ancho, alto) de la imagen de entrada para el modelo.
+            confidence_threshold:
+                Umbral de confianza. Si es None, usa el de config.
+            nms_threshold:
+                Umbral de Non-Maximum Suppression. Si es None, usa el de config.
+            top_k:
+                Número máximo de detecciones a mantener.
+        """
+        # --- 1. Resolver la ruta del modelo usando la config si es necesario ---
+        if model_path is None:
+            model_path = YUNET_PATH
+        self.model_path = Path(model_path)
+
+        # --- 2. Resolver umbrales usando la config si no se pasan ---
+        self.confidence_threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else YUNET_CONFIDENCE_THRESHOLD
+        )
+        self.nms_threshold = (
+            nms_threshold
+            if nms_threshold is not None
+            else YUNET_NMS_THRESHOLD
+        )
+
+        self.input_size = input_size
+        self.top_k = top_k
         self._detector: cv2.FaceDetectorYN | None = None
 
+        # --- 3. Validar y cargar ---
         self._validate_model()
         self._create_detector()
 
     def _validate_model(self) -> None:
         """
-        Comprueba que el archivo del modelo exista.
+        Comprueba que el archivo del modelo exista y no esté vacío.
         """
         if not self.model_path.exists():
             raise FileNotFoundError(
-                f"No se encontró el modelo YuNet: "
-                f"{self.model_path}"
+                f"No se encontró el modelo YuNet en: {self.model_path}\n"
+                "Ejecuta 'python scripts/download_weights.py' para descargarlo."
             )
 
         if self.model_path.stat().st_size == 0:
             raise ValueError(
-                f"El modelo YuNet está vacío: "
-                f"{self.model_path}"
+                f"El modelo YuNet está vacío: {self.model_path}\n"
+                "Elimínalo y vuelve a descargarlo con 'scripts/download_weights.py'."
             )
 
     def _create_detector(self) -> None:
         """
         Crea la instancia de FaceDetectorYN.
+
+        Nota: cv2.FaceDetectorYN no expone los métodos setPreferableBackend
+        ni setPreferableTarget, por lo que el backend es decidido internamente
+        por OpenCV. En sistemas sin GPU compatible (como la GT 610), se usará
+        CPU por defecto.
         """
         self._detector = cv2.FaceDetectorYN.create(
             model=str(self.model_path),
@@ -103,20 +145,14 @@ class YuNetFaceDetector:
         Actualiza el tamaño de entrada utilizado por YuNet.
         """
         if width <= 0 or height <= 0:
-            raise ValueError(
-                "El ancho y alto deben ser mayores que cero."
-            )
+            raise ValueError("El ancho y alto deben ser mayores que cero.")
 
         self.input_size = (width, height)
 
         if self._detector is None:
-            raise RuntimeError(
-                "El detector YuNet no está inicializado."
-            )
+            raise RuntimeError("El detector YuNet no está inicializado.")
 
-        self._detector.setInputSize(
-            self.input_size
-        )
+        self._detector.setInputSize(self.input_size)
 
     def detect(
         self,
@@ -131,21 +167,17 @@ class YuNetFaceDetector:
 
         Returns:
             list[FaceDetection]:
-                Lista de rostros detectados.
+                Lista de rostros detectados. Vacía si no hay ninguno.
         """
         if self._detector is None:
-            raise RuntimeError(
-                "El detector YuNet no está inicializado."
-            )
+            raise RuntimeError("El detector YuNet no está inicializado.")
 
         if frame is None or frame.size == 0:
-            raise ValueError(
-                "El frame proporcionado está vacío."
-            )
+            raise ValueError("El frame proporcionado está vacío.")
 
         height, width = frame.shape[:2]
 
-        # YuNet debe conocer el tamaño real del frame.
+        # YuNet debe conocer el tamaño real del frame para escalar correctamente.
         self.set_input_size(width, height)
 
         _, faces = self._detector.detect(frame)
@@ -161,6 +193,7 @@ class YuNetFaceDetector:
             face_width = int(face[2])
             face_height = int(face[3])
 
+            # La confianza está en el índice 14 según la doc de YuNet
             confidence = float(face[14])
 
             detections.append(

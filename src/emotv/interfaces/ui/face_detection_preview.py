@@ -3,6 +3,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from emotv.config import FRAME_SKIP_INTERVAL
 from emotv.infrastructure.vision.camera.opencv_camera import OpenCVCamera
 from emotv.infrastructure.vision.face_detection.yunet_face_detector import (
     YuNetFaceDetector,
@@ -16,7 +17,7 @@ class FaceDetectionPreview:
 
     Responsabilidades:
     - Obtener frames desde OpenCVCamera.
-    - Ejecutar YuNet sobre los frames.
+    - Ejecutar YuNet sobre los frames (con frame‑skipping para optimizar).
     - Dibujar los rostros detectados.
     - Mostrar FPS, CPU y RAM.
     """
@@ -30,9 +31,7 @@ class FaceDetectionPreview:
         exit_key: str = "q",
     ) -> None:
         if len(exit_key) != 1:
-            raise ValueError(
-                "exit_key debe contener exactamente un carácter."
-            )
+            raise ValueError("exit_key debe contener exactamente un carácter.")
 
         self.camera = camera
         self.detector = detector
@@ -41,6 +40,11 @@ class FaceDetectionPreview:
         self.exit_key = exit_key.lower()
 
         self._running = False
+
+        # --- NUEVO: Contador para el frame‑skipping ---
+        self._frame_counter = 0
+        # Almacena la última detección para reutilizarla en frames saltados
+        self._last_detections = []
 
     def run(self) -> None:
         """
@@ -54,29 +58,37 @@ class FaceDetectionPreview:
 
         self._running = True
 
-        cv2.namedWindow(
-            self.window_name,
-            cv2.WINDOW_NORMAL,
-        )
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
         try:
             while self._running:
+                # 1. Leer frame
                 frame = self.camera.read()
+                if frame is None:
+                    break
 
+                # 2. Medir rendimiento (en cada frame)
                 self.monitor.update_frame()
 
-                detections = self.detector.detect(frame)
+                # 3. Lógica de frame‑skipping
+                self._frame_counter += 1
 
-                display_frame = self._prepare_frame(
-                    frame,
-                    detections,
-                )
+                if self._frame_counter % FRAME_SKIP_INTERVAL == 0:
+                    # Cada N frames, ejecutamos el detector
+                    detections = self.detector.detect(frame)
+                    # Guardamos la detección para los siguientes frames
+                    self._last_detections = detections
+                else:
+                    # Reutilizamos la última detección (puede ser lista vacía)
+                    detections = self._last_detections
 
-                cv2.imshow(
-                    self.window_name,
-                    display_frame,
-                )
+                # 4. Preparar frame para mostrar (dibujar caras, info, etc.)
+                display_frame = self._prepare_frame(frame, detections)
 
+                # 5. Mostrar
+                cv2.imshow(self.window_name, display_frame)
+
+                # 6. Comprobar cierre
                 if self._should_close():
                     self.stop()
 
@@ -99,18 +111,9 @@ class FaceDetectionPreview:
         """
         display_frame = frame.copy()
 
-        self._draw_faces(
-            display_frame,
-            detections,
-        )
-
-        self._draw_performance_info(
-            display_frame,
-        )
-
-        self._draw_exit_message(
-            display_frame,
-        )
+        self._draw_faces(display_frame, detections)
+        self._draw_performance_info(display_frame)
+        self._draw_exit_message(display_frame)
 
         return display_frame
 
@@ -133,20 +136,10 @@ class FaceDetectionPreview:
                 2,
             )
 
-            confidence_text = (
-                f"Rostro: {face.confidence * 100:.1f}%"
-            )
+            confidence_text = f"Rostro: {face.confidence * 100:.1f}%"
+            text_position = (x, max(y - 10, 20))
 
-            text_position = (
-                x,
-                max(y - 10, 20),
-            )
-
-            self._draw_text(
-                frame,
-                confidence_text,
-                text_position,
-            )
+            self._draw_text(frame, confidence_text, text_position)
 
     def _draw_performance_info(
         self,
@@ -169,12 +162,7 @@ class FaceDetectionPreview:
 
         for index, text in enumerate(lines):
             y = start_y + (index * line_height)
-
-            self._draw_text(
-                frame,
-                text,
-                (start_x, y),
-            )
+            self._draw_text(frame, text, (start_x, y))
 
     def _draw_exit_message(
         self,
@@ -184,15 +172,8 @@ class FaceDetectionPreview:
         Muestra la tecla utilizada para cerrar.
         """
         height = frame.shape[0]
-
         text = f"Presiona '{self.exit_key.upper()}' para salir"
-
-        self._draw_text(
-            frame,
-            text,
-            (15, height - 20),
-            font_scale=0.55,
-        )
+        self._draw_text(frame, text, (15, height - 20), font_scale=0.55)
 
     @staticmethod
     def _draw_text(
@@ -207,7 +188,7 @@ class FaceDetectionPreview:
         font = cv2.FONT_HERSHEY_SIMPLEX
         thickness = 2
 
-        # Borde
+        # Borde negro
         cv2.putText(
             frame,
             text,
@@ -219,7 +200,7 @@ class FaceDetectionPreview:
             cv2.LINE_AA,
         )
 
-        # Texto
+        # Texto blanco
         cv2.putText(
             frame,
             text,
@@ -240,15 +221,14 @@ class FaceDetectionPreview:
         if key == ord(self.exit_key):
             return True
 
+        # Si la ventana fue cerrada manualmente
         try:
             visible = cv2.getWindowProperty(
                 self.window_name,
                 cv2.WND_PROP_VISIBLE,
             )
-
             if visible < 1:
                 return True
-
         except cv2.error:
             return True
 

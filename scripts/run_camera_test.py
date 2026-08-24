@@ -1,3 +1,4 @@
+from emotv.config import TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS
 from emotv.infrastructure.vision.camera.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
@@ -7,11 +8,12 @@ from emotv.shared.performance.monitor import PerformanceMonitor
 
 
 def main() -> None:
+    # Usamos los valores centralizados
     config = CameraConfig(
         device_index=0,
-        width=640,
-        height=480,
-        fps=15,
+        width=TARGET_WIDTH,
+        height=TARGET_HEIGHT,
+        fps=TARGET_FPS,
     )
 
     camera = OpenCVCamera(config)

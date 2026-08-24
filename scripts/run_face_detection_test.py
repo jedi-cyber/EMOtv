@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from emotv.config import TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS, YUNET_PATH
 from emotv.infrastructure.vision.camera.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
@@ -11,16 +12,6 @@ from emotv.interfaces.ui.face_detection_preview import (
     FaceDetectionPreview,
 )
 from emotv.shared.performance.monitor import PerformanceMonitor
-
-
-# Ruta del modelo YuNet
-MODEL_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "models"
-    / "weights"
-    / "yunet"
-    / "face_detection_yunet_2026may.onnx"
-)
 
 
 def main() -> None:
@@ -35,24 +26,25 @@ def main() -> None:
 
     print("[1] Comprobando modelo YuNet...")
 
-    if not MODEL_PATH.exists():
+    if not YUNET_PATH.exists():
         print("[ERROR] No se encontró el modelo YuNet.")
-        print(f"Ruta esperada: {MODEL_PATH}")
+        print(f"Ruta esperada: {YUNET_PATH}")
+        print("Ejecuta 'python scripts/download_weights.py' para descargarlo.")
         return
 
     print(f"[OK] Modelo encontrado:")
-    print(f"     {MODEL_PATH}")
+    print(f"     {YUNET_PATH}")
     print()
 
     # ---------------------------------------------------------
-    # 2. Configuración de cámara
+    # 2. Configuración de cámara (usando valores centralizados)
     # ---------------------------------------------------------
 
     config = CameraConfig(
         device_index=0,
-        width=640,
-        height=480,
-        fps=15,
+        width=TARGET_WIDTH,
+        height=TARGET_HEIGHT,
+        fps=TARGET_FPS,
     )
 
     print("[2] Configuración de cámara:")
@@ -68,14 +60,12 @@ def main() -> None:
     print("[3] Inicializando componentes...")
 
     camera = OpenCVCamera(config)
-
     monitor = PerformanceMonitor()
 
+    # El detector usará YUNET_PATH por defecto (definido en config)
     detector = YuNetFaceDetector(
-        model_path=MODEL_PATH,
-        input_size=(config.width, config.height),
-        confidence_threshold=0.6,
-        nms_threshold=0.3,
+        input_size=(TARGET_WIDTH, TARGET_HEIGHT),
+        # Los umbrales también se toman de config por defecto
     )
 
     print("[OK] Cámara preparada.")
