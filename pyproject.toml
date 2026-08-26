@@ -12,6 +12,11 @@ dependencies = [
     "opencv-python",
     "numpy",
     "psutil",
+    "fastapi",
+    "uvicorn",
+    "websockets",
+    "onnxruntime",
+    "python-multipart",  # Opcional, pero útil para subir archivos
 ]
 
 [tool.setuptools.packages.find]

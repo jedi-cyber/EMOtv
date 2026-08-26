@@ -1,0 +1,101 @@
+/* style.css - Estilos para EMOtv */
+
+body {
+    font-family: Arial, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    text-align: center;
+    padding: 20px;
+    margin: 0;
+}
+
+.container {
+    max-width: 900px;
+    margin: auto;
+    background: #16213e;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+h1 {
+    margin-top: 0;
+    color: #e94560;
+}
+
+.video-container {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.video-container img {
+    width: 100%;
+    border-radius: 10px;
+    border: 2px solid #0f3460;
+    display: block;
+}
+
+.emotion-display {
+    font-size: 32px;
+    font-weight: bold;
+    color: #e94560;
+    margin-top: 15px;
+    min-height: 50px;
+    background: #0f3460;
+    padding: 10px;
+    border-radius: 10px;
+    display: inline-block;
+    min-width: 200px;
+}
+
+.info {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+    gap: 15px;
+}
+
+.card {
+    background: #0f3460;
+    padding: 15px 25px;
+    border-radius: 10px;
+    min-width: 100px;
+    flex: 1;
+    max-width: 150px;
+}
+
+.card h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #aaa;
+}
+
+.card .value {
+    font-size: 24px;
+    font-weight: bold;
+    margin-top: 5px;
+    color: #e94560;
+}
+
+.controls {
+    margin-top: 20px;
+}
+
+.controls button {
+    background: #e94560;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 8px;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    margin: 5px;
+    transition: background 0.3s;
+}
+
+.controls button:hover {
+    background: #c7364f;
+}

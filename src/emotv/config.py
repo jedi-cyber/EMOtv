@@ -24,3 +24,13 @@ FRAME_SKIP_INTERVAL = 2  # Procesar 1 frame y saltar 1
 
 # --- Backend de OpenCV ---
 FORCE_CPU_BACKEND = True  # Evita que intente usar GPU fallando en la PC vieja
+
+# --- Configuración de Recorte y Preprocesamiento Facial ---
+FACE_PADDING_RATIO = 0.2  # 20% de padding alrededor del rostro (para contexto)
+FACE_TARGET_SIZE = (64, 64)  # Tamaño estándar para modelos de emociones (FER2013)
+PREPROCESS_GRAYSCALE = True  # Los modelos de emociones suelen usar escala de grises
+PREPROCESS_NORMALIZE = False  # Normalizar píxeles a [0, 1]
+
+# --- Configuración de Modelo de Emociones ---
+EMOTION_MODEL_PATH = MODELS_DIR / "weights" / "emotion" / "emotion-ferplus-8.onnx"
+EMOTION_INPUT_SIZE = (64, 64)  # Tamaño esperado por el modelo

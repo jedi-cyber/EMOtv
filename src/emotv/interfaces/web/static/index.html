@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>EMOtv - Web Interface</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 EMOtv - Emotion Recognition</h1>
+        <img id="video" src="/video_feed" alt="Video Feed">
+
+        <div class="emotion" id="emotion-display">Neutral</div>
+
+        <div class="info">
+            <div class="card">
+                <h3>FPS</h3>
+                <div class="value" id="fps">0</div>
+            </div>
+            <div class="card">
+                <h3>CPU</h3>
+                <div class="value" id="cpu">0%</div>
+            </div>
+            <div class="card">
+                <h3>RAM</h3>
+                <div class="value" id="ram">0 MB</div>
+            </div>
+            <div class="card">
+                <h3>Faces</h3>
+                <div class="value" id="faces">0</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button onclick="location.reload()">🔄 Refresh</button>
+        </div>
+    </div>
+
+    <script src="/static/js/script.js"></script>
+</body>
+</html>

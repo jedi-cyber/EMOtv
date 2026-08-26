@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from emotv.config import TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS, YUNET_PATH
+from emotv.config import (
+    TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS,
+    YUNET_PATH, EMOTION_MODEL_PATH
+)
 from emotv.infrastructure.vision.camera.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
@@ -8,36 +11,43 @@ from emotv.infrastructure.vision.camera.opencv_camera import (
 from emotv.infrastructure.vision.face_detection.yunet_face_detector import (
     YuNetFaceDetector,
 )
-from emotv.interfaces.ui.face_detection_preview import (
-    FaceDetectionPreview,
+from emotv.infrastructure.vision.face_processing.face_preprocessor import (
+    FacePreprocessor,
+)
+from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import (
+    EmotionClassifier,
 )
 from emotv.shared.performance.monitor import PerformanceMonitor
+import cv2
+import numpy as np
 
 
 def main() -> None:
     print("========================================")
-    print(" EMOtv - Face Detection Test")
+    print(" EMOtv - Face Detection + Emotion Test")
     print("========================================")
     print()
 
     # ---------------------------------------------------------
-    # 1. Comprobar modelo
+    # 1. Comprobar modelos
     # ---------------------------------------------------------
 
-    print("[1] Comprobando modelo YuNet...")
+    print("[1] Comprobando modelos...")
 
     if not YUNET_PATH.exists():
-        print("[ERROR] No se encontró el modelo YuNet.")
-        print(f"Ruta esperada: {YUNET_PATH}")
-        print("Ejecuta 'python scripts/download_weights.py' para descargarlo.")
+        print("[ERROR] No se encontró YuNet.")
+        return
+    if not EMOTION_MODEL_PATH.exists():
+        print("[ERROR] No se encontró el modelo de emociones.")
+        print(f"Ruta: {EMOTION_MODEL_PATH}")
+        print("Ejecuta 'python scripts/download_emotion_model.py'")
         return
 
-    print(f"[OK] Modelo encontrado:")
-    print(f"     {YUNET_PATH}")
+    print("[OK] Modelos encontrados.")
     print()
 
     # ---------------------------------------------------------
-    # 2. Configuración de cámara (usando valores centralizados)
+    # 2. Configuración de cámara
     # ---------------------------------------------------------
 
     config = CameraConfig(
@@ -47,10 +57,7 @@ def main() -> None:
         fps=TARGET_FPS,
     )
 
-    print("[2] Configuración de cámara:")
-    print(f"     Dispositivo: {config.device_index}")
-    print(f"     Resolución: {config.width}x{config.height}")
-    print(f"     FPS objetivo: {config.fps}")
+    print(f"[2] Cámara: {config.width}x{config.height} @ {config.fps} FPS")
     print()
 
     # ---------------------------------------------------------
@@ -61,16 +68,11 @@ def main() -> None:
 
     camera = OpenCVCamera(config)
     monitor = PerformanceMonitor()
+    detector = YuNetFaceDetector(input_size=(TARGET_WIDTH, TARGET_HEIGHT))
+    preprocessor = FacePreprocessor()
+    classifier = EmotionClassifier()
 
-    # El detector usará YUNET_PATH por defecto (definido en config)
-    detector = YuNetFaceDetector(
-        input_size=(TARGET_WIDTH, TARGET_HEIGHT),
-        # Los umbrales también se toman de config por defecto
-    )
-
-    print("[OK] Cámara preparada.")
-    print("[OK] Monitor preparado.")
-    print("[OK] YuNet preparado.")
+    print("[OK] Todos los componentes listos.")
     print()
 
     # ---------------------------------------------------------
@@ -78,72 +80,102 @@ def main() -> None:
     # ---------------------------------------------------------
 
     try:
-        print("[4] Abriendo cámara...")
-
         camera.open()
+        print("[4] Cámara abierta. Presiona Q para salir.")
+        print("    Se mostrará la emoción en la ventana principal.\n")
 
-        print("[OK] Cámara abierta.")
-        print()
+        cv2.namedWindow("EMOtv - Face Detection + Emotion", cv2.WINDOW_NORMAL)
+        cv2.namedWindow("EMOtv - Cropped Face", cv2.WINDOW_NORMAL)
 
-        properties = camera.get_actual_properties()
+        running = True
+        frame_counter = 0
+        last_detections = []
+        last_emotion = ("neutral", 0.0)  # (emoción, confianza)
 
-        print("========================================")
-        print(" CONFIGURACIÓN REAL")
-        print("========================================")
+        while running:
+            frame = camera.read()
+            if frame is None:
+                break
 
-        print(
-            f"Resolución real: "
-            f"{int(properties['width'])}x"
-            f"{int(properties['height'])}"
-        )
+            monitor.update_frame()
 
-        print(
-            f"FPS reportados: "
-            f"{properties['fps']:.2f}"
-        )
+            # Frame skipping
+            frame_counter += 1
+            if frame_counter % 2 == 0:
+                detections = detector.detect(frame)
+                last_detections = detections
+            else:
+                detections = last_detections
 
-        print()
+            # Copiar frame para dibujar
+            display_frame = frame.copy()
 
-        # -----------------------------------------------------
-        # 5. Crear preview
-        # -----------------------------------------------------
+            # Dibujar detecciones y emociones
+            for face in detections:
+                x, y, w, h = face.bbox
+                cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        preview = FaceDetectionPreview(
-            camera=camera,
-            detector=detector,
-            monitor=monitor,
-            window_name="EMOtv - Face Detection",
-            exit_key="q",
-        )
+                # Preprocesar el rostro
+                cropped = preprocessor.process(frame, face)
 
-        print("[5] Iniciando detección facial...")
-        print("    Presiona Q para salir.")
-        print()
+                if cropped and cropped.is_valid:
+                    # Clasificar emoción (solo en el frame de detección)
+                    if frame_counter % 2 == 0:
+                        emotion, conf = classifier.predict(cropped)
+                        last_emotion = (emotion, conf)
+                    else:
+                        emotion, conf = last_emotion
 
-        preview.run()
+                    # Mostrar emoción encima del rectángulo
+                    label = f"{emotion} ({conf*100:.1f}%)"
+                    cv2.putText(
+                        display_frame,
+                        label,
+                        (x, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (0, 255, 0),
+                        2,
+                    )
 
-    except RuntimeError as error:
-        print(f"[ERROR] {error}")
+                    # Mostrar el rostro recortado en la otra ventana
+                    cropped_display = (cropped.image * 255).astype(np.uint8) if cropped.image.dtype == np.float32 else cropped.image
+                    cv2.imshow("EMOtv - Cropped Face", cropped_display)
 
-    except KeyboardInterrupt:
-        print()
-        print("[INFO] Prueba interrumpida por el usuario.")
+            # Mostrar métricas
+            stats = monitor.get_stats()
+            lines = [
+                f"FPS: {stats.fps:.1f}",
+                f"CPU: {stats.cpu_percent:.1f}%",
+                f"RAM: {stats.ram_mb:.1f} MB",
+                f"Faces: {len(detections)}",
+                f"Emotion: {last_emotion[0]} ({last_emotion[1]*100:.1f}%)",
+            ]
+            for i, line in enumerate(lines):
+                cv2.putText(
+                    display_frame,
+                    line,
+                    (15, 30 + i * 28),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    (255, 255, 255),
+                    2,
+                )
 
-    except Exception as error:
-        print()
-        print(
-            f"[ERROR INESPERADO] "
-            f"{type(error).__name__}: {error}"
-        )
+            cv2.imshow("EMOtv - Face Detection + Emotion", display_frame)
+
+            # Control de cierre
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or key == ord('Q'):
+                running = False
+
+    except Exception as e:
+        print(f"[ERROR] {e}")
 
     finally:
         camera.release()
-
-        print()
-        print("========================================")
-        print(" Cámara liberada.")
-        print(" Prueba finalizada.")
-        print("========================================")
+        cv2.destroyAllWindows()
+        print("\nPrueba finalizada.")
 
 
 if __name__ == "__main__":
