@@ -12,6 +12,7 @@ CAMERA_INDEX = 0
 TARGET_WIDTH = 640
 TARGET_HEIGHT = 480
 TARGET_FPS = 15  # Objetivo de la demo
+MAX_VIDEO_FPS = 60  # Límite superior para captura y streaming web
 
 # --- Configuración de Detección Facial (YuNet) ---
 YUNET_CONFIDENCE_THRESHOLD = 0.6

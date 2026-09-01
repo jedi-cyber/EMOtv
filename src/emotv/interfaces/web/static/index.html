@@ -33,9 +33,14 @@
 
         <div class="controls">
             <button onclick="location.reload()">🔄 Refresh</button>
+            <button id="start-camera" type="button">Encender cámara</button>
+            <button id="stop-camera" class="danger-button" type="button">
+                Apagar cámara
+            </button>
+            <p id="camera-status" class="camera-status" aria-live="polite"></p>
         </div>
     </div>
 
-    <script src="/static/js/script.js"></script>
+    <script src="/static/js/script.js?v=4"></script>
 </body>
 </html>

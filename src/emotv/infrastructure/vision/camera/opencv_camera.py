@@ -107,6 +107,10 @@ class OpenCVCamera:
             self.config.fps,
         )
 
+        # Cuando el backend lo soporta, evita que VideoCapture conserve una
+        # cola de frames viejos si el consumidor se retrasa.
+        self._capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
     def read(self) -> np.ndarray:
         """
         Captura y devuelve el frame más reciente disponible.

@@ -99,3 +99,14 @@ h1 {
 .controls button:hover {
     background: #c7364f;
 }
+
+.controls button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.camera-status {
+    min-height: 1.2em;
+    margin: 8px 0 0;
+    color: #aaa;
+}

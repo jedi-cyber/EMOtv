@@ -22,4 +22,57 @@ setInterval(() => {
         .catch(console.error);
 }, 2000);
 
+const stopCameraButton = document.getElementById('stop-camera');
+const startCameraButton = document.getElementById('start-camera');
+const cameraStatus = document.getElementById('camera-status');
+
+async function controlCamera(action) {
+    let response = await fetch(`/control/${action}`, {
+        method: 'POST',
+        cache: 'no-store',
+    });
+
+    // Compatibilidad con servidores anteriores que solo exponen GET.
+    if (response.status === 404) {
+        response = await fetch(`/control?action=${action}`, {
+            cache: 'no-store',
+        });
+    }
+
+    if (!response.ok) {
+        throw new Error(`No se pudo ${action} la cámara.`);
+    }
+}
+
+startCameraButton.addEventListener('click', async () => {
+    startCameraButton.disabled = true;
+    cameraStatus.textContent = 'Encendiendo cámara...';
+
+    try {
+        await controlCamera('start');
+        document.getElementById('video').src = `/video_feed?ts=${Date.now()}`;
+        cameraStatus.textContent = 'Cámara encendida.';
+    } catch (error) {
+        console.error(error);
+        cameraStatus.textContent = 'No se pudo encender la cámara.';
+    } finally {
+        startCameraButton.disabled = false;
+    }
+});
+
+stopCameraButton.addEventListener('click', async () => {
+    stopCameraButton.disabled = true;
+    cameraStatus.textContent = 'Apagando cámara...';
+
+    try {
+        await controlCamera('stop');
+        document.getElementById('video').removeAttribute('src');
+        cameraStatus.textContent = 'Cámara apagada.';
+    } catch (error) {
+        console.error(error);
+        stopCameraButton.disabled = false;
+        cameraStatus.textContent = 'No se pudo apagar la cámara.';
+    }
+});
+
 console.log('EMOtv Web Interface cargada.');
