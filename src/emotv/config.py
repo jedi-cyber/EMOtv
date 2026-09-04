@@ -33,5 +33,19 @@ PREPROCESS_GRAYSCALE = True  # Los modelos de emociones suelen usar escala de gr
 PREPROCESS_NORMALIZE = False  # Normalizar píxeles a [0, 1]
 
 # --- Configuración de Modelo de Emociones ---
-EMOTION_MODEL_PATH = MODELS_DIR / "weights" / "emotion" / "emotion-ferplus-8.onnx"
+EMOTION_MODEL_PATH = WEIGHTS_DIR / "emotion" / "emotion-ferplus-8.onnx"
+
+# --- Configuracion de Estimacion de Pose ---
+POSE_MODEL_PATH = WEIGHTS_DIR / "pose" / "pose_landmarker_lite.task"
+POSE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+    "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+)
+POSE_MIN_DETECTION_CONFIDENCE = 0.5
+POSE_MIN_PRESENCE_CONFIDENCE = 0.5
+POSE_MIN_TRACKING_CONFIDENCE = 0.5
+POSE_MIN_LANDMARK_VISIBILITY = 0.5
+ARMS_UP_WRIST_MARGIN = 0.02
+ARMS_UP_ELBOW_TOLERANCE_DEGREES = 25.0
+ARMS_UP_HOLD_SECONDS = 5.0
 EMOTION_INPUT_SIZE = (64, 64)  # Tamaño esperado por el modelo

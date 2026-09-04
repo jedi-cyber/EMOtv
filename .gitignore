@@ -60,6 +60,7 @@ data/external/**
 *.onnx
 *.engine
 *.tflite
+*.task
 models/artifacts/**
 !models/artifacts/.gitkeep
 

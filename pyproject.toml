@@ -5,19 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "emotv"
 version = "0.1.0"
-description = "Sistema experimental de análisis y clasificación de expresiones emocionales mediante visión por computadora"
+description = "Sistema experimental de análisis emocional y corporal mediante visión por computadora"
 requires-python = ">=3.11"
 
 dependencies = [
-    "opencv-python",
+    "opencv-contrib-python",
     "numpy",
     "psutil",
     "fastapi",
     "uvicorn",
     "websockets",
     "onnxruntime",
+    "mediapipe>=0.10.35,<2",
     "python-multipart",  # Opcional, pero útil para subir archivos
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
