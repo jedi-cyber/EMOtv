@@ -128,7 +128,8 @@ Al completar el ejercicio, el script conserva e imprime:
 }
 ```
 
-No se guarda en disco ni en una base de datos.
+El resultado puede entregarse a `SessionService` y conservarse mediante el
+repositorio en memoria. No se guarda todavía en disco ni en una base de datos.
 
 ## Protocolo de validación manual pendiente
 

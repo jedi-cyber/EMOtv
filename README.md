@@ -2,7 +2,7 @@
 
 EMOtv es un sistema experimental de apoyo al bienestar emocional para la
 Facultad de Psicología de la Universidad Nacional Hermilio Valdizán. Combina
-visión por computadora, análisis corporal y aplicaciones interactivas.
+visión por computadora y actividades guiadas mediante posturas corporales.
 
 El sistema es una herramienta de apoyo y seguimiento. No realiza diagnósticos
 ni sustituye la evaluación de un profesional de psicología.
@@ -24,7 +24,10 @@ La base funcional incluye:
 - controlador del flujo emoción → actividad → postura → ejercicio;
 - ejercicio temporizado con estados `incorrect`, `holding` y `completed`;
 - progreso normalizado y barra visual en tiempo real;
-- pruebas unitarias de pose, postura, dibujo y ejercicio.
+- sesiones estructuradas con estados y timestamps;
+- persistencia desacoplada mediante `SessionRepository`;
+- repositorio local `InMemorySessionRepository`;
+- pruebas unitarias de pose, postura, ejercicio y sesiones.
 
 ## Inicio rápido
 
@@ -45,6 +48,7 @@ python scripts/poses/run_pose_detection_test.py
 python scripts/poses/run_posture_test.py
 python scripts/poses/run_exercise_test.py
 python scripts/run_emotional_exercise_test.py
+python scripts/run_session_test.py
 ```
 
 En las ventanas de prueba, `Q` finaliza la ejecución. En la prueba del
@@ -68,14 +72,15 @@ python -m unittest discover -s tests -p "test_*.py"
 - [Arquitectura](docs/architecture.md)
 - [Etapa de reconocimiento corporal](docs/pose-estimation.md)
 - [MVP de actividad emocional](docs/emotional-activity-mvp.md)
+- [Sesiones y persistencia en memoria](docs/sessions.md)
 - [Modelos y pesos](models/README.md)
 - [Scripts disponibles](scripts/README.md)
 - [Pruebas](tests/README.md)
 
 ## Próximas etapas
 
-1. Validar manualmente el MVP integrado con webcam y registrar resultados.
+1. Validar manualmente el flujo completo de sesiones con webcam.
 2. Calibrar umbrales y revisar actividades con profesionales de Psicología.
-3. Registrar sesiones y resultados de ejercicios.
-4. Integrar el flujo con la aplicación web.
-5. Admitir fuentes de video adicionales, incluida ESP32-CAM.
+3. Implementar PostgreSQL y migraciones tras validar el repositorio en memoria.
+4. Incorporar autenticación, roles y la API definitiva.
+5. Integrar el flujo con las aplicaciones web y móvil.

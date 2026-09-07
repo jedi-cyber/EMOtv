@@ -74,3 +74,16 @@ Muestra el resultado final en la consola y lo mantiene en memoria. Controles:
 - `ESPACIO`: comenzar inmediatamente la actividad seleccionada;
 - `R`: reiniciar el flujo completo;
 - `Q`: salir.
+
+## Prueba completa de sesión
+
+Ejecuta el flujo integrado y guarda el resultado final mediante
+`SessionService` e `InMemorySessionRepository`:
+
+```powershell
+python scripts/run_session_test.py
+```
+
+La salida incluye el ID de sesión, timestamps, emoción inicial, actividad,
+resultado del ejercicio y duración. Las sesiones interrumpidas o reiniciadas
+se registran como canceladas mientras el proceso permanezca abierto.

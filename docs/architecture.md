@@ -61,8 +61,9 @@ OpenCVCamera
     -> PoseDrawer + interfaz
 ```
 
-Esta separación permite sustituir la webcam por video, teléfono o ESP32-CAM
-si la nueva fuente continúa entregando un `numpy.ndarray` BGR válido.
+Esta separación permite sustituir la webcam por otra fuente compatible si
+continúa entregando un `numpy.ndarray` BGR válido. El alcance vigente utiliza
+webcam y no contempla ESP32-CAM.
 
 ## Flujo emocional integrado
 
@@ -73,6 +74,29 @@ secuencial para no inferir emoción y pose de manera constante al mismo tiempo:
 rostro -> emoción estable -> actividad seleccionada -> instrucción
        -> postura objetivo -> progreso -> resultado final en memoria
 ```
+
+## Flujo de sesiones
+
+La emoción se estima a partir del rostro. El cuerpo se utiliza exclusivamente
+para guiar y validar posturas de las actividades; no se infieren emociones a
+partir de landmarks corporales.
+
+```text
+EmotionalActivityService
+    -> EmotionalActivityStatus
+    -> SessionService
+    -> EmotionalSession
+    -> SessionRepository
+    -> InMemorySessionRepository
+```
+
+`SessionState` representa los estados `created`, `in_progress`, `completed` y
+`cancelled`. `SessionService` controla IDs, timestamps y transiciones y depende
+del puerto `SessionRepository`, nunca del adaptador concreto. El repositorio en
+memoria podrá sustituirse por PostgreSQL sin modificar la visión artificial.
+
+La implementación y su auditoría están descritas en
+[Sesiones y persistencia en memoria](sessions.md).
 
 ## Decisiones relevantes
 
@@ -87,6 +111,8 @@ rostro -> emoción estable -> actividad seleccionada -> instrucción
 - Las asociaciones emoción–actividad son configuración provisional y no una
   recomendación clínica.
 - El resultado integrado permanece en memoria durante esta etapa.
+- `EmotionalActivityService` no depende de sesiones ni persistencia.
+- Ningún detector o validador corporal conoce el repositorio de sesiones.
 
 El alcance y el protocolo de validación están documentados en
 [MVP de actividad emocional](emotional-activity-mvp.md).

@@ -6,7 +6,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from emotv.application import EmotionalActivityService
+from emotv.application import EmotionalActivityService, SessionService
 from emotv.application.pose_service import PoseService
 from emotv.config import (
     CAMERA_INDEX,
@@ -19,7 +19,8 @@ from emotv.config import (
     TARGET_WIDTH,
     YUNET_PATH,
 )
-from emotv.domain import EmotionalActivityState, EmotionalActivityStatus
+from emotv.domain import EmotionalActivityState, EmotionalActivityStatus, SessionState
+from emotv.infrastructure.persistence import InMemorySessionRepository
 from emotv.infrastructure.vision.camera.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
@@ -126,7 +127,11 @@ def validate_models() -> bool:
     return False
 
 
-def main() -> None:
+def main(
+    *,
+    window_name: str = WINDOW_NAME,
+    console_title: str = "EMOtv - Emotional Activity Test",
+) -> None:
     if not validate_models():
         return
 
@@ -142,6 +147,9 @@ def main() -> None:
     face_preprocessor = FacePreprocessor()
     pose_service = PoseService()
     controller = EmotionalActivityService(pose_service=pose_service)
+    session_repository = InMemorySessionRepository()
+    session_service = SessionService(session_repository)
+    session = session_service.start_session()
     pose_drawer = PoseDrawer(
         PoseDrawingStyle(connection_color=ERROR_COLOR),
     )
@@ -155,14 +163,14 @@ def main() -> None:
     final_result: dict[str, Any] | None = None
 
     print("========================================")
-    print(" EMOtv - Emotional Activity Test")
+    print(f" {console_title}")
     print("========================================")
     print("Mira a la cámara durante el análisis emocional.")
     print("Q: salir | R: reiniciar | ESPACIO: iniciar actividad")
 
     try:
         with camera:
-            cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
             while True:
                 frame = camera.read()
@@ -213,12 +221,21 @@ def main() -> None:
                         display = drawer.draw(frame, last_pose.landmarks)
 
                 if status.completed and final_result is None:
+                    session = session_service.complete_from_activity_status(
+                        session.id,
+                        status,
+                    )
                     final_result = build_final_result(status)
                     print("========================================")
                     print(" ACTIVIDAD COMPLETADA")
                     print("========================================")
                     for key, value in final_result.items():
                         print(f"{key}: {value}")
+                    print(f"session_id: {session.id}")
+                    print(f"started_at: {session.started_at.isoformat()}")
+                    assert session.completed_at is not None
+                    print(f"completed_at: {session.completed_at.isoformat()}")
+                    print("Sesión guardada correctamente en memoria.")
 
                 monitor.update_frame()
                 stats = monitor.get_stats()
@@ -273,12 +290,19 @@ def main() -> None:
                         "Análisis emocional",
                     )
 
-                cv2.imshow(WINDOW_NAME, display)
+                cv2.imshow(window_name, display)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), ord("Q")):
                     break
                 if key in (ord("r"), ord("R")):
+                    current_session = session_service.get_session(session.id)
+                    if (
+                        current_session is not None
+                        and current_session.state is SessionState.IN_PROGRESS
+                    ):
+                        session_service.cancel_session(session.id)
                     controller.reset()
+                    session = session_service.start_session()
                     selected_at = None
                     last_emotion = None
                     final_result = None
@@ -288,7 +312,7 @@ def main() -> None:
                     is EmotionalActivityState.ACTIVITY_SELECTED
                 ):
                     status = controller.begin_activity()
-                if cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
+                if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                     break
 
     except (RuntimeError, ValueError, FileNotFoundError, cv2.error) as error:
@@ -296,6 +320,12 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nPrueba interrumpida por el usuario.")
     finally:
+        current_session = session_service.get_session(session.id)
+        if (
+            current_session is not None
+            and current_session.state is SessionState.IN_PROGRESS
+        ):
+            session_service.cancel_session(session.id)
         controller.close()
         camera.release()
         cv2.destroyAllWindows()

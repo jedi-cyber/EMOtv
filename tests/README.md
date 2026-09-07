@@ -39,5 +39,15 @@ python -m unittest discover -s tests -p "test_*.py"
 - construcción del resultado final en memoria;
 - compatibilidad de `PoseService` con posturas genéricas.
 
+## Cobertura de sesiones
+
+- valores serializables de `SessionState`;
+- invariantes, timestamps e inmutabilidad de `EmotionalSession`;
+- contrato estructural `SessionRepository`;
+- creación, inicio, finalización y cancelación con `SessionService`;
+- prevención de transiciones repetidas e IDs duplicados;
+- conversión de `EmotionalActivityStatus` en una sesión completada;
+- almacenamiento, actualización, recuperación y listado en memoria.
+
 Las pruebas automatizadas no reemplazan la prueba manual con distintas
 personas, distancias, fondos e iluminación.
