@@ -17,7 +17,11 @@ La base funcional incluye:
 - estimación corporal con MediaPipe Pose Landmarker;
 - representación de landmarks independiente de MediaPipe;
 - dibujo de puntos y conexiones corporales;
-- validación de la postura de ambos brazos levantados;
+- validación de `arms_up`, `arms_open` y `hands_on_hips`;
+- catálogo local con una actividad para cada postura implementada;
+- estabilización de emociones a partir de múltiples predicciones;
+- recomendación local de actividades a partir de la emoción estabilizada;
+- controlador del flujo emoción → actividad → postura → ejercicio;
 - ejercicio temporizado con estados `incorrect`, `holding` y `completed`;
 - progreso normalizado y barra visual en tiempo real;
 - pruebas unitarias de pose, postura, dibujo y ejercicio.
@@ -40,6 +44,7 @@ Pruebas disponibles:
 python scripts/poses/run_pose_detection_test.py
 python scripts/poses/run_posture_test.py
 python scripts/poses/run_exercise_test.py
+python scripts/run_emotional_exercise_test.py
 ```
 
 En las ventanas de prueba, `Q` finaliza la ejecución. En la prueba del
@@ -62,13 +67,15 @@ python -m unittest discover -s tests -p "test_*.py"
 - [Primeros pasos](docs/primeros-pasos.md)
 - [Arquitectura](docs/architecture.md)
 - [Etapa de reconocimiento corporal](docs/pose-estimation.md)
+- [MVP de actividad emocional](docs/emotional-activity-mvp.md)
 - [Modelos y pesos](models/README.md)
 - [Scripts disponibles](scripts/README.md)
 - [Pruebas](tests/README.md)
 
 ## Próximas etapas
 
-1. Registrar sesiones y resultados de ejercicios.
-2. Integrar pose y ejercicio con la aplicación web.
-3. Definir más posturas validadas por profesionales.
-4. Admitir fuentes de video adicionales, incluida ESP32-CAM.
+1. Validar manualmente el MVP integrado con webcam y registrar resultados.
+2. Calibrar umbrales y revisar actividades con profesionales de Psicología.
+3. Registrar sesiones y resultados de ejercicios.
+4. Integrar el flujo con la aplicación web.
+5. Admitir fuentes de video adicionales, incluida ESP32-CAM.

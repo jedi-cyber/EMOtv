@@ -8,6 +8,8 @@ import numpy as np
 from emotv.application.pose_service import PoseService
 from emotv.domain.pose_landmarks import PoseLandmark, PoseLandmarks
 from emotv.domain.pose_result import PoseResult
+from emotv.domain.posture_id import PostureId
+from emotv.domain.posture_result import PostureResult
 from emotv.infrastructure.vision.movement_analysis.posture_validator import (
     ArmsUpThresholds,
     PostureValidator,
@@ -60,6 +62,23 @@ class PoseFoundationTests(unittest.TestCase):
         result = service.analyze(np.zeros((10, 10, 3), dtype=np.uint8))
 
         self.assertEqual(result, {"pose_detected": True, "arms_up": True})
+
+    def test_pose_service_validates_selected_posture(self) -> None:
+        pose = make_pose(wrists_y=0.2)
+        detector = FakePoseDetector(PoseResult(detected=True, landmarks=pose))
+        service = PoseService(detector=detector)
+
+        result = service.validate(
+            np.zeros((10, 10, 3), dtype=np.uint8),
+            PostureId.ARMS_UP,
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result.detected)
+        self.assertIsNotNone(service.last_pose_result)
+        assert service.last_pose_result is not None
+        self.assertIs(service.last_pose_result.landmarks, pose)
 
     def test_validator_rejects_wrists_below_shoulders(self) -> None:
         pose = make_pose(wrists_y=0.6)
@@ -115,6 +134,96 @@ class PoseFoundationTests(unittest.TestCase):
 
         self.assertAlmostEqual(left_angle, 180.0)
         self.assertAlmostEqual(right_angle, 180.0)
+
+    def test_generic_validation_returns_measurements(self) -> None:
+        result = PostureValidator().validate(
+            make_pose(wrists_y=0.2),
+            PostureId.ARMS_UP,
+        )
+
+        self.assertTrue(result.detected)
+        self.assertEqual(result.confidence, 1.0)
+        self.assertAlmostEqual(result.measurements["left_elbow_angle"], 180.0)
+        self.assertEqual(result.failed_rules, ())
+
+    def test_generic_validation_reports_failed_rules(self) -> None:
+        result = PostureValidator().validate(
+            make_pose(wrists_y=0.6),
+            "arms_up",
+        )
+
+        self.assertFalse(result.detected)
+        self.assertIn("left_wrist_above_shoulder", result.failed_rules)
+        self.assertIn("right_wrist_above_shoulder", result.failed_rules)
+        self.assertLess(result.confidence, 1.0)
+
+    def test_arms_up_reports_only_the_side_below_shoulder(self) -> None:
+        pose = make_pose(wrists_y=0.2)
+        pose = replace(
+            pose,
+            right_elbow=PoseLandmark(0.6, 0.5),
+            right_wrist=PoseLandmark(0.6, 0.6),
+        )
+
+        result = PostureValidator().validate(pose, PostureId.ARMS_UP)
+
+        self.assertNotIn("left_wrist_above_shoulder", result.failed_rules)
+        self.assertIn("right_wrist_above_shoulder", result.failed_rules)
+
+    def test_arms_up_accepts_visibility_at_exact_threshold(self) -> None:
+        pose = make_pose(wrists_y=0.2)
+        pose = replace(
+            pose,
+            left_wrist=replace(pose.left_wrist, visibility=0.5),
+        )
+
+        self.assertTrue(PostureValidator().validate(pose, "arms_up").detected)
+
+    def test_arms_up_accepts_elbow_at_configured_inclusive_limit(self) -> None:
+        pose = make_pose(wrists_y=0.2)
+        pose = replace(pose, left_elbow=PoseLandmark(0.5, 0.3))
+        validator = PostureValidator(
+            ArmsUpThresholds(elbow_straight_tolerance_degrees=90.0),
+        )
+
+        result = validator.validate(pose, PostureId.ARMS_UP)
+
+        self.assertTrue(result.detected)
+        self.assertAlmostEqual(result.measurements["left_elbow_angle"], 90.0)
+
+    def test_unimplemented_posture_has_explicit_error(self) -> None:
+        with self.assertRaises(NotImplementedError):
+            PostureValidator().validate(
+                make_pose(wrists_y=0.2),
+                PostureId.ARMS_FORWARD,
+            )
+
+    def test_can_register_an_additional_posture(self) -> None:
+        validator = PostureValidator()
+
+        def arms_forward_evaluator(pose: PoseLandmarks) -> PostureResult:
+            return PostureResult(
+                PostureId.ARMS_FORWARD,
+                detected=True,
+                confidence=0.8,
+            )
+
+        validator.register(PostureId.ARMS_FORWARD, arms_forward_evaluator)
+        result = validator.validate(make_pose(wrists_y=0.4), "arms_forward")
+
+        self.assertTrue(result.detected)
+        self.assertIs(result.posture_id, PostureId.ARMS_FORWARD)
+        self.assertIn(PostureId.ARMS_FORWARD, validator.supported_postures)
+
+    def test_rejects_result_for_a_different_posture(self) -> None:
+        validator = PostureValidator()
+        validator.register(
+            PostureId.ARMS_FORWARD,
+            lambda pose: PostureResult(PostureId.SQUAT, detected=True),
+        )
+
+        with self.assertRaises(ValueError):
+            validator.validate(make_pose(wrists_y=0.4), PostureId.ARMS_FORWARD)
 
 
 if __name__ == "__main__":

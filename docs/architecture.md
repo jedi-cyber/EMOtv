@@ -10,7 +10,10 @@ Contiene modelos independientes de frameworks:
 
 - `PoseLandmark` y `PoseLandmarks`: puntos corporales normalizados;
 - `PoseResult`: resultado de una inferencia corporal;
-- `PostureResult`: resultado conceptual de una postura;
+- `PostureId`: identificadores estables para seleccionar posturas;
+- `PostureResult`: resultado genérico con confianza, mediciones y reglas
+  incumplidas;
+- `Activity`: instrucción local asociada a una postura, duración y repeticiones;
 - `Exercise` y `ExerciseStatus`: definición y estado de un ejercicio;
 - `ExerciseState`: `incorrect`, `holding` o `completed`.
 
@@ -21,12 +24,21 @@ El dominio no importa OpenCV ni MediaPipe.
 - `PoseService`: coordina detección y validación de postura.
 - `ExerciseService`: máquina de estados que mide el tiempo sostenido y entrega
   un progreso entre `0.0` y `1.0`.
+- `ActivityCatalog`: catálogo local consultable por identificador o postura.
+- `EmotionStabilizer`: obtiene una emoción dominante desde una ventana móvil,
+  aplicando confianza mínima, muestras mínimas y acuerdo mínimo.
+- `ActivityRecommendationService`: traduce una emoción estabilizada a una
+  actividad del catálogo mediante reglas locales provisionales.
+- `EmotionalActivityService`: controlador de estados que coordina clasificación,
+  estabilización, recomendación, pose y progreso sin asumir una interfaz.
 
 ### Infraestructura
 
 - `OpenCVCamera`: convierte webcam u otra fuente compatible en frames BGR.
 - `PoseDetector`: adapta MediaPipe al modelo corporal del dominio.
-- `PostureValidator`: aplica reglas geométricas configurables.
+- `PostureValidator`: despacha por `PostureId` hacia evaluadores registrados y
+  devuelve un `PostureResult` genérico. `both_arms_up()` permanece como API de
+  compatibilidad.
 - `calculate_angle`: calcula el ángulo de tres landmarks.
 - módulos existentes de detección facial y clasificación emocional.
 
@@ -52,6 +64,16 @@ OpenCVCamera
 Esta separación permite sustituir la webcam por video, teléfono o ESP32-CAM
 si la nueva fuente continúa entregando un `numpy.ndarray` BGR válido.
 
+## Flujo emocional integrado
+
+`scripts/run_emotional_exercise_test.py` ejecuta localmente las fases de forma
+secuencial para no inferir emoción y pose de manera constante al mismo tiempo:
+
+```text
+rostro -> emoción estable -> actividad seleccionada -> instrucción
+       -> postura objetivo -> progreso -> resultado final en memoria
+```
+
 ## Decisiones relevantes
 
 - Los pesos se guardan fuera del paquete, bajo `models/weights/`, y no se
@@ -62,3 +84,9 @@ si la nueva fuente continúa entregando un `numpy.ndarray` BGR válido.
 - `completed` es terminal hasta que se llama a `ExerciseService.reset()`.
 - La pérdida de la postura durante `holding` reinicia tiempo y progreso.
 - Las reglas corporales permanecen separadas de la captura y del dibujo.
+- Las asociaciones emoción–actividad son configuración provisional y no una
+  recomendación clínica.
+- El resultado integrado permanece en memoria durante esta etapa.
+
+El alcance y el protocolo de validación están documentados en
+[MVP de actividad emocional](emotional-activity-mvp.md).

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import argparse
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
 
@@ -10,13 +13,12 @@ from emotv.config import (
     TARGET_HEIGHT,
     TARGET_WIDTH,
 )
-from emotv.domain.pose_landmarks import PoseLandmarks
+from emotv.domain import PoseLandmarks, PostureId, PostureResult
 from emotv.infrastructure.vision.camera.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
 )
 from emotv.infrastructure.vision.movement_analysis import (
-    ArmsUpThresholds,
     PostureValidator,
     calculate_angle,
 )
@@ -25,14 +27,42 @@ from emotv.interfaces.ui.pose_drawer import PoseDrawer, PoseDrawingStyle
 from emotv.shared.performance.monitor import PerformanceMonitor
 
 
-WINDOW_NAME = "EMOtv - Posture Test: Both Arms Up"
+WINDOW_NAME = "EMOtv - Posture Test"
 SUCCESS_COLOR = (0, 255, 0)
 ERROR_COLOR = (0, 0, 255)
 INFO_COLOR = (255, 255, 255)
 
 
+@dataclass(frozen=True, slots=True)
+class PosturePresentation:
+    name: str
+    instruction: str
+
+
+POSTURE_PRESENTATIONS = {
+    PostureId.ARMS_UP: PosturePresentation(
+        name="Brazos levantados",
+        instruction="Levanta y extiende ambos brazos sobre los hombros.",
+    ),
+    PostureId.ARMS_OPEN: PosturePresentation(
+        name="Brazos abiertos",
+        instruction="Extiende ambos brazos hacia los lados a la altura de hombros.",
+    ),
+    PostureId.HANDS_ON_HIPS: PosturePresentation(
+        name="Manos en las caderas",
+        instruction="Coloca ambas manos en las caderas y abre los codos.",
+    ),
+}
+
+KEY_TO_POSTURE = {
+    ord("1"): PostureId.ARMS_UP,
+    ord("2"): PostureId.ARMS_OPEN,
+    ord("3"): PostureId.HANDS_ON_HIPS,
+}
+
+
 def arm_angles(pose: PoseLandmarks) -> tuple[float, float]:
-    """Devuelve los angulos de los codos izquierdo y derecho."""
+    """Mantiene disponible el cálculo usado por pruebas y diagnóstico."""
 
     left = calculate_angle(
         pose.left_shoulder,
@@ -47,6 +77,47 @@ def arm_angles(pose: PoseLandmarks) -> tuple[float, float]:
     return left, right
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Prueba interactiva de posturas corporales de EMOtv.",
+    )
+    parser.add_argument(
+        "--posture",
+        choices=[posture.value for posture in POSTURE_PRESENTATIONS],
+        default=PostureId.ARMS_UP.value,
+        help="Postura objetivo inicial (por defecto: arms_up).",
+    )
+    return parser
+
+
+def diagnostic_lines(result: PostureResult) -> tuple[str, ...]:
+    measurements = result.measurements
+    lines: list[str] = []
+
+    if "left_elbow_angle" in measurements:
+        lines.append(
+            "Codos: "
+            f"izq {measurements['left_elbow_angle']:.1f} | "
+            f"der {measurements['right_elbow_angle']:.1f} grados"
+        )
+    if result.posture_id is PostureId.ARMS_OPEN:
+        lines.append(
+            "Altura munecas: "
+            f"izq {measurements['left_wrist_height_delta']:.3f} | "
+            f"der {measurements['right_wrist_height_delta']:.3f}"
+        )
+    if result.posture_id is PostureId.HANDS_ON_HIPS:
+        lines.append(
+            "Distancia mano-cadera: "
+            f"izq {measurements['left_wrist_hip_distance']:.3f} | "
+            f"der {measurements['right_wrist_hip_distance']:.3f}"
+        )
+    if result.failed_rules:
+        lines.append("Ajustar: " + ", ".join(result.failed_rules[:2]))
+
+    return tuple(lines)
+
+
 def draw_text_lines(
     frame: np.ndarray,
     lines: tuple[tuple[str, tuple[int, int, int]], ...],
@@ -57,34 +128,30 @@ def draw_text_lines(
             text,
             (15, 30 + index * 28),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
+            0.58,
             color,
             2,
             cv2.LINE_AA,
         )
 
 
-def main() -> None:
+def main(initial_posture: PostureId = PostureId.ARMS_UP) -> None:
+    if initial_posture not in POSTURE_PRESENTATIONS:
+        raise ValueError(f"Postura no disponible: {initial_posture.value}")
     if not POSE_MODEL_PATH.is_file():
         print(f"[ERROR] No se encontro el modelo de pose: {POSE_MODEL_PATH}")
         print("Ejecuta: python scripts/poses/download_pose_model.py")
         return
 
-    thresholds = ArmsUpThresholds()
-    validator = PostureValidator(thresholds)
+    validator = PostureValidator()
     correct_drawer = PoseDrawer(
-        PoseDrawingStyle(
-            landmark_color=(0, 255, 255),
-            connection_color=SUCCESS_COLOR,
-        ),
-        min_visibility=thresholds.min_visibility,
+        PoseDrawingStyle(connection_color=SUCCESS_COLOR),
     )
     incorrect_drawer = PoseDrawer(
         PoseDrawingStyle(
             landmark_color=(0, 165, 255),
             connection_color=ERROR_COLOR,
         ),
-        min_visibility=thresholds.min_visibility,
     )
     camera = OpenCVCamera(
         CameraConfig(
@@ -95,67 +162,66 @@ def main() -> None:
         )
     )
     monitor = PerformanceMonitor()
+    selected_posture = initial_posture
 
-    minimum_angle = 180.0 - thresholds.elbow_straight_tolerance_degrees
     print("=== EMOtv - Posture Test ===")
-    print("Postura objetivo: levantar ambos brazos extendidos.")
-    print(f"Visibilidad minima: {thresholds.min_visibility:.2f}")
-    print(f"Margen de munecas: {thresholds.wrist_above_shoulder_margin:.2f}")
-    print(f"Angulo minimo de codos: {minimum_angle:.1f} grados")
-    print("Presiona Q para salir.")
+    print("1: arms_up | 2: arms_open | 3: hands_on_hips")
+    print("Q: salir")
 
     try:
         with camera, PoseDetector() as detector:
             cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
 
             while True:
+                presentation = POSTURE_PRESENTATIONS[selected_posture]
                 frame = camera.read()
                 pose_result = detector.detect(frame)
                 monitor.update_frame()
-                stats = monitor.get_stats()
 
                 if pose_result.detected and pose_result.landmarks is not None:
-                    pose = pose_result.landmarks
-                    posture_correct = validator.both_arms_up(pose)
-                    left_angle, right_angle = arm_angles(pose)
-                    drawer = correct_drawer if posture_correct else incorrect_drawer
-                    display = drawer.draw(frame, pose)
-                    status = (
-                        "POSTURA CORRECTA: ambos brazos arriba"
-                        if posture_correct
-                        else "AJUSTA: sube y extiende ambos brazos"
+                    posture_result = validator.validate(
+                        pose_result.landmarks,
+                        selected_posture,
                     )
-                    status_color = SUCCESS_COLOR if posture_correct else ERROR_COLOR
-                    posture_lines = (
-                        (status, status_color),
-                        (
-                            f"Codos: izq {left_angle:.1f} | der {right_angle:.1f} "
-                            f"(min {minimum_angle:.1f})",
-                            INFO_COLOR,
-                        ),
-                        (
-                            f"Confianza de pose: {pose_result.confidence * 100:.1f}%",
-                            INFO_COLOR,
-                        ),
+                    drawer = (
+                        correct_drawer if posture_result.detected else incorrect_drawer
+                    )
+                    display = drawer.draw(frame, pose_result.landmarks)
+                    status = (
+                        "POSTURA CORRECTA"
+                        if posture_result.detected
+                        else "POSTURA INCORRECTA"
+                    )
+                    status_color = (
+                        SUCCESS_COLOR if posture_result.detected else ERROR_COLOR
+                    )
+                    diagnostics = tuple(
+                        (line, INFO_COLOR) for line in diagnostic_lines(posture_result)
                     )
                 else:
                     display = frame.copy()
-                    posture_lines = (
-                        ("SIN POSE: coloca el cuerpo completo en camara", ERROR_COLOR),
-                        ("Levanta ambos brazos y mantenlos extendidos", INFO_COLOR),
-                    )
+                    status = "SIN POSE: muestra el cuerpo completo"
+                    status_color = ERROR_COLOR
+                    diagnostics = ()
 
-                performance_lines = (
+                stats = monitor.get_stats()
+                lines = (
+                    (f"Objetivo: {presentation.name}", INFO_COLOR),
+                    (presentation.instruction, INFO_COLOR),
+                    (status, status_color),
+                ) + diagnostics + (
                     (f"FPS: {stats.fps:.1f}", INFO_COLOR),
-                    (f"CPU: {stats.cpu_percent:.1f}%", INFO_COLOR),
-                    (f"RAM: {stats.ram_mb:.1f} MB", INFO_COLOR),
+                    ("1/2/3: cambiar postura | Q: salir", INFO_COLOR),
                 )
-                draw_text_lines(display, posture_lines + performance_lines)
+                draw_text_lines(display, lines)
                 cv2.imshow(WINDOW_NAME, display)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), ord("Q")):
                     break
+                if key in KEY_TO_POSTURE:
+                    selected_posture = KEY_TO_POSTURE[key]
+                    print(f"Postura objetivo: {selected_posture.value}")
                 if cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
                     break
 
@@ -170,4 +236,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    arguments = build_parser().parse_args()
+    main(PostureId(arguments.posture))

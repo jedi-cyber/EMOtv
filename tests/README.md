@@ -29,5 +29,15 @@ python -m unittest discover -s tests -p "test_*.py"
 - progreso normalizado, reinicio y estado terminal;
 - barra visual y mensajes del ejercicio.
 
+## Cobertura del MVP emocional
+
+- catálogo local y validación de actividades;
+- asociaciones emoción–actividad y referencias inválidas;
+- ventana móvil, confianza, consenso y empates emocionales;
+- estados y transiciones del controlador integrado;
+- espera de postura, progreso, finalización y reinicio;
+- construcción del resultado final en memoria;
+- compatibilidad de `PoseService` con posturas genéricas.
+
 Las pruebas automatizadas no reemplazan la prueba manual con distintas
 personas, distancias, fondos e iluminación.

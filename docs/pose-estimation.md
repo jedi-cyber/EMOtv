@@ -41,10 +41,48 @@ Valores iniciales en `src/emotv/config.py`:
 | `POSE_MIN_LANDMARK_VISIBILITY` | `0.5` | Visibilidad mínima aceptada |
 | `ARMS_UP_WRIST_MARGIN` | `0.02` | Distancia vertical normalizada |
 | `ARMS_UP_ELBOW_TOLERANCE_DEGREES` | `25.0` | Desviación permitida desde 180° |
+| `ARMS_OPEN_WRIST_HEIGHT_TOLERANCE` | `0.08` | Diferencia vertical permitida |
+| `ARMS_OPEN_LATERAL_MARGIN` | `0.08` | Apertura mínima desde el hombro |
+| `HANDS_ON_HIPS_DISTANCE_TOLERANCE` | `0.12` | Distancia máxima muñeca–cadera |
+| `HANDS_ON_HIPS_MIN_ELBOW_ANGLE` | `35.0°` | Flexión mínima del codo |
+| `HANDS_ON_HIPS_MAX_ELBOW_ANGLE` | `135.0°` | Flexión máxima del codo |
 | `ARMS_UP_HOLD_SECONDS` | `5.0` | Tiempo necesario para completar |
 
 Estos valores son un punto de partida y deben calibrarse con usuarios, cámaras,
 distancias e iluminación representativas.
+
+## Contrato genérico de posturas
+
+`PostureId` define identificadores estables para `arms_up`, `arms_open`,
+`arms_forward`, `hands_on_hips` y `squat`. La existencia de un identificador no
+implica que su validador ya esté implementado.
+
+Cada evaluación podrá devolver un `PostureResult` con:
+
+- identificador de la postura;
+- indicador `detected` / `is_valid`;
+- confianza normalizada;
+- mensaje para la interfaz;
+- mediciones geométricas;
+- identificadores de reglas incumplidas.
+
+`PostureValidator.validate(pose, posture_id)` selecciona el evaluador desde un
+registro. Actualmente incluye `arms_up`, `arms_open` y `hands_on_hips`; otros
+validadores pueden añadirse mediante `register()` sin ampliar una cadena de
+condicionales.
+El método histórico `both_arms_up()` delega en esta interfaz y sigue devolviendo
+un booleano.
+
+### Brazos abiertos
+
+Requiere muñecas aproximadamente a la altura de los hombros, brazos extendidos
+y desplazamiento lateral hacia afuera del torso. La dirección se obtiene con
+respecto al centro de los hombros para funcionar aunque la imagen esté reflejada.
+
+### Manos en las caderas
+
+Requiere ambas muñecas cerca de la cadera correspondiente, codos flexionados
+dentro del rango configurado y desplazados hacia afuera del torso.
 
 ## Máquina de estados
 
@@ -73,7 +111,7 @@ incorrect -- postura correcta --> holding -- tiempo cumplido --> completed
 ## Limitaciones actuales
 
 - se analiza una sola persona;
-- solo existe una postura objetivo;
+- existen tres validadores; el ejercicio interactivo todavía usa `arms_up`;
 - no hay persistencia de sesiones;
 - no se ha integrado el flujo corporal con FastAPI;
 - la prueba funcional con webcam requiere ejecución manual;

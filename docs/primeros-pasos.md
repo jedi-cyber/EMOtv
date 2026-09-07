@@ -60,6 +60,25 @@ La primera prueba verifica landmarks y esqueleto. La segunda muestra si ambos
 brazos están levantados y extendidos. La tercera exige mantener esa postura
 durante cinco segundos y muestra una barra de progreso.
 
+Para iniciar la prueba de postura con otro objetivo:
+
+```powershell
+python scripts/poses/run_posture_test.py --posture arms_open
+```
+
+## Ejecutar el MVP integrado
+
+Cuando las pruebas individuales funcionen:
+
+```powershell
+python scripts/run_emotional_exercise_test.py
+```
+
+El flujo analiza varias expresiones, selecciona una actividad y luego cambia a
+pose corporal. Usa `ESPACIO` para iniciar, `R` para reiniciar y `Q` para salir.
+Consulta [MVP de actividad emocional](emotional-activity-mvp.md) para el alcance
+y protocolo de validación manual.
+
 ## Ejecutar pruebas automatizadas
 
 ```powershell
