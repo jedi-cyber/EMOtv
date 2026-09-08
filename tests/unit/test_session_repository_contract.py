@@ -21,6 +21,13 @@ class FakeSessionRepository:
     def list_all(self) -> tuple[EmotionalSession, ...]:
         return tuple(self.sessions.values())
 
+    def list_by_student(self, student_id: str) -> tuple[EmotionalSession, ...]:
+        return tuple(
+            session
+            for session in self.sessions.values()
+            if session.student_id == student_id
+        )
+
 
 class SessionRepositoryContractTests(unittest.TestCase):
     def test_structural_implementation_satisfies_contract(self) -> None:
@@ -40,6 +47,7 @@ class SessionRepositoryContractTests(unittest.TestCase):
         self.assertIs(saved, session)
         self.assertIs(repository.get_by_id(session.id), session)
         self.assertEqual(repository.list_all(), (session,))
+        self.assertEqual(repository.list_by_student("student-1"), ())
         self.assertIsNone(repository.get_by_id("missing"))
 
 

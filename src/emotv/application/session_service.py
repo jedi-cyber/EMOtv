@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from emotv.application.ports.session_repository import SessionRepository
+from emotv.application.ports.consent_repository import ConsentRepository
 from emotv.domain.emotional_activity_status import EmotionalActivityStatus
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
@@ -23,32 +24,44 @@ class SessionService:
         repository: SessionRepository,
         clock: Clock | None = None,
         id_factory: IdFactory | None = None,
+        consent_repository: ConsentRepository | None = None,
     ) -> None:
         self.repository = repository
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_factory = id_factory or (lambda: str(uuid4()))
+        self.consent_repository = consent_repository
 
-    def create_session(self) -> EmotionalSession:
+    def create_session(self, student_id: str | None = None) -> EmotionalSession:
         """Crea y guarda una sesión que todavía no ha comenzado."""
 
         session = EmotionalSession(
             id=self._next_unique_id(),
             started_at=self.clock(),
             state=SessionState.CREATED,
+            student_id=student_id,
         )
         return self.repository.save(session)
 
-    def start_session(self, session_id: str | None = None) -> EmotionalSession:
+    def start_session(
+        self,
+        session_id: str | None = None,
+        student_id: str | None = None,
+    ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada."""
 
         if session_id is None:
+            self._require_active_consent(student_id)
             session = EmotionalSession(
                 id=self._next_unique_id(),
                 started_at=self.clock(),
                 state=SessionState.IN_PROGRESS,
+                student_id=student_id,
             )
         else:
             current = self._get_required(session_id)
+            if student_id is not None and student_id.strip() != current.student_id:
+                raise ValueError("student_id no coincide con la sesión creada")
+            self._require_active_consent(current.student_id)
             self._require_state(current, SessionState.CREATED, "iniciar")
             session = replace(
                 current,
@@ -56,6 +69,21 @@ class SessionService:
                 started_at=self.clock(),
             )
         return self.repository.save(session)
+
+    def _require_active_consent(self, student_id: str | None) -> None:
+        if student_id is None:
+            return
+        normalized_id = student_id.strip()
+        if not normalized_id:
+            raise ValueError("student_id no puede estar vacío")
+        if self.consent_repository is None:
+            raise RuntimeError(
+                "se requiere ConsentRepository para iniciar una sesión asociada"
+            )
+        if self.consent_repository.get_active_by_student(normalized_id) is None:
+            raise PermissionError(
+                "el estudiante no tiene un consentimiento activo"
+            )
 
     def complete_session(
         self,
@@ -126,6 +154,14 @@ class SessionService:
 
     def list_sessions(self) -> tuple[EmotionalSession, ...]:
         return self.repository.list_all()
+
+    def list_sessions_by_student(
+        self,
+        student_id: str,
+    ) -> tuple[EmotionalSession, ...]:
+        """Consulta exclusivamente las sesiones asociadas a un estudiante."""
+
+        return self.repository.list_by_student(student_id)
 
     def _get_required(self, session_id: str) -> EmotionalSession:
         normalized_id = session_id.strip()

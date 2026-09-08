@@ -87,6 +87,28 @@ class ActivityCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "Actividad no encontrada"):
             ActivityCatalog().get("unknown")
 
+    def test_adds_updates_and_removes_activity(self) -> None:
+        catalog = ActivityCatalog(())
+        activity = Activity(
+            "custom", "Actividad", "Descripción", PostureId.ARMS_OPEN, 3.0
+        )
+        catalog.add(activity)
+        updated = Activity(
+            "custom", "Actualizada", "Nueva descripción", PostureId.ARMS_UP, 5.0
+        )
+
+        self.assertEqual(catalog.update("custom", updated), updated)
+        self.assertEqual(catalog.remove("custom"), updated)
+        self.assertEqual(catalog.list_all(), ())
+
+    def test_rejects_duplicate_and_unknown_mutations(self) -> None:
+        catalog = ActivityCatalog()
+
+        with self.assertRaises(ValueError):
+            catalog.add(DEFAULT_ACTIVITIES[0])
+        with self.assertRaises(KeyError):
+            catalog.remove("missing")
+
 
 if __name__ == "__main__":
     unittest.main()

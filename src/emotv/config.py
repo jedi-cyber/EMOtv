@@ -1,11 +1,44 @@
 # src/emotv/config.py
+import os
+from collections.abc import Mapping
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # --- Rutas del Proyecto ---
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(BASE_DIR / ".env")
 MODELS_DIR = BASE_DIR / "models"
 WEIGHTS_DIR = MODELS_DIR / "weights"
 YUNET_PATH = WEIGHTS_DIR / "yunet" / "face_detection_yunet_2026may.onnx"
+
+# --- Configuración de Base de Datos ---
+# Se conserva como opcional hasta que se construya el adaptador PostgreSQL.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or None
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+def get_database_url(environ: Mapping[str, str] | None = None) -> str:
+    """Obtiene DATABASE_URL y falla de forma explícita si no está configurada."""
+
+    source = os.environ if environ is None else environ
+    database_url = source.get("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL no está configurada. Define la variable de entorno "
+            "o crea un archivo .env local a partir de .env.example."
+        )
+    return database_url
+
+
+def get_jwt_secret_key(environ: Mapping[str, str] | None = None) -> str:
+    source = os.environ if environ is None else environ
+    secret = source.get("JWT_SECRET_KEY", "").strip()
+    if len(secret) < 32:
+        raise RuntimeError("JWT_SECRET_KEY debe tener al menos 32 caracteres")
+    return secret
 
 # --- Configuración de Cámara ---
 CAMERA_INDEX = 0

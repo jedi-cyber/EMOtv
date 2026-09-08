@@ -39,6 +39,21 @@ class InMemorySessionRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.repository.list_all(), (self.session, second))
 
+    def test_lists_only_sessions_for_student(self) -> None:
+        first = replace(self.session, student_id="student-1")
+        second = EmotionalSession(
+            id="session-002",
+            started_at=self.session.started_at,
+            student_id="student-2",
+        )
+        self.repository.save(first)
+        self.repository.save(second)
+
+        self.assertEqual(
+            self.repository.list_by_student(" student-1 "),
+            (first,),
+        )
+
     def test_replaces_same_session_id_without_creating_duplicate(self) -> None:
         self.repository.save(self.session)
         updated = replace(self.session, state=SessionState.IN_PROGRESS)

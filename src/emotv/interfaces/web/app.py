@@ -9,12 +9,55 @@ from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from emotv.application.vision_service import VisionService
+from emotv.application import ActivityCatalog, AuthenticationService, SessionService
+from emotv.config import DATABASE_URL, JWT_SECRET_KEY
+from emotv.infrastructure.persistence import (
+    PostgresUserRepository,
+    PostgresStudentRepository,
+    PostgresConsentRepository,
+    PostgresSessionRepository,
+    create_database_engine,
+    create_session_factory,
+)
+from emotv.interfaces.web.auth_router import create_auth_router
+from emotv.interfaces.web.activity_router import create_activity_router
+from emotv.interfaces.web.session_router import create_session_router
 
 # Inicializar servicio de visión
 vision_service = VisionService()
 
 # Inicializar FastAPI
 app = FastAPI(title="EMOtv API", version="1.0.0")
+activity_catalog = ActivityCatalog()
+
+if DATABASE_URL and JWT_SECRET_KEY:
+    database_engine = create_database_engine(DATABASE_URL)
+    user_repository = PostgresUserRepository(create_session_factory(database_engine))
+    database_sessions = create_session_factory(database_engine)
+    student_repository = PostgresStudentRepository(database_sessions)
+    consent_repository = PostgresConsentRepository(database_sessions)
+    session_repository = PostgresSessionRepository(database_sessions)
+    authentication_service = AuthenticationService(user_repository, JWT_SECRET_KEY)
+    session_service = SessionService(
+        session_repository,
+        consent_repository=consent_repository,
+    )
+    app.include_router(create_auth_router(authentication_service, user_repository))
+    app.include_router(create_activity_router(
+        activity_catalog,
+        authentication_service,
+        user_repository,
+    ))
+    app.include_router(create_session_router(
+        session_service,
+        authentication_service,
+        user_repository,
+        student_repository,
+    ))
+else:
+    app.include_router(create_auth_router(None, None))
+    app.include_router(create_activity_router(None, None, None))
+    app.include_router(create_session_router(None, None, None, None))
 
 
 @app.on_event("startup")

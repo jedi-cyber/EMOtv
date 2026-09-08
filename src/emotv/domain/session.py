@@ -19,6 +19,7 @@ class EmotionalSession:
     activity_id: str | None = None
     exercise_result: str | None = None
     exercise_duration_seconds: float | None = None
+    student_id: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -59,6 +60,7 @@ class EmotionalSession:
             self.exercise_result,
             "exercise_result",
         )
+        student_id = self._normalize_optional_text(self.student_id, "student_id")
 
         if self.emotion_confidence is not None:
             confidence = float(self.emotion_confidence)
@@ -95,6 +97,7 @@ class EmotionalSession:
         object.__setattr__(self, "initial_emotion", emotion)
         object.__setattr__(self, "activity_id", activity_id)
         object.__setattr__(self, "exercise_result", exercise_result)
+        object.__setattr__(self, "student_id", student_id)
 
     @staticmethod
     def _normalize_optional_text(value: str | None, field_name: str) -> str | None:

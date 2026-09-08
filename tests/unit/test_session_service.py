@@ -14,6 +14,7 @@ from emotv.domain import (
     PostureId,
     SessionState,
     StabilizedEmotion,
+    ConsentRecord,
 )
 
 
@@ -31,6 +32,13 @@ class FakeRepository:
     def list_all(self) -> tuple[EmotionalSession, ...]:
         return tuple(self.sessions.values())
 
+    def list_by_student(self, student_id: str) -> tuple[EmotionalSession, ...]:
+        return tuple(
+            session
+            for session in self.sessions.values()
+            if session.student_id == student_id
+        )
+
 
 class FakeClock:
     def __init__(self, value: datetime) -> None:
@@ -38,6 +46,26 @@ class FakeClock:
 
     def __call__(self) -> datetime:
         return self.value
+
+
+class FakeConsentRepository:
+    def __init__(self, active: ConsentRecord | None = None) -> None:
+        self.active = active
+
+    def save(self, consent: ConsentRecord) -> ConsentRecord:
+        self.active = consent
+        return consent
+
+    def get_by_id(self, consent_id: str) -> ConsentRecord | None:
+        return self.active if self.active and self.active.id == consent_id else None
+
+    def list_by_student(self, student_id: str) -> tuple[ConsentRecord, ...]:
+        return (self.active,) if self.active and self.active.student_id == student_id else ()
+
+    def get_active_by_student(self, student_id: str) -> ConsentRecord | None:
+        if self.active and self.active.student_id == student_id and self.active.is_active:
+            return self.active
+        return None
 
 
 class SessionServiceTests(unittest.TestCase):
@@ -164,6 +192,25 @@ class SessionServiceTests(unittest.TestCase):
 
         self.assertEqual(self.service.list_sessions(), (session,))
 
+    def test_lists_sessions_by_student_through_repository(self) -> None:
+        first = EmotionalSession(
+            "student-session",
+            self.started_at,
+            student_id="student-1",
+        )
+        other = EmotionalSession(
+            "other-session",
+            self.started_at,
+            student_id="student-2",
+        )
+        self.repository.save(first)
+        self.repository.save(other)
+
+        self.assertEqual(
+            self.service.list_sessions_by_student("student-1"),
+            (first,),
+        )
+
     def test_avoids_duplicate_ids(self) -> None:
         ids = iter(("duplicate", "duplicate", "unique"))
         service = SessionService(
@@ -177,6 +224,45 @@ class SessionServiceTests(unittest.TestCase):
 
         self.assertEqual(first.id, "duplicate")
         self.assertEqual(second.id, "unique")
+
+    def test_requires_active_consent_for_associated_session(self) -> None:
+        consent = ConsentRecord(
+            "consent-1", "student-1", "privacy-v1", self.started_at
+        )
+        service = SessionService(
+            self.repository,
+            clock=self.clock,
+            id_factory=lambda: "associated-session",
+            consent_repository=FakeConsentRepository(consent),
+        )
+
+        session = service.start_session(student_id="student-1")
+
+        self.assertEqual(session.student_id, "student-1")
+
+    def test_rejects_associated_session_without_active_consent(self) -> None:
+        for consents in (None, FakeConsentRepository()):
+            with self.subTest(consents=consents):
+                service = SessionService(
+                    self.repository,
+                    clock=self.clock,
+                    id_factory=lambda: "associated-session",
+                    consent_repository=consents,
+                )
+                with self.assertRaises((RuntimeError, PermissionError)):
+                    service.start_session(student_id="student-1")
+
+    def test_revalidates_consent_when_starting_created_session(self) -> None:
+        service = SessionService(
+            self.repository,
+            clock=self.clock,
+            id_factory=lambda: "created-associated",
+            consent_repository=FakeConsentRepository(),
+        )
+        created = service.create_session(student_id="student-1")
+
+        with self.assertRaises(PermissionError):
+            service.start_session(created.id)
 
 
 if __name__ == "__main__":

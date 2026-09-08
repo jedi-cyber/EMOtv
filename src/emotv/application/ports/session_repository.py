@@ -23,3 +23,8 @@ class SessionRepository(Protocol):
         """Devuelve todas las sesiones en el orden definido por el repositorio."""
 
         ...
+
+    def list_by_student(self, student_id: str) -> tuple[EmotionalSession, ...]:
+        """Devuelve las sesiones asociadas al estudiante indicado."""
+
+        ...

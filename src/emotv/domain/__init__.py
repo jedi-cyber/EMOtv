@@ -1,4 +1,5 @@
 from emotv.domain.activity import Activity
+from emotv.domain.access_action import AccessAction
 from emotv.domain.cropped_face import CroppedFace
 from emotv.domain.exercise import Exercise
 from emotv.domain.emotional_activity_status import (
@@ -12,10 +13,14 @@ from emotv.domain.posture_id import PostureId
 from emotv.domain.posture_result import PostureResult
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
+from emotv.domain.consent import ConsentRecord
+from emotv.domain.role import Role
+from emotv.domain.user import Student, User
 from emotv.domain.stabilized_emotion import StabilizedEmotion
 
 __all__ = [
     "Activity",
+    "AccessAction",
     "CroppedFace",
     "Exercise",
     "EmotionalActivityState",
@@ -29,5 +34,9 @@ __all__ = [
     "PostureResult",
     "EmotionalSession",
     "SessionState",
+    "ConsentRecord",
+    "Role",
+    "Student",
+    "User",
     "StabilizedEmotion",
 ]
