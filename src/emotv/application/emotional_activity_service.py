@@ -11,6 +11,7 @@ from emotv.application.activity_recommendation_service import (
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.exercise_service import ExerciseService
 from emotv.application.pose_service import PoseService
+from emotv.application.ports.emotion_classifier import EmotionClassifier
 from emotv.domain.cropped_face import CroppedFace
 from emotv.domain.emotional_activity_status import (
     EmotionalActivityState,
@@ -18,15 +19,6 @@ from emotv.domain.emotional_activity_status import (
 )
 from emotv.domain.posture_id import PostureId
 from emotv.domain.posture_result import PostureResult
-from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import (
-    EmotionClassifier,
-)
-
-
-class EmotionClassifierProtocol(Protocol):
-    def predict(self, cropped_face: CroppedFace) -> tuple[str, float]: ...
-
-
 class PoseServiceProtocol(Protocol):
     def validate(
         self,
@@ -43,13 +35,20 @@ class EmotionalActivityService:
 
     def __init__(
         self,
-        emotion_classifier: EmotionClassifierProtocol | None = None,
+        emotion_classifier: EmotionClassifier | None = None,
         emotion_stabilizer: EmotionStabilizer | None = None,
         recommendation_service: ActivityRecommendationService | None = None,
         pose_service: PoseServiceProtocol | None = None,
         exercise_factory: ExerciseServiceFactory = ExerciseService,
     ) -> None:
-        self.emotion_classifier = emotion_classifier or EmotionClassifier()
+        if emotion_classifier is None:
+            # Compatibilidad temporal hasta mover la composición al punto de entrada.
+            from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import (
+                EmotionClassifier as OnnxEmotionClassifier,
+            )
+
+            emotion_classifier = OnnxEmotionClassifier()
+        self.emotion_classifier = emotion_classifier
         self.emotion_stabilizer = emotion_stabilizer or EmotionStabilizer()
         self.recommendation_service = (
             recommendation_service or ActivityRecommendationService()

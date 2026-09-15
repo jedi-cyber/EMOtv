@@ -6,6 +6,7 @@ from emotv.domain.emotional_activity_status import (
     EmotionalActivityState,
     EmotionalActivityStatus,
 )
+from emotv.domain.emotion_model import EmotionModel
 from emotv.domain.exercise_status import ExerciseState, ExerciseStatus
 from emotv.domain.pose_landmarks import PoseLandmark, PoseLandmarks
 from emotv.domain.pose_result import PoseResult
@@ -25,6 +26,7 @@ __all__ = [
     "Exercise",
     "EmotionalActivityState",
     "EmotionalActivityStatus",
+    "EmotionModel",
     "ExerciseState",
     "ExerciseStatus",
     "PoseLandmark",

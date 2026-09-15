@@ -5,6 +5,7 @@
 - Windows con PowerShell (los comandos pueden adaptarse a otros sistemas).
 - Python 3.12.
 - Git.
+- Node.js reciente y npm para el frontend.
 - Webcam compatible con OpenCV.
 
 No se requiere CUDA: MediaPipe puede ejecutar el modelo Lite en CPU.
@@ -45,6 +46,37 @@ models/weights/pose/pose_landmarker_lite.task
 ```
 
 Consulta [models/README.md](../models/README.md) para más información.
+
+Para el modelo emocional facial predeterminado:
+
+```powershell
+python scripts/emotion/download_emotion_model.py
+```
+
+## Ejecutar la aplicación web
+
+Crear `.env` a partir de `.env.example`, definir DATABASE_URL/JWT_SECRET_KEY
+locales y aplicar las migraciones. No versionar el archivo con credenciales.
+
+```powershell
+python -m alembic upgrade head
+python -m uvicorn emotv.interfaces.web.app:app --reload
+```
+
+En otra terminal:
+
+```powershell
+cd web
+npm ci
+npm run dev
+```
+
+El estudiante prepara una actividad y autoriza su cámara en el navegador.
+Se exige consentimiento activo. La captura requiere HTTPS o localhost;
+la inferencia ocurre en FastAPI. No es necesario iniciar la cámara del servidor.
+Las rutas administrativas y preparación de despliegue están en
+[API administrativa](administrative-api.md) y
+[preparación para producción](production-readiness.md).
 
 ## Verificar la etapa corporal
 

@@ -4,12 +4,13 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from emotv.application.vision_service import VisionService
 from emotv.application import ActivityCatalog, AuthenticationService, SessionService
+from emotv.application import BrowserActivityService, PoseService
 from emotv.config import DATABASE_URL, JWT_SECRET_KEY
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
@@ -20,14 +21,27 @@ from emotv.infrastructure.persistence import (
     create_session_factory,
 )
 from emotv.interfaces.web.auth_router import create_auth_router
+from emotv.interfaces.web.auth_router import create_current_user_dependency
+from emotv.interfaces.web.identity_router import create_identity_router
+from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
+from emotv.domain import User, Role
+from emotv.interfaces.web.security import configure_web_security, load_web_settings
 from emotv.interfaces.web.activity_router import create_activity_router
+from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.interfaces.web.session_router import create_session_router
+from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
+    EmotionFrameAnalyzer,
+)
 
 # Inicializar servicio de visión
 vision_service = VisionService()
 
 # Inicializar FastAPI
-app = FastAPI(title="EMOtv API", version="1.0.0")
+web_settings = load_web_settings()
+app = FastAPI(title="EMOtv API", version="1.0.0", docs_url=None if web_settings.production else "/docs",
+              redoc_url=None if web_settings.production else "/redoc",
+              openapi_url=None if web_settings.production else "/openapi.json")
+configure_web_security(app, web_settings)
 activity_catalog = ActivityCatalog()
 
 if DATABASE_URL and JWT_SECRET_KEY:
@@ -38,6 +52,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
     consent_repository = PostgresConsentRepository(database_sessions)
     session_repository = PostgresSessionRepository(database_sessions)
     authentication_service = AuthenticationService(user_repository, JWT_SECRET_KEY)
+    activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
+    current_user = create_current_user_dependency(authentication_service, user_repository)
+    app.include_router(create_identity_router(authentication_service, user_repository, student_repository, consent_repository))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
@@ -53,18 +70,36 @@ if DATABASE_URL and JWT_SECRET_KEY:
         authentication_service,
         user_repository,
         student_repository,
+        activities=activity_catalog,
+    ))
+    app.include_router(create_analysis_router(
+        session_service,
+        activity_catalog,
+        authentication_service,
+        user_repository,
+        student_repository,
+        lambda activity: BrowserActivityService(
+            activity,
+            EmotionFrameAnalyzer(),
+            PoseService(),
+        ),
     ))
 else:
+    authentication_service = None
+    user_repository = None
+    current_user = create_current_user_dependency(None, None)
+    app.include_router(create_identity_router(None, None, None, None))
     app.include_router(create_auth_router(None, None))
     app.include_router(create_activity_router(None, None, None))
     app.include_router(create_session_router(None, None, None, None))
+    app.include_router(create_analysis_router(None, None, None, None, None, None))
 
 
 @app.on_event("startup")
 async def startup_event():
-    """Inicia el servicio de visión al arrancar la API."""
-    vision_service.start()
-    print("VisionService iniciado.")
+    """Deja disponible la API sin bloquearla al abrir la cámara."""
+
+    print("API EMOtv iniciada. La cámara permanece apagada.")
 
 
 @app.on_event("shutdown")
@@ -80,8 +115,10 @@ async def root():
 
 
 @app.get("/video_feed")
-async def video_feed():
+async def video_feed(user: User = Depends(current_user)):
     """Endpoint para streaming MJPEG del video procesado."""
+    if user.role is not Role.ADMIN:
+        raise HTTPException(403, "La cámara del servidor es exclusiva de administración")
     async def generate():
         while vision_service.is_running:
             jpeg = vision_service.get_current_jpeg()
@@ -106,13 +143,17 @@ async def video_feed():
 
 
 @app.get("/emotion")
-async def get_emotion():
+async def get_emotion(user: User = Depends(current_user)):
+    if user.role is not Role.ADMIN:
+        raise HTTPException(403, "Acceso exclusivo de administración")
     emotion, confidence = vision_service.get_current_emotion()
     return {"emotion": emotion, "confidence": confidence}
 
 
 @app.get("/stats")
-async def get_stats():
+async def get_stats(user: User = Depends(current_user)):
+    if user.role is not Role.ADMIN:
+        raise HTTPException(403, "Acceso exclusivo de administración")
     return vision_service.get_current_stats()
 
 
@@ -133,14 +174,18 @@ def _control_camera(action: str) -> dict[str, str]:
 
 
 @app.post("/control/{action}")
-async def control_camera_post(action: str):
+async def control_camera_post(action: str, user: User = Depends(current_user)):
     """Control no cacheable usado por la interfaz web."""
+    if user.role is not Role.ADMIN:
+        raise HTTPException(403, "Solo administración puede controlar la cámara del servidor")
     return _control_camera(action)
 
 
 @app.get("/control")
-async def control_camera(action: str):
+async def control_camera(action: str, user: User = Depends(current_user)):
     """Compatibilidad con el control existente por query string."""
+    if user.role is not Role.ADMIN:
+        raise HTTPException(403, "Solo administración puede controlar la cámara del servidor")
     return _control_camera(action)
 
 
@@ -148,7 +193,33 @@ async def control_camera(action: str):
 async def websocket_emotions(websocket: WebSocket):
     await websocket.accept()
     try:
+        import jwt
+        if authentication_service is None or user_repository is None:
+            await websocket.close(code=1011)
+            return
+        credentials = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+        try:
+            claims = authentication_service.decode_access_token(str(credentials.get("token", "")))
+            user = user_repository.get_by_id(str(claims.get("sub", "")))
+        except (jwt.InvalidTokenError, ValueError):
+            await websocket.close(code=4401)
+            return
+        if user is None or not user.is_active or credentials.get("type") != "authenticate":
+            await websocket.close(code=4401)
+            return
+        if user.role is not Role.ADMIN:
+            await websocket.close(code=4403)
+            return
         while True:
+            try:
+                authentication_service.decode_access_token(str(credentials.get("token", "")))
+            except jwt.InvalidTokenError:
+                await websocket.close(code=4401)
+                return
+            current = user_repository.get_by_id(user.id)
+            if current is None or not current.is_active or current.role is not Role.ADMIN:
+                await websocket.close(code=4403)
+                return
             emotion, confidence = vision_service.get_current_emotion()
             stats = vision_service.get_current_stats()
             await websocket.send_text(json.dumps({
@@ -158,7 +229,7 @@ async def websocket_emotions(websocket: WebSocket):
                 "faces": stats["faces_detected"],
             }))
             await asyncio.sleep(1.0)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.TimeoutError):
         print("WebSocket desconectado.")
 
 

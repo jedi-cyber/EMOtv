@@ -2,12 +2,27 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """Base declarativa compartida por los modelos persistentes de EMOtv."""
+
+
+class ActivityRecord(Base):
+    __tablename__ = "activities"
+    __table_args__ = (
+        CheckConstraint("duration_seconds > 0", name="ck_activities_duration_positive"),
+        CheckConstraint("repetitions >= 1", name="ck_activities_repetitions_positive"),
+        CheckConstraint("required_posture IN ('arms_up','arms_open','arms_forward','hands_on_hips','squat')", name="ck_activities_posture_valid"),
+    )
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+    required_posture: Mapped[str] = mapped_column(String(32), nullable=False)
+    duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    repetitions: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class SessionRecord(Base):

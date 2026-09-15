@@ -10,7 +10,8 @@ arranca FastAPI desde la raíz del proyecto:
 .venv\Scripts\python.exe scripts/run_api.py
 ```
 
-La documentación interactiva queda disponible en `/docs`. `.env.example` solo
+La documentación interactiva queda disponible en `/docs` en desarrollo y se
+deshabilita en modo producción. `.env.example` solo
 debe contener valores de referencia seguros para versionar, nunca credenciales.
 
 ## Autenticación
@@ -31,6 +32,7 @@ administrativo.
 | --- | --- | --- |
 | `POST` | `/sessions` | Estudiante propio, psicología o administración |
 | `POST` | `/sessions/{id}/cancel` | Propietario o rol autorizado |
+| `POST` | `/sessions/{id}/complete` | Administración o psicología; resultado manual controlado |
 | `GET` | `/sessions/{id}` | Propietario o rol autorizado |
 | `GET` | `/sessions` | Sesiones permitidas para el usuario |
 | `GET` | `/sessions?student_id={id}` | Sesiones del estudiante indicado |
@@ -63,8 +65,23 @@ Ejemplo para crear o reemplazar una actividad:
 ```
 
 Al actualizar, el ID del cuerpo y el de la ruta deben coincidir. El catálogo es
-local y se reconstruye al reiniciar la aplicación; persistirlo en PostgreSQL es
-parte de la siguiente etapa.
+persistente en PostgreSQL cuando se ejecuta FastAPI con la base configurada.
+La migración `20260915_04` crea y carga tres actividades iniciales.
+
+## Identidades, consentimiento y análisis web
+
+Las rutas `/users`, `/students` y `/students/{id}/consents` están descritas en
+[API administrativa](administrative-api.md), incluidos permisos y desactivación lógica.
+`/auth/users` conserva el listado administrativo anterior.
+
+`/ws/activity` recibe primero autenticación y referencias de sesión/actividad,
+después JPEG binarios. Devuelve progreso, estado, emoción y landmarks opcionales.
+El servidor valida la finalización estudiantil; no acepta que un estudiante
+declare un resultado completado mediante REST. La cámara pertenece al navegador,
+no al servidor. Las rutas antiguas de cámara y `/ws/emotions` requieren administración.
+
+CORS y validación de origen WebSocket se configuran por separado. Consultar
+[preparación para producción](production-readiness.md).
 
 ## Respuestas de error
 

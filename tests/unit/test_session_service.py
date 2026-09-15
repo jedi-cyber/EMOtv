@@ -91,6 +91,11 @@ class SessionServiceTests(unittest.TestCase):
         self.assertIs(session.state, SessionState.IN_PROGRESS)
         self.assertEqual(session.started_at, self.started_at)
 
+    def test_starts_session_associated_with_activity(self) -> None:
+        session = self.service.start_session(activity_id=" ARMS_UP_5S ")
+
+        self.assertEqual(session.activity_id, "arms_up_5s")
+
     def test_starts_previously_created_session(self) -> None:
         created = self.service.create_session()
         self.clock.value += timedelta(seconds=1)

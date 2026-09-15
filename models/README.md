@@ -35,6 +35,18 @@ models/weights/emotion/
 
 Los scripts de descarga relacionados se encuentran en `scripts/emotion/`.
 
+El clasificador facial predeterminado es FER+ ONNX, ID `ferplus_onnx`, adaptado
+por `FerPlusEmotionClassifier` y resuelto por una fábrica común. Sus pesos están
+en `models/weights/emotion/emotion-ferplus-8.onnx`:
+
+```powershell
+python scripts/emotion/download_emotion_model.py
+```
+
+Consultar [modelo predeterminado](../docs/emotion-models.md). La selección
+LIGHT/PRECISE y su benchmark aún son una subfase planificada, no implementada:
+[plan adaptativo](../docs/adaptive-emotion-models-plan.md).
+
 ## Política de versionado
 
 - No confirmar pesos `.task`, `.onnx`, `.pt`, `.pth` o `.tflite`.

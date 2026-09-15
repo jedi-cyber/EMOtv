@@ -5,6 +5,7 @@ from threading import RLock
 
 from emotv.domain.activity import Activity
 from emotv.domain.posture_id import PostureId
+from emotv.application.ports.activity_repository import ActivityRepository
 
 
 DEFAULT_ACTIVITIES = (
@@ -35,7 +36,8 @@ DEFAULT_ACTIVITIES = (
 class ActivityCatalog:
     """Catálogo local y en memoria de actividades disponibles."""
 
-    def __init__(self, activities: Iterable[Activity] = DEFAULT_ACTIVITIES) -> None:
+    def __init__(self, activities: Iterable[Activity] = DEFAULT_ACTIVITIES, *, repository: ActivityRepository | None = None) -> None:
+        self.repository = repository
         activities_by_id: dict[str, Activity] = {}
         for activity in activities:
             if activity.id in activities_by_id:
@@ -46,10 +48,15 @@ class ActivityCatalog:
 
     @property
     def ids(self) -> tuple[str, ...]:
-        return tuple(self._activities_by_id)
+        return tuple(item.id for item in self.list_all())
 
     def get(self, activity_id: str) -> Activity:
         normalized_id = self._normalize_id(activity_id)
+        if self.repository is not None:
+            activity = self.repository.get_by_id(normalized_id)
+            if activity is None:
+                raise KeyError(f"Actividad no encontrada: {normalized_id}")
+            return activity
         try:
             with self._lock:
                 return self._activities_by_id[normalized_id]
@@ -57,12 +64,16 @@ class ActivityCatalog:
             raise KeyError(f"Actividad no encontrada: {normalized_id}") from error
 
     def list_all(self) -> tuple[Activity, ...]:
+        if self.repository is not None:
+            return self.repository.list_all()
         with self._lock:
             return tuple(self._activities_by_id.values())
 
     def add(self, activity: Activity) -> Activity:
         if not isinstance(activity, Activity):
             raise TypeError("activity debe ser una Activity")
+        if self.repository is not None:
+            return self.repository.add(activity)
         with self._lock:
             if activity.id in self._activities_by_id:
                 raise ValueError(f"Actividad duplicada: {activity.id}")
@@ -75,6 +86,8 @@ class ActivityCatalog:
             raise TypeError("activity debe ser una Activity")
         if activity.id != normalized_id:
             raise ValueError("El ID de la actividad no puede modificarse")
+        if self.repository is not None:
+            return self.repository.update(activity)
         with self._lock:
             if normalized_id not in self._activities_by_id:
                 raise KeyError(f"Actividad no encontrada: {normalized_id}")
@@ -83,6 +96,8 @@ class ActivityCatalog:
 
     def remove(self, activity_id: str) -> Activity:
         normalized_id = self._normalize_id(activity_id)
+        if self.repository is not None:
+            return self.repository.remove(normalized_id)
         try:
             with self._lock:
                 return self._activities_by_id.pop(normalized_id)
@@ -94,7 +109,7 @@ class ActivityCatalog:
         with self._lock:
             return tuple(
                 activity
-                for activity in self._activities_by_id.values()
+                for activity in self.list_all()
                 if activity.required_posture is normalized_id
             )
 

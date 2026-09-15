@@ -18,7 +18,7 @@ La base funcional incluye:
 - representación de landmarks independiente de MediaPipe;
 - dibujo de puntos y conexiones corporales;
 - validación de `arms_up`, `arms_open` y `hands_on_hips`;
-- catálogo local con una actividad para cada postura implementada;
+- catálogo de actividades en memoria o PostgreSQL mediante un adaptador;
 - estabilización de emociones a partir de múltiples predicciones;
 - recomendación local de actividades a partir de la emoción estabilizada;
 - controlador del flujo emoción → actividad → postura → ejercicio;
@@ -30,12 +30,18 @@ La base funcional incluye:
 - persistencia PostgreSQL con SQLAlchemy y migraciones Alembic;
 - usuarios, estudiantes, roles, consentimiento y autenticación OAuth2/JWT;
 - API de sesiones con consultas por ID y por estudiante;
-- administración autenticada del catálogo local de actividades;
+- endpoints de estudiantes, usuarios y consentimientos con acceso por rol;
+- administración autenticada de actividades persistidas en PostgreSQL;
+- frontend React, TypeScript y Vite con autenticación, actividades y sesiones;
+- cámara del navegador y análisis remoto por WebSocket autenticado;
+- FER+ ONNX como modelo predeterminado mediante catálogo, contrato y fábrica;
+- pruebas de componentes, accesibilidad básica y configuración CORS/Host/Origin;
 - pruebas unitarias y de integración para el flujo implementado.
 
 ## Inicio rápido
 
-Requiere Python 3.12 y una webcam compatible con OpenCV.
+Requiere Python 3.12. El frontend usa Node.js reciente; la cámara web requiere
+HTTPS o localhost. Los scripts locales usan una webcam compatible con OpenCV.
 
 ```powershell
 python -m venv .venv
@@ -43,6 +49,7 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 python scripts/poses/download_pose_model.py
+python scripts/emotion/download_emotion_model.py
 ```
 
 Pruebas disponibles:
@@ -64,6 +71,19 @@ Para ejecutar las pruebas automatizadas:
 python -m pytest
 ```
 
+Para iniciar el frontend en desarrollo, ejecuta FastAPI y Vite en terminales
+separadas:
+
+```powershell
+# Configurar .env y aplicar migraciones antes de iniciar.
+python -m alembic upgrade head
+python -m uvicorn emotv.interfaces.web.app:app --reload
+# En otra terminal:
+cd web
+npm ci
+npm run dev
+```
+
 Aplicar el esquema PostgreSQL configurado en `.env`:
 
 ```powershell
@@ -71,7 +91,8 @@ python -m alembic upgrade head
 python -m alembic current
 ```
 
-También pueden ejecutarse sin pytest:
+La ejecución con unittest cubre solo los casos escritos con esa biblioteca,
+no la suite completa de pytest:
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py"
@@ -85,15 +106,21 @@ python -m unittest discover -s tests -p "test_*.py"
 - [MVP de actividad emocional](docs/emotional-activity-mvp.md)
 - [Sesiones y persistencia](docs/sessions.md)
 - [API HTTP](docs/api.md)
+- [Frontend web](web/README.md)
 - [Privacidad y gobierno de datos](docs/privacy-data-governance.md)
+- [API administrativa](docs/administrative-api.md)
+- [Modelo emocional predeterminado](docs/emotion-models.md)
+- [Preparación para producción](docs/production-readiness.md)
+- [Plan de selección adaptativa de modelos](docs/adaptive-emotion-models-plan.md)
 - [Modelos y pesos](models/README.md)
 - [Scripts disponibles](scripts/README.md)
 - [Pruebas](tests/README.md)
 
 ## Próximas etapas
 
-1. Persistir el catálogo de actividades en PostgreSQL.
-2. Completar endpoints administrativos de estudiantes y consentimientos.
-3. Validar manualmente el flujo completo con webcam y API.
-4. Calibrar actividades y umbrales con profesionales de Psicología.
-5. Integrar la API con las aplicaciones web y móvil.
+1. Medir FER+ en el servidor como línea base reproducible.
+2. Investigar candidatos y validar licencia, clases, precisión y compatibilidad.
+3. Comparar perfiles LIGHT/PRECISE antes de implementar selección adaptativa.
+4. Implementar evaluación, selector y fallback con pruebas deterministas.
+5. Validar cámaras reales y calibrar actividades con Psicología.
+6. Resolver las puertas de salida de privacidad y seguridad antes de producción.

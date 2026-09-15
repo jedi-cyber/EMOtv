@@ -5,11 +5,12 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 
-from emotv.config import EMOTION_MODEL_PATH  # lo añadiremos después
+from emotv.config import EMOTION_MODEL_PATH
+from emotv.application.emotion_model_catalog import EmotionModelCatalog, FERPLUS_LABELS
 from emotv.domain.cropped_face import CroppedFace
 
 
-class EmotionClassifier:
+class FerPlusEmotionClassifier:
     """
     Clasificador de emociones basado en el modelo FER+ (ONNX).
 
@@ -20,26 +21,18 @@ class EmotionClassifier:
     """
 
     # Mapeo de índices a emociones (según FER+)
-    EMOTIONS = [
-        "neutral",
-        "happiness",
-        "surprise",
-        "sadness",
-        "anger",
-        "disgust",
-        "fear",
-        "contempt",
-    ]
+    EMOTIONS = list(FERPLUS_LABELS)
 
     def __init__(
         self,
         model_path: str | Path | None = None,
-        input_size: tuple[int, int] = (64, 64),  # FER+ espera 64x64
+        input_size: tuple[int, int] | None = None,
     ) -> None:
         if model_path is None:
             model_path = EMOTION_MODEL_PATH
         self.model_path = Path(model_path)
-        self.input_size = input_size
+        self.model = EmotionModelCatalog().get("ferplus_onnx")
+        self.input_size = input_size or self.model.input_size
 
         self._validate_model()
         self._load_model()
@@ -48,7 +41,7 @@ class EmotionClassifier:
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"No se encontró el modelo de emociones en: {self.model_path}\n"
-                "Ejecuta 'python scripts/download_emotion_model.py' para descargarlo."
+                "Ejecuta 'python scripts/emotion/download_emotion_model.py' para descargarlo."
             )
         if self.model_path.stat().st_size == 0:
             raise ValueError(f"El modelo está vacío: {self.model_path}")
@@ -80,8 +73,8 @@ class EmotionClassifier:
             # Redimensionar si es necesario
             img = cv2.resize(img, self.input_size, interpolation=cv2.INTER_AREA)
 
-        # 2. Preparar entrada para ONNX: (N, C, H, W) con valores en [0,1]
-        # Si la imagen ya está normalizada, solo añadir dimensiones.
+        # FER+ conserva la escala de píxeles del preprocesador existente.
+        # Preparar entrada float32 NCHW, sin normalización adicional.
         if img.dtype == np.uint8:
             img = img.astype(np.float32)
 
@@ -109,3 +102,7 @@ class EmotionClassifier:
         confidence = float(probs[top_idx])
 
         return emotion, confidence
+
+
+# Compatibilidad con los imports y scripts anteriores.
+EmotionClassifier = FerPlusEmotionClassifier

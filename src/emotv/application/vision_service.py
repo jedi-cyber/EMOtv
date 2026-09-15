@@ -12,7 +12,7 @@ from emotv.config import MAX_VIDEO_FPS, TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS
 from emotv.infrastructure.vision.camera.opencv_camera import OpenCVCamera, CameraConfig
 from emotv.infrastructure.vision.face_detection.yunet_face_detector import YuNetFaceDetector
 from emotv.infrastructure.vision.face_processing.face_preprocessor import FacePreprocessor
-from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import EmotionClassifier
+from emotv.infrastructure.vision.emotion_classifier.factory import create_emotion_classifier
 from emotv.shared.performance.monitor import PerformanceMonitor
 
 
@@ -39,7 +39,7 @@ class VisionService:
         self.camera = OpenCVCamera(config)
         self.detector = YuNetFaceDetector(input_size=(width, height))
         self.preprocessor = FacePreprocessor()
-        self.classifier = EmotionClassifier()
+        self.classifier = create_emotion_classifier()
         self.monitor = PerformanceMonitor()
 
         self._running = False

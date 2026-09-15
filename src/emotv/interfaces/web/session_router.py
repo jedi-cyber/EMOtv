@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from emotv.application import AuthenticationService, AuthorizationService, SessionService
+from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.domain import AccessAction, EmotionalSession, Role, User
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -13,6 +13,15 @@ from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 class CreateSessionRequest(BaseModel):
     student_id: str | None = None
+    activity_id: str | None = None
+
+
+class CompleteSessionRequest(BaseModel):
+    initial_emotion: str = Field(min_length=1, max_length=64)
+    emotion_confidence: float = Field(ge=0, le=1)
+    activity_id: str = Field(min_length=1, max_length=128)
+    exercise_result: str = "completed"
+    exercise_duration_seconds: float = Field(ge=0)
 
 
 class SessionResponse(BaseModel):
@@ -45,6 +54,7 @@ def create_session_router(
     users: UserRepository | None,
     students: StudentRepository | None,
     authorization: AuthorizationService | None = None,
+    activities: ActivityCatalog | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/sessions", tags=["sessions"])
     policy = authorization or AuthorizationService()
@@ -66,15 +76,51 @@ def create_session_router(
 
     @router.post("", response_model=SessionResponse, status_code=201)
     def start(request: CreateSessionRequest, user: User = Depends(current_user)) -> SessionResponse:
-        service, _ = services()
+        service, student_repository = services()
         resource_id, actor_id = target_student(user, request.student_id)
         try:
+            if request.activity_id is not None and activities is not None:
+                activities.get(request.activity_id)
             policy.require(user, AccessAction.START_SESSION,
                            resource_student_id=resource_id, actor_student_id=actor_id)
-            session = service.start_session(student_id=resource_id)
+            if resource_id is not None and student_repository.get_by_id(resource_id) is None:
+                raise HTTPException(404, "Estudiante no encontrado")
+            session = service.start_session(
+                student_id=resource_id,
+                activity_id=request.activity_id,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error.args[0])) from error
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         return SessionResponse.from_domain(session)
+
+    @router.post("/{session_id}/complete", response_model=SessionResponse)
+    def complete(session_id: str, request: CompleteSessionRequest,
+                 user: User = Depends(current_user)) -> SessionResponse:
+        service, _ = services()
+        if user.role not in {Role.ADMIN, Role.PSYCHOLOGIST}:
+            raise HTTPException(403, "La finalización estudiantil requiere análisis validado por el servidor")
+        session = service.get_session(session_id)
+        if session is None:
+            raise HTTPException(404, "Sesión no encontrada")
+        if request.exercise_result != "completed":
+            raise HTTPException(422, "exercise_result debe ser completed")
+        if session.activity_id is not None and session.activity_id != request.activity_id:
+            raise HTTPException(409, "La actividad no coincide con la sesión")
+        try:
+            if activities is not None:
+                activities.get(request.activity_id)
+            result = service.complete_session(session_id, **request.model_dump())
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return SessionResponse.from_domain(result)
 
     @router.post("/{session_id}/cancel", response_model=SessionResponse)
     def cancel(session_id: str, user: User = Depends(current_user)) -> SessionResponse:

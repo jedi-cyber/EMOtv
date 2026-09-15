@@ -31,7 +31,11 @@ class SessionService:
         self.id_factory = id_factory or (lambda: str(uuid4()))
         self.consent_repository = consent_repository
 
-    def create_session(self, student_id: str | None = None) -> EmotionalSession:
+    def create_session(
+        self,
+        student_id: str | None = None,
+        activity_id: str | None = None,
+    ) -> EmotionalSession:
         """Crea y guarda una sesión que todavía no ha comenzado."""
 
         session = EmotionalSession(
@@ -39,6 +43,7 @@ class SessionService:
             started_at=self.clock(),
             state=SessionState.CREATED,
             student_id=student_id,
+            activity_id=activity_id,
         )
         return self.repository.save(session)
 
@@ -46,6 +51,7 @@ class SessionService:
         self,
         session_id: str | None = None,
         student_id: str | None = None,
+        activity_id: str | None = None,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada."""
 
@@ -56,17 +62,28 @@ class SessionService:
                 started_at=self.clock(),
                 state=SessionState.IN_PROGRESS,
                 student_id=student_id,
+                activity_id=activity_id,
             )
         else:
             current = self._get_required(session_id)
             if student_id is not None and student_id.strip() != current.student_id:
                 raise ValueError("student_id no coincide con la sesión creada")
+            normalized_activity_id = (
+                activity_id.strip().lower() if activity_id is not None else None
+            )
+            if (
+                normalized_activity_id is not None
+                and current.activity_id is not None
+                and normalized_activity_id != current.activity_id
+            ):
+                raise ValueError("activity_id no coincide con la sesión creada")
             self._require_active_consent(current.student_id)
             self._require_state(current, SessionState.CREATED, "iniciar")
             session = replace(
                 current,
                 state=SessionState.IN_PROGRESS,
                 started_at=self.clock(),
+                activity_id=current.activity_id or normalized_activity_id,
             )
         return self.repository.save(session)
 
@@ -84,6 +101,10 @@ class SessionService:
             raise PermissionError(
                 "el estudiante no tiene un consentimiento activo"
             )
+
+    def require_active_consent(self, student_id: str | None) -> None:
+        """Revalida el permiso durante un análisis remoto en curso."""
+        self._require_active_consent(student_id)
 
     def complete_session(
         self,

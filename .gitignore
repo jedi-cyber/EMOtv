@@ -68,3 +68,10 @@ models/artifacts/**
 runs/
 outputs/
 exports/
+
+# Frontend dependencies and Vite output
+web/node_modules/
+web/dist/
+web/.vite/
+web/.npm-cache/
+web/.env.local

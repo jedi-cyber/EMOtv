@@ -9,7 +9,8 @@ Con las dependencias de desarrollo instaladas:
 python -m pytest
 ```
 
-Alternativa con la biblioteca estándar:
+Unittest ejecuta solo los casos escritos con la biblioteca estándar, no la
+suite completa de pytest:
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py"
@@ -56,6 +57,29 @@ python -m unittest discover -s tests -p "test_*.py"
 
 Las pruebas automatizadas no reemplazan la prueba manual con distintas
 personas, distancias, fondos e iluminación.
+
+## Web y modelo predeterminado
+
+La suite incluye integración HTTP/WebSocket con procesador determinista y
+SQLAlchemy aislado: completar, cancelar, desconectar, propiedad de sesiones y
+revocación de cuenta/consentimiento. Se comprueban CORS, hosts, orígenes y
+configuración insegura. No requiere cámara real ni valida precisión de IA.
+
+La adaptación FER+ comprueba el contrato, etiquetas, tensor de entrada,
+compatibilidad del alias anterior, fábrica predeterminada y errores de pesos/IDs.
+El benchmark adaptativo y sus pruebas todavía están pendientes.
+
+Pruebas de componentes, autenticación, roles, cámara y contrato HTTP del frontend:
+
+```powershell
+cd web
+npm ci
+npm test
+npm run build
+```
+
+Véase [preparación para producción](../docs/production-readiness.md) para
+verificación manual y límites de las pruebas DOM.
 
 ## Pruebas de integración PostgreSQL
 

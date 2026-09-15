@@ -28,6 +28,9 @@ El dominio no importa OpenCV ni MediaPipe.
   contra IDs duplicados y accesos concurrentes.
 - `EmotionStabilizer`: obtiene una emoción dominante desde una ventana móvil,
   aplicando confianza mínima, muestras mínimas y acuerdo mínimo.
+- `EmotionModelCatalog`: metadatos del modelo facial predeterminado FER+.
+- `EmotionClassifier`: contrato común de predicción facial.
+- `BrowserActivityService`: coordina los frames del navegador y la actividad elegida.
 - `ActivityRecommendationService`: traduce una emoción estabilizada a una
   actividad del catálogo mediante reglas locales provisionales.
 - `EmotionalActivityService`: controlador de estados que coordina clasificación,
@@ -41,8 +44,9 @@ El dominio no importa OpenCV ni MediaPipe.
   devuelve un `PostureResult` genérico. `both_arms_up()` permanece como API de
   compatibilidad.
 - `calculate_angle`: calcula el ángulo de tres landmarks.
-- módulos existentes de detección facial y clasificación emocional.
-- adaptadores PostgreSQL para sesiones, usuarios, estudiantes y consentimientos;
+- `FerPlusEmotionClassifier` y fábrica del modelo predeterminado;
+- `EmotionFrameAnalyzer`: detección y preprocesamiento facial antes de clasificar;
+- adaptadores PostgreSQL para sesiones, actividades, usuarios, estudiantes y consentimientos;
 - modelos ORM y migraciones Alembic, aislados del dominio.
 
 ### Interfaces
@@ -50,7 +54,9 @@ El dominio no importa OpenCV ni MediaPipe.
 - `PoseDrawer`: dibuja landmarks sin conocer cómo fueron detectados.
 - scripts interactivos de cámara, pose, postura y ejercicio.
 - aplicación web existente para el flujo emocional.
-- routers FastAPI para autenticación, sesiones y actividades.
+- routers FastAPI para autenticación, sesiones, actividades e identidades;
+- WebSocket `/ws/activity` con token, propiedad, consentimiento y limpieza;
+- configuración HTTP/WebSocket de CORS, hosts y orígenes permitidos.
 
 ## Flujo corporal
 
@@ -118,8 +124,9 @@ HTTP -> router -> autenticación/autorización -> servicio de aplicación
 
 `SessionService` permanece independiente de FastAPI y SQLAlchemy. El filtro por
 estudiante forma parte de `SessionRepository`, por lo que PostgreSQL realiza la
-selección sin cargar todas las sesiones. El catálogo de actividades todavía es
-local: los cambios hechos mediante la API duran hasta reiniciar el proceso.
+selección sin cargar todas las sesiones. El catálogo de actividades está
+desacoplado mediante `ActivityRepository`: FastAPI usa PostgreSQL y los scripts
+pueden conservar el catálogo en memoria.
 
 Las reglas preliminares de acceso, retención, consentimiento y eliminación se
 encuentran en [Privacidad y gobierno de datos](privacy-data-governance.md).
@@ -136,9 +143,19 @@ encuentran en [Privacidad y gobierno de datos](privacy-data-governance.md).
 - Las reglas corporales permanecen separadas de la captura y del dibujo.
 - Las asociaciones emoción–actividad son configuración provisional y no una
   recomendación clínica.
-- El resultado integrado permanece en memoria durante esta etapa.
+- El resultado de scripts puede permanecer en memoria; el flujo web guarda
+  finalización o cancelación mediante `SessionService`.
 - `EmotionalActivityService` no depende de sesiones ni persistencia.
 - Ningún detector o validador corporal conoce el repositorio de sesiones.
 
 El alcance y el protocolo de validación están documentados en
 [MVP de actividad emocional](emotional-activity-mvp.md).
+
+## Evolución adaptativa pendiente
+
+La selección de modelos será un servicio de aplicación que dependa de contratos
+de evaluación y creación de clasificadores. La medición de CPU/RAM/latencia
+pertenece a infraestructura, no al dominio ni al componente React.
+La inferencia web ocurre en el servidor: evaluar su capacidad y concurrencia.
+No implementar aún selector web ni selección persistida por sesión.
+Véase [plan adaptativo](adaptive-emotion-models-plan.md).
