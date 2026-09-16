@@ -37,7 +37,7 @@ class Processor:
 
 
 @pytest.fixture
-def flow():
+def flow(request):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -56,7 +56,15 @@ def flow():
         return instance
     app = FastAPI()
     app.include_router(create_session_router(sessions, auth, users, students, activities=catalog))
-    app.include_router(create_analysis_router(sessions, catalog, auth, users, students, processor))
+    def model_processor(activity, model_id):
+        instance = processor(activity)
+        instance.model_id = model_id
+        return instance
+    app.include_router(create_analysis_router(sessions, catalog, auth, users, students, processor,
+                                             model_processor_factory=model_processor,
+                                             model_admission=lambda model_id: dict(model_id=model_id,
+                                                 state=getattr(request, "param", "SUPPORTED"),
+                                                 reasons=["RAM insuficiente"] if getattr(request, "param", "SUPPORTED") == "BLOCKED" else [])))
     with TestClient(app) as client:
         yield client, auth, user, other, student, sessions, identity, processors, users
     engine.dispose()
@@ -95,6 +103,46 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
                 assert socket.receive_json()["type"] == "cancelled"
         assert sessions.get_session(session.id).state is SessionState.CANCELLED
         assert processors[-1].closed
+
+
+@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hardlyhumans_vit"])
+def test_selected_model_reaches_processor(flow, model_id):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": model_id})
+        ready = socket.receive_json()
+        assert ready["type"] == "ready"
+        assert ready["emotion_model_id"] == model_id
+    assert processors[-1].model_id == model_id
+    assert processors[-1].closed
+    assert sessions.get_session(session.id).state is SessionState.CANCELLED
+
+
+def test_invalid_model_is_rejected_without_loading(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": "untrusted/model"})
+        assert socket.receive_json()["type"] == "error"
+    assert not processors
+    assert sessions.get_session(session.id).state is SessionState.CANCELLED
+
+
+@pytest.mark.parametrize("flow", ["BLOCKED"], indirect=True)
+def test_admission_blocks_socket_and_exposes_authenticated_status(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    assert client.get("/analysis/models").status_code == 401
+    headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
+    assert client.get("/analysis/models", headers=headers).json()[0]["state"] == "BLOCKED"
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json(credentials(auth, user, session.id))
+        error = socket.receive_json()
+        assert error["type"] == "error"
+        assert error["admission"]["state"] == "BLOCKED"
+    assert not processors
+    assert sessions.get_session(session.id).state is SessionState.CANCELLED
 
 
 def test_foreign_student_cannot_view_cancel_or_process_session(flow):

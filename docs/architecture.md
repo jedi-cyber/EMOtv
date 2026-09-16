@@ -28,8 +28,10 @@ El dominio no importa OpenCV ni MediaPipe.
   contra IDs duplicados y accesos concurrentes.
 - `EmotionStabilizer`: obtiene una emoción dominante desde una ventana móvil,
   aplicando confianza mínima, muestras mínimas y acuerdo mínimo.
-- `EmotionModelCatalog`: metadatos del modelo facial predeterminado FER+.
+- `EmotionModelCatalog`: metadatos de FER+ y HardlyHumans; FER+ es predeterminado.
 - `EmotionClassifier`: contrato común de predicción facial.
+- `evaluate_resources`: política de admisión con límites configurables y estados
+  `SUPPORTED`, `WARNING` y `BLOCKED`, independiente de FastAPI y React.
 - `BrowserActivityService`: coordina los frames del navegador y la actividad elegida.
 - `ActivityRecommendationService`: traduce una emoción estabilizada a una
   actividad del catálogo mediante reglas locales provisionales.
@@ -44,7 +46,9 @@ El dominio no importa OpenCV ni MediaPipe.
   devuelve un `PostureResult` genérico. `both_arms_up()` permanece como API de
   compatibilidad.
 - `calculate_angle`: calcula el ángulo de tres landmarks.
-- `FerPlusEmotionClassifier` y fábrica del modelo predeterminado;
+- `FerPlusEmotionClassifier`, `HardlyHumansEmotionClassifier` y fábrica común;
+- `ServerModelAdmission`: verifica informe, pesos y recursos actuales antes de
+  admitir una nueva actividad;
 - `EmotionFrameAnalyzer`: detección y preprocesamiento facial antes de clasificar;
 - adaptadores PostgreSQL para sesiones, actividades, usuarios, estudiantes y consentimientos;
 - modelos ORM y migraciones Alembic, aislados del dominio.
@@ -55,7 +59,9 @@ El dominio no importa OpenCV ni MediaPipe.
 - scripts interactivos de cámara, pose, postura y ejercicio.
 - aplicación web existente para el flujo emocional.
 - routers FastAPI para autenticación, sesiones, actividades e identidades;
-- WebSocket `/ws/activity` con token, propiedad, consentimiento y limpieza;
+- WebSocket `/ws/activity` con token, propiedad, consentimiento, admisión del
+  modelo elegido y limpieza;
+- `GET /analysis/models` autenticado, consultado periódicamente por el selector;
 - configuración HTTP/WebSocket de CORS, hosts y orígenes permitidos.
 
 ## Flujo corporal
@@ -151,11 +157,20 @@ encuentran en [Privacidad y gobierno de datos](privacy-data-governance.md).
 El alcance y el protocolo de validación están documentados en
 [MVP de actividad emocional](emotional-activity-mvp.md).
 
-## Evolución adaptativa pendiente
+## Selección facial y límites de admisión
 
-La selección de modelos será un servicio de aplicación que dependa de contratos
-de evaluación y creación de clasificadores. La medición de CPU/RAM/latencia
-pertenece a infraestructura, no al dominio ni al componente React.
-La inferencia web ocurre en el servidor: evaluar su capacidad y concurrencia.
-No implementar aún selector web ni selección persistida por sesión.
-Véase [plan adaptativo](adaptive-emotion-models-plan.md).
+La web permite elegir FER+ ONNX o HardlyHumans ViT/PyTorch antes de iniciar una
+actividad. La elección viaja como `emotion_model_id` en la autenticación del
+WebSocket y se mantiene durante la actividad; FER+ sigue siendo el valor por
+defecto para clientes antiguos. No se persiste aún el ID en `EmotionalSession`.
+La UI muestra el estado consultado a `GET /analysis/models`, pero el WebSocket
+vuelve a evaluar antes de cargar el adaptador: un cliente no puede evitar el
+bloqueo manipulando la interfaz. No existe fallback silencioso.
+
+La política pura de límites reside en aplicación; la lectura de benchmarks,
+pesos, CPU y RAM reside en infraestructura. Una evaluación ausente, insuficiente
+o vencida bloquea incluso FER+. La inferencia ocurre en el **servidor**, así que
+su capacidad —y no la del navegador del estudiante— determina la admisión.
+Esta protección es preventiva: no reserva recursos entre workers ni supervisa
+sesiones activas. Véanse [condiciones actuales](emotion-model-candidates.md) y
+[trabajo pendiente](adaptive-emotion-models-plan.md).

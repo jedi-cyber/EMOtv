@@ -1,16 +1,24 @@
-# Próxima subfase: selección adaptativa de modelos faciales
+# Selección de modelos faciales: estado y trabajo pendiente
 
-Estado: **plan, no implementación**. Basado en el contexto de continuación 3,
-revisado el 15 de septiembre de 2026. Sus ejemplos de resultados y umbrales
-son ilustrativos, no mediciones de EMOtv.
+Estado revisado el 16 de septiembre de 2026. La selección manual y la admisión
+preventiva están implementadas; el monitoreo sostenido y el control de
+concurrencia siguen pendientes. Los umbrales de admisión son configuraciones
+iniciales de ingeniería, no una validación clínica ni garantía de servicio.
 
 ## Punto de partida versionable
 
-Ya existen `EmotionModel`, `EmotionModelCatalog`, el contrato `EmotionClassifier`
-y el adaptador `FerPlusEmotionClassifier`. `create_emotion_classifier()` resuelve
-`ferplus_onnx` como predeterminado para los analizadores existentes. Se conservan
-pesos, CPU, etiquetas y preprocesamiento. Todavía no hay perfiles, benchmark,
-selector, monitor de degradación ni nuevos modelos integrados.
+`EmotionModelCatalog` registra FER+ ONNX (`ferplus_onnx`, predeterminado) y
+HardlyHumans ViT/PyTorch (`hardlyhumans_vit`, experimental). Ambos implementan
+`EmotionClassifier` mediante adaptadores. La web presenta **tipos de modelo**,
+no categorías LIGHT/PRECISE ni una comparación de exactitud que no se ha medido.
+
+El benchmark común mide carga, latencia, CPU y RSS de `predict` con entradas
+nativas. Existe una [línea base FER+](ferplus-baseline.md). La consulta autenticada
+`GET /analysis/models` devuelve `SUPPORTED`, `WARNING` o `BLOCKED` por modelo;
+la web la refresca y el WebSocket la verifica de nuevo antes de cargar. El
+informe debe ser local, vigente y corresponder a los pesos y al runtime. No hay
+fallback silencioso. La selección se usa durante la actividad y no se persiste
+todavía como campo de sesión. Véase [procedimiento operativo](emotion-model-candidates.md).
 
 También están implementados cámara web, sesiones, endpoints administrativos,
 actividades PostgreSQL, migración `20260915_04`, pruebas frontend/backend y
@@ -19,30 +27,17 @@ aprobación institucional de producción.
 
 ## Método recomendado
 
-1. **Línea base FER+.** Definir protocolo y medir el adaptador existente en el
-   equipo que realmente ejecuta inferencia, sin cambiar su comportamiento.
-2. **Investigación de candidatos.** Consultar publicaciones, repositorios y
-   fichas oficiales; documentar licencia del código, pesos y datasets por separado.
-   Comparar métricas solo cuando protocolo y dataset permitan hacerlo.
-3. **Validación controlada.** Probar preprocesamiento, clases, salida, conversión
-   ONNX y equivalencia con el framework original. Evaluar una colección consentida
-   o pública compatible, sin reutilizar sesiones de estudiantes para entrenamiento.
-4. **Perfiles.** Mantener FER+ como DEFAULT y candidato inicial LIGHT. Incorporar
-   otro LIGHT solo si aporta una ventaja medida; elegir PRECISE después de medir,
-   no por el nombre o tamaño de la red.
-5. **Selector puro.** Definir requisitos configurables y resultados SUPPORTED,
-   WARNING y BLOCKED. Probar decisiones con mediciones simuladas antes de conectarlo
-   a clasificadores reales. AUTO queda como política recomendada futura.
-6. **Protección sostenida.** Medir ventanas temporales, usar histéresis y cooldown
-   para evitar cambios por frames aislados. Preferir cambios entre actividades;
-   si se permite cambio durante una actividad, reiniciar explícitamente la ventana
-   de estabilización emocional y comunicar el evento al consumidor.
-7. **Integración posterior.** Solo con mediciones y políticas verificadas, exponer
-   disponibilidad/advertencias por API y luego diseñar el selector web.
-
-El primer incremento de código recomendado es el contrato de métricas/resultados,
-un medidor de FER+ y `scripts/emotion/run_emotion_models_benchmark.py`. Todavía
-no descargar ni seleccionar automáticamente modelos candidatos sin revisión.
+1. Repetir el benchmark de ambos adaptadores en el servidor de despliegue y
+   conservar informes válidos; los generados en otro equipo no habilitan modelos.
+2. Medir pipeline completo (detección, pose, WebSocket, carga e inferencia),
+   disponibilidad de RAM y concurrencia representativa antes de recalibrar límites.
+3. Evaluar la calidad de reconocimiento con datos autorizados y un protocolo
+   común; no inferir mejor precisión del tamaño de pesos o métricas publicadas.
+4. Añadir un límite de admisiones entre procesos/workers. La instantánea actual
+   de CPU/RAM no reserva memoria de forma atómica.
+5. Si se desea protección sostenida, usar ventanas, histéresis y cooldown;
+   definir cómo comunicar degradación sin cambiar modelos a mitad de actividad.
+   AUTO o fallback solo se considerarán después de validar esa política.
 
 ## Qué hardware evaluar
 
@@ -78,7 +73,7 @@ El servicio de aplicación depende de un puerto de evaluación y una fábrica de
 Metadatos/requisitos/resultados no deben importar React, psutil u ONNX Runtime.
 
 Un resultado válido debe identificar equipo, modelo, protocolo y vigencia.
-Una evaluación ausente, fallida o desactualizada no autoriza PRECISE.
+Una evaluación ausente, fallida o desactualizada no autoriza ningún modelo.
 DEFAULT es el modelo de compatibilidad, **no una garantía de rendimiento**:
 también necesita evaluación. Si ningún modelo cumple, bloquear el análisis y
 dar un error claro en vez de forzar un fallback que sobrecargue el servidor.
@@ -91,14 +86,16 @@ silenciosos. No aceptar archivos de pesos elegidos directamente por usuarios.
 
 - Ficha de candidatos con clases, dataset, métrica/protocolo, licencia, versión,
   tamaño, framework, soporte ONNX, fuentes y observaciones.
-- Elección LIGHT/PRECISE sustentada en mediciones locales comparables.
-- Benchmark común y script comparativo con CPU, RAM, latencia y throughput.
-- Selector AUTO/LIGHT/PRECISE con SUPPORTED/WARNING/BLOCKED y razones.
-- Monitor PERFORMANCE_DEGRADED con ventana e histéresis; fallback controlado.
-- Tests de límites, datos ausentes, errores, recuperación, concurrencia y fallback.
+- Benchmark común y script comparativo con CPU, RAM, latencia y throughput:
+  implementados para los dos adaptadores disponibles.
+- Selector manual por tecnología y estados SUPPORTED/WARNING/BLOCKED:
+  implementados para **nuevos inicios**, pendientes de calibración operativa.
+- Evaluación de calidad comparable, concurrencia y pipeline completo: pendientes.
+- Monitor de degradación con ventana e histéresis, y eventual fallback
+  controlado: pendientes; no forman parte del comportamiento actual.
 
-La subfase termina cuando estas decisiones son reproducibles bajo límites
-calibrados, no cuando solo se agregan metadatos al catálogo.
+La subfase operativa termina cuando estas decisiones sean reproducibles bajo
+límites calibrados y concurrencia representativa, no solo por tener un selector.
 
 ## Antes del commit de esta etapa
 
@@ -111,9 +108,8 @@ npm test
 npm run build
 ```
 
-Últimas ejecuciones registradas durante el desarrollo: 231 pruebas backend y
-32 subpruebas; 23 pruebas frontend y compilación correctas. Son una referencia
-de ejecución, no una garantía de cobertura ni mediciones de modelos candidatos.
+Registrar los resultados actuales de las pruebas al preparar el commit; no
+reutilizar conteos de ejecuciones anteriores como verificación de esta revisión.
 
 Revisar el diff y preparar archivos explícitamente antes del commit. No incluir
 `.env`, pesos, caches, `node_modules`, `dist` ni scripts temporales de credenciales.

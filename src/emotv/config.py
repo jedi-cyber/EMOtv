@@ -67,6 +67,7 @@ PREPROCESS_NORMALIZE = False  # Normalizar píxeles a [0, 1]
 
 # --- Configuración de Modelo de Emociones ---
 EMOTION_MODEL_PATH = WEIGHTS_DIR / "emotion" / "emotion-ferplus-8.onnx"
+HARDLYHUMANS_MODEL_DIR = WEIGHTS_DIR / "hardlyhumans_vit"
 
 # --- Configuracion de Estimacion de Pose ---
 POSE_MODEL_PATH = WEIGHTS_DIR / "pose" / "pose_landmarker_lite.task"

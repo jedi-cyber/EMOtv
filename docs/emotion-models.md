@@ -20,6 +20,10 @@ Los pesos se obtienen desde `EMOTION_MODEL_PATH`, actualmente:
 python scripts/emotion/download_emotion_model.py
 ```
 
-Esta etapa adapta el modelo existente; no añade nuevos modelos, selector web ni
-afirmaciones de mayor precisión. El contrato permite inyectar otros adaptadores
-en el analizador cuando se implementen y validen.
+Se añadió el adaptador opcional experimental `hardlyhumans_vit`; no sustituye
+a FER+ como predeterminado. El selector web distingue FER+ (ONNX) y HardlyHumans
+(ViT/PyTorch experimental), fijados antes de iniciar. La elección depende de la
+disponibilidad y el rendimiento del servidor, pues allí se ejecuta la inferencia;
+el equipo del estudiante solo captura y envía imágenes. Su descarga, licencia declarada,
+preprocesamiento y límites están en [revisión de candidatos](emotion-model-candidates.md).
+No se afirma mayor precisión sin evaluación comparable en EMOtv.

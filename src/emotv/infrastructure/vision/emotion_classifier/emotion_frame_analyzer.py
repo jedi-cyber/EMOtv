@@ -23,8 +23,8 @@ class EmotionFrameAnalyzer:
         classifier: EmotionClassifier | None = None,
     ) -> None:
         self.detector = detector or YuNetFaceDetector()
-        self.preprocessor = preprocessor or FacePreprocessor()
         self.classifier = classifier if classifier is not None else create_emotion_classifier()
+        self.preprocessor = preprocessor if preprocessor is not None else FacePreprocessor(**getattr(self.classifier, "face_preprocessor_options", {}))
 
     def analyze(self, frame: np.ndarray) -> tuple[str, float] | None:
         detections = self.detector.detect(frame)

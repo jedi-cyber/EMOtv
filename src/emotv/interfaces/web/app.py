@@ -32,6 +32,8 @@ from emotv.interfaces.web.session_router import create_session_router
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
+from emotv.infrastructure.vision.emotion_classifier import create_emotion_classifier
+from emotv.infrastructure.vision.emotion_classifier.model_admission import ServerModelAdmission
 
 # Inicializar servicio de visión
 vision_service = VisionService()
@@ -43,6 +45,7 @@ app = FastAPI(title="EMOtv API", version="1.0.0", docs_url=None if web_settings.
               openapi_url=None if web_settings.production else "/openapi.json")
 configure_web_security(app, web_settings)
 activity_catalog = ActivityCatalog()
+model_admission = ServerModelAdmission()
 
 if DATABASE_URL and JWT_SECRET_KEY:
     database_engine = create_database_engine(DATABASE_URL)
@@ -83,6 +86,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
             EmotionFrameAnalyzer(),
             PoseService(),
         ),
+        model_processor_factory=lambda activity, model_id: BrowserActivityService(
+            activity,
+            EmotionFrameAnalyzer(classifier=create_emotion_classifier(model_id)),
+            PoseService(),
+        ),
+        model_admission=model_admission.evaluate,
     ))
 else:
     authentication_service = None

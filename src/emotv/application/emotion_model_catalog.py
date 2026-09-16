@@ -26,6 +26,14 @@ DEFAULT_EMOTION_MODELS = (
         emotion_labels=FERPLUS_LABELS,
         is_default=True,
     ),
+    EmotionModel(
+        id="hardlyhumans_vit",
+        name="HardlyHumans ViT (experimental)",
+        description="Alternativa facial de ocho clases; requiere dependencias opcionales y benchmark antes de uso web.",
+        version="736c91353cf79a0e0c9a86256982be7d9d7c1591",
+        input_size=(224, 224),
+        emotion_labels=FERPLUS_LABELS,
+    ),
 )
 
 

@@ -44,7 +44,14 @@ los permisos institucionales por psicólogo asignado siguen pendientes.
 El analizador recibe cámara propia con getUserMedia y envía JPEG por
 `/ws/activity`. Incluye instrucciones, landmarks opcionales, progreso y limpieza
 al cancelar, completar o abandonar. El servidor valida token, sesión y consentimiento.
-FER+ es el modelo facial predeterminado; todavía no existe selector de modelos web.
+El selector permite FER+ ONNX (predeterminado) o HardlyHumans ViT/PyTorch
+(experimental). La inferencia ocurre en FastAPI: la RAM y CPU relevantes son las
+del servidor, no las del navegador del estudiante. `GET /analysis/models`
+requiere autenticación y muestra disponibilidad, advertencias o bloqueo según
+informes de benchmark y recursos actuales. El WebSocket reevalúa antes de
+cargar; no hay cambio silencioso de modelo ni conmutación durante la sesión.
+Para instalar, medir y habilitar cada modelo, consultar
+[modelos faciales y admisión](../docs/emotion-model-candidates.md).
 
 Las actividades se administran por API y persisten en PostgreSQL. Antes de arrancar
 FastAPI, aplicar las migraciones desde la raíz. Para dominios separados configurar

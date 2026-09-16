@@ -9,6 +9,11 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageState } from "../components/PageState";
 
 interface Landmark { x: number; y: number; visibility: number }
+interface ModelAdmission {
+  model_id: string;
+  state: "SUPPORTED" | "WARNING" | "BLOCKED";
+  reasons: string[];
+}
 interface AnalysisMessage {
   type: "ready" | "status" | "completed" | "cancelled" | "error";
   state?: string;
@@ -17,6 +22,7 @@ interface AnalysisMessage {
   emotion?: string | null;
   emotion_confidence?: number | null;
   landmarks?: Record<string, Landmark> | null;
+  admission?: ModelAdmission | null;
 }
 
 const postureNames: Record<string, string> = {
@@ -42,6 +48,7 @@ export function AnalysisPage() {
   const { token } = useAuth();
   const activityId = params.get("activity") ?? "";
   const query = useApiQuery<Activity>(activityId ? `/activities/${encodeURIComponent(activityId)}` : null);
+  const modelsQuery = useApiQuery<ModelAdmission[]>("/analysis/models");
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const captureRef = useRef<HTMLCanvasElement>(null);
@@ -57,8 +64,16 @@ export function AnalysisPage() {
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [includeLandmarks, setIncludeLandmarks] = useState(true);
+  const [emotionModelId, setEmotionModelId] = useState("ferplus_onnx");
+  const selectedAdmission = modelsQuery.data?.find((item) => item.model_id === emotionModelId);
+  const modelBlocked = !selectedAdmission || selectedAdmission.state === "BLOCKED" || modelsQuery.loading || Boolean(modelsQuery.error);
   const [status, setStatus] = useState<AnalysisMessage>({ type: "ready", state: "analyzing_emotion", message: "Preparado", progress: 0 });
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (session || starting) return;
+    const timer = window.setInterval(() => { void modelsQuery.reload(); }, 10000);
+    return () => window.clearInterval(timer);
+  }, [session, starting, modelsQuery.reload]);
 
   function releaseMedia() {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
@@ -130,6 +145,7 @@ export function AnalysisPage() {
 
   async function start() {
     if (!query.data || !token) return;
+    if (modelBlocked) { setError("El modelo seleccionado no está autorizado para iniciar. Actualiza la evaluación."); return; }
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("La cámara no está disponible. Usa un navegador compatible y HTTPS o localhost.");
       return;
@@ -151,7 +167,10 @@ export function AnalysisPage() {
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       if (lifecycle !== lifecycleRef.current) return;
       const socket = new WebSocket(apiWebSocketUrl("/ws/activity")); socket.binaryType = "arraybuffer"; socketRef.current = socket;
-      socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token, session_id: created?.id, activity_id: activityId, include_landmarks: includeLandmarks }));
+      socket.onopen = () => {
+        setStatus({ type: "ready", state: "analyzing_emotion", message: "Cargando modelo facial en el servidor…", progress: 0 });
+        socket.send(JSON.stringify({ type: "authenticate", token, session_id: created?.id, activity_id: activityId, include_landmarks: includeLandmarks, emotion_model_id: emotionModelId }));
+      };
       socket.onmessage = (event) => {
         awaitingFrame.current = false;
         let message: AnalysisMessage;
@@ -190,10 +209,26 @@ export function AnalysisPage() {
   const activity = query.data;
   const progress = Math.round(Math.max(0, Math.min(1, status.progress ?? 0)) * 100);
   return <section><Link className="back-link" to="/activities">← Cambiar actividad</Link><p className="eyebrow">Actividad corporal</p><h1>{activity?.name ?? "Actividad"}</h1><PageState {...query} onRetry={query.reload} />{error && <Alert variant="error">{error}</Alert>}
-    {activity && !session && <div className="analysis-preflight card"><div><span className="pill">{postureNames[activity.required_posture] ?? activity.required_posture}</span><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)} />Mostrar landmarks</label><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><button className="button primary" disabled={starting} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</button></div></div>}
+    {activity && !session && <div className="analysis-preflight card"><div><span className="pill">{postureNames[activity.required_posture] ?? activity.required_posture}</span><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)} />Mostrar landmarks</label><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><button className="button primary" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</button></div></div>}
+    {activity && !session && <fieldset className="card" disabled={starting}>
+      <legend>Modelo de reconocimiento facial</legend>
+      <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
+      <select id="emotion-model" value={emotionModelId} onChange={(event) => setEmotionModelId(event.target.value)} aria-describedby="emotion-model-help">
+        <option value="ferplus_onnx" disabled={modelsQuery.data?.find((item) => item.model_id === "ferplus_onnx")?.state === "BLOCKED"}>FER+ · ONNX (predeterminado)</option>
+        <option value="hardlyhumans_vit" disabled={modelsQuery.data?.find((item) => item.model_id === "hardlyhumans_vit")?.state === "BLOCKED"}>HardlyHumans · ViT/PyTorch (experimental)</option>
+      </select>
+      <p id="emotion-model-help" className="muted">Elige el modelo que prefieras según su disponibilidad y rendimiento en el servidor. FER+ suele requerir menos recursos; HardlyHumans puede tardar más y usar más RAM. En esta versión el análisis ocurre en el servidor, no en tu dispositivo. No se ha demostrado que uno reconozca mejor las emociones en EMOtv. Puedes cambiarlo antes de iniciar la sesión.</p>
+      <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
+      {selectedAdmission && <Alert variant={selectedAdmission.state === "BLOCKED" ? "error" : selectedAdmission.state === "WARNING" ? "warning" : "info"}>
+        {selectedAdmission.state}: {selectedAdmission.reasons.join("; ") || "Recursos suficientes según evaluación del servidor"}
+      </Alert>}
+      <button className="button" onClick={modelsQuery.reload}>Actualizar evaluación</button>
+    </fieldset>}
     {session && <div className="live-analysis">
       <div className="video-stage"><video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted /><canvas ref={overlayRef} aria-hidden="true" width="640" height="480" /><canvas ref={captureRef} hidden /></div>
       <aside className="analysis-panel">
+        <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>
+        {status.admission?.state === "WARNING" && <Alert variant="warning">{status.admission.reasons.join("; ")}</Alert>}
         <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? status.state}</span>
         <h2>{status.message}</h2><p>{activity?.description}</p>
         {status.emotion && <p>Emoción inicial: <strong>{status.emotion}</strong> ({Math.round((status.emotion_confidence ?? 0) * 100)} %)</p>}

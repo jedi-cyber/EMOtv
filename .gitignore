@@ -58,6 +58,8 @@ data/external/**
 *.pt
 *.pth
 *.onnx
+*.safetensors
+models/weights/hardlyhumans_vit/
 *.engine
 *.tflite
 *.task

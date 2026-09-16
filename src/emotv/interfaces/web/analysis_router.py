@@ -7,7 +7,8 @@ import json
 import cv2
 import jwt
 import numpy as np
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 from emotv.application import (
     ActivityCatalog,
@@ -32,9 +33,17 @@ def create_analysis_router(
     students: StudentRepository | None,
     processor_factory: ProcessorFactory | None,
     authorization: AuthorizationService | None = None,
+    model_processor_factory: Callable[[Activity, str], BrowserActivityService] | None = None,
+    model_admission: Callable[[str], dict] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     policy = authorization or AuthorizationService()
+
+    @router.get("/analysis/models")
+    def available_models(user=Depends(create_current_user_dependency(authentication, users))):
+        return [model_admission(model_id) if model_admission else
+                dict(model_id=model_id, state="BLOCKED", reasons=["Evaluación de modelos no configurada"])
+                for model_id in ("ferplus_onnx", "hardlyhumans_vit")]
 
     @router.websocket("/ws/activity")
     async def activity_socket(websocket: WebSocket) -> None:
@@ -95,12 +104,35 @@ def create_analysis_router(
                 return
 
             include_landmarks = bool(credentials.get("include_landmarks", False))
-            processor = processor_factory(activity)
+            model_id = credentials.get("emotion_model_id", "ferplus_onnx")
+            if model_id not in ("ferplus_onnx", "hardlyhumans_vit"):
+                await _error(websocket, "Modelo facial no permitido", 4400)
+                return
+            if model_id != "ferplus_onnx" and model_processor_factory is None:
+                await _error(websocket, "El modelo preciso no está configurado en el servidor", 1011)
+                return
+            admission = None
+            if model_admission is not None:
+                admission = await asyncio.to_thread(model_admission, model_id)
+                if admission.get("state") not in ("SUPPORTED", "WARNING"):
+                    await websocket.send_json({"type": "error", "message": "Modelo bloqueado: " + "; ".join(admission.get("reasons", [])), "admission": admission})
+                    await websocket.close(code=4409)
+                    return
+            try:
+                if model_processor_factory is not None:
+                    processor = await asyncio.to_thread(model_processor_factory, activity, model_id)
+                else:
+                    processor = await asyncio.to_thread(processor_factory, activity)
+            except (FileNotFoundError, RuntimeError):
+                await _error(websocket, "Modelo no disponible. Revisa sus pesos y dependencias en el servidor o selecciona Ligero", 1011)
+                return
             await websocket.send_json({
                 "type": "ready",
                 "state": "analyzing_emotion",
                 "message": "Cámara conectada. Ubica tu rostro en el centro",
                 "progress": 0.0,
+                "emotion_model_id": model_id,
+                "admission": admission,
             })
 
             while True:

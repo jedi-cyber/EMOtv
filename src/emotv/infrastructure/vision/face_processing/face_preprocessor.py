@@ -35,7 +35,7 @@ class FacePreprocessor:
     def __init__(
         self,
         padding_ratio: float = FACE_PADDING_RATIO,
-        target_size: tuple[int, int] = FACE_TARGET_SIZE,
+        target_size: tuple[int, int] | None = FACE_TARGET_SIZE,
         grayscale: bool = PREPROCESS_GRAYSCALE,
         normalize: bool = PREPROCESS_NORMALIZE,
     ) -> None:
@@ -82,7 +82,7 @@ class FacePreprocessor:
             return None
 
         # 5. Redimensionar al tamaño objetivo
-        roi_resized = cv2.resize(roi, self.target_size, interpolation=cv2.INTER_AREA)
+        roi_resized = cv2.resize(roi, self.target_size, interpolation=cv2.INTER_AREA) if self.target_size is not None else roi.copy()
 
         # 6. Convertir a escala de grises si está configurado
         if self.grayscale:

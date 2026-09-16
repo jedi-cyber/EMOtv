@@ -6,7 +6,11 @@ import { AnalysisPage } from "../src/pages/AnalysisPage";
 import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest, ApiError } from "../src/api/http";
 
-vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: () => ({ data: { id: "arms_up_5s", name: "Brazos arriba", description: "Mantén ambos brazos arriba", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }, loading: false, error: "", reload: vi.fn() }) }));
+const { admissions } = vi.hoisted(() => ({ admissions: { value: [
+  { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] },
+  { model_id: "hardlyhumans_vit", state: "WARNING", reasons: ["Latencia elevada"] },
+] } }));
+vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string) => ({ data: path === "/analysis/models" ? admissions.value : { id: "arms_up_5s", name: "Brazos arriba", description: "Mantén ambos brazos arriba", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
 class Socket {
@@ -28,6 +32,10 @@ function page() {
 }
 
 beforeEach(() => {
+  admissions.value = [
+    { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
+    { model_id: "hardlyhumans_vit", state: "WARNING", reasons: ["Latencia elevada"] },
+  ];
   Socket.instances = []; vi.stubGlobal("WebSocket", Socket);
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -35,6 +43,31 @@ beforeEach(() => {
 });
 
 describe("cámara y ciclo de actividad", () => {
+  it("bloquea el inicio sin crear sesión ni solicitar cámara", async () => {
+    admissions.value[0] = { model_id: "ferplus_onnx", state: "BLOCKED", reasons: ["RAM insuficiente"] };
+    const getMedia = camera(); page();
+    expect(screen.getByText(/RAM insuficiente/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Permitir cámara e iniciar" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    expect(apiRequest).not.toHaveBeenCalled(); expect(getMedia).not.toHaveBeenCalled();
+  });
+  it("muestra advertencias para HardlyHumans", async () => {
+    page(); await userEvent.selectOptions(screen.getByRole("combobox"), "hardlyhumans_vit");
+    expect(screen.getByText(/WARNING: Latencia elevada/)).toBeInTheDocument();
+  });
+  it.each(["ferplus_onnx", "hardlyhumans_vit"])("envía el modelo %s al WebSocket", async (modelId) => {
+    camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
+    const view = page();
+    const selector = screen.getByRole("combobox", { name: "Modelo de reconocimiento facial" });
+    expect(selector).toHaveValue("ferplus_onnx");
+    await userEvent.selectOptions(selector, modelId);
+    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    act(() => Socket.instances[0].onopen?.());
+    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: modelId, token: "test" }));
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    view.unmount();
+  });
   it("no crea una sesión si el navegador no admite cámara", async () => {
     vi.stubGlobal("navigator", Object.create(navigator, { mediaDevices: { value: undefined } }));
     page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));

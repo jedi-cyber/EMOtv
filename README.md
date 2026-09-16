@@ -35,6 +35,9 @@ La base funcional incluye:
 - frontend React, TypeScript y Vite con autenticación, actividades y sesiones;
 - cámara del navegador y análisis remoto por WebSocket autenticado;
 - FER+ ONNX como modelo predeterminado mediante catálogo, contrato y fábrica;
+- HardlyHumans ViT/PyTorch como alternativa experimental opcional;
+- selector web por tipo de modelo y admisión `SUPPORTED`/`WARNING`/`BLOCKED`
+  según informe de rendimiento y recursos del servidor;
 - pruebas de componentes, accesibilidad básica y configuración CORS/Host/Origin;
 - pruebas unitarias y de integración para el flujo implementado.
 
@@ -110,6 +113,8 @@ python -m unittest discover -s tests -p "test_*.py"
 - [Privacidad y gobierno de datos](docs/privacy-data-governance.md)
 - [API administrativa](docs/administrative-api.md)
 - [Modelo emocional predeterminado](docs/emotion-models.md)
+- [Modelos faciales, mediciones y admisión](docs/emotion-model-candidates.md)
+- [Línea base FER+](docs/ferplus-baseline.md)
 - [Preparación para producción](docs/production-readiness.md)
 - [Plan de selección adaptativa de modelos](docs/adaptive-emotion-models-plan.md)
 - [Modelos y pesos](models/README.md)
@@ -118,9 +123,11 @@ python -m unittest discover -s tests -p "test_*.py"
 
 ## Próximas etapas
 
-1. Medir FER+ en el servidor como línea base reproducible.
-2. Investigar candidatos y validar licencia, clases, precisión y compatibilidad.
-3. Comparar perfiles LIGHT/PRECISE antes de implementar selección adaptativa.
-4. Implementar evaluación, selector y fallback con pruebas deterministas.
-5. Validar cámaras reales y calibrar actividades con Psicología.
-6. Resolver las puertas de salida de privacidad y seguridad antes de producción.
+1. Repetir las mediciones de ambos modelos en el servidor de despliegue y
+   configurar informes vigentes; medir también carga, pipeline y concurrencia.
+2. Evaluar calidad de reconocimiento sobre datos con permiso y protocolo común;
+   las métricas publicadas de modelos distintos no permiten ordenar su precisión.
+3. Calibrar los umbrales de admisión y añadir control de concurrencia; actualmente
+   la evaluación protege nuevos inicios, no supervisa sesiones activas.
+4. Validar cámaras reales y calibrar actividades con Psicología.
+5. Resolver las puertas de salida de privacidad y seguridad antes de producción.

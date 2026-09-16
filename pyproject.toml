@@ -27,6 +27,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+emotion-vit = [
+    "torch>=2.2,<3",
+    "transformers>=4.40,<5",
+    "huggingface-hub>=0.24,<1",
+    "safetensors>=0.4,<1",
+    "Pillow>=10,<13",
+    "truststore>=0.10,<1",
+]
 dev = [
     "pytest>=8",
     "httpx2",

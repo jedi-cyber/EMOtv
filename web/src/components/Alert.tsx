@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from "react";
 
 interface AlertProps extends PropsWithChildren {
-  variant?: "info" | "success" | "error";
+  variant?: "info" | "success" | "warning" | "error";
 }
 
 export function Alert({ variant = "info", children }: AlertProps) {

@@ -3,5 +3,6 @@ from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import (
     FerPlusEmotionClassifier,
 )
 from emotv.infrastructure.vision.emotion_classifier.factory import create_emotion_classifier
+from emotv.infrastructure.vision.emotion_classifier.hardlyhumans_classifier import HardlyHumansEmotionClassifier
 
-__all__ = ["EmotionClassifier", "FerPlusEmotionClassifier", "create_emotion_classifier"]
+__all__ = ["EmotionClassifier", "FerPlusEmotionClassifier", "HardlyHumansEmotionClassifier", "create_emotion_classifier"]
