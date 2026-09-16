@@ -24,7 +24,7 @@ Fuentes primarias:
 mo-thecreator publica accuracy 0.8434 sobre su evaluación de FER2013/MMI/AffectNet.
 HardlyHumans publica 0.922 sobre una evaluación FER2013/AffectNet; la ficha no
 permite reconstruir por completo la partición y protocolo. Estos números no
-demuestran que HardlyHumans sea más preciso que FER+ en EMOtv.
+demuestran cuál modelo funciona mejor en EMOtv.
 Ambos ViT tienen unos 85.8 millones de parámetros y pesos Safetensors de unos
 343 MB. HardlyHumans no ofrece ONNX listo en los archivos revisados: este
 adaptador usa PyTorch CPU. La conversión ONNX y equivalencia quedan pendientes.
@@ -70,7 +70,10 @@ El analizador web permite seleccionar FER+ (ONNX, predeterminado) o HardlyHumans
 (ViT/PyTorch, experimental) antes de iniciar. No los clasifica por precisión.
 El mensaje autenticado de
 `/ws/activity` incluye `emotion_model_id`; el servidor solo admite estos dos IDs
-y confirma el elegido en `ready`. Clientes anteriores conservan FER+.
+y confirma el elegido y su versión en `ready`. Clientes anteriores conservan FER+.
+Después de cargar el modelo, ambos valores se guardan en la sesión mediante
+`SessionService`; no se inventan valores para sesiones históricas o canceladas
+antes de la carga.
 No cambia modelos durante una sesión ni aplica fallback silencioso. Si faltan
 pesos/dependencias, devuelve un error y cancela la sesión activa. La carga ocurre
 en un hilo, no en el event loop. Las dependencias ViT siguen siendo opcionales.

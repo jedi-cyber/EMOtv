@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from emotv.application import ActivityCatalog, AuthenticationService, SessionService, IdentityRegistrationService
+from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.domain import User, Role, SessionState
 from emotv.domain.exercise_status import ExerciseStatus, ExerciseState
 from emotv.domain.emotional_activity_status import EmotionalActivityStatus, EmotionalActivityState
@@ -87,6 +88,8 @@ def test_start_complete_and_reject_cancel_of_completed_session(flow):
         socket.send_bytes(jpeg.tobytes())
         assert socket.receive_json()["type"] == "completed"
     assert sessions.get_session(session_id).state is SessionState.COMPLETED
+    assert sessions.get_session(session_id).emotion_model_id == "ferplus_onnx"
+    assert client.get(f"/sessions/{session_id}", headers=headers).json()["emotion_model_version"] == "1.0"
     assert processors[0].closed
     assert client.post(f"/sessions/{session_id}/cancel", headers=headers).status_code == 409
 
@@ -117,6 +120,8 @@ def test_selected_model_reaches_processor(flow, model_id):
     assert processors[-1].model_id == model_id
     assert processors[-1].closed
     assert sessions.get_session(session.id).state is SessionState.CANCELLED
+    assert sessions.get_session(session.id).emotion_model_id == model_id
+    assert sessions.get_session(session.id).emotion_model_version == EmotionModelCatalog().get(model_id).version
 
 
 def test_invalid_model_is_rejected_without_loading(flow):
@@ -127,6 +132,7 @@ def test_invalid_model_is_rejected_without_loading(flow):
         assert socket.receive_json()["type"] == "error"
     assert not processors
     assert sessions.get_session(session.id).state is SessionState.CANCELLED
+    assert sessions.get_session(session.id).emotion_model_id is None
 
 
 @pytest.mark.parametrize("flow", ["BLOCKED"], indirect=True)

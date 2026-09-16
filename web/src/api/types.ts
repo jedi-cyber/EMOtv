@@ -20,4 +20,6 @@ export interface EmotionalSession {
   activity_id: string | null;
   exercise_result: string | null;
   exercise_duration_seconds: number | null;
+  emotion_model_id: string | null;
+  emotion_model_version: string | null;
 }

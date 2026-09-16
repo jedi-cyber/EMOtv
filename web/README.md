@@ -50,6 +50,8 @@ del servidor, no las del navegador del estudiante. `GET /analysis/models`
 requiere autenticación y muestra disponibilidad, advertencias o bloqueo según
 informes de benchmark y recursos actuales. El WebSocket reevalúa antes de
 cargar; no hay cambio silencioso de modelo ni conmutación durante la sesión.
+El ID y la versión del clasificador cargado aparecen en el detalle de la
+sesión; las sesiones anteriores pueden mostrar «No registrado».
 Para instalar, medir y habilitar cada modelo, consultar
 [modelos faciales y admisión](../docs/emotion-model-candidates.md).
 

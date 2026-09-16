@@ -20,6 +20,8 @@ class EmotionalSession:
     exercise_result: str | None = None
     exercise_duration_seconds: float | None = None
     student_id: str | None = None
+    emotion_model_id: str | None = None
+    emotion_model_version: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -61,6 +63,16 @@ class EmotionalSession:
             "exercise_result",
         )
         student_id = self._normalize_optional_text(self.student_id, "student_id")
+        model_id = self._normalize_optional_text(self.emotion_model_id, "emotion_model_id")
+        model_version = self.emotion_model_version
+        if model_version is not None:
+            if not isinstance(model_version, str):
+                raise TypeError("emotion_model_version debe ser str")
+            model_version = model_version.strip()
+            if not model_version:
+                raise ValueError("emotion_model_version no puede estar vacío")
+        if (model_id is None) != (model_version is None):
+            raise ValueError("emotion_model_id y emotion_model_version deben registrarse juntos")
 
         if self.emotion_confidence is not None:
             confidence = float(self.emotion_confidence)
@@ -98,6 +110,8 @@ class EmotionalSession:
         object.__setattr__(self, "activity_id", activity_id)
         object.__setattr__(self, "exercise_result", exercise_result)
         object.__setattr__(self, "student_id", student_id)
+        object.__setattr__(self, "emotion_model_id", model_id)
+        object.__setattr__(self, "emotion_model_version", model_version)
 
     @staticmethod
     def _normalize_optional_text(value: str | None, field_name: str) -> str | None:

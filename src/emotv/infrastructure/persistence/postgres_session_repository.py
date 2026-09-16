@@ -69,6 +69,8 @@ class PostgresSessionRepository:
             exercise_result=session.exercise_result,
             exercise_duration_seconds=session.exercise_duration_seconds,
             student_id=session.student_id,
+            emotion_model_id=session.emotion_model_id,
+            emotion_model_version=session.emotion_model_version,
         )
 
     @staticmethod
@@ -85,6 +87,8 @@ class PostgresSessionRepository:
         record.exercise_result = session.exercise_result
         record.exercise_duration_seconds = session.exercise_duration_seconds
         record.student_id = session.student_id
+        record.emotion_model_id = session.emotion_model_id
+        record.emotion_model_version = session.emotion_model_version
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -103,6 +107,8 @@ class PostgresSessionRepository:
             exercise_result=record.exercise_result,
             exercise_duration_seconds=record.exercise_duration_seconds,
             student_id=record.student_id,
+            emotion_model_id=record.emotion_model_id,
+            emotion_model_version=record.emotion_model_version,
         )
 
     @staticmethod

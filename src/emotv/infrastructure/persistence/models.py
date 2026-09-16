@@ -59,6 +59,11 @@ class SessionRecord(Base):
             "exercise_result IS NOT NULL AND exercise_duration_seconds IS NOT NULL)",
             name="ck_sessions_completed_result",
         ),
+        CheckConstraint(
+            "(emotion_model_id IS NULL AND emotion_model_version IS NULL) OR "
+            "(emotion_model_id IS NOT NULL AND emotion_model_version IS NOT NULL)",
+            name="ck_sessions_emotion_model_fields_together",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -75,6 +80,8 @@ class SessionRecord(Base):
     initial_emotion: Mapped[str | None] = mapped_column(String(64), nullable=True)
     emotion_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     activity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    emotion_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    emotion_model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     exercise_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exercise_duration_seconds: Mapped[float | None] = mapped_column(
         Float,

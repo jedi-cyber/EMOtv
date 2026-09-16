@@ -17,6 +17,7 @@ from emotv.application import (
     BrowserActivityService,
     SessionService,
 )
+from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.domain import AccessAction, Activity, Role, SessionState
 
@@ -109,7 +110,7 @@ def create_analysis_router(
                 await _error(websocket, "Modelo facial no permitido", 4400)
                 return
             if model_id != "ferplus_onnx" and model_processor_factory is None:
-                await _error(websocket, "El modelo preciso no está configurado en el servidor", 1011)
+                await _error(websocket, "El modelo seleccionado no está configurado en el servidor", 1011)
                 return
             admission = None
             if model_admission is not None:
@@ -124,14 +125,17 @@ def create_analysis_router(
                 else:
                     processor = await asyncio.to_thread(processor_factory, activity)
             except (FileNotFoundError, RuntimeError):
-                await _error(websocket, "Modelo no disponible. Revisa sus pesos y dependencias en el servidor o selecciona Ligero", 1011)
+                await _error(websocket, "Modelo no disponible. Revisa sus pesos y dependencias en el servidor o selecciona FER+", 1011)
                 return
+            model_version = EmotionModelCatalog().get(model_id).version
+            sessions.record_emotion_model(session.id, model_id, model_version)
             await websocket.send_json({
                 "type": "ready",
                 "state": "analyzing_emotion",
                 "message": "Cámara conectada. Ubica tu rostro en el centro",
                 "progress": 0.0,
                 "emotion_model_id": model_id,
+                "emotion_model_version": model_version,
                 "admission": admission,
             })
 

@@ -125,6 +125,19 @@ class EmotionalSessionTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             session.state = SessionState.IN_PROGRESS  # type: ignore[misc]
 
+    def test_model_fields_are_optional_but_must_be_paired(self) -> None:
+        historical = EmotionalSession("historical", self.started_at)
+        self.assertIsNone(historical.emotion_model_id)
+        session = EmotionalSession("selected", self.started_at,
+                                   emotion_model_id=" HARDLYHUMANS_VIT ",
+                                   emotion_model_version=" Revision-A ")
+        self.assertEqual(session.emotion_model_id, "hardlyhumans_vit")
+        self.assertEqual(session.emotion_model_version, "Revision-A")
+        for fields in ({"emotion_model_id": "ferplus_onnx"},
+                       {"emotion_model_version": "1.0"}):
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                EmotionalSession("invalid", self.started_at, **fields)
+
 
 if __name__ == "__main__":
     unittest.main()

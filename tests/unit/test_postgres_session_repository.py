@@ -38,6 +38,15 @@ class PostgresSessionRepositoryTests(unittest.TestCase):
         self.assertIs(saved, session)
         self.assertEqual(recovered, session)
 
+    def test_round_trips_selected_model(self) -> None:
+        service = SessionService(self.repository,
+                                 clock=lambda: self.started_at,
+                                 id_factory=lambda: "model-session")
+        started = service.start_session()
+        selected = service.record_emotion_model(started.id, "hardlyhumans_vit", "revision")
+        self.assertEqual(self.repository.get_by_id(started.id), selected)
+        self.assertEqual(self.repository.list_all(), (selected,))
+
     def test_returns_none_for_unknown_id(self) -> None:
         self.assertIsNone(self.repository.get_by_id("missing"))
 

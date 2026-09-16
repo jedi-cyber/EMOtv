@@ -10,18 +10,19 @@ iniciales de ingeniería, no una validación clínica ni garantía de servicio.
 `EmotionModelCatalog` registra FER+ ONNX (`ferplus_onnx`, predeterminado) y
 HardlyHumans ViT/PyTorch (`hardlyhumans_vit`, experimental). Ambos implementan
 `EmotionClassifier` mediante adaptadores. La web presenta **tipos de modelo**,
-no categorías LIGHT/PRECISE ni una comparación de exactitud que no se ha medido.
+no niveles de precisión ni una comparación de exactitud que no se ha medido.
 
 El benchmark común mide carga, latencia, CPU y RSS de `predict` con entradas
 nativas. Existe una [línea base FER+](ferplus-baseline.md). La consulta autenticada
 `GET /analysis/models` devuelve `SUPPORTED`, `WARNING` o `BLOCKED` por modelo;
 la web la refresca y el WebSocket la verifica de nuevo antes de cargar. El
 informe debe ser local, vigente y corresponder a los pesos y al runtime. No hay
-fallback silencioso. La selección se usa durante la actividad y no se persiste
-todavía como campo de sesión. Véase [procedimiento operativo](emotion-model-candidates.md).
+fallback silencioso. Tras cargar el clasificador, su ID y versión se fijan en la
+sesión y permanecen al completarla o cancelarla. Las sesiones históricas
+conservan ambos valores nulos. Véase [procedimiento operativo](emotion-model-candidates.md).
 
 También están implementados cámara web, sesiones, endpoints administrativos,
-actividades PostgreSQL, migración `20260915_04`, pruebas frontend/backend y
+actividades PostgreSQL, migraciones hasta `20260916_05`, pruebas frontend/backend y
 configuración básica de seguridad. No confundir estas capacidades con la
 aprobación institucional de producción.
 

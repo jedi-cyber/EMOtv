@@ -162,7 +162,9 @@ El alcance y el protocolo de validación están documentados en
 La web permite elegir FER+ ONNX o HardlyHumans ViT/PyTorch antes de iniciar una
 actividad. La elección viaja como `emotion_model_id` en la autenticación del
 WebSocket y se mantiene durante la actividad; FER+ sigue siendo el valor por
-defecto para clientes antiguos. No se persiste aún el ID en `EmotionalSession`.
+defecto para clientes antiguos. Tras cargar el clasificador se fijan
+`emotion_model_id` y `emotion_model_version` en `EmotionalSession` antes de
+enviar `ready`; las sesiones históricas conservan ambos valores nulos.
 La UI muestra el estado consultado a `GET /analysis/models`, pero el WebSocket
 vuelve a evaluar antes de cargar el adaptador: un cliente no puede evitar el
 bloqueo manipulando la interfaz. No existe fallback silencioso.

@@ -24,6 +24,9 @@ PostgreSQL son intercambiables sin modificar detectores ni validadores.
 `EmotionalSession` es una entidad inmutable con ID, timestamps con zona horaria,
 estado, emoción inicial, confianza, actividad, resultado y duración. Sus estados
 son `created`, `in_progress`, `completed` y `cancelled`.
+Puede conservar `emotion_model_id` y `emotion_model_version` juntos cuando el
+análisis web carga un clasificador. Las sesiones históricas y las iniciadas sin
+clasificación facial conservan ambos valores nulos.
 
 ```text
 CREATED -> IN_PROGRESS -> COMPLETED
@@ -63,6 +66,8 @@ crea el esquema automáticamente; las tablas serán administradas con Alembic.
 | `initial_emotion` | `varchar(64)` | Sí | Expresión facial estabilizada |
 | `emotion_confidence` | `double precision` | Sí | Confianza entre 0 y 1 |
 | `activity_id` | `varchar(128)` | Sí | Actividad corporal recomendada |
+| `emotion_model_id` | `varchar(128)` | Sí | Identificador del clasificador usado |
+| `emotion_model_version` | `varchar(128)` | Sí | Versión/revisión del clasificador usado |
 | `exercise_result` | `varchar(32)` | Sí | Resultado del ejercicio |
 | `exercise_duration_seconds` | `double precision` | Sí | Duración no negativa |
 | `student_id` | `varchar(64)` | Sí | Estudiante asociado, con clave foránea |
@@ -70,6 +75,10 @@ crea el esquema automáticamente; las tablas serán administradas con Alembic.
 La tabla indexa `state` y `started_at`. Sus restricciones comprueban estados
 válidos, rangos numéricos, registro conjunto de emoción y confianza, coherencia
 de `completed_at` y presencia del resultado cuando el estado es `completed`.
+La revisión `20260916_05` añade las columnas de modelo como opcionales y exige
+que se registren juntas, sin atribuir retrospectivamente un modelo a sesiones
+anteriores. Ejecutar `python -m alembic upgrade head` antes de usar la API con
+un PostgreSQL existente.
 
 ## API de sesiones
 

@@ -170,6 +170,20 @@ class SessionService:
         )
         return self.repository.save(cancelled)
 
+    def record_emotion_model(
+        self, session_id: str, model_id: str, model_version: str,
+    ) -> EmotionalSession:
+        """Fija el clasificador cargado para una sesión en progreso."""
+        current = self._get_required(session_id)
+        self._require_state(current, SessionState.IN_PROGRESS, "registrar modelo")
+        if current.emotion_model_id is not None:
+            if (current.emotion_model_id, current.emotion_model_version) != (model_id, model_version):
+                raise ValueError("La sesión ya tiene otro modelo facial registrado")
+            return current
+        return self.repository.save(replace(
+            current, emotion_model_id=model_id, emotion_model_version=model_version,
+        ))
+
     def get_session(self, session_id: str) -> EmotionalSession | None:
         return self.repository.get_by_id(session_id)
 

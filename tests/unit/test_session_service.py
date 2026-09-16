@@ -91,6 +91,18 @@ class SessionServiceTests(unittest.TestCase):
         self.assertIs(session.state, SessionState.IN_PROGRESS)
         self.assertEqual(session.started_at, self.started_at)
 
+    def test_records_model_once_and_preserves_it_on_cancel(self) -> None:
+        session = self.service.start_session()
+        selected = self.service.record_emotion_model(session.id, "ferplus_onnx", "1.0")
+        self.assertEqual(self.service.record_emotion_model(session.id, "ferplus_onnx", "1.0"), selected)
+        with self.assertRaises(ValueError):
+            self.service.record_emotion_model(session.id, "hardlyhumans_vit", "revision")
+        cancelled = self.service.cancel_session(session.id)
+        self.assertEqual((cancelled.emotion_model_id, cancelled.emotion_model_version),
+                         ("ferplus_onnx", "1.0"))
+        with self.assertRaises(RuntimeError):
+            self.service.record_emotion_model(session.id, "ferplus_onnx", "1.0")
+
     def test_starts_session_associated_with_activity(self) -> None:
         session = self.service.start_session(activity_id=" ARMS_UP_5S ")
 
