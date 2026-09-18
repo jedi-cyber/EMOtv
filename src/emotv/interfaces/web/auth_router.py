@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -23,16 +24,24 @@ class UserResponse(BaseModel):
     email: str
     role: str
     is_active: bool
+    must_change_password: bool = False
 
     @classmethod
     def from_domain(cls, user: User) -> "UserResponse":
         return cls(id=user.id, email=user.email, role=user.role.value,
-                   is_active=user.is_active)
+                   is_active=user.is_active, must_change_password=user.must_change_password)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def create_current_user_dependency(
     authentication: AuthenticationService | None,
     users: UserRepository | None,
+    *,
+    allow_password_change: bool = False,
 ):
     def current_user(token: str = Depends(oauth2_scheme)) -> User:
         if authentication is None or users is None:
@@ -50,8 +59,10 @@ def create_current_user_dependency(
         except jwt.InvalidTokenError as error:
             raise unauthorized from error
         user = users.get_by_id(subject)
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or claims.get("tv") != user.token_version:
             raise unauthorized
+        if user.must_change_password and not allow_password_change:
+            raise HTTPException(status_code=403, detail="Debes cambiar la contraseña provisional antes de continuar")
         return user
     return current_user
 
@@ -64,6 +75,7 @@ def create_auth_router(
     router = APIRouter(prefix="/auth", tags=["authentication"])
     policy = authorization or AuthorizationService()
     current_user = create_current_user_dependency(authentication, users)
+    onboarding_user = create_current_user_dependency(authentication, users, allow_password_change=True)
 
     def require_services() -> tuple[AuthenticationService, UserRepository]:
         if authentication is None or users is None:
@@ -83,8 +95,23 @@ def create_auth_router(
         return TokenResponse(access_token=auth.create_access_token(user))
 
     @router.get("/me", response_model=UserResponse)
-    def me(user: User = Depends(current_user)) -> UserResponse:
+    def me(user: User = Depends(onboarding_user)) -> UserResponse:
         return UserResponse.from_domain(user)
+
+    @router.post("/change-password", response_model=TokenResponse)
+    def change_password(request: ChangePasswordRequest, user: User = Depends(onboarding_user)) -> TokenResponse:
+        auth, repository = require_services()
+        if auth.authenticate(user.email, request.current_password) is None:
+            raise HTTPException(400, "Contraseña actual incorrecta")
+        if request.current_password == request.new_password:
+            raise HTTPException(422, "La nueva contraseña debe ser diferente")
+        try:
+            updated = replace(user, password_hash=auth.hash_password(request.new_password),
+                              must_change_password=False, token_version=user.token_version + 1)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        repository.save(updated)
+        return TokenResponse(access_token=auth.create_access_token(updated))
 
     @router.get("/users", response_model=list[UserResponse])
     def list_users(user: User = Depends(current_user)) -> list[UserResponse]:

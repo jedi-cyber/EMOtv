@@ -39,6 +39,7 @@ class BrowserActivityService:
         pose_service: PoseServiceProtocol,
         emotion_stabilizer: EmotionStabilizer | None = None,
         exercise_service: ExerciseService | None = None,
+        initial_emotion: StabilizedEmotion | None = None,
     ) -> None:
         self.activity = activity
         self.emotion_analyzer = emotion_analyzer
@@ -47,7 +48,7 @@ class BrowserActivityService:
         self.exercise_service = exercise_service or ExerciseService(
             activity.duration_seconds
         )
-        self.emotion: StabilizedEmotion | None = None
+        self.emotion: StabilizedEmotion | None = initial_emotion
         self._closed = False
 
     @property

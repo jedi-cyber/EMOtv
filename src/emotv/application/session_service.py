@@ -25,11 +25,13 @@ class SessionService:
         clock: Clock | None = None,
         id_factory: IdFactory | None = None,
         consent_repository: ConsentRepository | None = None,
+        required_policy_version: str | None = None,
     ) -> None:
         self.repository = repository
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_factory = id_factory or (lambda: str(uuid4()))
         self.consent_repository = consent_repository
+        self.required_policy_version = required_policy_version
 
     def create_session(
         self,
@@ -97,10 +99,13 @@ class SessionService:
             raise RuntimeError(
                 "se requiere ConsentRepository para iniciar una sesión asociada"
             )
-        if self.consent_repository.get_active_by_student(normalized_id) is None:
+        consent = self.consent_repository.get_active_by_student(normalized_id)
+        if consent is None:
             raise PermissionError(
                 "el estudiante no tiene un consentimiento activo"
             )
+        if self.required_policy_version is not None and consent.policy_version != self.required_policy_version:
+            raise PermissionError("el consentimiento no corresponde a la política vigente")
 
     def require_active_consent(self, student_id: str | None) -> None:
         """Revalida el permiso durante un análisis remoto en curso."""
@@ -183,6 +188,19 @@ class SessionService:
         return self.repository.save(replace(
             current, emotion_model_id=model_id, emotion_model_version=model_version,
         ))
+
+    def assign_activity(self, session_id: str, activity_id: str) -> EmotionalSession:
+        """Fija la actividad elegida tras reconocer la emoción en una sesión web."""
+        current = self._get_required(session_id)
+        self._require_state(current, SessionState.IN_PROGRESS, "asignar actividad")
+        normalized_id = activity_id.strip().lower()
+        if not normalized_id:
+            raise ValueError("activity_id no puede estar vacío")
+        if current.activity_id is not None:
+            if current.activity_id != normalized_id:
+                raise ValueError("La sesión ya tiene otra actividad")
+            return current
+        return self.repository.save(replace(current, activity_id=normalized_id))
 
     def get_session(self, session_id: str) -> EmotionalSession | None:
         return self.repository.get_by_id(session_id)

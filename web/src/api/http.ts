@@ -1,5 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 export const AUTH_UNAUTHORIZED_EVENT = "emotv:auth-unauthorized";
+export const API_UNAVAILABLE_EVENT = "emotv:api-unavailable";
+export const API_RECOVERED_EVENT = "emotv:api-recovered";
 
 export function apiWebSocketUrl(path: string): string {
   if (API_URL) {
@@ -19,6 +21,10 @@ export class ApiError extends Error {
   }
 }
 
+export function isConnectionError(reason: unknown): reason is ApiError {
+  return reason instanceof ApiError && (reason.status === 0 || reason.status >= 500);
+}
+
 type RequestOptions = RequestInit & { token?: string | null };
 
 export async function apiRequest<T>(
@@ -30,15 +36,23 @@ export async function apiRequest<T>(
     request.body != null &&
     !(request.body instanceof FormData) &&
     !(request.body instanceof URLSearchParams);
-  const response = await fetch(`${API_URL}${path}`, {
-    ...request,
-    headers: {
-      Accept: "application/json",
-      ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...request,
+      headers: {
+        Accept: "application/json",
+        ...(hasJsonBody ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+    });
+  } catch {
+    window.dispatchEvent(new Event(API_UNAVAILABLE_EVENT));
+    throw new ApiError(0, "No se pudo conectar con EMOtv. Comprueba tu conexión e inténtalo de nuevo.");
+  }
+
+  window.dispatchEvent(new Event(response.status >= 500 ? API_UNAVAILABLE_EVENT : API_RECOVERED_EVENT));
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as

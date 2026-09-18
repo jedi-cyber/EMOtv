@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
@@ -61,6 +62,10 @@ if DATABASE_URL and JWT_SECRET_KEY:
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
+        required_policy_version=(os.getenv("CONSENT_POLICY_VERSION", "").strip()
+                                 if os.getenv("CONSENT_POLICY_VERSION", "").strip() and
+                                 os.getenv("CONSENT_POLICY_URL", "").strip().startswith(("https://", "http://localhost", "http://127.0.0.1"))
+                                 else "__policy_not_configured__"),
     )
     app.include_router(create_auth_router(authentication_service, user_repository))
     app.include_router(create_activity_router(
@@ -92,6 +97,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
             PoseService(),
         ),
         model_admission=model_admission.evaluate,
+        emotion_analyzer_factory=lambda model_id: EmotionFrameAnalyzer(
+            classifier=create_emotion_classifier(model_id),
+        ),
+        adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
+            activity, analyzer, PoseService(), initial_emotion=emotion,
+        ),
     ))
 else:
     authentication_service = None
@@ -213,7 +224,9 @@ async def websocket_emotions(websocket: WebSocket):
         except (jwt.InvalidTokenError, ValueError):
             await websocket.close(code=4401)
             return
-        if user is None or not user.is_active or credentials.get("type") != "authenticate":
+        if (user is None or not user.is_active or user.must_change_password
+                or claims.get("tv") != user.token_version
+                or credentials.get("type") != "authenticate"):
             await websocket.close(code=4401)
             return
         if user.role is not Role.ADMIN:
@@ -221,12 +234,14 @@ async def websocket_emotions(websocket: WebSocket):
             return
         while True:
             try:
-                authentication_service.decode_access_token(str(credentials.get("token", "")))
+                current_claims = authentication_service.decode_access_token(str(credentials.get("token", "")))
             except jwt.InvalidTokenError:
                 await websocket.close(code=4401)
                 return
             current = user_repository.get_by_id(user.id)
-            if current is None or not current.is_active or current.role is not Role.ADMIN:
+            if (current is None or not current.is_active or current.must_change_password
+                    or current_claims.get("tv") != current.token_version
+                    or current.role is not Role.ADMIN):
                 await websocket.close(code=4403)
                 return
             emotion, confidence = vision_service.get_current_emotion()

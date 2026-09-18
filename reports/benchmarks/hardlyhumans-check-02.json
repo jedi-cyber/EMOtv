@@ -1,0 +1,101 @@
+{
+  "schema_version": 2,
+  "measured_at": "2026-09-16T14:56:35.006449+00:00",
+  "scope": "predict(CroppedFace), one process, one classifier, sequential, unthrottled",
+  "input": "16 synthetic BGR color uint8 images, 224x224, seed 2026; not accuracy evaluation",
+  "model": {
+    "id": "hardlyhumans_vit",
+    "version": "736c91353cf79a0e0c9a86256982be7d9d7c1591",
+    "sha256": "95763e110ed7cadd1e63dc3d10a9408fda56910b9b4248c6f745687558e930fe",
+    "size_bytes": 343242432
+  },
+  "environment": {
+    "os": "Windows",
+    "os_version": "11",
+    "architecture": "AMD64",
+    "cpu": "Intel64 Family 6 Model 154 Stepping 4, GenuineIntel",
+    "logical_cpus": 12,
+    "physical_cpus": 10,
+    "total_ram_mib": 11959.359375,
+    "python": "3.12.10",
+    "numpy": "2.5.2",
+    "backend": "pytorch",
+    "device": "cpu",
+    "torch": "2.14.0+cpu",
+    "transformers": "4.57.6",
+    "intra_op_threads": 10,
+    "inter_op_threads": 10
+  },
+  "protocol": {
+    "runs": 3,
+    "samples_min": 100,
+    "warmup_per_run": 20,
+    "min_seconds": 3,
+    "max_seconds": 120.0,
+    "rss_interval_ms": 50
+  },
+  "load": {
+    "seconds": 79.71987940000008,
+    "rss_before_mib": 103.35546875,
+    "rss_after_mib": 359.0078125,
+    "rss_delta_mib": 255.65234375
+  },
+  "definitions": {
+    "fps": "completed predictions / measured wall seconds; not browser FPS",
+    "cpu_process_percent": "process user+system CPU / wall time *100; can exceed 100",
+    "cpu_percent": "process CPU divided by logical CPUs; not total host utilization",
+    "ram": "sampled whole-process RSS in MiB; includes imports/runtime; not exact model allocation",
+    "thread_zero": "ONNX Runtime default, not zero worker threads",
+    "timeout": "checked between predictions; cannot interrupt a hung prediction"
+  },
+  "results": [
+    {
+      "samples": 96,
+      "elapsed_seconds": 392.87000030000013,
+      "inference_time_ms": 4092.39111145833,
+      "p50_ms": 1213.0163000000493,
+      "p95_ms": 1549.6570499999507,
+      "min_ms": 413.3142999999109,
+      "max_ms": 274191.2949,
+      "fps": 0.2443556390833947,
+      "cpu_process_percent": 49.21316207711468,
+      "cpu_percent": 4.101096839759557,
+      "ram_mean_mib": 706.0136302206754,
+      "ram_peak_mib": 711.28125,
+      "ram_samples": 1688,
+      "target_reached": false
+    },
+    {
+      "samples": 99,
+      "elapsed_seconds": 121.01603879999993,
+      "inference_time_ms": 1222.3799131313028,
+      "p50_ms": 1366.4136000002145,
+      "p95_ms": 1902.8245299999753,
+      "min_ms": 376.9945999999891,
+      "max_ms": 1966.7782000001353,
+      "fps": 0.8180733808649507,
+      "cpu_process_percent": 174.95098343939523,
+      "cpu_percent": 14.579248619949603,
+      "ram_mean_mib": 706.6317151685768,
+      "ram_peak_mib": 711.26953125,
+      "ram_samples": 1876,
+      "target_reached": false
+    },
+    {
+      "samples": 40,
+      "elapsed_seconds": 193.50818500000014,
+      "inference_time_ms": 4837.700537500007,
+      "p50_ms": 1176.315299999942,
+      "p95_ms": 1418.9070399998172,
+      "min_ms": 398.7899000001107,
+      "max_ms": 153647.16199999998,
+      "fps": 0.2067096024904578,
+      "cpu_process_percent": 43.79659702766575,
+      "cpu_percent": 3.6497164189721456,
+      "ram_mean_mib": 706.5280021067416,
+      "ram_peak_mib": 710.6171875,
+      "ram_samples": 623,
+      "target_reached": false
+    }
+  ]
+}

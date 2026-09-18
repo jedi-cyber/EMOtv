@@ -7,6 +7,7 @@ import { useAuth } from "../auth/useAuth";
 import { Alert } from "../components/Alert";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageState } from "../components/PageState";
+import { PageHeader } from "../components/PageHeader";
 
 const emptyForm = { id: "", name: "", description: "", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 };
 
@@ -66,7 +67,7 @@ export function AdminActivitiesPage() {
     finally { setDeleting(false); }
   }
 
-  return <section><p className="eyebrow">Administración</p><h1>Administrar actividades</h1><p className="lead">Crea y actualiza las actividades corporales del catálogo local.</p>
+  return <section><PageHeader section="Administración" title="Administrar actividades" description="Crea y actualiza las actividades corporales del catálogo local." />
     {message && <Alert variant="success">{message}</Alert>}{error && <Alert variant="error">{error}</Alert>}
     <form className="editor card" onSubmit={save}><div className="form-grid"><label>ID<input required maxLength={128} disabled={editing} value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value.toLowerCase() })} /></label><label>Nombre<input required maxLength={200} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label className="wide">Descripción<input required maxLength={1000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><label>Postura<select value={form.required_posture} onChange={(e) => setForm({ ...form, required_posture: e.target.value })}><option value="arms_up">Brazos arriba</option><option value="arms_open">Brazos abiertos</option><option value="hands_on_hips">Manos en las caderas</option><option value="arms_forward">Brazos al frente</option><option value="squat">Sentadilla</option></select></label><label>Duración (s)<input type="number" min="0.1" step="0.1" required value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: Number(e.target.value) })} /></label><label>Repeticiones<input type="number" min="1" step="1" required value={form.repetitions} onChange={(e) => setForm({ ...form, repetitions: Number(e.target.value) })} /></label></div><div className="inline-actions"><button className="button primary" disabled={saving}>{saving ? "Guardando…" : editing ? "Guardar cambios" : "Crear actividad"}</button>{editing && <button className="button secondary" type="button" onClick={() => { setEditing(false); setForm(emptyForm); }}>Cancelar edición</button>}</div></form>
     <PageState {...query} empty={!query.loading && !query.error && activities.length === 0} onRetry={query.reload} />

@@ -7,6 +7,10 @@ import { useAuth } from "../auth/useAuth";
 import { Alert } from "../components/Alert";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageState } from "../components/PageState";
+import { useActiveSession } from "../analysis/ActiveSessionContext";
+import { AnalysisNavigationGuard } from "../analysis/AnalysisNavigationGuard";
+import { PageHeader } from "../components/PageHeader";
+import { AdaptiveAnalysisPage } from "./AdaptiveAnalysisPage";
 
 interface Landmark { x: number; y: number; visibility: number }
 interface ModelAdmission {
@@ -34,6 +38,7 @@ const stateNames: Record<string, string> = {
   analyzing_emotion: "Analizando emoción", waiting_for_posture: "Postura incorrecta",
   performing_exercise: "Manteniendo postura", completed: "Actividad completada",
 };
+const analysisSteps = ["Reconocer expresión", "Preparar postura", "Realizar actividad"];
 const connections = [
   ["left_shoulder", "right_shoulder"], ["left_shoulder", "left_elbow"],
   ["left_elbow", "left_wrist"], ["right_shoulder", "right_elbow"],
@@ -45,7 +50,13 @@ const connections = [
 
 export function AnalysisPage() {
   const [params] = useSearchParams();
+  return params.has("activity") ? <ManualActivityAnalysisPage /> : <AdaptiveAnalysisPage />;
+}
+
+function ManualActivityAnalysisPage() {
+  const [params] = useSearchParams();
   const { token } = useAuth();
+  const { setActiveSession } = useActiveSession();
   const activityId = params.get("activity") ?? "";
   const query = useApiQuery<Activity>(activityId ? `/activities/${encodeURIComponent(activityId)}` : null);
   const modelsQuery = useApiQuery<ModelAdmission[]>("/analysis/models");
@@ -69,6 +80,10 @@ export function AnalysisPage() {
   const modelBlocked = !selectedAdmission || selectedAdmission.state === "BLOCKED" || modelsQuery.loading || Boolean(modelsQuery.error);
   const [status, setStatus] = useState<AnalysisMessage>({ type: "ready", state: "analyzing_emotion", message: "Preparado", progress: 0 });
   const [error, setError] = useState("");
+  useEffect(() => {
+    setActiveSession(session && status.type !== "completed" ? { id: session.id, activityId } : null);
+    return () => setActiveSession(null);
+  }, [session?.id, status.type, activityId, setActiveSession]);
   useEffect(() => {
     if (session || starting) return;
     const timer = window.setInterval(() => { void modelsQuery.reload(); }, 10000);
@@ -193,22 +208,44 @@ export function AnalysisPage() {
       if (created) { await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined); sessionRef.current = null; setSession(null); }
       if (reason instanceof DOMException && reason.name === "NotAllowedError") setError("Debes permitir el acceso a la cámara para continuar.");
       else if (reason instanceof DOMException && reason.name === "NotFoundError") setError("No se encontró una cámara conectada a tu dispositivo.");
+      else if (reason instanceof ApiError && reason.status === 403 && /consentimiento/i.test(reason.message))
+        setError("No se puede iniciar el análisis sin consentimiento activo. Registra el consentimiento correspondiente antes de usar la cámara.");
       else setError(reason instanceof ApiError ? reason.message : "No fue posible iniciar la cámara.");
     } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
   }
 
-  async function cancel() {
-    if (!session || !token) return;
+  async function cancel(): Promise<boolean> {
+    if (!session || !token) return false;
     setCancelling(true);
-    try { await apiRequest(`/sessions/${session.id}/cancel`, { method: "POST", token }); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo cancelar la sesión"); }
-    finally { sessionRef.current = null; setSession(null); setConfirmCancel(false); setCancelling(false); releaseMedia(); }
+    try {
+      await apiRequest(`/sessions/${session.id}/cancel`, { method: "POST", token });
+      sessionRef.current = null; setSession(null); setConfirmCancel(false); releaseMedia();
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo cancelar la sesión");
+      return false;
+    } finally { setCancelling(false); }
   }
 
-  if (!activityId) return <section><p className="eyebrow">Analizador facial</p><h1>Selecciona una actividad</h1><Link className="button primary action-link" to="/activities">Ver actividades</Link></section>;
+  async function cancelForDeparture(): Promise<boolean> {
+    const current = sessionRef.current;
+    if (!current || !token) return false;
+    try {
+      await apiRequest(`/sessions/${current.id}/cancel`, { method: "POST", token });
+      completedRef.current = true;
+      releaseMedia();
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo cancelar la sesión");
+      return false;
+    }
+  }
+
+  if (!activityId) return <section><PageHeader section="Analizador facial" title="Selecciona una actividad" description="Elige una actividad corporal para preparar el análisis." /><Link className="button primary action-link" to="/activities">Ver actividades</Link></section>;
   const activity = query.data;
   const progress = Math.round(Math.max(0, Math.min(1, status.progress ?? 0)) * 100);
-  return <section><Link className="back-link" to="/activities">← Cambiar actividad</Link><p className="eyebrow">Actividad corporal</p><h1>{activity?.name ?? "Actividad"}</h1><PageState {...query} onRetry={query.reload} />{error && <Alert variant="error">{error}</Alert>}
+  const stepIndex = status.state === "completed" || status.state === "performing_exercise" ? 2 : status.state === "waiting_for_posture" ? 1 : 0;
+  return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <Link className="back-link" to="/activities">← Volver a actividades</Link>}<PageHeader section="Actividad corporal" title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Alert variant="error">{error}</Alert>}
     {activity && !session && <div className="analysis-preflight card"><div><span className="pill">{postureNames[activity.required_posture] ?? activity.required_posture}</span><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)} />Mostrar landmarks</label><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><button className="button primary" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</button></div></div>}
     {activity && !session && <fieldset className="card" disabled={starting}>
       <legend>Modelo de reconocimiento facial</legend>
@@ -227,6 +264,8 @@ export function AnalysisPage() {
     {session && <div className="live-analysis">
       <div className="video-stage"><video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted /><canvas ref={overlayRef} aria-hidden="true" width="640" height="480" /><canvas ref={captureRef} hidden /></div>
       <aside className="analysis-panel">
+        <p className="step-caption">Etapa {stepIndex + 1} de {analysisSteps.length}</p>
+        <ol className="analysis-steps" aria-label="Etapas del análisis">{analysisSteps.map((step, index) => <li key={step} className={index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"} aria-current={index === stepIndex ? "step" : undefined}>{step}</li>)}</ol>
         <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>
         {status.admission?.state === "WARNING" && <Alert variant="warning">{status.admission.reasons.join("; ")}</Alert>}
         <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? status.state}</span>

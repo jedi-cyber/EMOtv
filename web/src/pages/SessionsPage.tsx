@@ -6,6 +6,7 @@ import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { PageState } from "../components/PageState";
 import { Alert } from "../components/Alert";
+import { PageHeader } from "../components/PageHeader";
 
 const stateNames: Record<string, string> = {
   created: "Creada", in_progress: "En progreso", completed: "Completada", cancelled: "Cancelada",
@@ -50,10 +51,7 @@ export function SessionsPage() {
 
   return (
     <section>
-      <p className="eyebrow">Seguimiento</p>
-      <div className="page-heading"><div><h1>Sesiones</h1><p className="lead">Revisa actividades realizadas y resultados registrados.</p></div>
-        <button className="button primary" disabled={starting} onClick={startSession}>{starting ? "Iniciando…" : "Nueva sesión"}</button>
-      </div>
+      <PageHeader section="Seguimiento" title="Sesiones" description="Revisa actividades realizadas y resultados registrados." actions={<button className="button primary" disabled={starting} onClick={startSession}>{starting ? "Iniciando…" : "Nueva sesión"}</button>} />
       {user?.role !== "student" && <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); setAppliedFilter(studentFilter.trim()); setActionError(""); }}><label>ID del estudiante<input value={studentFilter} placeholder="student-..." onChange={(event) => setStudentFilter(event.target.value)} /></label><button className="button secondary">Aplicar filtro</button>{appliedFilter && <button type="button" className="button secondary" onClick={() => { setStudentFilter(""); setAppliedFilter(""); }}>Mostrar todas</button>}</form>}
       {appliedFilter && <p className="filter-summary">Mostrando sesiones del estudiante <strong>{appliedFilter}</strong>.</p>}
       {actionError && <Alert variant="error">{actionError}</Alert>}

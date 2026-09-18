@@ -7,6 +7,12 @@ export interface Activity {
   repetitions: number;
 }
 
+export interface Student {
+  id: string;
+  user_id: string;
+  student_code: string;
+}
+
 export type SessionState = "created" | "in_progress" | "completed" | "cancelled";
 
 export interface EmotionalSession {

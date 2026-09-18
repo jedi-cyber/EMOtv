@@ -21,4 +21,11 @@ describe("contrato HTTP del frontend", () => {
     expect(await apiRequest("/activities/a", { method: "DELETE" })).toBeUndefined();
     expect(apiWebSocketUrl("/ws/activity")).toMatch(/^ws:\/\/.+\/ws\/activity$/);
   });
+  it("convierte un fallo de red en un error de conexión legible", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(apiRequest("/sessions", { token: "test" })).rejects.toMatchObject({
+      status: 0,
+      message: expect.stringContaining("No se pudo conectar con EMOtv"),
+    });
+  });
 });

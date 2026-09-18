@@ -5,12 +5,14 @@ import { AuthProvider } from "../src/auth/AuthContext";
 import { useAuth } from "../src/auth/useAuth";
 import { tokenStorage } from "../src/auth/tokenStorage";
 import { AUTH_UNAUTHORIZED_EVENT } from "../src/api/http";
+import { MemoryRouter } from "react-router-dom";
+import { App } from "../src/App";
 
 const user = { id: "u", email: "u@example.com", role: "student", is_active: true };
 const token = (exp: number) => `test.${btoa(JSON.stringify({ exp }))}.signature`;
 function Probe() {
   const auth = useAuth();
-  return <><span>{auth.user?.email ?? "Anónimo"}</span><span>{auth.notice}</span><button onClick={() => { void auth.login("u@example.com", "password-123"); }}>Ingresar</button><button onClick={() => auth.logout()}>Salir</button></>;
+  return <><span>{auth.user?.email ?? "Anónimo"}</span><span>{auth.notice}</span><span>{auth.connectionError ? "Sin conexión" : "Conectado"}</span><button onClick={() => { void auth.login("u@example.com", "password-123"); }}>Ingresar</button><button onClick={() => auth.logout()}>Salir</button></>;
 }
 beforeEach(() => sessionStorage.clear());
 
@@ -47,4 +49,35 @@ it("descarta un token ya vencido y responde a un 401", async () => {
   expect(screen.getByText("Anónimo")).toBeInTheDocument();
   act(() => window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT)));
   expect(screen.getByText("Tu sesión venció. Ingresa nuevamente.")).toBeInTheDocument();
+});
+
+it("conserva el token si falla la verificación por conexión", async () => {
+  const jwt = token(Math.floor(Date.now() / 1000) + 600);
+  tokenStorage.set(jwt);
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+  render(<AuthProvider><Probe /></AuthProvider>);
+  expect(await screen.findByText("Sin conexión")).toBeInTheDocument();
+  expect(tokenStorage.get()).toBe(jwt);
+  expect(screen.getByText("Anónimo")).toBeInTheDocument();
+});
+
+it("redirige al login con aviso cuando vence la sesión durante la navegación", async () => {
+  tokenStorage.set(token(Math.floor(Date.now() / 1000) + 600));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(user))));
+  render(<MemoryRouter initialEntries={["/dashboard"]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  expect(await screen.findByRole("heading", { name: "Hola, u" })).toBeInTheDocument();
+  act(() => window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT)));
+  expect(await screen.findByRole("heading", { name: "Ingresa a EMOtv" })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Tu sesión venció. Ingresa nuevamente.");
+  expect(tokenStorage.get()).toBeNull();
+});
+
+it("muestra la pantalla de conexión si /auth/me no responde", async () => {
+  const jwt = token(Math.floor(Date.now() / 1000) + 600);
+  tokenStorage.set(jwt);
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+  render(<MemoryRouter initialEntries={["/dashboard"]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
+  expect(await screen.findByRole("heading", { name: "No podemos comunicarnos con EMOtv" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Reintentar conexión" })).toBeInTheDocument();
+  expect(tokenStorage.get()).toBe(jwt);
 });

@@ -55,11 +55,27 @@ tiempo y una barra de progreso. Teclas:
 - `scripts/emotion/download_weights.py`: descarga pesos de YuNet.
 - `scripts/emotion/download_emotion_model.py`: descarga el clasificador.
 - `scripts/emotion/run_face_detection_test.py`: prueba rostro y emoción.
+- `scripts/emotion/check_model_availability.py`: muestra si FER+ y ViT están
+  habilitados por los pesos, benchmarks y recursos locales. No modifica archivos.
 
 ## Otros
 
 - `scripts/run_camera_test.py`: verifica la captura básica.
-- `scripts/run_api.py`: inicia la interfaz web existente.
+- `scripts/run_api.py`: inicia la API FastAPI.
+
+### Cuentas locales de prueba por rol
+
+Con PostgreSQL local y las migraciones aplicadas, crea una cuenta de Psicología
+y una de Estudiante con contraseñas aleatorias:
+
+```powershell
+python scripts/create_demo_role_accounts.py --create
+```
+
+El script rechaza bases de datos remotas, no modifica usuarios existentes y
+muestra las credenciales solo en la terminal. Guárdalas fuera del repositorio.
+No crea consentimiento para la cuenta estudiantil: debe registrarse de forma
+válida antes de iniciar sesiones asociadas.
 
 ## Flujo emocional integrado
 
