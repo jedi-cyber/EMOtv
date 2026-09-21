@@ -23,8 +23,9 @@ postura dependa de MediaPipe.
 - rodillas;
 - tobillos.
 
-Las coordenadas `x` e `y` están normalizadas respecto al frame. `visibility`
-indica la calidad estimada de cada punto.
+Las coordenadas `x` e `y` están normalizadas respecto al frame. La profundidad
+normalizada `z` disminuye hacia la cámara; `visibility` indica la calidad
+estimada de cada punto. `arms_forward` requiere profundidad fiable.
 
 ## Postura: ambos brazos levantados
 
@@ -46,6 +47,9 @@ Valores iniciales en `src/emotv/config.py`:
 | `HANDS_ON_HIPS_DISTANCE_TOLERANCE` | `0.12` | Distancia máxima muñeca–cadera |
 | `HANDS_ON_HIPS_MIN_ELBOW_ANGLE` | `35.0°` | Flexión mínima del codo |
 | `HANDS_ON_HIPS_MAX_ELBOW_ANGLE` | `135.0°` | Flexión máxima del codo |
+| `ARMS_FORWARD_MIN_WRIST_DEPTH` | `0.12` | Avance mínimo de la muñeca respecto al hombro |
+| `ARMS_FORWARD_ELBOW_TOLERANCE_DEGREES` | `35.0°` | Desviación máxima del codo extendido en 3D |
+| `SQUAT_MIN_KNEE_ANGLE` / `SQUAT_MAX_KNEE_ANGLE` | `65°` / `155°` | Flexión aceptada de ambas rodillas |
 | `ARMS_UP_HOLD_SECONDS` | `5.0` | Tiempo necesario para completar |
 
 Estos valores son un punto de partida y deben calibrarse con usuarios, cámaras,
@@ -54,8 +58,8 @@ distancias e iluminación representativas.
 ## Contrato genérico de posturas
 
 `PostureId` define identificadores estables para `arms_up`, `arms_open`,
-`arms_forward`, `hands_on_hips` y `squat`. La existencia de un identificador no
-implica que su validador ya esté implementado.
+`arms_forward`, `hands_on_hips` y `squat`. Los cinco cuentan con validadores
+predeterminados; una prueba comprueba que cada paso del catálogo tenga uno.
 
 Cada evaluación podrá devolver un `PostureResult` con:
 
@@ -67,8 +71,8 @@ Cada evaluación podrá devolver un `PostureResult` con:
 - identificadores de reglas incumplidas.
 
 `PostureValidator.validate(pose, posture_id)` selecciona el evaluador desde un
-registro. Actualmente incluye `arms_up`, `arms_open` y `hands_on_hips`; otros
-validadores pueden añadirse mediante `register()` sin ampliar una cadena de
+registro. Incluye las cinco posturas anteriores; otros validadores pueden
+añadirse mediante `register()` sin ampliar una cadena de
 condicionales.
 El método histórico `both_arms_up()` delega en esta interfaz y sigue devolviendo
 un booleano.
@@ -83,6 +87,19 @@ respecto al centro de los hombros para funcionar aunque la imagen esté reflejad
 
 Requiere ambas muñecas cerca de la cadera correspondiente, codos flexionados
 dentro del rango configurado y desplazados hacia afuera del torso.
+
+### Brazos al frente
+
+Requiere hombros, codos y muñecas visibles, ambas muñecas y codos avanzados
+hacia la cámara, muñecas a una altura cercana a los hombros y codos extendidos
+según un ángulo 3D. No equivale a brazos abiertos: comprueba profundidad `z`.
+
+### Sentadilla estática
+
+Requiere hombros, caderas, rodillas y tobillos visibles, ambas rodillas
+flexionadas dentro del rango configurable y el orden vertical esperado. Es
+una aproximación geométrica de una postura mantenida, no un análisis de la
+técnica, profundidad o seguridad de una sentadilla en movimiento.
 
 ## Máquina de estados
 
@@ -111,9 +128,8 @@ incorrect -- postura correcta --> holding -- tiempo cumplido --> completed
 ## Limitaciones actuales
 
 - se analiza una sola persona;
-- existen tres validadores; el ejercicio interactivo todavía usa `arms_up`;
-- no hay persistencia de sesiones;
-- no se ha integrado el flujo corporal con FastAPI;
+- las cinco posturas se validan geométricamente, pero requieren calibración
+  con personas, cámaras y orientaciones reales;
 - la prueba funcional con webcam requiere ejecución manual;
 - los umbrales aún no han sido calibrados con una muestra de usuarios.
 

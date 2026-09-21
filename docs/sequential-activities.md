@@ -2,6 +2,8 @@
 
 Una actividad puede tener varios pasos ordenados (`steps`). Cada paso indica una postura conocida por el validador, una instrucción y los segundos durante los que debe mantenerse. `repetitions` repite la secuencia completa. Las actividades antiguas sin `steps` siguen siendo válidas: se transforman internamente en un paso.
 
+Las cinco posturas usadas por el catálogo (`arms_up`, `arms_open`, `arms_forward`, `hands_on_hips`, `squat`) tienen validadores predeterminados. La suite unitaria comprueba que todos los pasos de las actividades incluidas pueden validarse y completarse con landmarks sintéticos. Antes de usar estas reglas con personas se deben calibrar con vídeo real; en particular, `arms_forward` depende de la estimación de profundidad y `squat` solo reconoce una postura estática aproximada.
+
 El progreso enviado por WebSocket corresponde a toda la secuencia; la sesión se completa únicamente después del último paso. La respuesta incluye `step_index`, `step_count` y `step` para mostrar y anunciar la instrucción actual. Si se pierde la postura durante un paso, solo se reinicia el tiempo de ese paso.
 
 El catálogo incluye seis secuencias nuevas además de las tres actividades previas. La recomendación elige aleatoriamente entre candidatos configurados para la expresión detectada, evitando cuando sea posible la actividad usada en la sesión anterior del estudiante y la última elección para esa expresión. La elección se fija al asignarla a la sesión: los pasos no se barajan mientras se realiza el ejercicio. Las asociaciones entre expresión y actividad son demostrativas, no indicaciones clínicas.

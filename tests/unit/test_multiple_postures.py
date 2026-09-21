@@ -73,19 +73,21 @@ class MultiplePosturesTests(unittest.TestCase):
                 )
                 self.assertEqual(arguments.posture, posture_id.value)
 
-    def test_keyboard_shortcuts_select_the_three_postures(self) -> None:
+    def test_keyboard_shortcuts_select_all_supported_postures(self) -> None:
         self.assertEqual(
             set(KEY_TO_POSTURE.values()),
             set(PostureValidator().supported_postures),
         )
 
-    def test_three_postures_are_registered(self) -> None:
+    def test_five_postures_are_registered(self) -> None:
         self.assertEqual(
             PostureValidator().supported_postures,
             {
                 PostureId.ARMS_UP,
                 PostureId.ARMS_OPEN,
                 PostureId.HANDS_ON_HIPS,
+                PostureId.ARMS_FORWARD,
+                PostureId.SQUAT,
             },
         )
 

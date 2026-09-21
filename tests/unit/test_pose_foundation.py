@@ -191,11 +191,11 @@ class PoseFoundationTests(unittest.TestCase):
         self.assertTrue(result.detected)
         self.assertAlmostEqual(result.measurements["left_elbow_angle"], 90.0)
 
-    def test_unimplemented_posture_has_explicit_error(self) -> None:
-        with self.assertRaises(NotImplementedError):
+    def test_unknown_posture_has_explicit_error(self) -> None:
+        with self.assertRaises(ValueError):
             PostureValidator().validate(
                 make_pose(wrists_y=0.2),
-                PostureId.ARMS_FORWARD,
+                "unknown",
             )
 
     def test_can_register_an_additional_posture(self) -> None:
@@ -208,7 +208,7 @@ class PoseFoundationTests(unittest.TestCase):
                 confidence=0.8,
             )
 
-        validator.register(PostureId.ARMS_FORWARD, arms_forward_evaluator)
+        validator.register(PostureId.ARMS_FORWARD, arms_forward_evaluator, replace=True)
         result = validator.validate(make_pose(wrists_y=0.4), "arms_forward")
 
         self.assertTrue(result.detected)
@@ -220,6 +220,7 @@ class PoseFoundationTests(unittest.TestCase):
         validator.register(
             PostureId.ARMS_FORWARD,
             lambda pose: PostureResult(PostureId.SQUAT, detected=True),
+            replace=True,
         )
 
         with self.assertRaises(ValueError):

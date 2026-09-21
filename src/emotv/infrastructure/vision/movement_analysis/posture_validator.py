@@ -8,6 +8,12 @@ from emotv.config import (
     ARMS_OPEN_ELBOW_TOLERANCE_DEGREES,
     ARMS_OPEN_LATERAL_MARGIN,
     ARMS_OPEN_WRIST_HEIGHT_TOLERANCE,
+    ARMS_FORWARD_ELBOW_TOLERANCE_DEGREES,
+    ARMS_FORWARD_MIN_ELBOW_DEPTH,
+    ARMS_FORWARD_MIN_WRIST_DEPTH,
+    ARMS_FORWARD_MIN_WRIST_ELBOW_DEPTH,
+    ARMS_FORWARD_WRIST_HEIGHT_TOLERANCE,
+    ARMS_FORWARD_WRIST_LATERAL_TOLERANCE,
     ARMS_UP_ELBOW_TOLERANCE_DEGREES,
     ARMS_UP_WRIST_MARGIN,
     HANDS_ON_HIPS_DISTANCE_TOLERANCE,
@@ -15,12 +21,18 @@ from emotv.config import (
     HANDS_ON_HIPS_MAX_ELBOW_ANGLE,
     HANDS_ON_HIPS_MIN_ELBOW_ANGLE,
     POSE_MIN_LANDMARK_VISIBILITY,
+    SQUAT_MAX_KNEE_ANGLE,
+    SQUAT_MIN_HIP_KNEE_GAP,
+    SQUAT_MIN_KNEE_ANGLE,
+    SQUAT_MIN_KNEE_ANKLE_GAP,
+    SQUAT_MIN_SHOULDER_HIP_GAP,
 )
 from emotv.domain.pose_landmarks import PoseLandmark, PoseLandmarks
 from emotv.domain.posture_id import PostureId
 from emotv.domain.posture_result import PostureResult
 from emotv.infrastructure.vision.movement_analysis.angle_calculator import (
     calculate_angle,
+    calculate_3d_angle,
 )
 
 
@@ -83,6 +95,50 @@ class HandsOnHipsThresholds:
             raise ValueError("El rango de ángulos de codo no es válido")
 
 
+@dataclass(frozen=True, slots=True)
+class ArmsForwardThresholds:
+    min_visibility: float = POSE_MIN_LANDMARK_VISIBILITY
+    min_wrist_depth: float = ARMS_FORWARD_MIN_WRIST_DEPTH
+    min_elbow_depth: float = ARMS_FORWARD_MIN_ELBOW_DEPTH
+    min_wrist_elbow_depth: float = ARMS_FORWARD_MIN_WRIST_ELBOW_DEPTH
+    wrist_height_tolerance: float = ARMS_FORWARD_WRIST_HEIGHT_TOLERANCE
+    wrist_lateral_tolerance: float = ARMS_FORWARD_WRIST_LATERAL_TOLERANCE
+    elbow_straight_tolerance_degrees: float = ARMS_FORWARD_ELBOW_TOLERANCE_DEGREES
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.min_visibility <= 1:
+            raise ValueError("min_visibility debe estar entre 0 y 1")
+        if any(value < 0 for value in (
+            self.min_wrist_depth, self.min_elbow_depth,
+            self.min_wrist_elbow_depth, self.wrist_height_tolerance,
+            self.wrist_lateral_tolerance,
+        )):
+            raise ValueError("Las tolerancias espaciales no pueden ser negativas")
+        if not 0 <= self.elbow_straight_tolerance_degrees <= 180:
+            raise ValueError("La tolerancia de codo debe estar entre 0 y 180")
+
+
+@dataclass(frozen=True, slots=True)
+class SquatThresholds:
+    min_visibility: float = POSE_MIN_LANDMARK_VISIBILITY
+    min_knee_angle: float = SQUAT_MIN_KNEE_ANGLE
+    max_knee_angle: float = SQUAT_MAX_KNEE_ANGLE
+    min_shoulder_hip_gap: float = SQUAT_MIN_SHOULDER_HIP_GAP
+    min_hip_knee_gap: float = SQUAT_MIN_HIP_KNEE_GAP
+    min_knee_ankle_gap: float = SQUAT_MIN_KNEE_ANKLE_GAP
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.min_visibility <= 1:
+            raise ValueError("min_visibility debe estar entre 0 y 1")
+        if not 0 <= self.min_knee_angle <= self.max_knee_angle <= 180:
+            raise ValueError("El rango de ángulos de rodilla no es válido")
+        if any(value < 0 for value in (
+            self.min_shoulder_hip_gap, self.min_hip_knee_gap,
+            self.min_knee_ankle_gap,
+        )):
+            raise ValueError("Las separaciones verticales no pueden ser negativas")
+
+
 class PostureValidator:
     """Selecciona y ejecuta validadores de postura registrados."""
 
@@ -91,16 +147,22 @@ class PostureValidator:
         thresholds: ArmsUpThresholds | None = None,
         arms_open_thresholds: ArmsOpenThresholds | None = None,
         hands_on_hips_thresholds: HandsOnHipsThresholds | None = None,
+        arms_forward_thresholds: ArmsForwardThresholds | None = None,
+        squat_thresholds: SquatThresholds | None = None,
     ) -> None:
         self.thresholds = thresholds or ArmsUpThresholds()
         self.arms_open_thresholds = arms_open_thresholds or ArmsOpenThresholds()
         self.hands_on_hips_thresholds = (
             hands_on_hips_thresholds or HandsOnHipsThresholds()
         )
+        self.arms_forward_thresholds = arms_forward_thresholds or ArmsForwardThresholds()
+        self.squat_thresholds = squat_thresholds or SquatThresholds()
         self._evaluators: dict[PostureId, PostureEvaluator] = {
             PostureId.ARMS_UP: self._evaluate_arms_up,
             PostureId.ARMS_OPEN: self._evaluate_arms_open,
             PostureId.HANDS_ON_HIPS: self._evaluate_hands_on_hips,
+            PostureId.ARMS_FORWARD: self._evaluate_arms_forward,
+            PostureId.SQUAT: self._evaluate_squat,
         }
 
     @property
@@ -357,6 +419,111 @@ class PostureValidator:
             },
             success_message="Postura de manos en las caderas correcta",
             failure_message="Acerca las manos a las caderas y abre los codos",
+        )
+
+    def _evaluate_arms_forward(self, pose: PoseLandmarks) -> PostureResult:
+        thresholds = self.arms_forward_thresholds
+        points = (
+            pose.left_shoulder, pose.right_shoulder, pose.left_elbow,
+            pose.right_elbow, pose.left_wrist, pose.right_wrist,
+        )
+        rules = {
+            "upper_body_visible": all(
+                self._is_visible(point, thresholds.min_visibility) for point in points
+            ),
+        }
+        measurements = {"minimum_visibility": min(point.visibility for point in points)}
+        for side in ("left", "right"):
+            shoulder = getattr(pose, f"{side}_shoulder")
+            elbow = getattr(pose, f"{side}_elbow")
+            wrist = getattr(pose, f"{side}_wrist")
+            # En landmarks normalizados de MediaPipe, z menor apunta a la cámara.
+            wrist_depth = shoulder.z - wrist.z
+            elbow_depth = shoulder.z - elbow.z
+            wrist_elbow_depth = elbow.z - wrist.z
+            height_delta = abs(wrist.y - shoulder.y)
+            lateral_delta = abs(wrist.x - shoulder.x)
+            angle = calculate_3d_angle(shoulder, elbow, wrist)
+            rules.update({
+                f"{side}_wrist_forward": wrist_depth >= thresholds.min_wrist_depth,
+                f"{side}_elbow_forward": elbow_depth >= thresholds.min_elbow_depth,
+                f"{side}_wrist_beyond_elbow": (
+                    wrist_elbow_depth >= thresholds.min_wrist_elbow_depth
+                ),
+                f"{side}_wrist_at_shoulder_height": (
+                    height_delta <= thresholds.wrist_height_tolerance
+                ),
+                f"{side}_arm_not_open_laterally": (
+                    lateral_delta <= thresholds.wrist_lateral_tolerance
+                ),
+                f"{side}_elbow_extended": (
+                    angle >= 180 - thresholds.elbow_straight_tolerance_degrees
+                ),
+            })
+            measurements.update({
+                f"{side}_wrist_depth": wrist_depth,
+                f"{side}_elbow_depth": elbow_depth,
+                f"{side}_wrist_elbow_depth": wrist_elbow_depth,
+                f"{side}_wrist_height_delta": height_delta,
+                f"{side}_wrist_lateral_delta": lateral_delta,
+                f"{side}_elbow_angle": angle,
+            })
+        return self._build_result(
+            posture_id=PostureId.ARMS_FORWARD,
+            rules=rules,
+            measurements=measurements,
+            success_message="Brazos al frente correctos",
+            failure_message="Extiende ambos brazos al frente a la altura de hombros",
+        )
+
+    def _evaluate_squat(self, pose: PoseLandmarks) -> PostureResult:
+        thresholds = self.squat_thresholds
+        points = (
+            pose.left_shoulder, pose.right_shoulder, pose.left_hip,
+            pose.right_hip, pose.left_knee, pose.right_knee,
+            pose.left_ankle, pose.right_ankle,
+        )
+        rules = {
+            "body_visible": all(
+                self._is_visible(point, thresholds.min_visibility) for point in points
+            ),
+        }
+        measurements = {"minimum_visibility": min(point.visibility for point in points)}
+        for side in ("left", "right"):
+            shoulder = getattr(pose, f"{side}_shoulder")
+            hip = getattr(pose, f"{side}_hip")
+            knee = getattr(pose, f"{side}_knee")
+            ankle = getattr(pose, f"{side}_ankle")
+            knee_angle = calculate_3d_angle(hip, knee, ankle)
+            shoulder_hip_gap = hip.y - shoulder.y
+            hip_knee_gap = knee.y - hip.y
+            knee_ankle_gap = ankle.y - knee.y
+            rules.update({
+                f"{side}_knee_bent": (
+                    thresholds.min_knee_angle <= knee_angle <= thresholds.max_knee_angle
+                ),
+                f"{side}_shoulder_above_hip": (
+                    shoulder_hip_gap >= thresholds.min_shoulder_hip_gap
+                ),
+                f"{side}_hip_above_knee": (
+                    hip_knee_gap >= thresholds.min_hip_knee_gap
+                ),
+                f"{side}_knee_above_ankle": (
+                    knee_ankle_gap >= thresholds.min_knee_ankle_gap
+                ),
+            })
+            measurements.update({
+                f"{side}_knee_angle": knee_angle,
+                f"{side}_shoulder_hip_gap": shoulder_hip_gap,
+                f"{side}_hip_knee_gap": hip_knee_gap,
+                f"{side}_knee_ankle_gap": knee_ankle_gap,
+            })
+        return self._build_result(
+            posture_id=PostureId.SQUAT,
+            rules=rules,
+            measurements=measurements,
+            success_message="Sentadilla estática detectada",
+            failure_message="Flexiona ambas rodillas suavemente y muestra el cuerpo completo",
         )
 
     @staticmethod

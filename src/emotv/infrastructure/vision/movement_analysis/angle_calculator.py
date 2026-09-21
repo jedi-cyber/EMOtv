@@ -25,3 +25,16 @@ def calculate_angle(a, b, c) -> float:
     cos_angle = max(-1.0, min(1.0, cos_angle))
 
     return math.degrees(math.acos(cos_angle))
+
+
+def calculate_3d_angle(a, b, c) -> float:
+    """Calcula el ángulo ABC con profundidad normalizada (x, y, z)."""
+    ba = (a.x - b.x, a.y - b.y, a.z - b.z)
+    bc = (c.x - b.x, c.y - b.y, c.z - b.z)
+    magnitude = math.sqrt(sum(value * value for value in ba)) * math.sqrt(
+        sum(value * value for value in bc)
+    )
+    if magnitude == 0:
+        return 0.0
+    cosine = sum(left * right for left, right in zip(ba, bc)) / magnitude
+    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))

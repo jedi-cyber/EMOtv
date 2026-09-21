@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "emotv"
 version = "0.1.0"
 description = "Sistema experimental de análisis emocional y corporal mediante visión por computadora"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 dependencies = [
     "opencv-contrib-python",
@@ -37,7 +37,7 @@ emotion-vit = [
 ]
 dev = [
     "pytest>=8",
-    "httpx2",
+    "httpx",
 ]
 
 [tool.setuptools.packages.find]

@@ -17,7 +17,7 @@ La base funcional incluye:
 - estimación corporal con MediaPipe Pose Landmarker;
 - representación de landmarks independiente de MediaPipe;
 - dibujo de puntos y conexiones corporales;
-- validación de `arms_up`, `arms_open` y `hands_on_hips`;
+- validación de `arms_up`, `arms_open`, `arms_forward`, `hands_on_hips` y `squat`;
 - catálogo de actividades en memoria o PostgreSQL mediante un adaptador;
 - estabilización de emociones a partir de múltiples predicciones;
 - recomendación local de actividades a partir de la emoción estabilizada;

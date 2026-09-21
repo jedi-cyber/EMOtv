@@ -52,12 +52,22 @@ POSTURE_PRESENTATIONS = {
         name="Manos en las caderas",
         instruction="Coloca ambas manos en las caderas y abre los codos.",
     ),
+    PostureId.ARMS_FORWARD: PosturePresentation(
+        name="Brazos al frente",
+        instruction="Extiende ambos brazos hacia la cámara a la altura de hombros.",
+    ),
+    PostureId.SQUAT: PosturePresentation(
+        name="Sentadilla suave",
+        instruction="Flexiona ambas rodillas sin forzarte y muestra el cuerpo completo.",
+    ),
 }
 
 KEY_TO_POSTURE = {
     ord("1"): PostureId.ARMS_UP,
     ord("2"): PostureId.ARMS_OPEN,
     ord("3"): PostureId.HANDS_ON_HIPS,
+    ord("4"): PostureId.ARMS_FORWARD,
+    ord("5"): PostureId.SQUAT,
 }
 
 
@@ -112,6 +122,18 @@ def diagnostic_lines(result: PostureResult) -> tuple[str, ...]:
             f"izq {measurements['left_wrist_hip_distance']:.3f} | "
             f"der {measurements['right_wrist_hip_distance']:.3f}"
         )
+    if result.posture_id is PostureId.ARMS_FORWARD:
+        lines.append(
+            "Profundidad munecas: "
+            f"izq {measurements['left_wrist_depth']:.3f} | "
+            f"der {measurements['right_wrist_depth']:.3f}"
+        )
+    if result.posture_id is PostureId.SQUAT:
+        lines.append(
+            "Rodillas: "
+            f"izq {measurements['left_knee_angle']:.1f} | "
+            f"der {measurements['right_knee_angle']:.1f} grados"
+        )
     if result.failed_rules:
         lines.append("Ajustar: " + ", ".join(result.failed_rules[:2]))
 
@@ -165,7 +187,7 @@ def main(initial_posture: PostureId = PostureId.ARMS_UP) -> None:
     selected_posture = initial_posture
 
     print("=== EMOtv - Posture Test ===")
-    print("1: arms_up | 2: arms_open | 3: hands_on_hips")
+    print("1: arms_up | 2: arms_open | 3: hands_on_hips | 4: arms_forward | 5: squat")
     print("Q: salir")
 
     try:
@@ -211,7 +233,7 @@ def main(initial_posture: PostureId = PostureId.ARMS_UP) -> None:
                     (status, status_color),
                 ) + diagnostics + (
                     (f"FPS: {stats.fps:.1f}", INFO_COLOR),
-                    ("1/2/3: cambiar postura | Q: salir", INFO_COLOR),
+                    ("1/2/3/4/5: cambiar postura | Q: salir", INFO_COLOR),
                 )
                 draw_text_lines(display, lines)
                 cv2.imshow(WINDOW_NAME, display)
