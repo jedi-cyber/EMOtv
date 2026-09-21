@@ -38,7 +38,8 @@ class IdentityRegistrationService:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_factory = id_factory or (lambda: str(uuid4()))
 
-    def register_user(self, email: str, password: str, role: Role | str) -> User:
+    def register_user(self, email: str, password: str, role: Role | str,
+                      *, must_change_password: bool = False) -> User:
         normalized_email = email.strip().lower()
         if self.users.get_by_email(normalized_email) is not None:
             raise ValueError("el correo ya está registrado")
@@ -48,6 +49,7 @@ class IdentityRegistrationService:
             password_hash=self.password_hasher.hash_password(password),
             role=Role(role),
             created_at=self.clock(),
+            must_change_password=must_change_password,
         )
         return self.users.save(user)
 
@@ -56,11 +58,14 @@ class IdentityRegistrationService:
         email: str,
         password: str,
         student_code: str,
+        *,
+        must_change_password: bool = False,
     ) -> tuple[User, Student]:
         normalized_code = student_code.strip()
         if self.students.get_by_code(normalized_code) is not None:
             raise ValueError("el código de estudiante ya está registrado")
-        user = self.register_user(email, password, Role.STUDENT)
+        user = self.register_user(email, password, Role.STUDENT,
+                                  must_change_password=must_change_password)
         student = Student(
             id=self._id("student"),
             user_id=user.id,
@@ -76,13 +81,17 @@ class IdentityRegistrationService:
         student = self.students.get_by_id(student_id)
         if student is None:
             raise KeyError(f"Estudiante no encontrado: {student_id}")
-        if self.consents.get_active_by_student(student.id) is not None:
-            raise RuntimeError("el estudiante ya tiene un consentimiento activo")
+        current = self.consents.get_active_by_student(student.id)
+        if current is not None and current.policy_version == policy_version.strip():
+            raise RuntimeError("el estudiante ya tiene un consentimiento activo para esta versión")
+        now = self.clock()
+        if current is not None:
+            self.consents.save(replace(current, revoked_at=max(now, current.granted_at)))
         consent = ConsentRecord(
             id=self._id("consent"),
             student_id=student.id,
             policy_version=policy_version,
-            granted_at=self.clock(),
+            granted_at=now,
         )
         return self.consents.save(consent)
 

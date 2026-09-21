@@ -25,6 +25,8 @@ class EmotionalActivityStatus:
     activity: Activity | None = None
     posture: PostureResult | None = None
     exercise: ExerciseStatus | None = None
+    step_index: int = 0
+    step_count: int = 1
 
     @property
     def completed(self) -> bool:

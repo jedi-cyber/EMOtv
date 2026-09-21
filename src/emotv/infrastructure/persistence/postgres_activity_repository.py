@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
-from emotv.domain.activity import Activity
+from emotv.domain.activity import Activity, ActivityStep
 from emotv.infrastructure.persistence.models import ActivityRecord
 
 
@@ -12,7 +12,13 @@ class PostgresActivityRepository:
     @staticmethod
     def _domain(row: ActivityRecord) -> Activity:
         return Activity(row.id, row.name, row.description, row.required_posture,
-                        row.duration_seconds, row.repetitions)
+                        row.duration_seconds, row.repetitions,
+                        tuple(ActivityStep(**step) for step in (row.steps or [])))
+
+    @staticmethod
+    def _steps(activity: Activity) -> list[dict]:
+        return [dict(posture=step.posture.value, instruction=step.instruction,
+                     duration_seconds=step.duration_seconds) for step in activity.steps]
 
     def get_by_id(self, activity_id: str) -> Activity | None:
         with self._factory() as db:
@@ -28,7 +34,8 @@ class PostgresActivityRepository:
             with self._factory.begin() as db:
                 db.add(ActivityRecord(id=activity.id, name=activity.name,
                     description=activity.description, required_posture=activity.required_posture.value,
-                    duration_seconds=activity.duration_seconds, repetitions=activity.repetitions))
+                    duration_seconds=activity.duration_seconds, repetitions=activity.repetitions,
+                    steps=self._steps(activity)))
         except IntegrityError as error:
             raise ValueError("Actividad duplicada o inválida") from error
         return activity
@@ -41,6 +48,7 @@ class PostgresActivityRepository:
             row.name, row.description = activity.name, activity.description
             row.required_posture = activity.required_posture.value
             row.duration_seconds, row.repetitions = activity.duration_seconds, activity.repetitions
+            row.steps = self._steps(activity)
         return activity
 
     def remove(self, activity_id: str) -> Activity:

@@ -37,6 +37,22 @@ class Processor:
         self.closed = True
 
 
+class AdaptiveAnalyzer:
+    def analyze(self, frame):
+        return "sadness", .9
+
+
+class AdaptiveProcessor(Processor):
+    def __init__(self, activity, emotion):
+        super().__init__(activity)
+        self.emotion = emotion
+
+    def process_frame(self, frame):
+        return EmotionalActivityStatus(EmotionalActivityState.COMPLETED, "Completada",
+            self.emotion, self.activity,
+            exercise=ExerciseStatus(ExerciseState.COMPLETED, 1, 5))
+
+
 @pytest.fixture
 def flow(request):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -65,7 +81,9 @@ def flow(request):
                                              model_processor_factory=model_processor,
                                              model_admission=lambda model_id: dict(model_id=model_id,
                                                  state=getattr(request, "param", "SUPPORTED"),
-                                                 reasons=["RAM insuficiente"] if getattr(request, "param", "SUPPORTED") == "BLOCKED" else [])))
+                                                 reasons=["RAM insuficiente"] if getattr(request, "param", "SUPPORTED") == "BLOCKED" else []),
+                                             emotion_analyzer_factory=lambda model_id: AdaptiveAnalyzer(),
+                                             adaptive_processor_factory=lambda activity, analyzer, emotion: _adaptive_processor(activity, emotion, processors)))
     with TestClient(app) as client:
         yield client, auth, user, other, student, sessions, identity, processors, users
     engine.dispose()
@@ -73,6 +91,42 @@ def flow(request):
 
 def credentials(auth, user, session_id):
     return dict(type="authenticate", token=auth.create_access_token(user), session_id=session_id, activity_id="arms_up_5s")
+
+
+def _adaptive_processor(activity, emotion, processors):
+    instance = AdaptiveProcessor(activity, emotion)
+    processors.append(instance)
+    return instance
+
+
+def test_recognize_then_recommend_then_complete_activity(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
+    response = client.post("/sessions", headers=headers, json={})
+    assert response.status_code == 201
+    session_id = response.json()["id"]
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({"type": "authenticate", "token": auth.create_access_token(user),
+                          "session_id": session_id, "emotion_model_id": "ferplus_onnx"})
+        assert socket.receive_json()["type"] == "ready"
+        _, jpeg = cv2.imencode(".jpg", np.zeros((32, 32, 3), dtype=np.uint8))
+        for _ in range(4):
+            socket.send_bytes(jpeg.tobytes())
+            assert socket.receive_json()["state"] == "analyzing_emotion"
+        socket.send_bytes(jpeg.tobytes())
+        suggestion = socket.receive_json()
+        assert suggestion["type"] == "recommendation"
+        assert suggestion["emotion"] == "sadness"
+        assert suggestion["activity"]["id"] in {"morning_mobility", "open_and_reach", "arms_up_5s"}
+        assert sessions.get_session(session_id).activity_id is None
+        socket.send_json({"type": "select_activity", "activity_id": "arms_up_5s"})
+        assert socket.receive_json()["type"] == "activity_started"
+        assert sessions.get_session(session_id).activity_id == "arms_up_5s"
+        socket.send_bytes(jpeg.tobytes())
+        assert socket.receive_json()["type"] == "completed"
+    assert sessions.get_session(session_id).state is SessionState.COMPLETED
+    assert sessions.get_session(session_id).initial_emotion == "sadness"
+    assert processors[-1].closed
 
 
 def test_start_complete_and_reject_cancel_of_completed_session(flow):

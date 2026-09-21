@@ -6,6 +6,21 @@ from emotv.domain.posture_id import PostureId
 
 
 @dataclass(frozen=True, slots=True)
+class ActivityStep:
+    posture: PostureId | str
+    instruction: str
+    duration_seconds: float
+
+    def __post_init__(self) -> None:
+        posture = PostureId(self.posture)
+        if not self.instruction.strip() or self.duration_seconds <= 0:
+            raise ValueError("Cada paso requiere una instrucción y duración positiva")
+        object.__setattr__(self, "posture", posture)
+        object.__setattr__(self, "instruction", self.instruction.strip())
+        object.__setattr__(self, "duration_seconds", float(self.duration_seconds))
+
+
+@dataclass(frozen=True, slots=True)
 class Activity:
     """Actividad local que el usuario debe realizar."""
 
@@ -15,6 +30,7 @@ class Activity:
     required_posture: PostureId | str
     duration_seconds: float
     repetitions: int = 1
+    steps: tuple[ActivityStep, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -43,5 +59,10 @@ class Activity:
         object.__setattr__(self, "id", self.id.strip())
         object.__setattr__(self, "name", self.name.strip())
         object.__setattr__(self, "description", self.description.strip())
-        object.__setattr__(self, "required_posture", posture_id)
-        object.__setattr__(self, "duration_seconds", float(self.duration_seconds))
+        steps = tuple(self.steps)
+        if any(not isinstance(step, ActivityStep) for step in steps):
+            raise TypeError("steps debe contener ActivityStep")
+        normalized_steps = steps or (ActivityStep(posture_id, self.description, self.duration_seconds),)
+        object.__setattr__(self, "required_posture", normalized_steps[0].posture)
+        object.__setattr__(self, "duration_seconds", normalized_steps[0].duration_seconds)
+        object.__setattr__(self, "steps", normalized_steps)

@@ -1,4 +1,7 @@
 import { useAuth } from "../auth/useAuth";
+import { PageHeader } from "../components/PageHeader";
+import { Link } from "react-router-dom";
+import { paths } from "../routes/paths";
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -9,15 +12,13 @@ export function DashboardPage() {
   };
   return (
     <section>
-      <p className="eyebrow">Panel principal</p>
-      <h1>Hola, {user?.email.split("@")[0]}</h1>
-      <p className="lead">{user ? descriptions[user.role] : ""}</p>
+      <PageHeader section="Panel principal" title={`Hola, ${user?.email.split("@")[0] ?? ""}`} description={user ? descriptions[user.role] : ""} />
       <div className="card-grid">
-        {user?.role === "student" && <article className="card"><h2>Analizador facial</h2><p>Prepara una sesión y selecciona el modelo de emociones.</p></article>}
-        {user?.role === "psychologist" && <article className="card"><h2>Estudiantes</h2><p>Accede al seguimiento con los permisos correspondientes.</p></article>}
-        {user?.role === "admin" && <article className="card"><h2>Usuarios</h2><p>Supervisa las cuentas y sus roles de acceso.</p></article>}
-        <article className="card"><h2>Actividades</h2><p>Explora las posturas y ejercicios disponibles.</p></article>
-        <article className="card"><h2>Sesiones</h2><p>Consulta el progreso y los resultados registrados.</p></article>
+        {user?.role === "student" && <article className="card"><h2>Analizador facial</h2><p>Reconoce tu expresión y recibe una actividad sugerida.</p><Link className="text-link" to={paths.analysis}>Abrir analizador</Link></article>}
+        {user?.role === "psychologist" && <article className="card"><h2>Estudiantes</h2><p>Accede al seguimiento con los permisos correspondientes.</p><Link className="text-link" to={paths.students}>Ver estudiantes</Link></article>}
+        {user?.role === "admin" && <article className="card"><h2>Usuarios</h2><p>Supervisa las cuentas y sus roles de acceso.</p><Link className="text-link" to={paths.users}>Ver usuarios</Link></article>}
+        <article className="card"><h2>Actividades</h2><p>Explora las posturas y ejercicios disponibles.</p><Link className="text-link" to={user?.role === "admin" ? paths.adminActivities : paths.activities}>{user?.role === "admin" ? "Administrar actividades" : "Ver actividades"}</Link></article>
+        <article className="card"><h2>Sesiones</h2><p>Consulta el progreso y los resultados registrados.</p><Link className="text-link" to={paths.sessions}>Ver sesiones</Link></article>
       </div>
     </section>
   );

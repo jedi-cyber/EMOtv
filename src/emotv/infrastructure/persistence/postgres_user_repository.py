@@ -22,10 +22,14 @@ class PostgresUserRepository:
             if row is None:
                 db.add(UserRecord(id=user.id, email=user.email,
                     password_hash=user.password_hash, role=user.role.value,
-                    is_active=user.is_active, created_at=user.created_at))
+                    is_active=user.is_active, must_change_password=user.must_change_password,
+                    token_version=user.token_version,
+                    created_at=user.created_at))
             else:
                 row.email, row.password_hash = user.email, user.password_hash
                 row.role, row.is_active = user.role.value, user.is_active
+                row.must_change_password = user.must_change_password
+                row.token_version = user.token_version
                 row.created_at = user.created_at
         return user
 
@@ -48,7 +52,8 @@ class PostgresUserRepository:
     @staticmethod
     def _domain(row: UserRecord) -> User:
         created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)
-        return User(row.id, row.email, row.password_hash, Role(row.role), created, row.is_active)
+        return User(row.id, row.email, row.password_hash, Role(row.role), created,
+                    row.is_active, row.must_change_password, row.token_version)
 
 
 def _text(value: str, name: str) -> str:

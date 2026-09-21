@@ -37,7 +37,7 @@ class AuthenticationService:
     def create_access_token(self, user: User) -> str:
         now = self.clock()
         return jwt.encode(
-            {"sub": user.id, "role": user.role.value, "iat": now,
+            {"sub": user.id, "role": user.role.value, "tv": user.token_version, "iat": now,
              "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)},
             self.secret_key,
             algorithm=JWT_ALGORITHM,

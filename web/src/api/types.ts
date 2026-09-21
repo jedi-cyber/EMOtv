@@ -5,6 +5,19 @@ export interface Activity {
   required_posture: string;
   duration_seconds: number;
   repetitions: number;
+  steps?: ActivityStep[];
+}
+
+export interface ActivityStep {
+  posture: string;
+  instruction: string;
+  duration_seconds: number;
+}
+
+export interface Student {
+  id: string;
+  user_id: string;
+  student_code: string;
 }
 
 export type SessionState = "created" | "in_progress" | "completed" | "cancelled";

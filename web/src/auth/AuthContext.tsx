@@ -1,6 +1,6 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PropsWithChildren } from "react";
-import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiRequest } from "../api/http";
+import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiRequest, isConnectionError } from "../api/http";
 import { tokenStorage } from "./tokenStorage";
 import type { CurrentUser, TokenResponse } from "./types";
 
@@ -9,7 +9,9 @@ interface AuthContextValue {
   token: string | null;
   loading: boolean;
   notice: string;
+  connectionError?: boolean;
   login(email: string, password: string): Promise<void>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
   logout(notice?: string): void;
 }
 
@@ -20,6 +22,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
   const [notice, setNotice] = useState("");
+  const [connectionError, setConnectionError] = useState(false);
   const generation = useRef(0);
 
   const logout = useCallback((message = "") => {
@@ -28,6 +31,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setToken(null);
     setUser(null);
     setNotice(message);
+    setConnectionError(false);
   }, []);
 
   useEffect(() => {
@@ -69,12 +73,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setLoading(true);
     let active = true;
     apiRequest<CurrentUser>("/auth/me", { token })
-      .then((current) => { if (active) setUser(current); })
-      .catch((reason: unknown) => { if (active) logout(
-        reason instanceof ApiError && reason.status === 401
+      .then((current) => { if (active) { setUser(current); setConnectionError(false); } })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        if (isConnectionError(reason)) { setConnectionError(true); return; }
+        logout(reason instanceof ApiError && reason.status === 401
           ? "Tu sesión venció. Ingresa nuevamente."
-          : "No fue posible verificar la sesión. Ingresa nuevamente.",
-      ); })
+          : "No fue posible verificar la sesión. Ingresa nuevamente.");
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [logout, token]);
@@ -98,9 +104,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(currentUser);
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    if (!token) throw new Error("Inicia sesión nuevamente.");
+    const result = await apiRequest<TokenResponse>("/auth/change-password", {
+      method: "POST", token,
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    const current = await apiRequest<CurrentUser>("/auth/me", { token: result.access_token });
+    tokenStorage.set(result.access_token);
+    setToken(result.access_token);
+    setUser(current);
+  }, [token]);
+
   const value = useMemo(
-    () => ({ user, token, loading, notice, login, logout }),
-    [user, token, loading, notice, login, logout],
+    () => ({ user, token, loading, notice, connectionError, login, changePassword, logout }),
+    [user, token, loading, notice, connectionError, login, changePassword, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

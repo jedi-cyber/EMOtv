@@ -6,6 +6,13 @@ from pydantic import BaseModel, Field
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService
 from emotv.application.ports import UserRepository
 from emotv.domain import AccessAction, Activity, PostureId, User
+from emotv.domain.activity import ActivityStep
+
+
+class ActivityStepRequest(BaseModel):
+    posture: PostureId
+    instruction: str = Field(min_length=1, max_length=1000)
+    duration_seconds: float = Field(gt=0)
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 
@@ -16,9 +23,11 @@ class ActivityRequest(BaseModel):
     required_posture: PostureId
     duration_seconds: float = Field(gt=0)
     repetitions: int = Field(default=1, ge=1)
+    steps: list[ActivityStepRequest] = Field(default_factory=list)
 
     def to_domain(self) -> Activity:
-        return Activity(**self.model_dump())
+        data = self.model_dump(exclude={"steps"})
+        return Activity(**data, steps=tuple(ActivityStep(**step.model_dump()) for step in self.steps))
 
 
 class ActivityResponse(BaseModel):
@@ -28,6 +37,7 @@ class ActivityResponse(BaseModel):
     required_posture: PostureId
     duration_seconds: float
     repetitions: int
+    steps: list[ActivityStepRequest]
 
     @classmethod
     def from_domain(cls, activity: Activity) -> "ActivityResponse":
@@ -38,6 +48,8 @@ class ActivityResponse(BaseModel):
             "required_posture": activity.required_posture,
             "duration_seconds": activity.duration_seconds,
             "repetitions": activity.repetitions,
+            "steps": [ActivityStepRequest(posture=step.posture, instruction=step.instruction,
+                                          duration_seconds=step.duration_seconds) for step in activity.steps],
         })
 
 

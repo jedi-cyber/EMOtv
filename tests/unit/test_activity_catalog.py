@@ -54,17 +54,18 @@ class ActivityTests(unittest.TestCase):
 
 
 class ActivityCatalogTests(unittest.TestCase):
-    def test_default_catalog_has_one_activity_per_implemented_posture(self) -> None:
+    def test_default_catalog_contains_single_and_sequential_activities(self) -> None:
         catalog = ActivityCatalog()
 
-        self.assertEqual(len(catalog.list_all()), 3)
+        self.assertGreaterEqual(len(catalog.list_all()), 9)
         for posture_id in (
             PostureId.ARMS_UP,
             PostureId.ARMS_OPEN,
             PostureId.HANDS_ON_HIPS,
         ):
             with self.subTest(posture_id=posture_id):
-                self.assertEqual(len(catalog.for_posture(posture_id)), 1)
+                self.assertGreaterEqual(len(catalog.for_posture(posture_id)), 1)
+        self.assertEqual(len(catalog.get("morning_mobility").steps), 3)
 
     def test_get_returns_activity_by_stable_identifier(self) -> None:
         activity = ActivityCatalog().get("arms_up_5s")

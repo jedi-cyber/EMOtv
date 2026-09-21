@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer, UniqueConstraint, Index, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,6 +23,7 @@ class ActivityRecord(Base):
     required_posture: Mapped[str] = mapped_column(String(32), nullable=False)
     duration_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     repetitions: Mapped[int] = mapped_column(Integer, nullable=False)
+    steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class SessionRecord(Base):
@@ -102,6 +103,8 @@ class UserRecord(Base):
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -127,3 +130,21 @@ class ConsentRecordModel(Base):
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ConsentPolicyRecord(Base):
+    __tablename__ = "consent_policies"
+    __table_args__ = (
+        UniqueConstraint("code", "version", name="uq_consent_policies_code_version"),
+        Index("uq_consent_policies_single_active", "is_active", unique=True,
+              postgresql_where=text("is_active = true"), sqlite_where=text("is_active = 1")),
+    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code: Mapped[str] = mapped_column(String(48), nullable=False)
+    version: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content: Mapped[str] = mapped_column(String(16000), nullable=False)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -1,8 +1,9 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, Link, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisPage } from "../src/pages/AnalysisPage";
+import { App } from "../src/App";
 import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest, ApiError } from "../src/api/http";
 
@@ -27,8 +28,12 @@ function camera(getUserMedia = vi.fn()) {
   vi.stubGlobal("navigator", Object.create(navigator, { mediaDevices: { value: { getUserMedia }, configurable: true } }));
   return getUserMedia;
 }
-function page() {
-  return render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><MemoryRouter initialEntries={["/analysis?activity=arms_up_5s"]}><AnalysisPage /></MemoryRouter></AuthContext.Provider>);
+function page(withNavigation = false) {
+  const router = createMemoryRouter([
+    { path: "/analysis", element: <>{withNavigation && <Link to="/dashboard">Ir al inicio</Link>}<AnalysisPage /></> },
+    { path: "/dashboard", element: <p>Página de inicio</p> },
+  ], { initialEntries: ["/analysis?activity=arms_up_5s"] });
+  return render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
 }
 
 beforeEach(() => {
@@ -89,6 +94,8 @@ describe("cámara y ciclo de actividad", () => {
     const view = page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
     await waitFor(() => expect(Socket.instances).toHaveLength(1)); const socket = Socket.instances[0];
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "status", state: "performing_exercise", progress: .5 }) }));
+    expect(screen.getByText("Etapa 3 de 3")).toBeInTheDocument();
+    expect(screen.getByText("Realizar actividad")).toHaveAttribute("aria-current", "step");
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", state: "completed", progress: 1 }) }));
     expect(screen.getByRole("link", { name: "Ver resultado" })).toBeInTheDocument(); expect(stop).toHaveBeenCalledOnce();
@@ -101,6 +108,40 @@ describe("cámara y ciclo de actividad", () => {
     act(() => Socket.instances[0].onclose?.());
     expect(screen.getByRole("alert")).toHaveTextContent("Se perdió la conexión"); expect(stop).toHaveBeenCalledOnce();
     view.unmount(); expect(apiRequest).toHaveBeenCalledWith("/sessions/s/cancel", expect.objectContaining({ method: "POST" }));
+  });
+  it("advierte antes de salir y cancela solo al confirmar", async () => {
+    const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
+    page(true); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    await userEvent.click(screen.getByRole("link", { name: "Ir al inicio" }));
+    expect(screen.getByRole("alertdialog", { name: "Salir del análisis" })).toBeInTheDocument();
+    expect(apiRequest).not.toHaveBeenCalledWith("/sessions/s/cancel", expect.anything());
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Ir al inicio" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar sesión y salir" }));
+    expect(await screen.findByText("Página de inicio")).toBeInTheDocument();
+    expect(apiRequest).toHaveBeenCalledWith("/sessions/s/cancel", expect.objectContaining({ method: "POST" }));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+  it("muestra un acceso a la sesión activa en la navegación", async () => {
+    camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
+    const router = createMemoryRouter([{ path: "*", element: <App /> }], { initialEntries: ["/analysis?activity=arms_up_5s"] });
+    render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
+    expect(screen.queryByRole("link", { name: /Sesión activa/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await waitFor(() => expect(screen.getAllByRole("link", { name: /Sesión activa/ })).toHaveLength(2));
+    expect(screen.getAllByRole("link", { name: /Sesión activa/ })[0]).toHaveAttribute("href", "/analysis?activity=arms_up_5s");
+  });
+  it("permanece en el análisis si falla la cancelación al salir", async () => {
+    camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
+    page(true); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(503, "No se pudo cancelar"));
+    await userEvent.click(screen.getByRole("link", { name: "Ir al inicio" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar sesión y salir" }));
+    expect(screen.getByRole("alertdialog", { name: "Salir del análisis" })).toBeInTheDocument();
+    expect(screen.queryByText("Página de inicio")).not.toBeInTheDocument();
   });
   it("detiene una cámara cuyo permiso llega después de abandonar la pantalla", async () => {
     let resolve!: (stream: unknown) => void;

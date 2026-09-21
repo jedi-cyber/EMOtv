@@ -64,3 +64,9 @@ class ExerciseService:
             elapsed_seconds=0.0,
         )
         return self._status
+
+    def start_step(self, duration_seconds: float) -> None:
+        if duration_seconds <= 0:
+            raise ValueError("duration_seconds debe ser mayor que cero")
+        self.duration_seconds = float(duration_seconds)
+        self.reset()

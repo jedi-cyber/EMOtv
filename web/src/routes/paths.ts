@@ -1,0 +1,22 @@
+// URLs públicas del frontend. Mantenerlas independientes de las rutas de la API.
+export const paths = {
+  login: "/login",
+  firstAccess: "/first-access",
+  consent: "/consent",
+  dashboard: "/dashboard",
+  activities: "/activities",
+  activity: (id: string) => `/activities/${encodeURIComponent(id)}`,
+  activityPattern: "/activities/:activityId",
+  analysis: "/analysis",
+  analysisForActivity: (id: string) => `/analysis?activity=${encodeURIComponent(id)}`,
+  sessions: "/sessions",
+  session: (id: string) => `/sessions/${encodeURIComponent(id)}`,
+  sessionPattern: "/sessions/:sessionId",
+  students: "/students",
+  studentSessions: (id: string) => `/students/${encodeURIComponent(id)}/sessions`,
+  studentSessionsPattern: "/students/:studentId/sessions",
+  users: "/users",
+  adminActivities: "/admin/activities",
+  unauthorized: "/unauthorized",
+  connectionError: "/connection-error",
+} as const;

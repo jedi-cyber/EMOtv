@@ -1,5 +1,10 @@
 # Política preliminar de privacidad y gobierno de datos de EMOtv
 
+> Este documento es una guía/borrador de gobierno para administración, **no**
+> el consentimiento que acepta el estudiante. Para demos se usa
+> `docs/consent-demo.md`; el despliegue se describe en
+> `docs/consent-deployment.md`.
+
 **Estado:** borrador técnico para aprobación institucional.  
 **Propietario propuesto:** Universidad Nacional Hermilio Valdizán (por confirmar).  
 **Revisión obligatoria:** Facultad de Psicología, asesoría jurídica, seguridad/TI

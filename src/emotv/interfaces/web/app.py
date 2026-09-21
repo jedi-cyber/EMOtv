@@ -10,13 +10,15 @@ from fastapi.staticfiles import StaticFiles
 
 from emotv.application.vision_service import VisionService
 from emotv.application import ActivityCatalog, AuthenticationService, SessionService
+from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
-from emotv.config import DATABASE_URL, JWT_SECRET_KEY
+from emotv.config import BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_consent_mode
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
     PostgresConsentRepository,
     PostgresSessionRepository,
+    PostgresConsentPolicyRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -46,6 +48,7 @@ app = FastAPI(title="EMOtv API", version="1.0.0", docs_url=None if web_settings.
 configure_web_security(app, web_settings)
 activity_catalog = ActivityCatalog()
 model_admission = ServerModelAdmission()
+consent_mode = get_consent_mode()
 
 if DATABASE_URL and JWT_SECRET_KEY:
     database_engine = create_database_engine(DATABASE_URL)
@@ -53,14 +56,17 @@ if DATABASE_URL and JWT_SECRET_KEY:
     database_sessions = create_session_factory(database_engine)
     student_repository = PostgresStudentRepository(database_sessions)
     consent_repository = PostgresConsentRepository(database_sessions)
+    consent_policy_service = ConsentPolicyService(PostgresConsentPolicyRepository(database_sessions), consent_mode)
     session_repository = PostgresSessionRepository(database_sessions)
     authentication_service = AuthenticationService(user_repository, JWT_SECRET_KEY)
     activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
     current_user = create_current_user_dependency(authentication_service, user_repository)
-    app.include_router(create_identity_router(authentication_service, user_repository, student_repository, consent_repository))
+    app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
+                                              consent_repository, consent_policy_service))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
+        consent_policy_service=consent_policy_service,
     )
     app.include_router(create_auth_router(authentication_service, user_repository))
     app.include_router(create_activity_router(
@@ -92,6 +98,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
             PoseService(),
         ),
         model_admission=model_admission.evaluate,
+        emotion_analyzer_factory=lambda model_id: EmotionFrameAnalyzer(
+            classifier=create_emotion_classifier(model_id),
+        ),
+        adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
+            activity, analyzer, PoseService(), initial_emotion=emotion,
+        ),
     ))
 else:
     authentication_service = None
@@ -107,6 +119,9 @@ else:
 @app.on_event("startup")
 async def startup_event():
     """Deja disponible la API sin bloquearla al abrir la cámara."""
+
+    if DATABASE_URL and JWT_SECRET_KEY and consent_mode == "demo":
+        consent_policy_service.ensure_demo_policy(BASE_DIR / "docs" / "consent-demo.md")
 
     print("API EMOtv iniciada. La cámara permanece apagada.")
 
@@ -213,7 +228,9 @@ async def websocket_emotions(websocket: WebSocket):
         except (jwt.InvalidTokenError, ValueError):
             await websocket.close(code=4401)
             return
-        if user is None or not user.is_active or credentials.get("type") != "authenticate":
+        if (user is None or not user.is_active or user.must_change_password
+                or claims.get("tv") != user.token_version
+                or credentials.get("type") != "authenticate"):
             await websocket.close(code=4401)
             return
         if user.role is not Role.ADMIN:
@@ -221,12 +238,14 @@ async def websocket_emotions(websocket: WebSocket):
             return
         while True:
             try:
-                authentication_service.decode_access_token(str(credentials.get("token", "")))
+                current_claims = authentication_service.decode_access_token(str(credentials.get("token", "")))
             except jwt.InvalidTokenError:
                 await websocket.close(code=4401)
                 return
             current = user_repository.get_by_id(user.id)
-            if current is None or not current.is_active or current.role is not Role.ADMIN:
+            if (current is None or not current.is_active or current.must_change_password
+                    or current_claims.get("tv") != current.token_version
+                    or current.role is not Role.ADMIN):
                 await websocket.close(code=4403)
                 return
             emotion, confidence = vision_service.get_current_emotion()

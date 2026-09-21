@@ -14,6 +14,8 @@ class User:
     role: Role | str
     created_at: datetime
     is_active: bool = True
+    must_change_password: bool = False
+    token_version: int = 0
 
     def __post_init__(self) -> None:
         user_id, email = self.id.strip(), self.email.strip().lower()

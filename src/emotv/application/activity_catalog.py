@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from threading import RLock
 
-from emotv.domain.activity import Activity
+from emotv.domain.activity import Activity, ActivityStep
 from emotv.domain.posture_id import PostureId
 from emotv.application.ports.activity_repository import ActivityRepository
 
@@ -30,6 +30,18 @@ DEFAULT_ACTIVITIES = (
         required_posture=PostureId.HANDS_ON_HIPS,
         duration_seconds=5.0,
     ),
+    Activity("morning_mobility", "Movilidad suave", "Alterna brazos abiertos, arriba y manos en las caderas.", PostureId.ARMS_OPEN, 4.0,
+             steps=(ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos a la altura de los hombros", 4), ActivityStep(PostureId.ARMS_UP, "Eleva ambos brazos", 4), ActivityStep(PostureId.HANDS_ON_HIPS, "Coloca las manos en las caderas", 4))),
+    Activity("upper_body_flow", "Movimiento de brazos", "Mueve los brazos al frente, abiertos y arriba.", PostureId.ARMS_FORWARD, 4.0,
+             steps=(ActivityStep(PostureId.ARMS_FORWARD, "Extiende los brazos al frente", 4), ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 4), ActivityStep(PostureId.ARMS_UP, "Eleva los brazos", 4))),
+    Activity("gentle_squat_flow", "Sentadilla y apertura", "Realiza una sentadilla suave y abre los brazos.", PostureId.SQUAT, 3.0,
+             steps=(ActivityStep(PostureId.SQUAT, "Flexiona las rodillas suavemente, sin forzarte", 3), ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 4), ActivityStep(PostureId.HANDS_ON_HIPS, "Descansa con las manos en las caderas", 4))),
+    Activity("open_and_reach", "Abrir y alcanzar", "Abre, eleva y extiende los brazos al frente.", PostureId.ARMS_OPEN, 4.0,
+             steps=(ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 4), ActivityStep(PostureId.ARMS_UP, "Eleva los brazos", 4), ActivityStep(PostureId.ARMS_FORWARD, "Extiende los brazos al frente", 4))),
+    Activity("balanced_postures", "Posturas equilibradas", "Alterna manos en las caderas, brazos al frente y abiertos.", PostureId.HANDS_ON_HIPS, 4.0,
+             steps=(ActivityStep(PostureId.HANDS_ON_HIPS, "Coloca las manos en las caderas", 4), ActivityStep(PostureId.ARMS_FORWARD, "Extiende los brazos al frente", 4), ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 4))),
+    Activity("full_body_flow", "Movimiento completo", "Combina brazos elevados, sentadilla y apertura.", PostureId.ARMS_UP, 4.0,
+             steps=(ActivityStep(PostureId.ARMS_UP, "Eleva los brazos", 4), ActivityStep(PostureId.SQUAT, "Flexiona las rodillas suavemente", 3), ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 4))),
 )
 
 

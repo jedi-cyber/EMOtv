@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
+import random
+from threading import Lock
 
 from emotv.application.activity_catalog import ActivityCatalog
 from emotv.domain.activity import Activity
@@ -11,14 +13,14 @@ from emotv.domain.activity import Activity
 # Deben ser revisadas por profesionales de Psicología antes de uso real.
 DEFAULT_ACTIVITIES_BY_EMOTION: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
-        "sadness": ("arms_up_5s", "arms_open_5s"),
-        "anger": ("arms_open_5s",),
-        "neutral": (),
-        "happiness": (),
-        "surprise": (),
-        "disgust": (),
-        "fear": (),
-        "contempt": (),
+        "sadness": ("morning_mobility", "open_and_reach", "arms_up_5s"),
+        "anger": ("upper_body_flow", "balanced_postures", "arms_open_5s"),
+        "neutral": ("balanced_postures", "morning_mobility", "upper_body_flow"),
+        "happiness": ("full_body_flow", "open_and_reach", "gentle_squat_flow"),
+        "surprise": ("open_and_reach", "upper_body_flow"),
+        "disgust": ("balanced_postures", "morning_mobility"),
+        "fear": ("morning_mobility", "balanced_postures"),
+        "contempt": ("upper_body_flow", "open_and_reach"),
     }
 )
 
@@ -44,6 +46,8 @@ class ActivityRecommendationService:
             normalized_mapping[normalized_emotion] = normalized_ids
 
         self._activities_by_emotion = MappingProxyType(normalized_mapping)
+        self._last_by_emotion: dict[str, str] = {}
+        self._lock = Lock()
 
     @property
     def supported_emotions(self) -> frozenset[str]:
@@ -61,6 +65,19 @@ class ActivityRecommendationService:
         normalized_emotion = self._normalize_emotion(emotion)
         activity_ids = self._activities_by_emotion.get(normalized_emotion, ())
         return tuple(self.catalog.get(activity_id) for activity_id in activity_ids)
+
+    def recommend_varied(self, emotion: str, *, exclude_ids: Sequence[str] = ()) -> Activity | None:
+        """Elige entre candidatos configurados, evitando la última elección si es posible."""
+        candidates = self.recommend_all(emotion)
+        if not candidates:
+            return None
+        key = self._normalize_emotion(emotion)
+        with self._lock:
+            preferred = [item for item in candidates if item.id not in exclude_ids
+                         and item.id != self._last_by_emotion.get(key)]
+            selected = random.SystemRandom().choice(preferred or [item for item in candidates if item.id not in exclude_ids] or list(candidates))
+            self._last_by_emotion[key] = selected.id
+            return selected
 
     @staticmethod
     def _normalize_emotion(emotion: str) -> str:

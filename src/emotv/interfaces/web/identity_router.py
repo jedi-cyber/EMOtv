@@ -1,26 +1,31 @@
 from dataclasses import replace
 from datetime import datetime
+import secrets
+import os
+from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
 from emotv.application import AuthenticationService, IdentityRegistrationService
+from emotv.application.consent_policy_service import ConsentPolicyService
+from emotv.domain.consent_policy import ConsentPolicy
 from emotv.application.ports import UserRepository, StudentRepository, ConsentRepository
 from emotv.domain import Role, User
 from emotv.interfaces.web.auth_router import create_current_user_dependency, UserResponse
 
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     email: str = Field(min_length=3, max_length=320)
-    password: str = Field(min_length=12, max_length=128)
     role: Role
     student_code: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     email: str | None = Field(default=None, min_length=3, max_length=320)
-    password: str | None = Field(default=None, min_length=12, max_length=128)
     role: Role | None = None
     is_active: bool | None = None
 
@@ -29,6 +34,10 @@ class StudentResponse(BaseModel):
     id: str
     user_id: str
     student_code: str
+
+
+class CreatedUserResponse(UserResponse):
+    temporary_password: str | None = None
 
 
 class ConsentRequest(BaseModel):
@@ -43,10 +52,34 @@ class ConsentResponse(BaseModel):
     revoked_at: datetime | None
 
 
+class ConsentPolicyResponse(BaseModel):
+    id: str | None = None
+    code: str | None = None
+    version: str | None
+    title: str | None = None
+    content: str | None = None
+    effective_at: datetime | None = None
+    is_demo: bool = False
+    approved: bool = False
+    mode: str = "production"
+    url: str | None
+    available: bool
+
+
+class ConsentPolicyCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=48)
+    version: str = Field(min_length=1, max_length=16)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=30, max_length=16000)
+    effective_at: datetime
+    approved: bool = False
+
+
 def create_identity_router(authentication: AuthenticationService | None,
                            users: UserRepository | None,
                            students: StudentRepository | None,
-                           consents: ConsentRepository | None) -> APIRouter:
+                           consents: ConsentRepository | None,
+                           policy_service: ConsentPolicyService | None = None) -> APIRouter:
     router = APIRouter(tags=["identity"])
     current_user = create_current_user_dependency(authentication, users)
 
@@ -83,24 +116,28 @@ def create_identity_router(authentication: AuthenticationService | None,
             raise HTTPException(404, "Usuario no encontrado")
         return UserResponse.from_domain(item)
 
-    @router.post("/users", response_model=UserResponse, status_code=201)
+    @router.post("/users", response_model=CreatedUserResponse, status_code=201)
     def create_user(request: UserCreate, user: User = Depends(current_user)):
         require_admin(user)
         service = configured()
+        temporary_password = secrets.token_urlsafe(24)
         try:
             if request.role is Role.STUDENT:
                 if not request.student_code or not request.student_code.strip():
                     raise HTTPException(422, "student_code es obligatorio para estudiantes")
-                item, _ = service.register_student(request.email, request.password, request.student_code)
+                item, _ = service.register_student(request.email, temporary_password, request.student_code,
+                                                   must_change_password=True)
             else:
                 if request.student_code is not None:
                     raise HTTPException(422, "student_code solo corresponde a estudiantes")
-                item = service.register_user(request.email, request.password, request.role)
+                item = service.register_user(request.email, temporary_password, request.role,
+                                             must_change_password=True)
         except IntegrityError as error:
             raise HTTPException(409, "Correo o código ya registrado") from error
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
-        return UserResponse.from_domain(item)
+        return CreatedUserResponse(**UserResponse.from_domain(item).model_dump(),
+                                   temporary_password=temporary_password)
 
     @router.patch("/users/{user_id}", response_model=UserResponse)
     def update_user(user_id: str, request: UserUpdate, user: User = Depends(current_user)):
@@ -115,8 +152,6 @@ def create_identity_router(authentication: AuthenticationService | None,
             raise HTTPException(409, "No se puede convertir un perfil estudiantil mediante cambio de rol")
         if item.id == user.id and (changes.get("is_active") is False or role is not Role.ADMIN):
             raise HTTPException(409, "No puedes desactivar tu cuenta ni retirar tu propio rol administrativo")
-        if "password" in changes:
-            changes["password_hash"] = service.password_hasher.hash_password(changes.pop("password"))
         try:
             updated = replace(item, **changes)
             existing = service.users.get_by_email(updated.email)
@@ -128,6 +163,22 @@ def create_identity_router(authentication: AuthenticationService | None,
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         return UserResponse.from_domain(updated)
+
+    @router.post("/users/{user_id}/reset-password", response_model=CreatedUserResponse)
+    def reset_password(user_id: str, user: User = Depends(current_user)):
+        require_admin(user)
+        if user_id == user.id:
+            raise HTTPException(409, "Cambia tu propia contraseña desde tu cuenta")
+        service = configured()
+        target = service.users.get_by_id(user_id)
+        if target is None:
+            raise HTTPException(404, "Usuario no encontrado")
+        temporary_password = secrets.token_urlsafe(24)
+        updated = replace(target, password_hash=service.password_hasher.hash_password(temporary_password),
+                          must_change_password=True, token_version=target.token_version + 1)
+        service.users.save(updated)
+        return CreatedUserResponse(**UserResponse.from_domain(updated).model_dump(),
+                                   temporary_password=temporary_password)
 
     @router.delete("/users/{user_id}", response_model=UserResponse)
     def deactivate_user(user_id: str, user: User = Depends(current_user)):
@@ -152,6 +203,75 @@ def create_identity_router(authentication: AuthenticationService | None,
         return ConsentResponse(id=item.id, student_id=item.student_id, policy_version=item.policy_version,
                                granted_at=item.granted_at, revoked_at=item.revoked_at)
 
+    def active_policy() -> ConsentPolicyResponse:
+        if policy_service is not None:
+            policy = policy_service.active()
+            if policy is None:
+                return ConsentPolicyResponse(version=None, url=None, available=False,
+                                             mode=policy_service.mode)
+            return ConsentPolicyResponse(id=policy.id, code=policy.code,
+                version=policy.version, title=policy.title, content=policy.content,
+                effective_at=policy.effective_at, is_demo=policy.is_demo,
+                approved=policy.approved, url=None, available=True,
+                mode=policy_service.mode)
+        version = os.getenv("CONSENT_POLICY_VERSION", "").strip()
+        url = os.getenv("CONSENT_POLICY_URL", "").strip()
+        available = bool(version and url and
+                         (url.startswith("https://") or url.startswith("http://localhost") or
+                          url.startswith("http://127.0.0.1")))
+        return ConsentPolicyResponse(version=version if available else None,
+                                     url=url if available else None, available=available)
+
+    @router.get("/consent-policy", response_model=ConsentPolicyResponse)
+    def get_consent_policy(user: User = Depends(current_user)):
+        return active_policy()
+
+    @router.get("/consent-policies", response_model=list[ConsentPolicyResponse])
+    def list_policies(user: User = Depends(current_user)):
+        require_admin(user)
+        if policy_service is None:
+            raise HTTPException(503, "Catálogo de políticas no configurado")
+        return [ConsentPolicyResponse(id=item.id, code=item.code, version=item.version,
+                title=item.title, content=item.content, effective_at=item.effective_at,
+                is_demo=item.is_demo, approved=item.approved, url=None,
+                available=item.is_active, mode=policy_service.mode)
+                for item in policy_service.repository.list_all()]
+
+    @router.post("/consent-policies", response_model=ConsentPolicyResponse, status_code=201)
+    def create_policy(request: ConsentPolicyCreate, user: User = Depends(current_user)):
+        require_admin(user)
+        if policy_service is None:
+            raise HTTPException(503, "Catálogo de políticas no configurado")
+        if request.effective_at.tzinfo is None:
+            raise HTTPException(422, "effective_at requiere zona horaria")
+        policy_id = f"{request.code.strip()}:{request.version.strip()}"
+        try:
+            policy = policy_service.repository.save(ConsentPolicy(
+                id=policy_id, code=request.code, version=request.version,
+                title=request.title, content=request.content,
+                effective_at=request.effective_at.astimezone(timezone.utc),
+                is_demo=False, approved=request.approved,
+            ))
+        except (ValueError, IntegrityError) as error:
+            raise HTTPException(409, str(error)) from error
+        return ConsentPolicyResponse(id=policy.id, code=policy.code, version=policy.version,
+            title=policy.title, content=policy.content, effective_at=policy.effective_at,
+            is_demo=policy.is_demo, approved=policy.approved, url=None,
+            available=False, mode=policy_service.mode)
+
+    @router.post("/consent-policies/{policy_id}/activate", response_model=ConsentPolicyResponse)
+    def activate_policy(policy_id: str, user: User = Depends(current_user)):
+        require_admin(user)
+        if policy_service is None:
+            raise HTTPException(503, "Catálogo de políticas no configurado")
+        try:
+            policy_service.activate(policy_id)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return active_policy()
+
     @router.get("/students/{student_id}/consents/active", response_model=ConsentResponse | None)
     def active_consent(student_id: str, user: User = Depends(current_user)):
         student_access(student_id, user)
@@ -165,7 +285,15 @@ def create_identity_router(authentication: AuthenticationService | None,
 
     @router.post("/students/{student_id}/consents", response_model=ConsentResponse, status_code=201)
     def grant_consent(student_id: str, request: ConsentRequest, user: User = Depends(current_user)):
+        if user.role is not Role.STUDENT:
+            raise HTTPException(403, "La aceptación debe realizarla el estudiante desde su cuenta")
         student_access(student_id, user, write=True)
+        policy = active_policy()
+        if not policy.available:
+            raise HTTPException(503, "No hay una política de consentimiento activa")
+        expected = policy.id or policy.version
+        if request.policy_version != expected:
+            raise HTTPException(409, "La versión de la política ha cambiado; revísala nuevamente")
         try:
             return consent_response(configured().grant_consent(student_id, request.policy_version))
         except (RuntimeError, IntegrityError) as error:

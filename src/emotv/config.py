@@ -20,6 +20,17 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
+def get_consent_mode(environ: Mapping[str, str] | None = None) -> str:
+    source = os.environ if environ is None else environ
+    environment = source.get("ENVIRONMENT", "development").strip().lower()
+    mode = source.get("CONSENT_MODE", "production" if environment == "production" else "demo").strip().lower()
+    if mode not in {"development", "demo", "production"}:
+        raise ValueError("CONSENT_MODE debe ser development, demo o production")
+    if environment == "production" and mode != "production":
+        raise ValueError("Producción no permite desactivar el consentimiento")
+    return mode
+
+
 def get_database_url(environ: Mapping[str, str] | None = None) -> str:
     """Obtiene DATABASE_URL y falla de forma explícita si no está configurada."""
 

@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { ApiError } from "../api/http";
+import { ApiError, isConnectionError } from "../api/http";
 import { useAuth } from "../auth/useAuth";
 
 export function LoginPage() {
@@ -24,7 +24,8 @@ export function LoginPage() {
         ?.from?.pathname ?? "/dashboard";
       navigate(destination, { replace: true });
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "No se pudo conectar con EMOtv");
+      setError(isConnectionError(reason) ? "No podemos conectar con EMOtv en este momento. Inténtalo más tarde."
+        : reason instanceof ApiError ? reason.message : "No se pudo completar el ingreso.");
     } finally {
       setSubmitting(false);
     }

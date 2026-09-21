@@ -16,29 +16,35 @@ import { StudentSessionsPage } from "./pages/StudentSessionsPage";
 import { StudentsPage } from "./pages/StudentsPage";
 import { UnauthorizedPage } from "./pages/UnauthorizedPage";
 import { UsersPage } from "./pages/UsersPage";
+import { FirstAccessPage } from "./pages/FirstAccessPage";
+import { ConsentPage } from "./pages/ConsentPage";
+import { ActiveSessionProvider } from "./analysis/ActiveSessionContext";
+import { paths } from "./routes/paths";
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
+    <ActiveSessionProvider><Routes>
+      <Route path={paths.login} element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
+        <Route path={paths.firstAccess} element={<FirstAccessPage />} />
         <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="analysis" element={<RoleRoute allowed={["student"]}><AnalysisPage /></RoleRoute>} />
-          <Route path="activities" element={<ActivitiesPage />} />
-          <Route path="activities/:activityId" element={<ActivityDetailPage />} />
-          <Route path="sessions" element={<SessionsPage />} />
-          <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
-          <Route path="students" element={<RoleRoute allowed={["psychologist", "admin"]}><StudentsPage /></RoleRoute>} />
-          <Route path="students/:studentId/sessions" element={<RoleRoute allowed={["psychologist", "admin"]}><StudentSessionsPage /></RoleRoute>} />
-          <Route path="users" element={<RoleRoute allowed={["admin"]}><UsersPage /></RoleRoute>} />
-          <Route path="admin/activities" element={<RoleRoute allowed={["admin"]}><AdminActivitiesPage /></RoleRoute>} />
-          <Route path="unauthorized" element={<UnauthorizedPage />} />
-          <Route path="connection-error" element={<ConnectionErrorPage />} />
+          <Route index element={<Navigate to={paths.dashboard} replace />} />
+          <Route path={paths.dashboard} element={<DashboardPage />} />
+          <Route path={paths.analysis} element={<RoleRoute allowed={["student"]}><AnalysisPage /></RoleRoute>} />
+          <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
+          <Route path={paths.activities} element={<ActivitiesPage />} />
+          <Route path={paths.activityPattern} element={<ActivityDetailPage />} />
+          <Route path={paths.sessions} element={<SessionsPage />} />
+          <Route path={paths.sessionPattern} element={<SessionDetailPage />} />
+          <Route path={paths.students} element={<RoleRoute allowed={["psychologist", "admin"]}><StudentsPage /></RoleRoute>} />
+          <Route path={paths.studentSessionsPattern} element={<RoleRoute allowed={["psychologist", "admin"]}><StudentSessionsPage /></RoleRoute>} />
+          <Route path={paths.users} element={<RoleRoute allowed={["admin"]}><UsersPage /></RoleRoute>} />
+          <Route path={paths.adminActivities} element={<RoleRoute allowed={["admin"]}><AdminActivitiesPage /></RoleRoute>} />
+          <Route path={paths.unauthorized} element={<UnauthorizedPage />} />
+          <Route path={paths.connectionError} element={<ConnectionErrorPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    </Routes></ActiveSessionProvider>
   );
 }

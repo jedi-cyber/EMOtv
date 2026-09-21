@@ -16,15 +16,15 @@ class ActivityRecommendationServiceTests(unittest.TestCase):
 
         self.assertIsNotNone(activity)
         assert activity is not None
-        self.assertEqual(activity.id, "arms_up_5s")
-        self.assertIs(activity.required_posture, PostureId.ARMS_UP)
+        self.assertEqual(activity.id, "morning_mobility")
+        self.assertIs(activity.required_posture, PostureId.ARMS_OPEN)
 
     def test_returns_all_options_in_priority_order(self) -> None:
         activities = ActivityRecommendationService().recommend_all("sadness")
 
         self.assertEqual(
             tuple(activity.id for activity in activities),
-            ("arms_up_5s", "arms_open_5s"),
+            ("morning_mobility", "open_and_reach", "arms_up_5s"),
         )
 
     def test_normalizes_emotion(self) -> None:
@@ -32,14 +32,20 @@ class ActivityRecommendationServiceTests(unittest.TestCase):
 
         self.assertIsNotNone(activity)
         assert activity is not None
-        self.assertEqual(activity.id, "arms_open_5s")
+        self.assertEqual(activity.id, "upper_body_flow")
 
     def test_returns_none_for_emotion_without_association(self) -> None:
         service = ActivityRecommendationService()
 
-        self.assertIsNone(service.recommend("neutral"))
+        self.assertIsNotNone(service.recommend("neutral"))
         self.assertIsNone(service.recommend("unknown"))
-        self.assertEqual(service.recommend_all("happiness"), ())
+        self.assertGreater(len(service.recommend_all("happiness")), 0)
+
+    def test_varied_recommendation_avoids_immediate_repeat(self) -> None:
+        service = ActivityRecommendationService()
+        first = service.recommend_varied("sadness")
+        second = service.recommend_varied("sadness")
+        self.assertNotEqual(first.id, second.id)
 
     def test_supports_custom_catalog_and_mapping(self) -> None:
         activity = Activity(

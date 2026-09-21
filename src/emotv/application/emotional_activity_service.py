@@ -56,6 +56,8 @@ class EmotionalActivityService:
         self.pose_service = pose_service or PoseService()
         self.exercise_factory = exercise_factory
         self._exercise_service: ExerciseService | None = None
+        self._step_index = 0
+        self._elapsed_total = 0.0
         self._status = EmotionalActivityStatus(
             state=EmotionalActivityState.ANALYZING_EMOTION,
             message="Analizando expresión emocional",
@@ -98,7 +100,9 @@ class EmotionalActivityService:
             )
             return self._status
 
-        self._exercise_service = self.exercise_factory(activity.duration_seconds)
+        self._step_index = 0
+        self._elapsed_total = 0.0
+        self._exercise_service = self.exercise_factory(activity.steps[0].duration_seconds)
         self._status = EmotionalActivityStatus(
             state=EmotionalActivityState.ACTIVITY_SELECTED,
             message=activity.description,
@@ -139,13 +143,24 @@ class EmotionalActivityService:
         activity = self._status.activity
         assert activity is not None
         assert self._exercise_service is not None
-        posture = self.pose_service.validate(frame, activity.required_posture)
+        step_count = len(activity.steps) * activity.repetitions
+        step = activity.steps[self._step_index % len(activity.steps)]
+        posture = self.pose_service.validate(frame, step.posture)
         posture_correct = posture is not None and posture.detected
         exercise = self._exercise_service.update(posture_correct)
 
         if exercise.completed:
-            state = EmotionalActivityState.COMPLETED
-            message = "Actividad completada"
+            self._elapsed_total += step.duration_seconds
+            self._step_index += 1
+            if self._step_index >= step_count:
+                state = EmotionalActivityState.COMPLETED
+                message = "Actividad completada"
+            else:
+                state = EmotionalActivityState.WAITING_FOR_POSTURE
+                next_step = activity.steps[self._step_index % len(activity.steps)]
+                message = "Siguiente postura: " + next_step.instruction
+                self._exercise_service.start_step(next_step.duration_seconds)
+                exercise = self._exercise_service.status
         elif posture_correct:
             state = EmotionalActivityState.PERFORMING_EXERCISE
             message = "Mantén la postura"
@@ -153,19 +168,29 @@ class EmotionalActivityService:
             state = EmotionalActivityState.WAITING_FOR_POSTURE
             message = "Esperando la postura requerida"
 
+        from emotv.domain.exercise_status import ExerciseState, ExerciseStatus
+        overall = ExerciseStatus(
+            state=ExerciseState.COMPLETED if state is EmotionalActivityState.COMPLETED else exercise.state,
+            progress=min((self._step_index + (0 if state is EmotionalActivityState.COMPLETED else exercise.progress)) / step_count, 1.0),
+            elapsed_seconds=self._elapsed_total + (0 if state is EmotionalActivityState.COMPLETED else exercise.elapsed_seconds),
+        )
         self._status = EmotionalActivityStatus(
             state=state,
             message=message,
             emotion=self._status.emotion,
             activity=activity,
             posture=posture,
-            exercise=exercise,
+            exercise=overall,
+            step_index=min(self._step_index, step_count - 1),
+            step_count=step_count,
         )
         return self._status
 
     def reset(self) -> EmotionalActivityStatus:
         self.emotion_stabilizer.reset()
         self._exercise_service = None
+        self._step_index = 0
+        self._elapsed_total = 0.0
         self._status = EmotionalActivityStatus(
             state=EmotionalActivityState.ANALYZING_EMOTION,
             message="Analizando expresión emocional",
