@@ -1,5 +1,17 @@
 # Scripts de EMOtv
 
+## Auditoría de actividades PostgreSQL
+
+```powershell
+python scripts/audit_postgres_activities.py
+python scripts/audit_postgres_activities.py --repair
+```
+
+El primer comando es de solo lectura. Comprueba que las actividades usadas por
+la recomendación automática existan, tengan al menos dos pasos y que todas sus
+posturas cuenten con un validador. `--repair` solo crea candidatas ausentes o
+restaura candidatas con menos de dos pasos desde el catálogo predeterminado.
+
 Ejecuta los scripts desde la raíz del repositorio y con `.venv` activado.
 
 ## Pose corporal

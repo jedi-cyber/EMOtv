@@ -1,6 +1,7 @@
 """API y WebSocket con adaptadores SQLAlchemy aislados y procesador determinista."""
 from datetime import datetime, timezone
 from dataclasses import replace
+import time
 
 import cv2
 import numpy as np
@@ -46,11 +47,32 @@ class AdaptiveProcessor(Processor):
     def __init__(self, activity, emotion):
         super().__init__(activity)
         self.emotion = emotion
+        self._next_step_index = 0
+        self._reported_step_index = 0
+
+    @property
+    def current_step(self):
+        return self.activity.steps[self._reported_step_index % len(self.activity.steps)]
 
     def process_frame(self, frame):
-        return EmotionalActivityStatus(EmotionalActivityState.COMPLETED, "Completada",
-            self.emotion, self.activity,
-            exercise=ExerciseStatus(ExerciseState.COMPLETED, 1, 5))
+        step_count = len(self.activity.steps) * self.activity.repetitions
+        self._reported_step_index = self._next_step_index
+        completed = self._next_step_index == step_count - 1
+        status = EmotionalActivityStatus(
+            EmotionalActivityState.COMPLETED if completed else EmotionalActivityState.PERFORMING_EXERCISE,
+            "Completada" if completed else "Siguiente postura",
+            self.emotion,
+            self.activity,
+            exercise=ExerciseStatus(
+                ExerciseState.COMPLETED if completed else ExerciseState.HOLDING,
+                (self._next_step_index + 1) / step_count,
+                self._next_step_index + 1,
+            ),
+            step_index=self._next_step_index,
+            step_count=step_count,
+        )
+        self._next_step_index += 1
+        return status
 
 
 @pytest.fixture
@@ -172,10 +194,58 @@ def test_selected_model_reaches_processor(flow, model_id):
         assert ready["type"] == "ready"
         assert ready["emotion_model_id"] == model_id
     assert processors[-1].model_id == model_id
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and (
+        not processors[-1].closed
+        or sessions.get_session(session.id).state is SessionState.IN_PROGRESS
+    ):
+        time.sleep(0.01)
     assert processors[-1].closed
     assert sessions.get_session(session.id).state is SessionState.CANCELLED
     assert sessions.get_session(session.id).emotion_model_id == model_id
     assert sessions.get_session(session.id).emotion_model_version == EmotionModelCatalog().get(model_id).version
+
+
+def test_recommended_sequence_uses_same_session_and_exposes_every_step(flow):
+    client, auth, user, _, _, sessions, _, processors, _ = flow
+    headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
+    session_id = client.post("/sessions", headers=headers, json={}).json()["id"]
+    _, jpeg = cv2.imencode(".jpg", np.zeros((32, 32, 3), dtype=np.uint8))
+
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({"type": "authenticate", "token": auth.create_access_token(user),
+                          "session_id": session_id, "emotion_model_id": "ferplus_onnx"})
+        assert socket.receive_json()["type"] == "ready"
+        for _ in range(4):
+            socket.send_bytes(jpeg.tobytes())
+            assert socket.receive_json()["state"] == "analyzing_emotion"
+        socket.send_bytes(jpeg.tobytes())
+        recommendation = socket.receive_json()
+        activity = recommendation["activity"]
+        assert recommendation["type"] == "recommendation"
+        assert len(activity["steps"]) >= 2
+        assert sessions.get_session(session_id).activity_id is None
+
+        socket.send_json({"type": "select_activity", "activity_id": activity["id"]})
+        started = socket.receive_json()
+        assert started["type"] == "activity_started"
+        assert started["activity"]["steps"] == activity["steps"]
+        assert sessions.get_session(session_id).id == session_id
+        assert sessions.get_session(session_id).activity_id == activity["id"]
+
+        received_steps = []
+        for expected_index, expected_step in enumerate(activity["steps"]):
+            socket.send_bytes(jpeg.tobytes())
+            update = socket.receive_json()
+            received_steps.append(update["step"])
+            assert update["step_index"] == expected_index
+            assert update["step_count"] == len(activity["steps"])
+            assert update["step"] == expected_step
+            assert update["type"] == ("completed" if expected_index == len(activity["steps"]) - 1 else "status")
+
+    assert received_steps == activity["steps"]
+    assert sessions.get_session(session_id).state is SessionState.COMPLETED
+    assert processors[-1].closed
 
 
 def test_invalid_model_is_rejected_without_loading(flow):

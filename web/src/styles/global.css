@@ -134,6 +134,13 @@ input:focus, select:focus { outline: 3px solid rgba(25,116,81,.18); border-color
 .adaptive-analysis-panel { display: grid; align-content: start; gap: .85rem; min-width: 0; }
 .adaptive-analysis-panel h2, .adaptive-analysis-panel p { margin: 0; }
 .adaptive-analysis-panel .button { justify-self: start; }
+.recommendation-card { display: grid; gap: .75rem; padding: 1.15rem; border: 1px solid #b9d8c8; border-radius: .9rem; background: #f4fbf7; }
+.recommendation-steps { display: grid; gap: .55rem; padding-top: .25rem; }
+.recommendation-steps h3 { margin: 0; font-size: 1rem; }
+.recommendation-steps ol { display: grid; gap: .55rem; margin: 0; padding-left: 1.5rem; }
+.recommendation-steps li { padding-left: .2rem; }
+.recommendation-steps li span, .recommendation-steps li small { display: block; }
+.recommendation-steps li small { margin-top: .15rem; color: #596b60; }
 .analysis-panel { padding: 1.4rem; border: 1px solid #dce5df; border-radius: 1rem; background: white; }
 .step-caption { margin: 0 0 .5rem; color: #596b60; font-size: .8rem; font-weight: 750; }
 .analysis-steps { display: grid; gap: .45rem; margin: 0 0 1.25rem; padding-left: 1.4rem; }

@@ -13,8 +13,8 @@ from emotv.domain.activity import Activity
 # Deben ser revisadas por profesionales de Psicología antes de uso real.
 DEFAULT_ACTIVITIES_BY_EMOTION: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
-        "sadness": ("morning_mobility", "open_and_reach", "arms_up_5s"),
-        "anger": ("upper_body_flow", "balanced_postures", "arms_open_5s"),
+        "sadness": ("morning_mobility", "open_and_reach"),
+        "anger": ("upper_body_flow", "balanced_postures"),
         "neutral": ("balanced_postures", "morning_mobility", "upper_body_flow"),
         "happiness": ("full_body_flow", "open_and_reach", "gentle_squat_flow"),
         "surprise": ("open_and_reach", "upper_body_flow"),
@@ -34,7 +34,10 @@ class ActivityRecommendationService:
         activities_by_emotion: Mapping[str, Sequence[str]] = (
             DEFAULT_ACTIVITIES_BY_EMOTION
         ),
+        minimum_steps: int = 2,
     ) -> None:
+        if isinstance(minimum_steps, bool) or minimum_steps < 1:
+            raise ValueError("minimum_steps debe ser un entero mayor o igual que 1")
         self.catalog = catalog or ActivityCatalog()
         normalized_mapping: dict[str, tuple[str, ...]] = {}
 
@@ -42,7 +45,12 @@ class ActivityRecommendationService:
             normalized_emotion = self._normalize_emotion(emotion)
             normalized_ids = tuple(activity_ids)
             for activity_id in normalized_ids:
-                self.catalog.get(activity_id)
+                activity = self.catalog.get(activity_id)
+                if len(activity.steps) < minimum_steps:
+                    raise ValueError(
+                        f"La actividad recomendada {activity_id} debe tener al menos "
+                        f"{minimum_steps} steps"
+                    )
             normalized_mapping[normalized_emotion] = normalized_ids
 
         self._activities_by_emotion = MappingProxyType(normalized_mapping)

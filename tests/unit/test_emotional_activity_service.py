@@ -63,7 +63,10 @@ class EmotionalActivityServiceTests(unittest.TestCase):
                 window_size=1,
                 min_samples=1,
             ),
-            recommendation_service=ActivityRecommendationService(activities_by_emotion={"sadness": ("arms_up_5s",)}),
+            recommendation_service=ActivityRecommendationService(
+                activities_by_emotion={"sadness": ("arms_up_5s",)},
+                minimum_steps=1,
+            ),
             pose_service=self.pose_service,
             exercise_factory=lambda duration: ExerciseService(duration, self.clock),
         )

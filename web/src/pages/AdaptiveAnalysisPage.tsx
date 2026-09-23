@@ -54,6 +54,7 @@ export function AdaptiveAnalysisPage() {
   const [availableActivities, setAvailableActivities] = useState<Activity[]>([]);
   const [selectedActivityId, setSelectedActivityId] = useState("");
   const [selectingActivity, setSelectingActivity] = useState(false);
+  const [showAlternatives, setShowAlternatives] = useState(false);
   const [activity, setActivity] = useState<Activity | null>(null);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState<ActivityStep | null>(null);
@@ -220,6 +221,7 @@ export function AdaptiveAnalysisPage() {
         if (result.type === "ready") { setPhase("recognizing"); resumeFrames(); }
         else if (result.type === "recommendation") {
           pauseFrames(); setPhase("choosing"); setSelectingActivity(false);
+          setShowAlternatives(false);
           setRecommendation(result.activity ?? null);
           setAvailableActivities(result.activities ?? []);
           setSelectedActivityId(result.activity?.id ?? result.activities?.[0]?.id ?? "");
@@ -265,11 +267,19 @@ export function AdaptiveAnalysisPage() {
     } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
   }
 
-  function chooseActivity() {
-    if (!selectedActivityId || selectingActivity || socketRef.current?.readyState !== WebSocket.OPEN) return;
+  function chooseActivity(activityId = selectedActivityId) {
+    if (!activityId || selectingActivity || socketRef.current?.readyState !== WebSocket.OPEN) return;
     setSelectingActivity(true);
     setMessage("Preparando la actividad seleccionada…");
-    socketRef.current.send(JSON.stringify({ type: "select_activity", activity_id: selectedActivityId }));
+    socketRef.current.send(JSON.stringify({ type: "select_activity", activity_id: activityId }));
+  }
+
+  function showOtherActivities() {
+    const firstAlternative = availableActivities.find(
+      (item) => item.id !== recommendation?.id,
+    );
+    setSelectedActivityId(firstAlternative?.id ?? "");
+    setShowAlternatives(true);
   }
 
   function analyzeAgain() {
@@ -282,6 +292,7 @@ export function AdaptiveAnalysisPage() {
     setConfidence(null);
     setRecommendation(null);
     setAvailableActivities([]);
+    setShowAlternatives(false);
     setSelectedActivityId("");
     setActivity(null);
     setCurrentStep(null);
@@ -362,15 +373,34 @@ export function AdaptiveAnalysisPage() {
           <span role="status" className="analysis-state">{message}</span>
           {emotion && <p>Expresión detectada: <strong>{emotion}</strong>{confidence != null && ` (${Math.round(confidence * 100)} %)`}</p>}
           {phase === "choosing" && <>
-            {recommendation ? <p><strong>Actividad sugerida:</strong> {recommendation.name}. {recommendation.description}</p>
-              : <p>No hay una recomendación automática para esta expresión. Puedes elegir una actividad disponible.</p>}
-            {availableActivities.length > 0 ? <>
+            {recommendation ? <div className="recommendation-card">
+              <p className="step-caption">Actividad recomendada</p>
+              <h2>{recommendation.name}</h2>
+              <p>{recommendation.description}</p>
+              <p className="muted">{recommendation.steps?.length ?? 1} pasos · Duración estimada: {(recommendation.steps?.reduce((total, step) => total + step.duration_seconds, 0) ?? recommendation.duration_seconds) * recommendation.repetitions} s</p>
+              <div className="recommendation-steps">
+                <h3>Pasos de la actividad</h3>
+                <ol>
+                  {recommendation.steps?.length ? recommendation.steps.map((step, index) => <li key={`${step.posture}-${index}`}>
+                    <span>{step.instruction}</span>
+                    <small>{postureNames[step.posture] ?? step.posture} · {step.duration_seconds} s</small>
+                  </li>) : <li>
+                    <span>{recommendation.description}</span>
+                    <small>{postureNames[recommendation.required_posture] ?? recommendation.required_posture} · {recommendation.duration_seconds} s</small>
+                  </li>}
+                </ol>
+              </div>
+              <button className="button primary" disabled={selectingActivity} onClick={() => chooseActivity(recommendation.id)}>{selectingActivity ? "Preparando actividad…" : "Realizar actividad recomendada"}</button>
+            </div> : <p>No hay una recomendación automática para esta expresión. Puedes elegir una actividad disponible.</p>}
+            {recommendation && availableActivities.some((item) => item.id !== recommendation.id) && !showAlternatives &&
+              <button className="button secondary" disabled={selectingActivity} onClick={showOtherActivities}>Ver otras actividades</button>}
+            {(!recommendation || showAlternatives) && availableActivities.length > 0 ? <>
               <label htmlFor="suggested-activity">Actividad que deseas realizar</label>
               <select id="suggested-activity" value={selectedActivityId} onChange={(event) => setSelectedActivityId(event.target.value)}>
-                {availableActivities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                {availableActivities.filter((item) => !recommendation || item.id !== recommendation.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-              <button className="button primary" disabled={selectingActivity} onClick={chooseActivity}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</button>
-            </> : <p>No hay actividades configuradas. Contacta con administración.</p>}
+              <button className="button primary" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</button>
+            </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
             <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>
           </>}
           {(phase === "exercise" || phase === "completed") && activity && <>

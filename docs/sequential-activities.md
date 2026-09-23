@@ -8,6 +8,14 @@ El progreso enviado por WebSocket corresponde a toda la secuencia; la sesión se
 
 El catálogo incluye seis secuencias nuevas además de las tres actividades previas. La recomendación elige aleatoriamente entre candidatos configurados para la expresión detectada, evitando cuando sea posible la actividad usada en la sesión anterior del estudiante y la última elección para esa expresión. La elección se fija al asignarla a la sesión: los pasos no se barajan mientras se realiza el ejercicio. Las asociaciones entre expresión y actividad son demostrativas, no indicaciones clínicas.
 
+Solo las seis actividades secuenciales forman parte de las recomendaciones automáticas. Las tres actividades históricas de una postura siguen disponibles para selección manual y compatibilidad. `ActivityRecommendationService` exige al menos dos pasos por recomendación. Para auditar el contenido realmente guardado en PostgreSQL:
+
+```powershell
+python scripts/audit_postgres_activities.py
+```
+
+El comando comprueba existencia, número de pasos y disponibilidad de validadores. `--repair` crea una secuencia recomendada ausente o restaura desde el catálogo local una que tenga menos de dos pasos; no modifica secuencias ya válidas.
+
 Para PostgreSQL, aplicar `alembic upgrade head` antes de iniciar la API. La migración agrega `activities.steps` y crea las seis secuencias nuevas si sus identificadores aún no existen. No reemplaza actividades editadas por administración.
 
 En administración se pueden editar los pasos de cada actividad. En el analizador web se anuncia cada paso mediante síntesis de voz del navegador si el usuario activó esa opción. La voz no forma parte del análisis de IA y puede no estar disponible en todos los navegadores.

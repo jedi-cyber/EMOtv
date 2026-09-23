@@ -8,6 +8,7 @@ from emotv.application import (
     DEFAULT_ACTIVITIES_BY_EMOTION,
 )
 from emotv.domain import Activity, PostureId
+from emotv.domain.activity import ActivityStep
 
 
 class ActivityRecommendationServiceTests(unittest.TestCase):
@@ -24,8 +25,14 @@ class ActivityRecommendationServiceTests(unittest.TestCase):
 
         self.assertEqual(
             tuple(activity.id for activity in activities),
-            ("morning_mobility", "open_and_reach", "arms_up_5s"),
+            ("morning_mobility", "open_and_reach"),
         )
+
+    def test_every_default_recommendation_has_multiple_steps(self) -> None:
+        service = ActivityRecommendationService()
+        for emotion in service.supported_emotions:
+            for activity in service.recommend_all(emotion):
+                self.assertGreaterEqual(len(activity.steps), 2)
 
     def test_normalizes_emotion(self) -> None:
         activity = ActivityRecommendationService().recommend("  ANGER ")
@@ -54,6 +61,10 @@ class ActivityRecommendationServiceTests(unittest.TestCase):
             description="Coloca las manos en las caderas.",
             required_posture=PostureId.HANDS_ON_HIPS,
             duration_seconds=3.0,
+            steps=(
+                ActivityStep(PostureId.HANDS_ON_HIPS, "Manos en las caderas", 3),
+                ActivityStep(PostureId.ARMS_OPEN, "Abre los brazos", 3),
+            ),
         )
         service = ActivityRecommendationService(
             catalog=ActivityCatalog((activity,)),
@@ -67,6 +78,16 @@ class ActivityRecommendationServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "Actividad no encontrada"):
             ActivityRecommendationService(
                 activities_by_emotion={"sadness": ("missing",)},
+            )
+
+    def test_rejects_recommended_activity_with_only_one_step(self) -> None:
+        activity = Activity(
+            "single", "Un paso", "Eleva los brazos", PostureId.ARMS_UP, 3,
+        )
+        with self.assertRaisesRegex(ValueError, "al menos 2 steps"):
+            ActivityRecommendationService(
+                catalog=ActivityCatalog((activity,)),
+                activities_by_emotion={"neutral": ("single",)},
             )
 
     def test_rejects_empty_emotion(self) -> None:
