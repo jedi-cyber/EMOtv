@@ -20,6 +20,7 @@ import { FirstAccessPage } from "./pages/FirstAccessPage";
 import { ConsentPage } from "./pages/ConsentPage";
 import { ActiveSessionProvider } from "./analysis/ActiveSessionContext";
 import { paths } from "./routes/paths";
+import { AssistantWidget } from "./components/AssistantWidget";
 
 export function App() {
   return (
@@ -45,6 +46,6 @@ export function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
-    </Routes></ActiveSessionProvider>
+    </Routes><AssistantWidget /></ActiveSessionProvider>
   );
 }

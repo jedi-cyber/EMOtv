@@ -141,6 +141,13 @@ input:focus, select:focus { outline: 3px solid rgba(25,116,81,.18); border-color
 .recommendation-steps li { padding-left: .2rem; }
 .recommendation-steps li span, .recommendation-steps li small { display: block; }
 .recommendation-steps li small { margin-top: .15rem; color: #596b60; }
+.chat-panel { display: grid; gap: 1rem; max-width: 52rem; padding: 1.25rem; border: 1px solid #dce5df; border-radius: 1rem; background: white; }
+.chat-messages { display: grid; align-content: start; gap: .75rem; min-height: 16rem; max-height: 32rem; overflow-y: auto; }
+.chat-message { max-width: 85%; padding: .8rem 1rem; border-radius: .85rem; background: #edf3ef; }
+.chat-message.user { justify-self: end; background: #dff3e8; }
+.chat-message p { margin: .25rem 0 0; white-space: pre-wrap; }
+.chat-form { display: grid; gap: .6rem; }
+.chat-form textarea { resize: vertical; }
 .analysis-panel { padding: 1.4rem; border: 1px solid #dce5df; border-radius: 1rem; background: white; }
 .step-caption { margin: 0 0 .5rem; color: #596b60; font-size: .8rem; font-weight: 750; }
 .analysis-steps { display: grid; gap: .45rem; margin: 0 0 1.25rem; padding-left: 1.4rem; }
@@ -236,3 +243,30 @@ tbody tr:last-child td { border-bottom: 0; }
 .onboarding-card input { width: 100%; }
 .temporary-secret { display: block; overflow-wrap: anywhere; margin: .6rem 0; font-weight: 700; }
 .consent-document { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.assistant-widget { position: fixed; right: max(1.25rem, env(safe-area-inset-right)); bottom: max(1.25rem, env(safe-area-inset-bottom)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: .75rem; }
+.assistant-launcher { display: flex; align-items: center; gap: .6rem; border: 0; border-radius: 2rem; padding: .9rem 1.2rem; background: #176448; color: white; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 6px 24px #153e3033; }
+.assistant-launcher:hover { background: #104d36; }
+.assistant-panel { width: min(25rem, calc(100vw - 2.5rem)); height: min(38rem, calc(100dvh - 7rem)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #dce5df; border-radius: 1.2rem; background: white; box-shadow: 0 16px 48px #153e3033; }
+.assistant-panel[hidden] { display: none; }
+.assistant-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem; background: #176448; color: white; }
+.assistant-identity { display: flex; align-items: center; gap: .65rem; }
+.assistant-header h2 { margin: 0; font-size: 1rem; }
+.assistant-header p { margin: .2rem 0 0; font-size: .8rem; color: #e0f3e9; }
+.assistant-minimize { min-width: 2.75rem; min-height: 2.75rem; border: 1px solid #ffffff55; border-radius: .65rem; background: transparent; color: white; font-size: 1.5rem; cursor: pointer; }
+.assistant-panel .chat-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 1rem; gap: .75rem; }
+.assistant-panel .alert { margin: 0; font-size: .78rem; }
+.assistant-panel .chat-messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.assistant-welcome { padding: .75rem; color: #355247; line-height: 1.5; }
+.assistant-panel .chat-message { margin: 0 1.5rem .75rem 0; padding: .75rem; border-radius: .8rem; background: #f0f5f2; overflow-wrap: anywhere; }
+.assistant-panel .chat-message.user { margin: 0 0 .75rem 1.5rem; background: #e0f2e8; }
+.assistant-panel .chat-message strong { font-size: .75rem; color: #176448; }
+.assistant-panel .chat-message p { margin: .3rem 0 0; white-space: pre-wrap; }
+.assistant-panel .chat-form { display: grid; gap: .5rem; margin: 0; }
+.assistant-panel .chat-form label { font-size: .8rem; font-weight: 600; }
+.assistant-panel .chat-form textarea { width: 100%; min-height: 4rem; max-height: 7rem; resize: vertical; }
+.assistant-panel .chat-form button { justify-self: end; }
+.content { padding-bottom: 6rem; }
+@media (max-width: 480px) {
+  .assistant-widget { right: max(.75rem, env(safe-area-inset-right)); bottom: max(.75rem, env(safe-area-inset-bottom)); }
+  .assistant-panel { width: calc(100vw - 1.5rem); height: min(38rem, calc(100dvh - 6rem)); }
+}

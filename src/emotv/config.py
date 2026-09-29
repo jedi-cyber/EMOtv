@@ -18,6 +18,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or None
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+FLOWISE_API_URL = os.getenv("FLOWISE_API_URL", "").strip() or None
+FLOWISE_API_KEY = os.getenv("FLOWISE_API_KEY", "").strip() or None
+FLOWISE_TIMEOUT_SECONDS = float(os.getenv("FLOWISE_TIMEOUT_SECONDS", "20"))
 
 
 def get_consent_mode(environ: Mapping[str, str] | None = None) -> str:

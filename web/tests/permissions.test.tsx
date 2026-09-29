@@ -32,6 +32,7 @@ describe("rutas y navegación por rol", () => {
     expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/activities", "/analysis", "/consent", "/sessions"]);
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
     expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(true);
+    expect(Object.values(navigationByRole).every((items) => items.every((item) => item.to !== "/chat"))).toBe(true);
   });
   it("redirige al login sin autenticación", () => { renderRole(null, ["admin"]); expect(screen.getByText("Login público")).toBeInTheDocument(); });
   it("espera la consulta de identidad", () => { renderRole(null, ["admin"], true); expect(screen.getByRole("status")).toHaveTextContent("Verificando sesión"); });

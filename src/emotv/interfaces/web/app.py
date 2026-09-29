@@ -12,7 +12,8 @@ from emotv.application.vision_service import VisionService
 from emotv.application import ActivityCatalog, AuthenticationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
-from emotv.config import BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_consent_mode
+from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
+                          FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -31,6 +32,8 @@ from emotv.interfaces.web.security import configure_web_security, load_web_setti
 from emotv.interfaces.web.activity_router import create_activity_router
 from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.interfaces.web.session_router import create_session_router
+from emotv.interfaces.web.chat_router import create_chat_router
+from emotv.infrastructure.chat import FlowiseClient
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
@@ -105,6 +108,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
             activity, analyzer, PoseService(), initial_emotion=emotion,
         ),
     ))
+    flowise_client = FlowiseClient(FLOWISE_API_URL, FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS) if FLOWISE_API_URL else None
+    app.include_router(create_chat_router(flowise_client, authentication_service, user_repository))
 else:
     authentication_service = None
     user_repository = None
@@ -114,6 +119,7 @@ else:
     app.include_router(create_activity_router(None, None, None))
     app.include_router(create_session_router(None, None, None, None))
     app.include_router(create_analysis_router(None, None, None, None, None, None))
+    app.include_router(create_chat_router(None, None, None))
 
 
 @app.on_event("startup")
