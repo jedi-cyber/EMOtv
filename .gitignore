@@ -79,3 +79,4 @@ web/.npm-cache/
 web/.env.local
 
 *.tsbuildinfo
+Claude.md
