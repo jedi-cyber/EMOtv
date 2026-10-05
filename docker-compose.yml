@@ -1,0 +1,123 @@
+# EMOtv con Docker Compose. Guía completa: docs/docker.md
+#
+#   Sistema completo:   docker compose --env-file .env.docker up -d --build
+#                       -> http://localhost:8080
+#   Red local (HTTPS):  docker compose --env-file .env.docker --profile https up -d
+#                       -> https://<IP>:8443
+#   Solo base de datos: docker compose -f docker-compose.yml -f docker-compose.db.yml up -d db
+#
+# Ningún servicio usa dispositivos de cámara: la cámara se abre en el navegador.
+
+name: emotv
+
+# Se construye para la arquitectura del equipo (verificado en linux/amd64).
+# mediapipe, onnxruntime y opencv publican ruedas linux/aarch64; si en Apple
+# Silicon algo falla, usa DOCKER_DEFAULT_PLATFORM=linux/amd64 (docs/docker.md).
+x-api-image: &api-image
+  image: emotv-api:local
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER (ver .env.docker.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD (ver .env.docker.example)}
+      POSTGRES_DB: ${POSTGRES_DB:?Define POSTGRES_DB (ver .env.docker.example)}
+    volumes:
+      - emotv_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Sin puertos publicados: solo el modo docker-compose.db.yml los expone.
+
+  # Descarga y verifica pesos (SHA-256). Además mide el benchmark de FER+ en este
+  # equipo si falta o venció: la API solo admite el modelo con un benchmark
+  # vigente medido en el mismo entorno (ver docs/docker.md).
+  models:
+    <<: *api-image
+    command: ["python", "scripts/download_models.py", "--ensure-benchmark", "/app/models/weights/benchmarks/ferplus.json"]
+    restart: "no"
+    environment:
+      EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
+    volumes:
+      - emotv_models:/app/models/weights
+
+  api:
+    <<: *api-image
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      models:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CONSENT_MODE: ${CONSENT_MODE:-demo}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,api}
+      ALLOWED_ADMIN_RESET_HOSTS: ${ALLOWED_ADMIN_RESET_HOSTS:-db}
+      FLOWISE_API_URL: ${FLOWISE_API_URL:-}
+      FLOWISE_API_KEY: ${FLOWISE_API_KEY:-}
+      FLOWISE_TIMEOUT_SECONDS: ${FLOWISE_TIMEOUT_SECONDS:-20}
+      FERPLUS_BENCHMARK_PATH: /app/models/weights/benchmarks/ferplus.json
+      EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
+    volumes:
+      - emotv_models:/app/models/weights:ro
+    # Sin puertos publicados: se accede a través de web.
+
+  web:
+    image: emotv-web:local
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:8080:8080"
+
+  https:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      EMOTV_LAN_HOST: ${EMOTV_LAN_HOST:-localhost}
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - emotv_caddy_data:/data
+      - emotv_caddy_config:/config
+
+  flowise:
+    image: flowiseai/flowise:latest
+    profiles: ["chatbot"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - emotv_flowise:/root/.flowise
+
+volumes:
+  emotv_pgdata:
+    name: emotv_pgdata
+  emotv_models:
+    name: emotv_models
+  emotv_caddy_data:
+    name: emotv_caddy_data
+  emotv_caddy_config:
+    name: emotv_caddy_config
+  emotv_flowise:
+    name: emotv_flowise

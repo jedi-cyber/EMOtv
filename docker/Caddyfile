@@ -1,0 +1,14 @@
+# HTTPS para usar la cámara desde otras computadoras de la red local.
+# Certificado emitido por la CA interna de Caddy: el navegador mostrará una
+# advertencia que hay que aceptar una vez por equipo.
+{
+	auto_https disable_redirects
+	# Los navegadores no envían SNI al conectar por IP; sin esto no hay certificado.
+	default_sni {$EMOTV_LAN_HOST:localhost}
+}
+
+# EMOTV_LAN_HOST: IP o nombre de esta PC en la red (definido en .env.docker).
+https://{$EMOTV_LAN_HOST:localhost}:8443 {
+	tls internal
+	reverse_proxy web:8080
+}

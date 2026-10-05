@@ -1,12 +1,14 @@
 """Crea cuentas locales de prueba sin modificar usuarios existentes.
 
 Uso: python scripts/create_demo_role_accounts.py --create
-Solo admite PostgreSQL en localhost y muestra las claves generadas una vez.
+Solo admite PostgreSQL en localhost (o en los hosts de ALLOWED_ADMIN_RESET_HOSTS,
+separados por comas; en Docker vale "db") y muestra las claves generadas una vez.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import secrets
 
 from sqlalchemy import inspect
@@ -24,6 +26,15 @@ from emotv.infrastructure.persistence import (
 )
 
 
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def allowed_hosts(environ: dict[str, str] | None = None) -> frozenset[str]:
+    source = os.environ if environ is None else environ
+    extra = source.get("ALLOWED_ADMIN_RESET_HOSTS", "")
+    return LOCAL_HOSTS | {host.strip() for host in extra.split(",") if host.strip()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--create", action="store_true", help="Autoriza crear dos cuentas locales de prueba")
@@ -33,7 +44,7 @@ def main() -> None:
 
     database_url = get_database_url()
     url = make_url(database_url)
-    if url.host not in {"localhost", "127.0.0.1", "::1"}:
+    if url.host not in allowed_hosts():
         parser.error("Este script solo permite una base de datos local")
 
     engine = create_database_engine(database_url)

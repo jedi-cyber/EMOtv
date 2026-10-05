@@ -104,6 +104,8 @@ python -m unittest discover -s tests -p "test_*.py"
 ## Documentación
 
 - [Primeros pasos](docs/primeros-pasos.md)
+- [EMOtv con Docker](docs/docker.md): base de datos o sistema completo sin
+  instalar Python, Node ni PostgreSQL
 - [Arquitectura](docs/architecture.md)
 - [Etapa de reconocimiento corporal](docs/pose-estimation.md)
 - [MVP de actividad emocional](docs/emotional-activity-mvp.md)

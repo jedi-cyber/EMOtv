@@ -1,0 +1,11 @@
+# Modo "solo base de datos" para desarrollo local con Python y Node en el host:
+#   docker compose -f docker-compose.yml -f docker-compose.db.yml up -d db
+# Publica PostgreSQL solo en 127.0.0.1. Puerto 5433 por defecto para no chocar
+# con un PostgreSQL instalado en Windows; cámbialo con POSTGRES_HOST_PORT.
+# DATABASE_URL del .env local:
+#   postgresql+psycopg://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/<POSTGRES_DB>
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"

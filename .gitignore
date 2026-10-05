@@ -24,6 +24,8 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.docker.example
+.env.docker
 *.pem
 *.key
 
@@ -80,3 +82,10 @@ web/.env.local
 
 *.tsbuildinfo
 Claude.md
+
+# Respaldos de la base de datos (scripts/docker/backup_db.py)
+backups/
+
+# CA locales para redes con inspección HTTPS (docker/certs/README.md)
+docker/certs/*.crt
+docker/certs/*.cer

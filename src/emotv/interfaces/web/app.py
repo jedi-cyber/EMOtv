@@ -5,15 +5,18 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from emotv.application.vision_service import VisionService
 from emotv.application import ActivityCatalog, AuthenticationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
-                          FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode)
+                          FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
+                          YUNET_PATH, EMOTION_MODEL_PATH)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -142,6 +145,30 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     return {"message": "EMOtv API. Visita /docs para documentación."}
+
+
+def _database_status() -> str:
+    if not (DATABASE_URL and JWT_SECRET_KEY):
+        return "not_configured"
+    try:
+        with database_engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return "unavailable"
+    return "ok"
+
+
+@app.get("/health")
+def health():
+    """Estado mínimo para orquestadores; no expone rutas ni configuración."""
+    checks = {
+        "database": _database_status(),
+        "face_detector": "ok" if YUNET_PATH.is_file() else "missing",
+        "emotion_model": "ok" if EMOTION_MODEL_PATH.is_file() else "missing",
+    }
+    healthy = all(value == "ok" for value in checks.values())
+    return JSONResponse({"status": "ok" if healthy else "unavailable", "checks": checks},
+                        status_code=200 if healthy else 503)
 
 
 @app.get("/video_feed")
