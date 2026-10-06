@@ -92,6 +92,11 @@ def create_analysis_router(
                     or claims.get("tv") != user.token_version):
                 await _error(websocket, "Usuario no autorizado", 4401)
                 return
+            if user.role is Role.PSYCHOLOGIST:
+                # Consultar sesiones asignadas no autoriza a enviar frames de
+                # otra cámara a la sesión de un estudiante.
+                await _error(websocket, "El análisis lo realiza el estudiante desde su cuenta", 4403)
+                return
 
             session = sessions.get_session(str(credentials.get("session_id", "")))
             if session is None:

@@ -92,8 +92,9 @@ Las rutas requieren un token Bearer obtenido mediante OAuth2:
 | `GET` | `/sessions` | Listar sesiones autorizadas |
 | `GET` | `/sessions?student_id={id}` | Consultar sesiones de un estudiante |
 
-Un estudiante solo accede a sesiones asociadas a su perfil. Psicología y
-administración pueden consultar sesiones de estudiantes. Una sesión asociada
+Un estudiante solo accede a sesiones asociadas a su perfil. Psicología solo
+consulta las sesiones de los estudiantes que administración le asignó (no puede
+iniciarlas, cancelarlas ni analizar); administración consulta todas. Una sesión asociada
 no puede iniciarse si el estudiante no tiene consentimiento activo.
 
 ## Prueba manual

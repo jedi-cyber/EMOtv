@@ -51,11 +51,11 @@ export function SessionsPage() {
 
   return (
     <section>
-      <PageHeader section="Seguimiento" title="Sesiones" description="Revisa actividades realizadas y resultados registrados." actions={<button className="button primary" disabled={starting} onClick={startSession}>{starting ? "Iniciando…" : "Nueva sesión"}</button>} />
+      <PageHeader section="Seguimiento" title="Sesiones" description="Revisa actividades realizadas y resultados registrados." actions={user?.role === "psychologist" ? undefined : <button className="button primary" disabled={starting} onClick={startSession}>{starting ? "Iniciando…" : "Nueva sesión"}</button>} />
       {user?.role !== "student" && <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); setAppliedFilter(studentFilter.trim()); setActionError(""); }}><label>ID del estudiante<input value={studentFilter} placeholder="student-..." onChange={(event) => setStudentFilter(event.target.value)} /></label><button className="button secondary">Aplicar filtro</button>{appliedFilter && <button type="button" className="button secondary" onClick={() => { setStudentFilter(""); setAppliedFilter(""); }}>Mostrar todas</button>}</form>}
       {appliedFilter && <p className="filter-summary">Mostrando sesiones del estudiante <strong>{appliedFilter}</strong>.</p>}
       {actionError && <Alert variant="error">{actionError}</Alert>}
-      <PageState {...query} empty={!query.loading && !query.error && sessions.length === 0} emptyMessage="Todavía no tienes sesiones registradas." onRetry={query.reload} />
+      <PageState {...query} empty={!query.loading && !query.error && sessions.length === 0} emptyMessage={user?.role === "psychologist" ? "No hay sesiones de tus estudiantes asignados." : "Todavía no tienes sesiones registradas."} onRetry={query.reload} />
       {sessions.length > 0 && <div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th>{user?.role !== "student" && <th>Estudiante</th>}<th>Actividad</th><th>Emoción inicial</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
         {sessions.map((session) => <tr key={session.id}><td><Link to={`/sessions/${session.id}`}>{formatDate(session.started_at)}</Link></td><td><span className={`status status-${session.state}`}>{stateNames[session.state] ?? session.state}</span></td>{user?.role !== "student" && <td>{session.student_id ?? "Sin asociar"}</td>}<td>{session.activity_id ?? "—"}</td><td>{session.initial_emotion ?? "—"}</td><td>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</td><td>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds.toFixed(1)} s`}</td></tr>)}
       </tbody></table></div>}

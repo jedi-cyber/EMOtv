@@ -102,9 +102,9 @@ Mantiene carácter preliminar: no se ha aprobado un plazo legal de retención ni
 automatizado la eliminación por documentarlo.
 
 - Aprobar consentimiento, versión vigente, responsables y canales de derechos.
-- Implementar asignación psicólogo–estudiante y separar administración funcional
-  de acceso a resultados. Actualmente esos roles tienen acceso amplio por rol;
-  **no habilitar ese acceso indiscriminado en producción asistencial**.
+- La asignación psicólogo–estudiante ya limita a Psicología. Falta separar
+  administración funcional de acceso a resultados: administración sigue viendo
+  todas las sesiones; **no habilitar ese acceso amplio en producción asistencial**.
 - Implementar auditoría de accesos y modificaciones, sin tokens, contraseñas,
   imágenes ni cadenas de conexión en logs.
 - Automatizar y verificar retención, purga y tratamiento de backups aprobados.

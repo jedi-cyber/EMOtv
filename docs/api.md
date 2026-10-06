@@ -30,11 +30,11 @@ administrativo.
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `POST` | `/sessions` | Estudiante propio, psicología o administración |
-| `POST` | `/sessions/{id}/cancel` | Propietario o rol autorizado |
-| `POST` | `/sessions/{id}/complete` | Administración o psicología; resultado manual controlado |
-| `GET` | `/sessions/{id}` | Propietario o rol autorizado |
-| `GET` | `/sessions` | Sesiones permitidas para el usuario |
+| `POST` | `/sessions` | Estudiante propio o administración |
+| `POST` | `/sessions/{id}/cancel` | Propietario o administración |
+| `POST` | `/sessions/{id}/complete` | Solo administración; resultado manual controlado |
+| `GET` | `/sessions/{id}` | Propietario, psicología asignada o administración |
+| `GET` | `/sessions` | Propias (estudiante), de estudiantes asignados (psicología) o todas (administración) |
 | `GET` | `/sessions?student_id={id}` | Sesiones del estudiante indicado |
 
 Para estudiantes, el servidor fuerza el alcance al perfil propio y rechaza un

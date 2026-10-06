@@ -108,6 +108,18 @@ class UserRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class PsychologistAssignmentRecord(Base):
+    """Estudiante que un psicólogo está autorizado a consultar."""
+
+    __tablename__ = "psychologist_assignments"
+    psychologist_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), primary_key=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assigned_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class LoginAttemptRecord(Base):
     """Intento de inicio de sesión; el correo se guarda solo como SHA-256."""
 

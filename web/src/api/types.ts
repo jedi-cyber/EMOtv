@@ -20,6 +20,10 @@ export interface Student {
   student_code: string;
 }
 
+export interface AssignedStudent extends Student {
+  assigned_at: string;
+}
+
 export type SessionState = "created" | "in_progress" | "completed" | "cancelled";
 
 export interface EmotionalSession {

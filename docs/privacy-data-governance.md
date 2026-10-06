@@ -54,9 +54,9 @@ retención superior exige finalidad documentada y aprobación.
 | Terceros | prohibido salvo contrato, base válida, información al titular y aprobación institucional |
 
 Todo acceso debe autenticarse, autorizarse en servidor y registrarse. Las cuentas
-compartidas están prohibidas. El acceso de Psicología requerirá en una fase
-posterior una relación explícita psicólogo–estudiante; el rol por sí solo no debe
-dar acceso indiscriminado en producción.
+compartidas están prohibidas. El acceso de Psicología exige una asignación
+explícita psicólogo–estudiante (tabla `psychologist_assignments`, gestionada por
+administración); el rol por sí solo no da acceso a ningún estudiante.
 
 ## Consentimiento
 

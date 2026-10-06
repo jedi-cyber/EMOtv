@@ -40,9 +40,9 @@ de reiniciar FastAPI.
 
 | Ruta | Acceso |
 | --- | --- |
-| `GET /students` | Administración y psicología: todos; estudiante: perfil propio |
-| `GET /students/{id}` | Administración, psicología y propietario |
-| `GET /students/{id}/consents` | Administración, psicología y propietario |
+| `GET /students` | Administración: todos; psicología: solo sus asignados; estudiante: perfil propio |
+| `GET /students/{id}` | Administración, psicología asignada y propietario |
+| `GET /students/{id}/consents` | Administración, psicología asignada y propietario |
 | `GET /students/{id}/consents/active` | Igual; devuelve `null` si no hay consentimiento activo |
 | `POST /students/{id}/consents` | Solo estudiante propietario; cuerpo `{"policy_version":"versión vigente"}` |
 | `POST /students/{id}/consents/revoke` | Administración o propietario |
@@ -50,7 +50,10 @@ de reiniciar FastAPI.
 | `POST /users` | Administración: email, role y student_code para estudiantes; clave provisional generada por servidor |
 | `PATCH /users/{id}` | Administración: email, role, is_active; no permite establecer contraseñas compartidas |
 | `DELETE /users/{id}` | Desactivación lógica; conserva sesiones y consentimientos |
-| `POST /sessions/{id}/complete` | Administración y psicología; finalización manual controlada |
+| `POST /sessions/{id}/complete` | Solo administración; finalización manual controlada |
+| `GET /users/{id}/assigned-students` | Administración: estudiantes asignados a una cuenta de psicología |
+| `PUT /users/{id}/assigned-students/{student_id}` | Administración: asigna (idempotente) |
+| `DELETE /users/{id}/assigned-students/{student_id}` | Administración: retira la asignación; `404` si no existía |
 
 El endpoint de finalización recibe `initial_emotion`, `emotion_confidence` (0–1),
 `activity_id`, `exercise_result` (`completed`) y `exercise_duration_seconds`.

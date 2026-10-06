@@ -20,11 +20,26 @@ class AuthorizationServiceTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertTrue(self.service.is_allowed(self.admin, action))
 
-    def test_psychologist_can_follow_students_but_not_manage_users(self) -> None:
-        self.assertTrue(self.service.is_allowed(
-            self.psychologist, AccessAction.VIEW_SESSION,
-            resource_student_id="student-1",
+    def test_psychologist_only_follows_assigned_students(self) -> None:
+        service = AuthorizationService(lambda psychologist, student: (psychologist, student) == ("user-p", "student-1"))
+        for action in (AccessAction.VIEW_SESSION, AccessAction.LIST_STUDENT_SESSIONS):
+            with self.subTest(action=action):
+                self.assertTrue(service.is_allowed(self.psychologist, action, resource_student_id="student-1"))
+                self.assertFalse(service.is_allowed(self.psychologist, action, resource_student_id="student-2"))
+                self.assertFalse(service.is_allowed(self.psychologist, action))
+
+    def test_psychologist_is_denied_without_assignment_lookup(self) -> None:
+        self.assertFalse(self.service.is_allowed(
+            self.psychologist, AccessAction.VIEW_SESSION, resource_student_id="student-1",
         ))
+
+    def test_psychologist_cannot_start_or_cancel_sessions(self) -> None:
+        service = AuthorizationService(lambda psychologist, student: True)
+        for action in (AccessAction.START_SESSION, AccessAction.CANCEL_SESSION):
+            with self.subTest(action=action):
+                self.assertFalse(service.is_allowed(self.psychologist, action, resource_student_id="student-1"))
+
+    def test_psychologist_cannot_manage_users_or_consent(self) -> None:
         self.assertFalse(self.service.is_allowed(
             self.psychologist, AccessAction.MANAGE_USERS,
         ))
