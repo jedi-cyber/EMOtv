@@ -89,6 +89,86 @@ Solo funciona si `DATABASE_URL` apunta a `localhost` o a un host listado en
 `ALLOWED_ADMIN_RESET_HOSTS` (en Docker vale `db`). Así no se puede usar por
 error contra una base remota.
 
+## Inicio de sesión
+
+### Límite de intentos
+
+`POST /auth/token` cuenta los fallos en la tabla `login_attempts` de
+PostgreSQL, así que el límite se respeta aunque la API corra en varios
+procesos. Por defecto:
+
+| Límite | Valor | Variable |
+|--------|-------|----------|
+| Fallos por correo + IP | 5 | `LOGIN_MAX_FAILURES_PER_ACCOUNT` |
+| Fallos por IP | 20 | `LOGIN_MAX_FAILURES_PER_IP` |
+| Ventana | 15 minutos | `LOGIN_ATTEMPT_WINDOW_MINUTES` |
+
+Al superar cualquiera de los dos, la API responde `429` con el mismo mensaje
+genérico y la cabecera `Retry-After`. Un acceso correcto reinicia el contador
+de esa combinación correo + IP; el contador por IP no se reinicia, porque si
+no alguien podría intercalar accesos con su propia cuenta para probar
+contraseñas de otras. Mientras está bloqueado, el intento no se verifica ni se
+registra.
+
+El correo se guarda como SHA-256, no en claro. Es un seudónimo, no un
+anonimato: quien tenga la base puede comprobar si un correo concreto intentó
+entrar. Los registros de más de 24 horas se eliminan al insertar uno nuevo.
+
+Límites conocidos:
+
+- **IP compartida en Docker Desktop.** Docker Desktop (Windows y macOS) no
+  conserva la IP del cliente: todas las conexiones llegan con la IP interna de
+  Docker o de Caddy. El límite por IP actúa entonces como un límite global; si
+  bloquea a usuarios legítimos (por ejemplo, en una prueba con varias
+  personas), sube `LOGIN_MAX_FAILURES_PER_IP`. El límite por correo sigue
+  funcionando por cuenta.
+- **`X-Forwarded-For`.** nginx reemplaza esa cabecera con la IP de la
+  conexión. Si se agregara a la que envía el cliente, uvicorn tomaría una IP
+  inventada y el límite se podría saltar. Un despliegue en la nube con otro
+  proxy debe configurar qué proxy es de confianza antes de usar su IP.
+- **Concurrencia.** El conteo y el registro no son atómicos: varios intentos
+  simultáneos pueden superar el límite por unos pocos antes de bloquearse.
+
+### Respuesta uniforme
+
+Usuario inexistente, contraseña incorrecta y cuenta inactiva devuelven el
+mismo `401 Correo o contraseña incorrectos`. En los tres casos se verifica un
+hash argon2 (uno ficticio si el usuario no existe), para que el tiempo de
+respuesta no revele qué correos están registrados.
+
+### Política de contraseñas
+
+En `/auth/change-password`, que también usa el primer acceso:
+
+- al menos 12 caracteres (el sistema ya exigía 12, que cumple el mínimo de 10
+  pedido para esta etapa);
+- distinta del correo;
+- distinta de la contraseña anterior.
+
+## Token de acceso en `sessionStorage`
+
+El navegador guarda el JWT en `sessionStorage` y lo envía en la cabecera
+`Authorization`; no se usan cookies. Es una decisión consciente para esta
+etapa:
+
+- **Ventajas:** no hay riesgo de CSRF (el navegador no envía el token solo),
+  el token desaparece al cerrar la pestaña y el WebSocket de análisis se
+  autentica con el mismo token.
+- **Riesgo:** cualquier JavaScript que se ejecute en la página puede leer
+  `sessionStorage`. Un XSS permitiría robar el token y usarlo desde otro
+  equipo hasta que venza (`ACCESS_TOKEN_EXPIRE_MINUTES`, 30 minutos). Una
+  cookie `HttpOnly` evitaría la lectura, aunque no el uso del token desde la
+  propia página comprometida.
+- **Mitigaciones actuales:** React escapa el contenido por defecto; nginx
+  envía una `Content-Security-Policy` que solo permite scripts propios, sin
+  `inline` ni dominios externos; el token dura 30 minutos; cambiar la
+  contraseña o desactivar la cuenta incrementa `token_version` e invalida los
+  tokens anteriores, también en el WebSocket.
+
+Si el token vence o se revoca durante un análisis, el WebSocket cierra con el
+código `4401`, el servidor cancela la sesión en curso y el navegador apaga la
+cámara y vuelve al login con el aviso "Tu sesión venció".
+
 ## Reescribir el historial (opcional)
 
 Se puede borrar `.tmp_check_login.py` de todo el historial con

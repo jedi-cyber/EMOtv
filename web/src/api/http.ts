@@ -2,6 +2,14 @@ const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "";
 export const AUTH_UNAUTHORIZED_EVENT = "emotv:auth-unauthorized";
 export const API_UNAVAILABLE_EVENT = "emotv:api-unavailable";
 export const API_RECOVERED_EVENT = "emotv:api-recovered";
+/** Código con el que el WebSocket de análisis cierra por token vencido o revocado. */
+export const SESSION_EXPIRED_CLOSE_CODE = 4401;
+export const SESSION_EXPIRED_ANALYSIS_MESSAGE = "Tu sesión venció durante el análisis. La actividad se canceló y la cámara se apagó.";
+
+/** Cierra la sesión del navegador; el login muestra "Tu sesión venció". */
+export function notifySessionExpired(): void {
+  window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+}
 
 export function apiWebSocketUrl(path: string): string {
   if (API_URL) {

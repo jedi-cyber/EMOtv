@@ -108,6 +108,21 @@ class UserRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class LoginAttemptRecord(Base):
+    """Intento de inicio de sesión; el correo se guarda solo como SHA-256."""
+
+    __tablename__ = "login_attempts"
+    __table_args__ = (
+        Index("ix_login_attempts_ip_created_at", "ip", "created_at"),
+        Index("ix_login_attempts_account_created_at", "email_hash", "ip", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ip: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
 class StudentRecord(Base):
     __tablename__ = "students"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

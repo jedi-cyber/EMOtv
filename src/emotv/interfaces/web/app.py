@@ -16,16 +16,18 @@ from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
                           FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
-                          YUNET_PATH, EMOTION_MODEL_PATH)
+                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
     PostgresConsentRepository,
     PostgresSessionRepository,
     PostgresConsentPolicyRepository,
+    PostgresLoginAttemptRepository,
     create_database_engine,
     create_session_factory,
 )
+from emotv.application.login_throttle import LoginThrottle
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 from emotv.interfaces.web.identity_router import create_identity_router
@@ -74,7 +76,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
         consent_repository=consent_repository,
         consent_policy_service=consent_policy_service,
     )
-    app.include_router(create_auth_router(authentication_service, user_repository))
+    login_throttle = LoginThrottle(PostgresLoginAttemptRepository(database_sessions), get_login_limits())
+    app.include_router(create_auth_router(authentication_service, user_repository,
+                                          login_throttle=login_throttle))
     app.include_router(create_activity_router(
         activity_catalog,
         authentication_service,

@@ -109,10 +109,12 @@ def is_env_file(path: str) -> bool:
 
 
 def login_call_literals(text: str) -> list[tuple[int, str]]:
-    """Contraseñas literales pasadas como 2.º argumento a authenticate()/login().
+    """Contraseñas literales que siguen a un correo literal en authenticate()/login().
 
     Cubre el caso de .tmp_check_login.py, donde la clave no tenía un nombre
-    de variable delante y las reglas por línea no la veían.
+    de variable delante y las reglas por línea no la veían. Exigir el correo
+    justo antes evita confundir el propio correo con la contraseña en
+    llamadas como login(client, "correo", clave).
     """
 
     try:
@@ -121,16 +123,21 @@ def login_call_literals(text: str) -> list[tuple[int, str]]:
         return []
     found: list[tuple[int, str]] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or len(node.args) < 2:
+        if not isinstance(node, ast.Call):
             continue
         function = node.func
         name = function.attr if isinstance(function, ast.Attribute) else getattr(function, "id", "")
-        argument = node.args[1]
-        if (name.lower() in LOGIN_CALLS and isinstance(argument, ast.Constant)
-                and isinstance(argument.value, str) and len(argument.value) >= 8
-                and not is_placeholder(argument.value)):
-            found.append((argument.lineno, argument.value))
+        if name.lower() not in LOGIN_CALLS:
+            continue
+        for email, argument in zip(node.args, node.args[1:]):
+            if (_string(email) and "@" in email.value and _string(argument)
+                    and len(argument.value) >= 8 and not is_placeholder(argument.value)):
+                found.append((argument.lineno, argument.value))
     return found
+
+
+def _string(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
 
 
 def scan_text(path: str, text: str) -> list[Finding]:

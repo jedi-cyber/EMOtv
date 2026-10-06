@@ -14,8 +14,10 @@ from emotv.infrastructure.persistence.postgres_student_repository import Postgre
 from emotv.infrastructure.persistence.postgres_user_repository import PostgresUserRepository
 from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
 from emotv.infrastructure.persistence.postgres_consent_policy_repository import PostgresConsentPolicyRepository
+from emotv.infrastructure.persistence.postgres_login_attempt_repository import PostgresLoginAttemptRepository
 
 __all__ = [
+    "PostgresLoginAttemptRepository",
     "PostgresActivityRepository",
     "PostgresConsentPolicyRepository",
     "InMemorySessionRepository",

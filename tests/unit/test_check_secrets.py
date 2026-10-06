@@ -67,6 +67,16 @@ def test_detects_each_rule(repo, capsys, name, content, rule):
     assert f": {rule} " in capsys.readouterr().out
 
 
+def test_login_call_rule_needs_a_literal_after_a_literal_email(repo, capsys):
+    stage(repo, "test_login.py", "login(client, 'ana@example.org', BAD_VALUE)\n"
+                                 "login(client, 'ana@example.org', 'Mz8" + "qL2vX0pK')\n")
+
+    assert check_secrets.main([]) == 1
+    output = capsys.readouterr().out
+    assert "test_login.py:2: clave-en-llamada-de-login" in output
+    assert "test_login.py:1:" not in output
+
+
 @pytest.mark.parametrize("content", [
     "JWT_SECRET_" + "KEY=replace-with-at-least-32-random-characters\nPOSTGRES_PASSWORD=__GENERATE__\n"
     "DATABASE_URL=postgresql+psycopg://emotv:change-me@localhost:5432/emotv\n# FLOWISE_API_KEY=\n",

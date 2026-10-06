@@ -69,6 +69,9 @@ services:
       FLOWISE_TIMEOUT_SECONDS: ${FLOWISE_TIMEOUT_SECONDS:-20}
       FERPLUS_BENCHMARK_PATH: /app/models/weights/benchmarks/ferplus.json
       EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
+      LOGIN_MAX_FAILURES_PER_ACCOUNT: ${LOGIN_MAX_FAILURES_PER_ACCOUNT:-5}
+      LOGIN_MAX_FAILURES_PER_IP: ${LOGIN_MAX_FAILURES_PER_IP:-20}
+      LOGIN_ATTEMPT_WINDOW_MINUTES: ${LOGIN_ATTEMPT_WINDOW_MINUTES:-15}
     volumes:
       - emotv_models:/app/models/weights:ro
     # Sin puertos publicados: se accede a través de web.

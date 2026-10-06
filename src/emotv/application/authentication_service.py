@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+import secrets
 import jwt
 from pwdlib import PasswordHash
 
 from emotv.config import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM
 from emotv.application.ports.user_repository import UserRepository
 from emotv.domain.user import User
+
+# El sistema ya exigía 12 caracteres; se mantiene (cumple el mínimo de 10).
+MIN_PASSWORD_LENGTH = 12
+_DUMMY_HASH: str | None = None
 
 
 class AuthenticationService:
@@ -24,15 +29,38 @@ class AuthenticationService:
         self.passwords = PasswordHash.recommended()
 
     def hash_password(self, password: str) -> str:
-        if len(password) < 12:
-            raise ValueError("la contraseña debe tener al menos 12 caracteres")
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres.")
         return self.passwords.hash(password)
 
+    def validate_new_password(self, user: User, new_password: str) -> None:
+        """Política para cambios de contraseña, incluido el primer acceso."""
+
+        if len(new_password) < MIN_PASSWORD_LENGTH:
+            raise ValueError(f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres.")
+        if new_password.strip().lower() == user.email.strip().lower():
+            raise ValueError("La contraseña no puede ser igual a tu correo.")
+        if self.passwords.verify(new_password, user.password_hash):
+            raise ValueError("La nueva contraseña debe ser diferente de la anterior.")
+
     def authenticate(self, email: str, password: str) -> User | None:
+        """Usuario inexistente, inactivo o clave incorrecta: mismo resultado y costo similar.
+
+        Siempre se verifica un hash argon2 (uno ficticio si el usuario no
+        existe) para que el tiempo de respuesta no revele qué correos existen.
+        """
+
         user = self.repository.get_by_email(email.strip().lower())
-        if user is None or not user.is_active:
+        valid = self.passwords.verify(password, user.password_hash if user else self._dummy_hash())
+        if user is None or not user.is_active or not valid:
             return None
-        return user if self.passwords.verify(password, user.password_hash) else None
+        return user
+
+    def _dummy_hash(self) -> str:
+        global _DUMMY_HASH
+        if _DUMMY_HASH is None:
+            _DUMMY_HASH = self.passwords.hash(secrets.token_urlsafe(32))
+        return _DUMMY_HASH
 
     def create_access_token(self, user: User) -> str:
         now = self.clock()

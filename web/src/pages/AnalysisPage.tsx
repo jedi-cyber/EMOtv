@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, apiRequest, apiWebSocketUrl } from "../api/http";
+import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
 import type { Activity, ActivityStep, EmotionalSession } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
@@ -24,6 +24,7 @@ interface AnalysisMessage {
   type: "ready" | "status" | "completed" | "cancelled" | "error";
   state?: string;
   message?: string;
+  code?: number;
   progress?: number;
   emotion?: string | null;
   emotion_confidence?: number | null;
@@ -113,6 +114,11 @@ function ManualActivityAnalysisPage() {
     };
   }, [token, activityId]);
 
+  function expireAnalysis() {
+    failAnalysis(SESSION_EXPIRED_ANALYSIS_MESSAGE);
+    notifySessionExpired();
+  }
+
   function failAnalysis(message: string) {
     setError(message);
     const current = sessionRef.current;
@@ -177,6 +183,7 @@ function ManualActivityAnalysisPage() {
         let message: AnalysisMessage;
         try { message = JSON.parse(event.data) as AnalysisMessage; }
         catch { failAnalysis("El analizador devolvió una respuesta inválida."); return; }
+        if (message.type === "error" && message.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
         if (message.type === "error") { failAnalysis(message.message ?? "Error durante el análisis"); return; }
         if (message.type === "cancelled") { releaseMedia(); sessionRef.current = null; setSession(null); return; }
         setStatus(message); drawLandmarks(message.landmarks);
@@ -196,7 +203,9 @@ function ManualActivityAnalysisPage() {
         if (message.type === "completed") { completedRef.current = true; releaseMedia(); }
       };
       socket.onerror = () => failAnalysis("No se pudo conectar con el analizador.");
-      socket.onclose = () => failAnalysis("Se perdió la conexión con el analizador. La cámara se ha apagado.");
+      socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
+        ? expireAnalysis()
+        : failAnalysis("Se perdió la conexión con el analizador. La cámara se ha apagado.");
     } catch (reason) {
       if (lifecycle !== lifecycleRef.current) {
         if (created) await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
