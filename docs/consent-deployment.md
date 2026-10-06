@@ -21,8 +21,13 @@ con estudiantes o participantes reales.
 1. Ejecute `python -m alembic upgrade head` con la base correcta. La migración
    `20260918_07` crea el catálogo persistente de políticas.
 2. En demo, al iniciar FastAPI se registra y activa automáticamente la versión
-   `EMOTV-CONSENT-DEMO-001:v0.1` si no hay otra activa. La pantalla `/consent`
-   muestra su texto completo y la etiqueta de demostración.
+   `EMOTV-CONSENT-DEMO-002:v0.2` (texto de `docs/consent-demo.md`) si no hay
+   política activa o si la activa es una demo anterior, como la
+   `EMOTV-CONSENT-DEMO-001:v0.1`. La versión anterior queda intacta como
+   historial y sus aceptaciones ya no habilitan análisis: cada cuenta debe
+   aceptar la v0.2. Una política institucional activa nunca se reemplaza. La
+   pantalla `/consent` muestra el texto completo, la versión, la fecha de
+   vigencia y la etiqueta de demostración.
 3. Cuando exista aprobación institucional, un administrador carga mediante
    `POST /consent-policies` un documento nuevo con `code`, `version`, `title`,
    `content`, `effective_at` con zona horaria y `approved=true`. El ID será

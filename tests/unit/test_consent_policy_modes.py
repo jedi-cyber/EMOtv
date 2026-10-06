@@ -7,7 +7,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from emotv.application.consent_policy_service import ConsentPolicyService, DEMO_POLICY_ID
+from emotv.application.consent_policy_service import (ConsentPolicyService, DEMO_POLICY_CODE,
+                                                       DEMO_POLICY_ID, DEMO_POLICY_VERSION)
 from emotv.application import AuthenticationService, SessionService
 from emotv.config import get_consent_mode
 from emotv.domain.consent_policy import ConsentPolicy
@@ -45,7 +46,7 @@ def test_demo_policy_is_seeded_and_replaced_without_erasing_history(tmp_path):
 
 def test_production_rejects_demo_or_unapproved_policy():
     engine, repo = repository()
-    demo = ConsentPolicy(DEMO_POLICY_ID, "EMOTV-CONSENT-DEMO-001", "v0.1", "Demo",
+    demo = ConsentPolicy(DEMO_POLICY_ID, DEMO_POLICY_CODE, DEMO_POLICY_VERSION, "Demo",
                          "Texto provisional", datetime.now(timezone.utc), is_demo=True)
     repo.save(demo)
     service = ConsentPolicyService(repo, "production")
@@ -74,7 +75,7 @@ def test_student_accepts_new_active_version_and_old_one_becomes_history():
     student = users.save(User("student", "student@example.org", auth.hash_password("student-secret-123"), Role.STUDENT, now))
     students.save(Student("student-profile", student.id, "STU-1"))
     service = ConsentPolicyService(policies, "demo")
-    policies.save(ConsentPolicy(DEMO_POLICY_ID, "EMOTV-CONSENT-DEMO-001", "v0.1",
+    policies.save(ConsentPolicy(DEMO_POLICY_ID, DEMO_POLICY_CODE, DEMO_POLICY_VERSION,
                                 "Demo", "Texto de política demo", now, is_demo=True))
     service.activate(DEMO_POLICY_ID)
     app = FastAPI()

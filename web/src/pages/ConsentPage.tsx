@@ -10,9 +10,13 @@ import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
 
 type Policy = { id?: string | null; code?: string | null; version: string | null;
-  title?: string | null; content?: string | null; is_demo?: boolean;
+  title?: string | null; content?: string | null; effective_at?: string | null; is_demo?: boolean;
   mode?: "development" | "demo" | "production"; url: string | null; available: boolean };
 type Consent = { id: string; policy_version: string; granted_at: string } | null;
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
+}
 
 export function ConsentPage() {
   const { token } = useAuth();
@@ -61,7 +65,15 @@ export function ConsentPage() {
     <PageState {...policy} onRetry={policy.reload} />
     {student && <PageState {...active} onRetry={active.reload} />}
     {!students.loading && !student && <p>No hay un perfil estudiantil asociado a tu cuenta. Contacta con administración.</p>}
-    {active.data ? <div className="card onboarding-card">
+    {policy.data?.available && <div className="card onboarding-card" aria-label="Política vigente">
+      <h2>Política vigente</h2>
+      <p>{policy.data.code ?? "Política"} · versión {policy.data.version}
+        {policy.data.effective_at && <> · vigente desde el {formatDate(policy.data.effective_at)}</>}</p>
+      {active.data
+        ? <p>Puedes retirar tu participación cuando quieras: <a href="#revocar">Revocar mi consentimiento</a></p>
+        : <p>No tienes un consentimiento activo. Si lo aceptas, podrás revocarlo desde esta página en cualquier momento.</p>}
+    </div>}
+    {active.data ? <div className="card onboarding-card" id="revocar">
       <h2>Consentimiento activo</h2>
       <p>Versión aceptada: {active.data.policy_version}</p>
       {policy.data?.available && (policy.data.id ?? policy.data.version) !== active.data.policy_version &&

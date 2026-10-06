@@ -84,11 +84,25 @@ EMOtv en esta misma computadora. Variables importantes:
   demostraciones usa `development` con `CONSENT_MODE=demo`. `production` exige
   HTTPS en `CORS_ORIGINS` y `CONSENT_MODE=production` con una política
   institucional aprobada.
-- `CONSENT_MODE`: `development` solo para pruebas del desarrollador sin otras
-  personas; `demo` para voluntarios y la presentación; `production` exige una
-  política institucional aprobada. El consentimiento no se desactiva para
-  facilitar pruebas.
+- `CONSENT_MODE`: deja `demo`, el valor para pruebas funcionales y la
+  presentación. Ver [Modos de consentimiento](#modos-de-consentimiento).
 - `FLOWISE_API_URL` y `FLOWISE_API_KEY`: chatbot Emi (opcional).
+
+### Modos de consentimiento
+
+El consentimiento del sistema no se desactiva para facilitar pruebas. Elige el
+modo según quién va a usar EMOtv:
+
+| Modo | Cuándo usarlo | Qué hace |
+|------|---------------|----------|
+| `demo` | Pruebas con voluntarios y la presentación. **Valor recomendado.** | Activa la política de prueba v0.2 ([texto](consent-demo.md)). Cada cuenta debe aceptarla antes de analizar y puede revocarla desde la página de consentimiento. Quien aceptó la v0.1 debe aceptar la v0.2. |
+| `development` | Solo pruebas técnicas del desarrollador, sin otras personas frente a la cámara. | No exige consentimiento para analizar. **Nunca** con voluntarios. |
+| `production` | Uso institucional real. | Exige `ENVIRONMENT=production` y una política aprobada por la institución; rechaza políticas de prueba. |
+
+Con voluntarios, `demo` no sustituye al consentimiento firmado en papel: son
+mayores de edad, no pertenecen a la Facultad de Psicología de la UNHEVAL, usan
+una cuenta identificada por código (`PRUEBA-NN`) y sus datos se eliminan como
+máximo a los 30 días.
 
 > **Importante:** todos los comandos `docker compose` de esta guía llevan
 > `--env-file .env.docker`. Sin él, Compose responde
