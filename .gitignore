@@ -81,7 +81,7 @@ web/.npm-cache/
 web/.env.local
 
 *.tsbuildinfo
-Claude.md
+CLAUDE.md
 
 # Respaldos de la base de datos (scripts/docker/backup_db.py)
 backups/
