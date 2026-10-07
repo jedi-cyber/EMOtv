@@ -109,13 +109,13 @@ class YuNetFaceDetector:
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"No se encontró el modelo YuNet en: {self.model_path}\n"
-                "Ejecuta 'python scripts/download_weights.py' para descargarlo."
+                "Ejecuta 'python scripts/download_models.py' para descargarlo."
             )
 
         if self.model_path.stat().st_size == 0:
             raise ValueError(
                 f"El modelo YuNet está vacío: {self.model_path}\n"
-                "Elimínalo y vuelve a descargarlo con 'scripts/download_weights.py'."
+                "Elimínalo y vuelve a descargarlo con 'python scripts/download_models.py'."
             )
 
     def _create_detector(self) -> None:

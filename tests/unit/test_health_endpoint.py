@@ -1,14 +1,10 @@
+"""/health y / tras retirar la cámara del servidor; la app se importa sin pesos."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from emotv.config import EMOTION_MODEL_PATH, YUNET_PATH
-
-if not (YUNET_PATH.is_file() and EMOTION_MODEL_PATH.is_file()):
-    pytest.skip("La app carga YuNet y FER+ al importarse; faltan los pesos", allow_module_level=True)
-
-from emotv.interfaces.web import app as app_module  # noqa: E402
+from emotv.interfaces.web import app as app_module
 
 
 @pytest.fixture
@@ -16,8 +12,36 @@ def client():
     return TestClient(app_module.app, base_url="http://localhost")
 
 
-def test_health_ok_when_database_and_weights_available(client, monkeypatch):
+def test_root_returns_simple_status(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.json() == {"service": "emotv-api", "status": "running"}
+
+
+@pytest.mark.parametrize("method, path", [
+    ("GET", "/video_feed"), ("GET", "/emotion"), ("GET", "/stats"),
+    ("GET", "/control?action=start"), ("POST", "/control/start"),
+    ("GET", "/web"), ("GET", "/static/js/script.js"),
+])
+def test_server_camera_routes_no_longer_exist(client, method, path):
+    assert client.request(method, path).status_code == 404
+
+
+def test_server_camera_websocket_no_longer_exists(client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws/emotions"):
+            pass
+
+
+def test_health_ok_when_database_and_weights_available(client, monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "_database_status", lambda: "ok")
+    for name in ("YUNET_PATH", "EMOTION_MODEL_PATH"):
+        weights = tmp_path / f"{name}.onnx"
+        weights.write_bytes(b"x")
+        monkeypatch.setattr(app_module, name, weights)
 
     response = client.get("/health")
 

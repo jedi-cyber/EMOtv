@@ -1,178 +1,128 @@
 # Arquitectura de EMOtv
 
-EMOtv utiliza una estructura por capas bajo `src/emotv`.
+EMOtv tiene dos piezas que se despliegan por separado:
+
+- **Frontend** React + TypeScript + Vite en `web/`. Obtiene la cámara en el
+  navegador con `getUserMedia` y envía frames JPEG por WebSocket.
+- **Backend** FastAPI en `src/emotv/` (`emotv.interfaces.web.app:app`), con
+  PostgreSQL + Alembic como única base de datos.
+
+**El servidor nunca abre una cámara física.** Recibe frames, los procesa en
+memoria y los descarta; no guarda fotografías ni video.
+
+```text
+Navegador (getUserMedia)
+    -> JPEG por WebSocket /ws/activity (token, sesión, actividad)
+    -> EmotionFrameAnalyzer: YuNet (rostro) + FER+ ONNX (expresión)
+    -> EmotionStabilizer -> ActivityRecommendationService (2+ posturas)
+    -> PoseService: MediaPipe + PostureValidator (solo posturas)
+    -> BrowserActivityService -> progreso y estado al navegador
+    -> SessionService -> PostgreSQL (resultado, sin imágenes)
+```
+
+La expresión se estima solo a partir del rostro. El cuerpo se usa
+exclusivamente para verificar posturas; nunca se infieren emociones desde los
+landmarks corporales. El resultado es una estimación de la expresión facial, no
+un diagnóstico.
 
 ## Capas
 
-### Dominio
+### Dominio (`emotv.domain`)
 
-Contiene modelos independientes de frameworks:
+Modelos independientes de frameworks: `PoseLandmark(s)`, `PoseResult`,
+`PostureId`, `PostureResult`, `Activity` y sus pasos, `ExerciseStatus`,
+`StabilizedEmotion`, `EmotionalSession` y `SessionState`, `User`, `Role`,
+`Student`, consentimientos y `PsychologistAssignment`. El dominio no importa
+OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 
-- `PoseLandmark` y `PoseLandmarks`: puntos corporales normalizados;
-- `PoseResult`: resultado de una inferencia corporal;
-- `PostureId`: identificadores estables para seleccionar posturas;
-- `PostureResult`: resultado genérico con confianza, mediciones y reglas
-  incumplidas;
-- `Activity`: instrucción local asociada a una postura, duración y repeticiones;
-- `Exercise` y `ExerciseStatus`: definición y estado de un ejercicio;
-- `ExerciseState`: `incorrect`, `holding` o `completed`.
+### Aplicación (`emotv.application`)
 
-El dominio no importa OpenCV ni MediaPipe.
+- `BrowserActivityService`: coordina los frames del navegador con la actividad
+  y entrega el estado de cada paso.
+- `PoseService` y `ExerciseService`: validación de postura y tiempo sostenido.
+- `EmotionStabilizer`: emoción dominante en una ventana móvil con confianza,
+  muestras y acuerdo mínimos.
+- `ActivityRecommendationService` y `ActivityCatalog`: reglas locales
+  provisionales emoción → actividad; no son una recomendación clínica.
+- `EmotionModelCatalog` y el contrato `EmotionClassifier`.
+- `evaluate_resources`: política de admisión `SUPPORTED`/`WARNING`/`BLOCKED`.
+- `SessionService`, `AuthenticationService`, `AuthorizationService`,
+  `ConsentPolicyService`, `IdentityRegistrationService` y `LoginThrottle`.
+- Puertos (`application.ports`) para repositorios de sesiones, actividades,
+  usuarios, estudiantes, consentimientos, asignaciones e intentos de login.
 
-### Aplicación
+### Infraestructura (`emotv.infrastructure`)
 
-- `PoseService`: coordina detección y validación de postura.
-- `ExerciseService`: máquina de estados que mide el tiempo sostenido y entrega
-  un progreso entre `0.0` y `1.0`.
-- `ActivityCatalog`: catálogo local consultable y administrable, protegido
-  contra IDs duplicados y accesos concurrentes.
-- `EmotionStabilizer`: obtiene una emoción dominante desde una ventana móvil,
-  aplicando confianza mínima, muestras mínimas y acuerdo mínimo.
-- `EmotionModelCatalog`: metadatos de FER+ y HardlyHumans; FER+ es predeterminado.
-- `EmotionClassifier`: contrato común de predicción facial.
-- `evaluate_resources`: política de admisión con límites configurables y estados
-  `SUPPORTED`, `WARNING` y `BLOCKED`, independiente de FastAPI y React.
-- `BrowserActivityService`: coordina los frames del navegador y la actividad elegida.
-- `ActivityRecommendationService`: traduce una emoción estabilizada a una
-  actividad del catálogo mediante reglas locales provisionales.
-- `EmotionalActivityService`: controlador de estados que coordina clasificación,
-  estabilización, recomendación, pose y progreso sin asumir una interfaz.
+- `vision.face_detection.YuNetFaceDetector` (`face_detection_yunet_2026may.onnx`).
+- `vision.emotion_classifier`: FER+ ONNX (predeterminado), HardlyHumans ViT
+  (experimental, extra `emotion-vit`), fábrica, `EmotionFrameAnalyzer` y
+  `ServerModelAdmission`.
+- `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
+  `vision.movement_analysis` (`PostureValidator`, ángulos).
+- `persistence`: adaptadores PostgreSQL y en memoria, modelos ORM y conexión.
+- `chat.FlowiseClient` para Emi; nunca recibe resultados personales.
 
-### Infraestructura
+### Interfaces (`emotv.interfaces.web`)
 
-- `OpenCVCamera`: convierte webcam u otra fuente compatible en frames BGR.
-- `PoseDetector`: adapta MediaPipe al modelo corporal del dominio.
-- `PostureValidator`: despacha por `PostureId` hacia evaluadores registrados y
-  devuelve un `PostureResult` genérico. `both_arms_up()` permanece como API de
-  compatibilidad.
-- `calculate_angle`: calcula el ángulo de tres landmarks.
-- `FerPlusEmotionClassifier`, `HardlyHumansEmotionClassifier` y fábrica común;
-- `ServerModelAdmission`: verifica informe, pesos y recursos actuales antes de
-  admitir una nueva actividad;
-- `EmotionFrameAnalyzer`: detección y preprocesamiento facial antes de clasificar;
-- adaptadores PostgreSQL para sesiones, actividades, usuarios, estudiantes y consentimientos;
-- modelos ORM y migraciones Alembic, aislados del dominio.
+- Routers de autenticación, identidades, sesiones, actividades, análisis y chat.
+- `WebSocket /ws/activity`: autenticación en el primer mensaje, propiedad de la
+  sesión, consentimiento vigente, admisión del modelo y limpieza al cerrar.
+- `GET /` devuelve un estado simple; `GET /health` comprueba base de datos y
+  pesos para Docker.
+- Seguridad HTTP: CORS, hosts de confianza, cabeceras y validación de Origin.
 
-### Interfaces
+## Modelo facial
 
-- `PoseDrawer`: dibuja landmarks sin conocer cómo fueron detectados.
-- scripts interactivos de cámara, pose, postura y ejercicio.
-- aplicación web existente para el flujo emocional.
-- routers FastAPI para autenticación, sesiones, actividades e identidades;
-- WebSocket `/ws/activity` con token, propiedad, consentimiento, admisión del
-  modelo elegido y limpieza;
-- `GET /analysis/models` autenticado, consultado periódicamente por el selector;
-- configuración HTTP/WebSocket de CORS, hosts y orígenes permitidos.
+El estudiante analiza siempre con FER+ (`ferplus_onnx`). Solo administración
+consulta `GET /analysis/models` y puede elegir otro `emotion_model_id` en el
+WebSocket; si un estudiante envía otro modelo, el servidor lo rechaza con
+`4403`. La UI oculta el selector a estudiantes, pero la restricción se aplica en
+FastAPI.
 
-## Flujo corporal
+Antes de cargar el clasificador, el WebSocket vuelve a evaluar la admisión del
+modelo: un cliente no puede evitar el bloqueo manipulando la interfaz y no hay
+fallback silencioso. Una evaluación ausente, insuficiente o vencida bloquea
+incluso FER+, y el motivo llega al navegador como mensaje de error. Tras cargar
+el clasificador se registran `emotion_model_id` y `emotion_model_version` en la
+sesión. La inferencia ocurre en el servidor, así que su capacidad es la que
+determina la admisión. Véanse [condiciones actuales](emotion-model-candidates.md)
+y [trabajo pendiente](adaptive-emotion-models-plan.md).
 
-```text
-OpenCVCamera
-    -> frame BGR
-    -> PoseDetector (MediaPipe)
-    -> PoseResult / PoseLandmarks
-    -> PostureValidator
-    -> ExerciseService
-    -> ExerciseStatus
-    -> PoseDrawer + interfaz
-```
-
-Esta separación permite sustituir la webcam por otra fuente compatible si
-continúa entregando un `numpy.ndarray` BGR válido. El alcance vigente utiliza
-webcam y no contempla ESP32-CAM.
-
-## Flujo emocional integrado
-
-`scripts/run_emotional_exercise_test.py` ejecuta localmente las fases de forma
-secuencial para no inferir emoción y pose de manera constante al mismo tiempo:
+## Sesiones, identidad y autorización
 
 ```text
-rostro -> emoción estable -> actividad seleccionada -> instrucción
-       -> postura objetivo -> progreso -> resultado final en memoria
+HTTP/WS -> router -> autenticación/autorización -> servicio de aplicación
+                                                  -> puerto -> PostgreSQL
 ```
 
-## Flujo de sesiones
+`AuthorizationService` aplica permisos por `Role` y `AccessAction`, con
+comprobación de propiedad para estudiantes y de asignación explícita para
+Psicología. Toda restricción se aplica en FastAPI, no solo ocultando botones.
+`SessionService` es independiente de FastAPI y SQLAlchemy; el filtro por
+estudiante forma parte de `SessionRepository`. Detalles en
+[Sesiones y persistencia](sessions.md) y
+[Privacidad y gobierno de datos](privacy-data-governance.md).
 
-La emoción se estima a partir del rostro. El cuerpo se utiliza exclusivamente
-para guiar y validar posturas de las actividades; no se infieren emociones a
-partir de landmarks corporales.
+## Pesos de modelos
 
-```text
-EmotionalActivityService
-    -> EmotionalActivityStatus
-    -> SessionService
-    -> EmotionalSession
-    -> SessionRepository
-    -> InMemorySessionRepository
-```
+Los pesos viven en `models/weights/` y no se versionan. `scripts/download_models.py`
+es la única descarga de los modelos requeridos (YuNet 2026may, FER+ y
+MediaPipe Pose); verifica SHA-256 y es idempotente. En Docker lo ejecuta el
+servicio `models` sobre su volumen antes de arrancar la API.
 
-`SessionState` representa los estados `created`, `in_progress`, `completed` y
-`cancelled`. `SessionService` controla IDs, timestamps y transiciones y depende
-del puerto `SessionRepository`, nunca del adaptador concreto. El repositorio en
-memoria puede sustituirse por `PostgresSessionRepository` sin modificar la
-visión artificial. `SessionRecord` es el modelo ORM y permanece dentro de
-infraestructura.
+## Herramientas de diagnóstico local
 
-La implementación y su auditoría están descritas en
-[Sesiones y persistencia](sessions.md).
-
-## API, identidad y autorización
-
-FastAPI actúa como adaptador de entrada. `AuthenticationService` emite y valida
-tokens JWT a partir del flujo OAuth2 password. `AuthorizationService` aplica
-permisos mediante `Role` y `AccessAction`; las comprobaciones de propiedad se
-realizan antes de invocar operaciones sensibles.
-
-```text
-HTTP -> router -> autenticación/autorización -> servicio de aplicación
-                                                -> puerto -> PostgreSQL
-```
-
-`SessionService` permanece independiente de FastAPI y SQLAlchemy. El filtro por
-estudiante forma parte de `SessionRepository`, por lo que PostgreSQL realiza la
-selección sin cargar todas las sesiones. El catálogo de actividades está
-desacoplado mediante `ActivityRepository`: FastAPI usa PostgreSQL y los scripts
-pueden conservar el catálogo en memoria.
-
-Las reglas preliminares de acceso, retención, consentimiento y eliminación se
-encuentran en [Privacidad y gobierno de datos](privacy-data-governance.md).
+`scripts/diagnostics/` contiene `OpenCVCamera`, una vista previa y `PoseDrawer`.
+Solo los usan scripts que abren la webcam del equipo del desarrollador para
+probar modelos a mano (`scripts/run_*_test.py`, `scripts/poses/run_*`,
+`scripts/emotion/run_face_detection_test.py`). Quedan fuera del producto: la API
+no los importa y la imagen Docker no los ejecuta. No usarlos con voluntarios.
 
 ## Decisiones relevantes
 
-- Los pesos se guardan fuera del paquete, bajo `models/weights/`, y no se
-  versionan en Git.
-- MediaPipe trabaja en modo `VIDEO` con timestamps monotónicos para aprovechar
-  el seguimiento entre frames.
+- MediaPipe trabaja en modo `VIDEO` con timestamps monotónicos.
 - Solo se transforma al dominio el subconjunto de landmarks necesario.
-- `completed` es terminal hasta que se llama a `ExerciseService.reset()`.
 - La pérdida de la postura durante `holding` reinicia tiempo y progreso.
-- Las reglas corporales permanecen separadas de la captura y del dibujo.
-- Las asociaciones emoción–actividad son configuración provisional y no una
-  recomendación clínica.
-- El resultado de scripts puede permanecer en memoria; el flujo web guarda
-  finalización o cancelación mediante `SessionService`.
-- `EmotionalActivityService` no depende de sesiones ni persistencia.
+- Una recomendación automática siempre tiene dos o más posturas.
 - Ningún detector o validador corporal conoce el repositorio de sesiones.
-
-El alcance y el protocolo de validación están documentados en
-[MVP de actividad emocional](emotional-activity-mvp.md).
-
-## Selección facial y límites de admisión
-
-La web permite elegir FER+ ONNX o HardlyHumans ViT/PyTorch antes de iniciar una
-actividad. La elección viaja como `emotion_model_id` en la autenticación del
-WebSocket y se mantiene durante la actividad; FER+ sigue siendo el valor por
-defecto para clientes antiguos. Tras cargar el clasificador se fijan
-`emotion_model_id` y `emotion_model_version` en `EmotionalSession` antes de
-enviar `ready`; las sesiones históricas conservan ambos valores nulos.
-La UI muestra el estado consultado a `GET /analysis/models`, pero el WebSocket
-vuelve a evaluar antes de cargar el adaptador: un cliente no puede evitar el
-bloqueo manipulando la interfaz. No existe fallback silencioso.
-
-La política pura de límites reside en aplicación; la lectura de benchmarks,
-pesos, CPU y RAM reside en infraestructura. Una evaluación ausente, insuficiente
-o vencida bloquea incluso FER+. La inferencia ocurre en el **servidor**, así que
-su capacidad —y no la del navegador del estudiante— determina la admisión.
-Esta protección es preventiva: no reserva recursos entre workers ni supervisa
-sesiones activas. Véanse [condiciones actuales](emotion-model-candidates.md) y
-[trabajo pendiente](adaptive-emotion-models-plan.md).
+- El LLM nunca decide la emoción y no recibe resultados personales.

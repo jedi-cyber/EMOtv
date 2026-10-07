@@ -57,9 +57,7 @@ añade HSTS y CSP restrictiva para respuestas de API. Los WebSockets validan Ori
 por separado: CORS no los protege. En producción se exige Origin explícito de la
 lista; los clientes no navegador deben enviarlo además del mensaje de autenticación.
 
-El frontend debe servirse por separado, no usando el HTML antiguo de `/web`.
-La CSP de producción de la API bloquea scripts de esa demostración antigua.
-El proxy que sirve `web/dist` debe configurar sus propias cabeceras: la API no
+El frontend (`web/dist`) se sirve por separado; la API no sirve HTML. El proxy que sirve `web/dist` debe configurar sus propias cabeceras: la API no
 protege automáticamente los archivos que sirve otro proceso.
 
 Configurar HTTPS/WSS, cámara limitada a self, bloqueo de embedding y una CSP

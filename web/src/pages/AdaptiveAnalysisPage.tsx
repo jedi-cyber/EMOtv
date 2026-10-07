@@ -32,12 +32,14 @@ const postureNames: Record<string, string> = {
 };
 
 export function AdaptiveAnalysisPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  // Solo administración elige modelo; el estudiante usa siempre FER+ (el servidor lo exige).
+  const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
-  const modelsQuery = useApiQuery<Admission[]>("/analysis/models");
+  const modelsQuery = useApiQuery<Admission[]>(canChooseModel ? "/analysis/models" : null);
   const [modelId, setModelId] = useState("ferplus_onnx");
   const admission = modelsQuery.data?.find((item) => item.model_id === modelId);
-  const modelBlocked = modelsQuery.loading || Boolean(modelsQuery.error) || !admission || admission.state === "BLOCKED";
+  const modelBlocked = canChooseModel && (modelsQuery.loading || Boolean(modelsQuery.error) || !admission || admission.state === "BLOCKED");
   const [phase, setPhase] = useState<Phase>("ready");
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -364,17 +366,19 @@ export function AdaptiveAnalysisPage() {
         {phase === "ready" && <>
           <h2>Antes de comenzar</h2>
           <p>Necesitas permiso de cámara, <Link to={paths.consent}>consentimiento activo</Link> y un modelo disponible en el servidor.</p>
-          <label htmlFor="adaptive-model">Modelo facial</label>
-          <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
-            <option value="ferplus_onnx">FER+ · ONNX</option>
-            <option value="hardlyhumans_vit">HardlyHumans · ViT/PyTorch</option>
-          </select>
-          <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
-          {admission && <Alert variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Alert>}
+          {canChooseModel && <>
+            <label htmlFor="adaptive-model">Modelo facial</label>
+            <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
+              <option value="ferplus_onnx">FER+ · ONNX</option>
+              <option value="hardlyhumans_vit">HardlyHumans · ViT/PyTorch</option>
+            </select>
+            <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
+            {admission && <Alert variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Alert>}
+          </>}
           <label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }} />Mostrar puntos y líneas durante la actividad</label>
           <label className="checkbox"><input type="checkbox" checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)} />Leer instrucciones en voz alta</label>
           <button className="button primary" disabled={starting || modelBlocked} onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</button>
-          <p className="muted">El análisis ocurre en el servidor. Si el modelo está bloqueado, consulta el motivo mostrado arriba.</p>
+          <p className="muted">El análisis ocurre en el servidor. {canChooseModel ? "Si el modelo está bloqueado, consulta el motivo mostrado arriba." : "Si el servidor no puede analizar, te mostraremos el motivo."}</p>
         </>}
         {phase !== "ready" && <>
           <p className="step-caption">{phase === "recognizing" ? "Paso 1 de 3 · Reconocimiento" : phase === "choosing" ? "Paso 2 de 3 · Actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>

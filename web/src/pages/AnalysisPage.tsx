@@ -51,11 +51,13 @@ export function AnalysisPage() {
 
 function ManualActivityAnalysisPage() {
   const [params] = useSearchParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  // Solo administración elige modelo; el estudiante usa siempre FER+ (el servidor lo exige).
+  const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
   const activityId = params.get("activity") ?? "";
   const query = useApiQuery<Activity>(activityId ? `/activities/${encodeURIComponent(activityId)}` : null);
-  const modelsQuery = useApiQuery<ModelAdmission[]>("/analysis/models");
+  const modelsQuery = useApiQuery<ModelAdmission[]>(canChooseModel ? "/analysis/models" : null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const captureRef = useRef<HTMLCanvasElement>(null);
@@ -75,7 +77,7 @@ function ManualActivityAnalysisPage() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [emotionModelId, setEmotionModelId] = useState("ferplus_onnx");
   const selectedAdmission = modelsQuery.data?.find((item) => item.model_id === emotionModelId);
-  const modelBlocked = !selectedAdmission || selectedAdmission.state === "BLOCKED" || modelsQuery.loading || Boolean(modelsQuery.error);
+  const modelBlocked = canChooseModel && (!selectedAdmission || selectedAdmission.state === "BLOCKED" || modelsQuery.loading || Boolean(modelsQuery.error));
   const [status, setStatus] = useState<AnalysisMessage>({ type: "ready", state: "analyzing_emotion", message: "Preparado", progress: 0 });
   const [error, setError] = useState("");
   useEffect(() => {
@@ -83,10 +85,10 @@ function ManualActivityAnalysisPage() {
     return () => setActiveSession(null);
   }, [session?.id, status.type, activityId, setActiveSession]);
   useEffect(() => {
-    if (session || starting) return;
+    if (!canChooseModel || session || starting) return;
     const timer = window.setInterval(() => { void modelsQuery.reload(); }, 10000);
     return () => window.clearInterval(timer);
-  }, [session, starting, modelsQuery.reload]);
+  }, [canChooseModel, session, starting, modelsQuery.reload]);
 
   function releaseMedia() {
     stopExerciseSpeech();
@@ -254,7 +256,7 @@ function ManualActivityAnalysisPage() {
   const stepIndex = status.state === "completed" || status.state === "performing_exercise" ? 2 : status.state === "waiting_for_posture" ? 1 : 0;
   return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <Link className="back-link" to="/activities">← Volver a actividades</Link>}<PageHeader section="Actividad corporal" title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Alert variant="error">{error}</Alert>}
     {activity && !session && <div className="analysis-preflight card"><div><span className="pill">{postureNames[activity.required_posture] ?? activity.required_posture}</span><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)} />Mostrar puntos y líneas</label><label className="checkbox"><input type="checkbox" checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)} />Leer instrucciones en voz alta</label><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><button className="button primary" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</button></div></div>}
-    {activity && !session && <fieldset className="card" disabled={starting}>
+    {canChooseModel && activity && !session && <fieldset className="card" disabled={starting}>
       <legend>Modelo de reconocimiento facial</legend>
       <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
       <select id="emotion-model" value={emotionModelId} onChange={(event) => setEmotionModelId(event.target.value)} aria-describedby="emotion-model-help">

@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from emotv.domain.pose_landmarks import PoseLandmark, PoseLandmarks
-from emotv.interfaces.ui.pose_drawer import PoseDrawer
+from scripts.diagnostics.pose_drawer import PoseDrawer
 
 
 def make_pose(visibility: float = 1.0) -> PoseLandmarks:

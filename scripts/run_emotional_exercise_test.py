@@ -1,4 +1,15 @@
+"""DIAGNÓSTICO LOCAL, FUERA DEL PRODUCTO.
+
+Abre la webcam de este equipo con OpenCV para probar modelos a mano.
+La API nunca abre una cámara: en EMOtv la captura ocurre en el navegador.
+"""
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Permite importar scripts.diagnostics al ejecutar el archivo directamente.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import time
 from typing import Any
@@ -21,7 +32,7 @@ from emotv.config import (
 )
 from emotv.domain import EmotionalActivityState, EmotionalActivityStatus, SessionState
 from emotv.infrastructure.persistence import InMemorySessionRepository
-from emotv.infrastructure.vision.camera.opencv_camera import (
+from scripts.diagnostics.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
 )
@@ -32,7 +43,7 @@ from emotv.infrastructure.vision.face_detection.yunet_face_detector import (
 from emotv.infrastructure.vision.face_processing.face_preprocessor import (
     FacePreprocessor,
 )
-from emotv.interfaces.ui.pose_drawer import PoseDrawer, PoseDrawingStyle
+from scripts.diagnostics.pose_drawer import PoseDrawer, PoseDrawingStyle
 from emotv.shared.performance.monitor import PerformanceMonitor
 
 

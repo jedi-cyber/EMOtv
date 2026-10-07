@@ -8,7 +8,7 @@ from typing import Protocol
 import cv2
 import jwt
 import numpy as np
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 from emotv.application import (
@@ -36,6 +36,8 @@ class EmotionAnalyzer(Protocol):
 EmotionAnalyzerFactory = Callable[[str], EmotionAnalyzer]
 AdaptiveProcessorFactory = Callable[[Activity, EmotionAnalyzer, StabilizedEmotion], BrowserActivityService]
 MAX_FRAME_BYTES = 2_500_000
+DEFAULT_EMOTION_MODEL_ID = "ferplus_onnx"
+EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, "hardlyhumans_vit")
 
 
 def create_analysis_router(
@@ -57,9 +59,12 @@ def create_analysis_router(
 
     @router.get("/analysis/models")
     def available_models(user=Depends(create_current_user_dependency(authentication, users))):
+        # Elegir modelo es una tarea de administración; el estudiante usa siempre FER+.
+        if user.role is not Role.ADMIN:
+            raise HTTPException(403, "Solo administración puede consultar y elegir modelos faciales")
         return [model_admission(model_id) if model_admission else
                 dict(model_id=model_id, state="BLOCKED", reasons=["Evaluación de modelos no configurada"])
-                for model_id in ("ferplus_onnx", "hardlyhumans_vit")]
+                for model_id in EMOTION_MODEL_IDS]
 
     @router.websocket("/ws/activity")
     async def activity_socket(websocket: WebSocket) -> None:
@@ -136,11 +141,14 @@ def create_analysis_router(
                     return
 
             include_landmarks = bool(credentials.get("include_landmarks", False))
-            model_id = credentials.get("emotion_model_id", "ferplus_onnx")
-            if model_id not in ("ferplus_onnx", "hardlyhumans_vit"):
+            model_id = credentials.get("emotion_model_id", DEFAULT_EMOTION_MODEL_ID)
+            if model_id not in EMOTION_MODEL_IDS:
                 await _error(websocket, "Modelo facial no permitido", 4400)
                 return
-            if model_id != "ferplus_onnx" and model_processor_factory is None:
+            if user.role is not Role.ADMIN and model_id != DEFAULT_EMOTION_MODEL_ID:
+                await _error(websocket, "Solo administración puede elegir otro modelo facial", 4403)
+                return
+            if model_id != DEFAULT_EMOTION_MODEL_ID and model_processor_factory is None:
                 await _error(websocket, "El modelo seleccionado no está configurado en el servidor", 1011)
                 return
             admission = None

@@ -47,10 +47,11 @@ models/weights/pose/pose_landmarker_lite.task
 
 Consulta [models/README.md](../models/README.md) para más información.
 
-Para el modelo emocional facial predeterminado:
+Para descargar y verificar de una vez todos los pesos requeridos (YuNet
+`face_detection_yunet_2026may.onnx`, FER+ y MediaPipe Pose):
 
 ```powershell
-python scripts/emotion/download_emotion_model.py
+python scripts/download_models.py
 ```
 
 ## Ejecutar la aplicación web
@@ -78,9 +79,11 @@ Las rutas administrativas y preparación de despliegue están en
 [API administrativa](administrative-api.md) y
 [preparación para producción](production-readiness.md).
 
-## Verificar la etapa corporal
+## Verificar la etapa corporal (diagnóstico local)
 
-Ejecuta los flujos en este orden:
+Estos scripts abren la webcam de tu equipo con OpenCV para probar los modelos a
+mano. Son herramientas de diagnóstico fuera del producto: la aplicación usa la
+cámara del navegador. No los uses con voluntarios. Ejecuta los flujos en este orden:
 
 ```powershell
 python scripts/poses/run_pose_detection_test.py

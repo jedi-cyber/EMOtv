@@ -1,9 +1,10 @@
+"""Diagnóstico local fuera del producto; ver scripts/diagnostics/__init__.py."""
 from __future__ import annotations
 
 import cv2
 import numpy as np
 
-from emotv.infrastructure.vision.camera.opencv_camera import OpenCVCamera
+from scripts.diagnostics.opencv_camera import OpenCVCamera
 from emotv.shared.performance.monitor import PerformanceMonitor
 
 

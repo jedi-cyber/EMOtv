@@ -78,7 +78,14 @@ Las rutas `/users`, `/students` y `/students/{id}/consents` están descritas en
 después JPEG binarios. Devuelve progreso, estado, emoción y landmarks opcionales.
 El servidor valida la finalización estudiantil; no acepta que un estudiante
 declare un resultado completado mediante REST. La cámara pertenece al navegador,
-no al servidor. Las rutas antiguas de cámara y `/ws/emotions` requieren administración.
+no al servidor: no existen rutas de cámara del servidor.
+
+`GET /analysis/models` es solo para administración. El estudiante analiza
+siempre con FER+; si envía un `emotion_model_id` distinto, el WebSocket lo
+rechaza con `4403`.
+
+`GET /` devuelve `{"service": "emotv-api", "status": "running"}`. `GET /health`
+comprueba base de datos y pesos (200 o 503) y lo usa Docker.
 
 CORS y validación de origen WebSocket se configuran por separado. Consultar
 [preparación para producción](production-readiness.md).

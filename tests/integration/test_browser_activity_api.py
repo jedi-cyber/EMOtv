@@ -184,12 +184,18 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
         assert processors[-1].closed
 
 
+def _admin(auth, users):
+    return users.save(User("admin-flow", "admin-flow@example.com", auth.hash_password("admin-password-123"),
+                           Role.ADMIN, datetime.now(timezone.utc)))
+
+
 @pytest.mark.parametrize("model_id", ["ferplus_onnx", "hardlyhumans_vit"])
-def test_selected_model_reaches_processor(flow, model_id):
-    client, auth, user, _, student, sessions, _, processors, _ = flow
+def test_admin_selected_model_reaches_processor(flow, model_id):
+    client, auth, _, _, student, sessions, _, processors, users = flow
+    admin = _admin(auth, users)
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
     with client.websocket_connect("/ws/activity") as socket:
-        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": model_id})
+        socket.send_json({**credentials(auth, admin, session.id), "emotion_model_id": model_id})
         ready = socket.receive_json()
         assert ready["type"] == "ready"
         assert ready["emotion_model_id"] == model_id
@@ -248,6 +254,27 @@ def test_recommended_sequence_uses_same_session_and_exposes_every_step(flow):
     assert processors[-1].closed
 
 
+def test_student_cannot_choose_non_default_model(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": "hardlyhumans_vit"})
+        error = socket.receive_json()
+        assert error["type"] == "error"
+        assert error["code"] == 4403
+    assert not processors
+    assert sessions.get_session(session.id).emotion_model_id is None
+
+
+def test_student_without_model_id_uses_ferplus(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json(credentials(auth, user, session.id))
+        assert socket.receive_json()["emotion_model_id"] == "ferplus_onnx"
+    assert processors[-1].model_id == "ferplus_onnx"
+
+
 def test_invalid_model_is_rejected_without_loading(flow):
     client, auth, user, _, student, sessions, _, processors, _ = flow
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
@@ -261,10 +288,12 @@ def test_invalid_model_is_rejected_without_loading(flow):
 
 @pytest.mark.parametrize("flow", ["BLOCKED"], indirect=True)
 def test_admission_blocks_socket_and_exposes_authenticated_status(flow):
-    client, auth, user, _, student, sessions, _, processors, _ = flow
+    client, auth, user, _, student, sessions, _, processors, users = flow
     assert client.get("/analysis/models").status_code == 401
-    headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
-    assert client.get("/analysis/models", headers=headers).json()[0]["state"] == "BLOCKED"
+    student_headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
+    assert client.get("/analysis/models", headers=student_headers).status_code == 403
+    admin_headers = {"Authorization": f"Bearer {auth.create_access_token(_admin(auth, users))}"}
+    assert client.get("/analysis/models", headers=admin_headers).json()[0]["state"] == "BLOCKED"
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
     with client.websocket_connect("/ws/activity") as socket:
         socket.send_json(credentials(auth, user, session.id))

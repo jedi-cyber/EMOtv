@@ -89,11 +89,10 @@ La cámara del navegador usa `/ws/activity`. El primer mensaje debe ser
 Se verifican rol, propietario, sesión activa, token y consentimiento durante el
 procesamiento. La revocación o pérdida de conexión cancela la sesión en progreso.
 
-Las rutas antiguas `/video_feed`, `/emotion`, `/stats`, `/control` y
-`/control/{action}`, y el WebSocket `/ws/emotions`, quedan reservados a
-administración. Este último exige un primer mensaje de autenticación y revalida
-token y cuenta durante la conexión. No enviar JWT en URLs. Un cliente de video
-debe usar una petición autenticada, no un `<img>` sin cabecera Bearer.
+El campo opcional `emotion_model_id` solo puede ser distinto de `ferplus_onnx`
+para administración, que consulta la admisión en `GET /analysis/models`. No
+enviar JWT en URLs. El servidor no abre cámaras propias ni ofrece streaming de
+video.
 
 ## Verificación
 

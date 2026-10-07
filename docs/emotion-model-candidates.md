@@ -87,11 +87,14 @@ no garantizan un mejor resultado en este equipo.
 
 ### Advertencia y bloqueo automáticos
 
-`GET /analysis/models` requiere autenticación y devuelve `SUPPORTED`, `WARNING`
-o `BLOCKED` por modelo, razones y métricas. La web refresca cada 10 segundos
-antes de iniciar; un fallo de consulta o estado bloqueado deshabilita el inicio.
-El WebSocket reevalúa antes de cargar y rechaza el inicio aunque el cliente
-omita o manipule el selector. WARNING permite continuar y muestra sus razones.
+`GET /analysis/models` es solo para administración y devuelve `SUPPORTED`,
+`WARNING` o `BLOCKED` por modelo, razones y métricas. Para administración la web
+refresca cada 10 segundos antes de iniciar; un fallo de consulta o estado
+bloqueado deshabilita el inicio. El estudiante no ve el selector y analiza
+siempre con FER+; el WebSocket rechaza con `4403` cualquier otro modelo enviado
+por un estudiante. El WebSocket reevalúa la admisión antes de cargar y rechaza
+el inicio aunque el cliente omita o manipule el selector; el motivo llega al
+navegador como error. WARNING permite continuar y muestra sus razones.
 
 La evaluación verifica instalación, hash/tamaño/versión de pesos, entorno CPU,
 Python/runtime y vigencia del informe. Requiere tres corridas con al menos
