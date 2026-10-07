@@ -4,7 +4,7 @@ import secrets
 import os
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
@@ -12,7 +12,9 @@ from emotv.application import AuthenticationService, IdentityRegistrationService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.domain.consent_policy import ConsentPolicy
 from emotv.application.ports import UserRepository, StudentRepository, ConsentRepository
+from emotv.application.ports.assignment_repository import AssignmentRepository
 from emotv.domain import Role, User
+from emotv.domain.psychologist_assignment import PsychologistAssignment
 from emotv.interfaces.web.auth_router import create_current_user_dependency, UserResponse
 
 
@@ -34,6 +36,10 @@ class StudentResponse(BaseModel):
     id: str
     user_id: str
     student_code: str
+
+
+class AssignedStudentResponse(StudentResponse):
+    assigned_at: datetime
 
 
 class CreatedUserResponse(UserResponse):
@@ -79,7 +85,8 @@ def create_identity_router(authentication: AuthenticationService | None,
                            users: UserRepository | None,
                            students: StudentRepository | None,
                            consents: ConsentRepository | None,
-                           policy_service: ConsentPolicyService | None = None) -> APIRouter:
+                           policy_service: ConsentPolicyService | None = None,
+                           assignments: AssignmentRepository | None = None) -> APIRouter:
     router = APIRouter(tags=["identity"])
     current_user = create_current_user_dependency(authentication, users)
 
@@ -92,6 +99,9 @@ def create_identity_router(authentication: AuthenticationService | None,
         if user.role is not Role.ADMIN:
             raise HTTPException(403, "Se requiere administración")
 
+    def is_assigned(psychologist_user_id: str, student_id: str) -> bool:
+        return assignments is not None and assignments.is_assigned(psychologist_user_id, student_id)
+
     def student_access(student_id: str, user: User, *, write: bool = False):
         service = configured()
         student = service.students.get_by_id(student_id)
@@ -99,6 +109,8 @@ def create_identity_router(authentication: AuthenticationService | None,
             raise HTTPException(404, "Estudiante no encontrado")
         if user.role is Role.STUDENT and student.user_id != user.id:
             raise HTTPException(403, "No tienes acceso a este estudiante")
+        if user.role is Role.PSYCHOLOGIST and not is_assigned(user.id, student.id):
+            raise HTTPException(403, "No tienes asignado a este estudiante")
         if write and user.role is Role.PSYCHOLOGIST:
             raise HTTPException(403, "El consentimiento debe registrarlo el estudiante o administración")
         return student
@@ -190,9 +202,53 @@ def create_identity_router(authentication: AuthenticationService | None,
         if user.role is Role.STUDENT:
             actor = service.students.get_by_user_id(user.id)
             items = (actor,) if actor else ()
+        elif user.role is Role.PSYCHOLOGIST:
+            assigned = assignments.list_by_psychologist(user.id) if assignments is not None else ()
+            items = tuple(item for item in (service.students.get_by_id(a.student_id) for a in assigned) if item)
         else:
             items = service.students.list_all()
         return [StudentResponse(id=item.id, user_id=item.user_id, student_code=item.student_code) for item in items]
+
+    def assignment_services(user: User, psychologist_user_id: str) -> tuple[AssignmentRepository, User]:
+        require_admin(user)
+        service = configured()
+        if assignments is None:
+            raise HTTPException(503, "Asignaciones no configuradas")
+        psychologist = service.users.get_by_id(psychologist_user_id)
+        if psychologist is None:
+            raise HTTPException(404, "Usuario no encontrado")
+        if psychologist.role is not Role.PSYCHOLOGIST:
+            raise HTTPException(422, "Solo se asignan estudiantes a cuentas de psicología")
+        return assignments, psychologist
+
+    def assigned_response(assignment: PsychologistAssignment) -> AssignedStudentResponse | None:
+        student = configured().students.get_by_id(assignment.student_id)
+        if student is None:
+            return None
+        return AssignedStudentResponse(id=student.id, user_id=student.user_id, student_code=student.student_code,
+                                       assigned_at=assignment.assigned_at)
+
+    @router.get("/users/{user_id}/assigned-students", response_model=list[AssignedStudentResponse])
+    def list_assigned_students(user_id: str, user: User = Depends(current_user)):
+        repository, psychologist = assignment_services(user, user_id)
+        items = (assigned_response(item) for item in repository.list_by_psychologist(psychologist.id))
+        return [item for item in items if item is not None]
+
+    @router.put("/users/{user_id}/assigned-students/{student_id}", response_model=AssignedStudentResponse)
+    def assign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
+        repository, psychologist = assignment_services(user, user_id)
+        if configured().students.get_by_id(student_id) is None:
+            raise HTTPException(404, "Estudiante no encontrado")
+        assignment = repository.assign(PsychologistAssignment(
+            psychologist.id, student_id, datetime.now(timezone.utc), assigned_by_user_id=user.id))
+        return assigned_response(assignment)
+
+    @router.delete("/users/{user_id}/assigned-students/{student_id}", status_code=204)
+    def unassign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
+        repository, psychologist = assignment_services(user, user_id)
+        if not repository.unassign(psychologist.id, student_id):
+            raise HTTPException(404, "El estudiante no estaba asignado a esta cuenta")
+        return Response(status_code=204)
 
     @router.get("/students/{student_id}", response_model=StudentResponse)
     def get_student(student_id: str, user: User = Depends(current_user)):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from emotv.domain.access_action import AccessAction
 from emotv.domain.role import Role
 from emotv.domain.user import User
@@ -13,9 +15,10 @@ ROLE_ACTIONS: dict[Role, frozenset[AccessAction]] = {
         AccessAction.LIST_STUDENT_SESSIONS,
         AccessAction.MANAGE_CONSENT,
     }),
+    # Sin START_SESSION ni CANCEL_SESSION: el análisis lo hace el estudiante
+    # con su cámara; una sesión iniciada por el psicólogo quedaría huérfana y
+    # cancelar solo serviría para interrumpir el análisis en vivo de otro.
     Role.PSYCHOLOGIST: frozenset({
-        AccessAction.START_SESSION,
-        AccessAction.CANCEL_SESSION,
         AccessAction.VIEW_SESSION,
         AccessAction.LIST_STUDENT_SESSIONS,
     }),
@@ -31,8 +34,19 @@ STUDENT_SCOPED_ACTIONS = frozenset({
 })
 
 
+AssignmentCheck = Callable[[str, str], bool]
+
+
 class AuthorizationService:
-    """Evalúa permisos de rol y propiedad sin depender de la interfaz web."""
+    """Evalúa permisos de rol, propiedad y asignación sin depender de la interfaz web.
+
+    ``is_assigned(psicólogo_user_id, student_id)`` responde si el psicólogo
+    tiene asignado al estudiante. Sin esa función, el psicólogo no accede a
+    ningún estudiante (se deniega por defecto).
+    """
+
+    def __init__(self, is_assigned: AssignmentCheck | None = None) -> None:
+        self.is_assigned = is_assigned
 
     def is_allowed(
         self,
@@ -57,6 +71,13 @@ class AuthorizationService:
                 and resource_student_id is not None
                 and actor_student_id.strip() == resource_student_id.strip()
                 and bool(actor_student_id.strip())
+            )
+        if user.role is Role.PSYCHOLOGIST and normalized_action in STUDENT_SCOPED_ACTIONS:
+            return (
+                self.is_assigned is not None
+                and resource_student_id is not None
+                and bool(resource_student_id.strip())
+                and self.is_assigned(user.id, resource_student_id.strip())
             )
         return True
 

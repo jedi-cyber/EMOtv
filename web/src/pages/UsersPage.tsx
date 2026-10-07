@@ -6,6 +6,7 @@ import { useApiQuery } from "../api/useApiQuery";
 import { Alert } from "../components/Alert";
 import { PageState } from "../components/PageState";
 import { PageHeader } from "../components/PageHeader";
+import { AssignmentsPanel } from "../components/AssignmentsPanel";
 
 const roleNames = { student: "Estudiante", psychologist: "Psicología", admin: "Administración" };
 type CreatedUser = CurrentUser & { temporary_password: string | null };
@@ -20,6 +21,7 @@ export function UsersPage() {
   const [created, setCreated] = useState<CreatedUser | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [assigning, setAssigning] = useState<CurrentUser | null>(null);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setCreated(null);
@@ -66,6 +68,7 @@ export function UsersPage() {
       <button className="button secondary" onClick={() => setCreated(null)}>Ocultar contraseña</button>
     </Alert>}
     <PageState {...query} empty={!query.loading && !query.error && users.length === 0} onRetry={query.reload} />
-    {users.length > 0 && <div className="table-wrap"><table><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td>{item.email}</td><td>{roleNames[item.role]}</td><td>{item.must_change_password ? "Debe cambiar contraseña" : item.is_active ? "Activo" : "Inactivo"}</td><td><button className="button secondary" disabled={busy} onClick={() => { void resetPassword(item); }}>Restablecer clave</button></td></tr>)}</tbody></table></div>}
+    {users.length > 0 && <div className="table-wrap"><table><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td>{item.email}</td><td>{roleNames[item.role]}</td><td>{item.must_change_password ? "Debe cambiar contraseña" : item.is_active ? "Activo" : "Inactivo"}</td><td className="inline-actions"><button className="button secondary" disabled={busy} onClick={() => { void resetPassword(item); }}>Restablecer clave</button>{item.role === "psychologist" && <button className="button secondary" onClick={() => setAssigning(item)}>Estudiantes asignados</button>}</td></tr>)}</tbody></table></div>}
+    {assigning && <AssignmentsPanel key={assigning.id} psychologist={assigning} onClose={() => setAssigning(null)} />}
   </section>;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, apiRequest, apiWebSocketUrl } from "../api/http";
+import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
 import type { Activity, ActivityStep, EmotionalSession, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
@@ -19,7 +19,7 @@ type Phase = "ready" | "recognizing" | "choosing" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
 type Message = {
   type: "ready" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
-  state?: string; message?: string; progress?: number;
+  state?: string; message?: string; progress?: number; code?: number;
   emotion?: string | null; emotion_confidence?: number | null;
   activity?: Activity | null; activities?: Activity[];
   step?: ActivityStep; step_index?: number; step_count?: number;
@@ -163,6 +163,11 @@ export function AdaptiveAnalysisPage() {
     drawPoseOverlay(overlayRef.current, landmarks, includeLandmarks);
   }
 
+  function expireAnalysis() {
+    failAnalysis(SESSION_EXPIRED_ANALYSIS_MESSAGE);
+    notifySessionExpired();
+  }
+
   function failAnalysis(reason: string) {
     setError(reason);
     releaseMedia(); setPreviewing(false); setPhase("ready");
@@ -213,6 +218,7 @@ export function AdaptiveAnalysisPage() {
         let result: Message;
         try { result = JSON.parse(event.data) as Message; }
         catch { failAnalysis("El analizador devolvió una respuesta inválida."); return; }
+        if (result.type === "error" && result.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
         if (result.type === "error") { failAnalysis(result.message ?? "No se pudo completar el análisis."); return; }
         if (result.type === "cancelled") { releaseMedia(); setSession(null); sessionRef.current = null; setPhase("ready"); return; }
         setMessage(result.message ?? "Procesando…");
@@ -252,7 +258,9 @@ export function AdaptiveAnalysisPage() {
         }
       };
       socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Revisa que FastAPI esté activo.");
-      socket.onclose = () => failAnalysis("Se perdió la conexión con el analizador. La cámara se apagó.");
+      socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
+        ? expireAnalysis()
+        : failAnalysis("Se perdió la conexión con el analizador. La cámara se apagó.");
     } catch (reason) {
       if (lifecycle !== lifecycleRef.current) {
         if (created) await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);

@@ -92,6 +92,11 @@ def create_analysis_router(
                     or claims.get("tv") != user.token_version):
                 await _error(websocket, "Usuario no autorizado", 4401)
                 return
+            if user.role is Role.PSYCHOLOGIST:
+                # Consultar sesiones asignadas no autoriza a enviar frames de
+                # otra cámara a la sesión de un estudiante.
+                await _error(websocket, "El análisis lo realiza el estudiante desde su cuenta", 4403)
+                return
 
             session = sessions.get_session(str(credentials.get("session_id", "")))
             if session is None:
@@ -228,7 +233,7 @@ def create_analysis_router(
                 if (current_user is None or not current_user.is_active or current_user.must_change_password
                         or current_claims.get("tv") != current_user.token_version
                         or current_user.role is not user.role):
-                    await _error(websocket, "Usuario no autorizado", 4403)
+                    await _error(websocket, "Usuario no autorizado", 4401)
                     break
                 current_session = sessions.get_session(session.id)
                 if current_session is None or current_session.state is not SessionState.IN_PROGRESS:
@@ -340,7 +345,9 @@ def create_analysis_router(
 
 
 async def _error(websocket: WebSocket, message: str, code: int) -> None:
-    await websocket.send_json({"type": "error", "message": message})
+    # "code" permite al navegador distinguir una sesión vencida (4401) sin
+    # depender del evento de cierre, que puede llegar después del mensaje.
+    await websocket.send_json({"type": "error", "message": message, "code": code})
     await websocket.close(code=code)
 
 

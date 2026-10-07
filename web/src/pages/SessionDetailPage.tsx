@@ -14,14 +14,15 @@ const stateNames = { created: "Creada", in_progress: "En progreso", completed: "
 
 export function SessionDetailPage() {
   const { sessionId = "" } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const query = useApiQuery<EmotionalSession>(`/sessions/${encodeURIComponent(sessionId)}`);
   const session = query.data;
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const canCancel = session?.state === "created" || session?.state === "in_progress";
+  // Psicología solo consulta: cancelar interrumpiría el análisis de un estudiante.
+  const canCancel = user?.role !== "psychologist" && (session?.state === "created" || session?.state === "in_progress");
 
   async function cancelSession() {
     if (!session) return;

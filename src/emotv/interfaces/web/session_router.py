@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.ports import StudentRepository, UserRepository
+from emotv.application.ports.assignment_repository import AssignmentRepository
 from emotv.domain import AccessAction, EmotionalSession, Role, User
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
@@ -59,6 +60,7 @@ def create_session_router(
     students: StudentRepository | None,
     authorization: AuthorizationService | None = None,
     activities: ActivityCatalog | None = None,
+    assignments: AssignmentRepository | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/sessions", tags=["sessions"])
     policy = authorization or AuthorizationService()
@@ -105,8 +107,11 @@ def create_session_router(
     def complete(session_id: str, request: CompleteSessionRequest,
                  user: User = Depends(current_user)) -> SessionResponse:
         service, _ = services()
-        if user.role not in {Role.ADMIN, Role.PSYCHOLOGIST}:
-            raise HTTPException(403, "La finalización estudiantil requiere análisis validado por el servidor")
+        # El resultado normal lo registra el análisis del servidor. La carga
+        # manual queda solo para administración: un psicólogo no debe fijar
+        # la emoción de una sesión.
+        if user.role is not Role.ADMIN:
+            raise HTTPException(403, "Solo administración puede registrar resultados manualmente")
         session = service.get_session(session_id)
         if session is None:
             raise HTTPException(404, "Sesión no encontrada")
@@ -165,6 +170,13 @@ def create_session_router(
         user: User = Depends(current_user),
     ) -> list[SessionResponse]:
         service, student_repository = services()
+        if user.role is Role.PSYCHOLOGIST and student_id is None:
+            # Sin filtro, el psicólogo ve solo las sesiones de sus estudiantes asignados.
+            assigned = assignments.list_by_psychologist(user.id) if assignments is not None else ()
+            found = [item for assignment in assigned
+                     for item in service.list_sessions_by_student(assignment.student_id)]
+            return [SessionResponse.from_domain(item)
+                    for item in sorted(found, key=lambda item: (item.started_at, item.id))]
         actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         resource_id = student_id
         if user.role is Role.STUDENT:

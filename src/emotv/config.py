@@ -1,6 +1,7 @@
 # src/emotv/config.py
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -32,6 +33,33 @@ def get_consent_mode(environ: Mapping[str, str] | None = None) -> str:
     if environment == "production" and mode != "production":
         raise ValueError("Producción no permite desactivar el consentimiento")
     return mode
+
+
+@dataclass(frozen=True)
+class LoginLimits:
+    """Límites de intentos fallidos de inicio de sesión."""
+
+    max_failures_per_account: int = 5
+    max_failures_per_ip: int = 20
+    window_minutes: int = 15
+
+
+def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
+    source = os.environ if environ is None else environ
+    defaults = LoginLimits()
+    values = []
+    for name, default in (("LOGIN_MAX_FAILURES_PER_ACCOUNT", defaults.max_failures_per_account),
+                          ("LOGIN_MAX_FAILURES_PER_IP", defaults.max_failures_per_ip),
+                          ("LOGIN_ATTEMPT_WINDOW_MINUTES", defaults.window_minutes)):
+        raw = source.get(name, "").strip()
+        try:
+            value = int(raw) if raw else default
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número entero") from error
+        if value < 1:
+            raise ValueError(f"{name} debe ser mayor que cero")
+        values.append(value)
+    return LoginLimits(*values)
 
 
 def get_database_url(environ: Mapping[str, str] | None = None) -> str:

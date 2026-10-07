@@ -11,21 +11,24 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from emotv.application.vision_service import VisionService
-from emotv.application import ActivityCatalog, AuthenticationService, SessionService
+from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
                           FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
-                          YUNET_PATH, EMOTION_MODEL_PATH)
+                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
     PostgresConsentRepository,
     PostgresSessionRepository,
     PostgresConsentPolicyRepository,
+    PostgresLoginAttemptRepository,
+    PostgresAssignmentRepository,
     create_database_engine,
     create_session_factory,
 )
+from emotv.application.login_throttle import LoginThrottle
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 from emotv.interfaces.web.identity_router import create_identity_router
@@ -67,14 +70,20 @@ if DATABASE_URL and JWT_SECRET_KEY:
     authentication_service = AuthenticationService(user_repository, JWT_SECRET_KEY)
     activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
     current_user = create_current_user_dependency(authentication_service, user_repository)
+    assignment_repository = PostgresAssignmentRepository(database_sessions)
+    # Psicología accede solo a estudiantes asignados; la misma política en todos los routers.
+    authorization_service = AuthorizationService(assignment_repository.is_assigned)
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
-                                              consent_repository, consent_policy_service))
+                                              consent_repository, consent_policy_service,
+                                              assignments=assignment_repository))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
         consent_policy_service=consent_policy_service,
     )
-    app.include_router(create_auth_router(authentication_service, user_repository))
+    login_throttle = LoginThrottle(PostgresLoginAttemptRepository(database_sessions), get_login_limits())
+    app.include_router(create_auth_router(authentication_service, user_repository,
+                                          login_throttle=login_throttle))
     app.include_router(create_activity_router(
         activity_catalog,
         authentication_service,
@@ -85,7 +94,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
         authentication_service,
         user_repository,
         student_repository,
+        authorization=authorization_service,
         activities=activity_catalog,
+        assignments=assignment_repository,
     ))
     app.include_router(create_analysis_router(
         session_service,
@@ -98,6 +109,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
             EmotionFrameAnalyzer(),
             PoseService(),
         ),
+        authorization=authorization_service,
         model_processor_factory=lambda activity, model_id: BrowserActivityService(
             activity,
             EmotionFrameAnalyzer(classifier=create_emotion_classifier(model_id)),

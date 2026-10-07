@@ -1,0 +1,23 @@
+#!/bin/sh
+# Bloquea el commit si los archivos en staging contienen credenciales.
+# Activación (una vez por clon): git config core.hooksPath .githooks
+#
+# Busca un intérprete que realmente ejecute código: en Windows, "python3"
+# puede ser el acceso directo de Microsoft Store, que no corre nada.
+# El código de prueba va por stdin y el detector se ejecuta con -m, sin rutas
+# de archivo en los argumentos: algunos entornos aislados de Windows (como el
+# servicio de sandbox de Codex) hacen que Python termine sin ejecutar nada,
+# con código 0, cuando se lanza desde Git Bash con -c o con un archivo .py.
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+for candidate in .venv/Scripts/python.exe .venv/bin/python python3 python py; do
+    # En Windows Python escribe "ok\r\n"; se quita el \r antes de comparar.
+    if [ "$(printf 'print("ok")\n' | "$candidate" - 2>/dev/null | tr -d '\r')" = "ok" ]; then
+        exec "$candidate" -m scripts.security.check_secrets
+    fi
+done
+
+echo "pre-commit: no se encontró Python para ejecutar el detector de secretos; commit bloqueado." >&2
+echo "Instala Python 3 o crea el entorno .venv del proyecto." >&2
+exit 1

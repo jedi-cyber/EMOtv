@@ -101,9 +101,20 @@ no la suite completa de pytest:
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
+Activa el hook que bloquea commits con credenciales (una vez por clon):
+
+```powershell
+git config core.hooksPath .githooks
+python scripts/security/check_secrets.py --all   # revisión manual completa
+```
+
+Detalles, allowlist y reseteo de administrador en
+[docs/security.md](docs/security.md).
+
 ## Documentación
 
 - [Primeros pasos](docs/primeros-pasos.md)
+- [Seguridad del repositorio](docs/security.md): detector de secretos, hook y reseteo de administrador
 - [EMOtv con Docker](docs/docker.md): base de datos o sistema completo sin
   instalar Python, Node ni PostgreSQL
 - [Arquitectura](docs/architecture.md)

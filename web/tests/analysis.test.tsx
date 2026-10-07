@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnalysisPage } from "../src/pages/AnalysisPage";
 import { App } from "../src/App";
 import { AuthContext } from "../src/auth/AuthContext";
-import { apiRequest, ApiError } from "../src/api/http";
+import { AUTH_UNAUTHORIZED_EVENT, apiRequest, ApiError } from "../src/api/http";
 
 const { admissions } = vi.hoisted(() => ({ admissions: { value: [
   { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] },
@@ -108,6 +108,21 @@ describe("cámara y ciclo de actividad", () => {
     act(() => Socket.instances[0].onclose?.());
     expect(screen.getByRole("alert")).toHaveTextContent("Se perdió la conexión"); expect(stop).toHaveBeenCalledOnce();
     view.unmount(); expect(apiRequest).toHaveBeenCalledWith("/sessions/s/cancel", expect.objectContaining({ method: "POST" }));
+  });
+  it.each([
+    ["mensaje de error con código 4401", (socket: Socket) => socket.onmessage?.({ data: JSON.stringify({ type: "error", message: "Token vencido", code: 4401 }) })],
+    ["cierre del socket con código 4401", (socket: Socket) => (socket.onclose as unknown as (event: { code: number }) => void)({ code: 4401 })],
+  ])("cierra la sesión del navegador si el token vence durante el análisis (%s)", async (_, expire) => {
+    const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
+    const expired = vi.fn(); window.addEventListener(AUTH_UNAUTHORIZED_EVENT, expired);
+    page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    act(() => expire(Socket.instances[0]));
+    expect(screen.getByRole("alert")).toHaveTextContent("Tu sesión venció durante el análisis");
+    expect(stop).toHaveBeenCalledOnce();
+    expect(expired).toHaveBeenCalledOnce();
+    expect(apiRequest).toHaveBeenCalledWith("/sessions/s/cancel", expect.objectContaining({ method: "POST" }));
+    window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, expired);
   });
   it("advierte antes de salir y cancela solo al confirmar", async () => {
     const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));

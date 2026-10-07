@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from emotv.application import AuthenticationService, AuthorizationService
+from emotv.application.login_throttle import LoginThrottle
 from emotv.application.ports import UserRepository
 from emotv.domain import AccessAction, User
 
@@ -67,10 +68,21 @@ def create_current_user_dependency(
     return current_user
 
 
+LOGIN_FAILED_DETAIL = "Correo o contraseña incorrectos"
+# Igual para el límite por correo+IP y por IP: no revela cuál se alcanzó.
+LOGIN_THROTTLED_DETAIL = "Demasiados intentos de inicio de sesión. Espera unos minutos e inténtalo de nuevo."
+
+
+def client_ip(request: Request) -> str:
+    # Detrás de nginx, uvicorn (--proxy-headers) ya resolvió la IP real.
+    return request.client.host if request.client and request.client.host else "desconocida"
+
+
 def create_auth_router(
     authentication: AuthenticationService | None,
     users: UserRepository | None,
     authorization: AuthorizationService | None = None,
+    login_throttle: LoginThrottle | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["authentication"])
     policy = authorization or AuthorizationService()
@@ -83,13 +95,22 @@ def create_auth_router(
         return authentication, users
 
     @router.post("/token", response_model=TokenResponse)
-    def login(form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
+    def login(request: Request, form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
         auth, _ = require_services()
+        ip = client_ip(request)
+        if login_throttle is not None and login_throttle.is_blocked(form.username, ip):
+            raise HTTPException(
+                status_code=429,
+                detail=LOGIN_THROTTLED_DETAIL,
+                headers={"Retry-After": str(int(login_throttle.window.total_seconds()))},
+            )
         user = auth.authenticate(form.username, form.password)
+        if login_throttle is not None:
+            login_throttle.record(form.username, ip, success=user is not None)
         if user is None:
             raise HTTPException(
                 status_code=401,
-                detail="Correo o contraseña incorrectos",
+                detail=LOGIN_FAILED_DETAIL,
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return TokenResponse(access_token=auth.create_access_token(user))
@@ -103,9 +124,8 @@ def create_auth_router(
         auth, repository = require_services()
         if auth.authenticate(user.email, request.current_password) is None:
             raise HTTPException(400, "Contraseña actual incorrecta")
-        if request.current_password == request.new_password:
-            raise HTTPException(422, "La nueva contraseña debe ser diferente")
         try:
+            auth.validate_new_password(user, request.new_password)
             updated = replace(user, password_hash=auth.hash_password(request.new_password),
                               must_change_password=False, token_version=user.token_version + 1)
         except ValueError as error:

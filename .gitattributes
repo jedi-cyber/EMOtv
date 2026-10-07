@@ -1,6 +1,8 @@
 # Scripts y Dockerfiles con fin de línea LF aunque se clone desde Windows:
 # un entrypoint con CRLF falla dentro del contenedor ("/bin/sh^M").
 *.sh text eol=lf
+# Hooks de Git: sh los ejecuta también en Windows (Git Bash).
+.githooks/* text eol=lf
 *Dockerfile text eol=lf
 *.Dockerfile text eol=lf
 docker/Caddyfile text eol=lf
