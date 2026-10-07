@@ -48,4 +48,5 @@ pythonpath = [".", "src"]
 testpaths = ["tests"]
 markers = [
     "integration: pruebas que requieren servicios externos como PostgreSQL",
+    "requires_weights: pruebas con modelos reales; se saltan si faltan los pesos (scripts/download_models.py)",
 ]

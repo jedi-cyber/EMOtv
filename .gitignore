@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+# Directorio temporal de pytest (--basetemp); contiene repos Git de prueba.
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage

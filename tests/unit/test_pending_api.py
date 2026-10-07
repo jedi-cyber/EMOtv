@@ -79,22 +79,6 @@ def test_identity_activity_and_session_api(monkeypatch):
     engine.dispose()
 
 
-def test_legacy_camera_requires_authentication(monkeypatch):
-    import importlib
-    from starlette.websockets import WebSocketDisconnect
-    import pytest
-    module = importlib.import_module("emotv.interfaces.web.app")
-    monkeypatch.setattr(module, "DATABASE_URL", None)
-    with TestClient(module.app) as client:
-        for path in ("/video_feed", "/emotion", "/stats", "/control?action=start"):
-            assert client.get(path).status_code == 401
-        assert client.post("/control/start").status_code == 401
-        with client.websocket_connect("/ws/emotions") as socket:
-            socket.send_json({"type": "authenticate", "token": "invalid"})
-            with pytest.raises(WebSocketDisconnect):
-                socket.receive_json()
-
-
 def test_first_access_uses_unique_temporary_password_and_explicit_policy(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)

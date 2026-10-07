@@ -1,3 +1,4 @@
+"""Diagnóstico local fuera del producto; ver scripts/diagnostics/__init__.py."""
 from __future__ import annotations
 
 from dataclasses import dataclass

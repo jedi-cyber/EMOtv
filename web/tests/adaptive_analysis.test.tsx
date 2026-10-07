@@ -7,7 +7,7 @@ import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest } from "../src/api/http";
 
 const { admissions } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] }] } }));
-vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: () => ({ data: admissions.value, loading: false, error: "", reload: vi.fn() }) }));
+vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
 class Socket {
@@ -24,9 +24,9 @@ class Socket {
   constructor() { Socket.instances.push(this); }
 }
 
-function page() {
+function page(role: "student" | "admin" = "student") {
   const router = createMemoryRouter([{ path: "/analysis", element: <AdaptiveAnalysisPage /> }], { initialEntries: ["/analysis"] });
-  return render(<AuthContext.Provider value={{ user: { id: "u", email: "student@example.com", role: "student", is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
+  return render(<AuthContext.Provider value={{ user: { id: "u", email: "student@example.com", role, is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
 }
 
 function camera(getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] })) {
@@ -79,11 +79,23 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(apiRequest).not.toHaveBeenCalled();
   });
 
-  it("impide iniciar con un modelo bloqueado e indica el motivo", async () => {
+  it("impide a administración iniciar con un modelo bloqueado e indica el motivo", async () => {
     admissions.value = [{ model_id: "ferplus_onnx", state: "BLOCKED", reasons: ["Benchmark vencido"] }];
-    page();
+    page("admin");
     expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent("Modelo no disponible: Benchmark vencido");
+  });
+
+  it("el estudiante no ve el selector de modelo y recibe el motivo del bloqueo desde el servidor", async () => {
+    camera();
+    page();
+    expect(screen.queryByLabelText("Modelo facial")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    act(() => Socket.instances[0].onopen?.());
+    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: "ferplus_onnx" }));
+    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Benchmark vencido" }) }));
+    expect(await screen.findByText(/Modelo bloqueado: Benchmark vencido/)).toBeInTheDocument();
   });
 
   it("reconoce primero, muestra sugerencia y solo entonces asigna la actividad", async () => {

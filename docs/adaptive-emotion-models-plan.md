@@ -89,8 +89,9 @@ silenciosos. No aceptar archivos de pesos elegidos directamente por usuarios.
   tamaño, framework, soporte ONNX, fuentes y observaciones.
 - Benchmark común y script comparativo con CPU, RAM, latencia y throughput:
   implementados para los dos adaptadores disponibles.
-- Selector manual por tecnología y estados SUPPORTED/WARNING/BLOCKED:
-  implementados para **nuevos inicios**, pendientes de calibración operativa.
+- Selector manual por tecnología (solo administración; el estudiante usa FER+)
+  y estados SUPPORTED/WARNING/BLOCKED: implementados para **nuevos inicios**,
+  pendientes de calibración operativa.
 - Evaluación de calidad comparable, concurrencia y pipeline completo: pendientes.
 - Monitor de degradación con ventana e histéresis, y eventual fallback
   controlado: pendientes; no forman parte del comportamiento actual.

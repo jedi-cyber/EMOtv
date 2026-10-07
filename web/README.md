@@ -133,10 +133,11 @@ Durante la actividad se pueden mostrar puntos y líneas de postura y activar la
 lectura de instrucciones por voz; cada paso nuevo se anuncia por separado.
 El catálogo y las reglas de variación están descritos en
 [actividades secuenciales](../docs/sequential-activities.md).
-El selector permite FER+ ONNX (predeterminado) o HardlyHumans ViT/PyTorch
-(experimental). La inferencia ocurre en FastAPI: la RAM y CPU relevantes son las
-del servidor, no las del navegador del estudiante. `GET /analysis/models`
-requiere autenticación y muestra disponibilidad, advertencias o bloqueo según
+El selector, visible solo para administración, permite FER+ ONNX
+(predeterminado) o HardlyHumans ViT/PyTorch (experimental); el estudiante
+analiza siempre con FER+ y el servidor rechaza otro modelo. La inferencia ocurre
+en FastAPI: la RAM y CPU relevantes son las del servidor, no las del navegador
+del estudiante. `GET /analysis/models` es solo para administración y muestra disponibilidad, advertencias o bloqueo según
 informes de benchmark y recursos actuales. El WebSocket reevalúa antes de
 cargar; no hay cambio silencioso de modelo ni conmutación durante la sesión.
 El ID y la versión del clasificador cargado aparecen en el detalle de la

@@ -14,6 +14,18 @@ restaura candidatas con menos de dos pasos desde el catálogo predeterminado.
 
 Ejecuta los scripts desde la raíz del repositorio y con `.venv` activado.
 
+## Diagnóstico local con webcam (fuera del producto)
+
+Los scripts de pose, emoción, ejercicio y sesión de las secciones siguientes
+(y `run_camera_test.py`) abren la webcam **de este equipo** con OpenCV y
+muestran ventanas de vista previa. Sirven solo para probar modelos a mano:
+
+- se apoyan en `scripts/diagnostics/` (`OpenCVCamera`, vista previa, `PoseDrawer`);
+- la API no los importa y no se ejecutan en Docker;
+- en el producto, la cámara se obtiene en el navegador y los frames llegan por
+  `/ws/activity`;
+- no usarlos con voluntarios.
+
 ## Pose corporal
 
 ### Descargar el modelo
@@ -64,9 +76,11 @@ tiempo y una barra de progreso. Teclas:
 
 ## Emociones
 
-- `scripts/emotion/download_weights.py`: descarga pesos de YuNet.
-- `scripts/emotion/download_emotion_model.py`: descarga el clasificador.
-- `scripts/emotion/run_face_detection_test.py`: prueba rostro y emoción.
+- `scripts/download_models.py`: descarga y verifica (SHA-256) todos los pesos
+  requeridos, incluido YuNet `face_detection_yunet_2026may.onnx`. Es la misma
+  descarga que usa el servicio `models` de Docker.
+- `scripts/emotion/download_emotion_model.py`: descarga solo el clasificador.
+- `scripts/emotion/run_face_detection_test.py`: prueba rostro y emoción (diagnóstico local).
 - `scripts/emotion/check_model_availability.py`: muestra si FER+ y ViT están
   habilitados por los pesos, benchmarks y recursos locales. No modifica archivos.
 

@@ -21,8 +21,9 @@ python scripts/emotion/download_emotion_model.py
 ```
 
 Se añadió el adaptador opcional experimental `hardlyhumans_vit`; no sustituye
-a FER+ como predeterminado. El selector web distingue FER+ (ONNX) y HardlyHumans
-(ViT/PyTorch experimental), fijados antes de iniciar. La elección depende de la
+a FER+ como predeterminado. El selector web, visible solo para administración,
+distingue FER+ (ONNX) y HardlyHumans (ViT/PyTorch experimental), fijados antes
+de iniciar; el estudiante analiza siempre con FER+. La elección depende de la
 disponibilidad y el rendimiento del servidor, pues allí se ejecuta la inferencia;
 el equipo del estudiante solo captura y envía imágenes. Su descarga, licencia declarada,
 preprocesamiento y límites están en [revisión de candidatos](emotion-model-candidates.md).

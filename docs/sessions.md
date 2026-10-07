@@ -97,9 +97,11 @@ consulta las sesiones de los estudiantes que administración le asignó (no pued
 iniciarlas, cancelarlas ni analizar); administración consulta todas. Una sesión asociada
 no puede iniciarse si el estudiante no tiene consentimiento activo.
 
-## Prueba manual
+## Prueba manual (diagnóstico local)
 
-Con `.venv` activo y los modelos descargados:
+Abre la webcam de este equipo con OpenCV; es una herramienta de diagnóstico
+fuera del producto, que usa la cámara del navegador. Con `.venv` activo y los
+modelos descargados:
 
 ```powershell
 python scripts/run_session_test.py

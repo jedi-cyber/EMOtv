@@ -1,9 +1,21 @@
+"""DIAGNÓSTICO LOCAL, FUERA DEL PRODUCTO.
+
+Abre la webcam de este equipo con OpenCV para probar modelos a mano.
+La API nunca abre una cámara: en EMOtv la captura ocurre en el navegador.
+"""
+
+import sys
+from pathlib import Path
+
+# Permite importar scripts.diagnostics al ejecutar el archivo directamente.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from emotv.config import TARGET_WIDTH, TARGET_HEIGHT, TARGET_FPS
-from emotv.infrastructure.vision.camera.opencv_camera import (
+from scripts.diagnostics.opencv_camera import (
     CameraConfig,
     OpenCVCamera,
 )
-from emotv.interfaces.ui.camera_preview import CameraPreview
+from scripts.diagnostics.camera_preview import CameraPreview
 from emotv.shared.performance.monitor import PerformanceMonitor
 
 
