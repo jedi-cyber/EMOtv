@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import json
+import time
 from typing import Protocol
 
 import cv2
@@ -24,7 +25,9 @@ from emotv.application.activity_recommendation_service import (
 )
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
+from emotv.application.live_expression import LiveExpressionTracker, LiveReading
 from emotv.application.ports import StudentRepository, UserRepository
+from emotv.config import LiveExpressionSettings
 from emotv.domain import AccessAction, Activity, Role, SessionState, StabilizedEmotion
 
 
@@ -38,6 +41,8 @@ AdaptiveProcessorFactory = Callable[[Activity, EmotionAnalyzer, StabilizedEmotio
 MAX_FRAME_BYTES = 2_500_000
 DEFAULT_EMOTION_MODEL_ID = "ferplus_onnx"
 EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, "hardlyhumans_vit")
+# Estados en los que la sesión sigue abierta en el WebSocket.
+OPEN_STATES = (SessionState.IN_PROGRESS, SessionState.RECOGNIZED)
 
 
 def create_analysis_router(
@@ -52,8 +57,11 @@ def create_analysis_router(
     model_admission: Callable[[str], dict] | None = None,
     emotion_analyzer_factory: EmotionAnalyzerFactory | None = None,
     adaptive_processor_factory: AdaptiveProcessorFactory | None = None,
+    live_settings: LiveExpressionSettings | None = None,
+    live_clock: Callable[[], float] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
+    live = live_settings or LiveExpressionSettings()
     policy = authorization or AuthorizationService()
     recommender: ActivityRecommendationService | None = None
 
@@ -68,11 +76,10 @@ def create_analysis_router(
 
     @router.websocket("/ws/activity")
     async def activity_socket(websocket: WebSocket) -> None:
-        nonlocal recommender
         await websocket.accept()
         processor: BrowserActivityService | None = None
         analyzer: EmotionAnalyzer | None = None
-        stable_emotion: StabilizedEmotion | None = None
+        recognized: StabilizedEmotion | None = None
         active_session_id: str | None = None
         try:
             if any(value is None for value in (
@@ -173,16 +180,63 @@ def create_analysis_router(
                 return
             model_version = EmotionModelCatalog().get(model_id).version
             sessions.record_emotion_model(session.id, model_id, model_version)
-            stabilizer = EmotionStabilizer()
+            tracker = LiveExpressionTracker(
+                EmotionStabilizer(),
+                stable_seconds=live.stable_seconds,
+                min_confidence=live.min_confidence,
+                clock=live_clock or time.monotonic,
+            )
             await websocket.send_json({
                 "type": "ready",
-                "state": "analyzing_emotion",
+                "state": "live" if adaptive else "analyzing_emotion",
                 "message": "Cámara conectada. Ubica tu rostro en el centro",
                 "progress": 0.0,
                 "emotion_model_id": model_id,
                 "emotion_model_version": model_version,
                 "admission": admission,
+                "live_stable_seconds": live.stable_seconds,
+                "live_min_confidence": live.min_confidence,
             })
+
+            def require_authorized(*states: SessionState) -> None:
+                """Revalida token, cuenta, estado de la sesión y consentimiento."""
+                current_claims = authentication.decode_access_token(str(credentials.get("token", "")))
+                current_user = users.get_by_id(user.id)
+                current_session = sessions.get_session(session.id)
+                if (current_user is None or not current_user.is_active or current_user.must_change_password
+                        or current_claims.get("tv") != current_user.token_version
+                        or current_user.role is not user.role
+                        or current_session is None or current_session.state not in states):
+                    raise PermissionError("Sesión no autorizada")
+                sessions.require_active_consent(session.student_id)
+
+            def recommendation_message(expression: StabilizedEmotion) -> dict[str, object]:
+                nonlocal recommender
+                available_ids = set(activities.ids)
+                mapping = {
+                    emotion: tuple(item_id for item_id in ids if item_id in available_ids)
+                    for emotion, ids in DEFAULT_ACTIVITIES_BY_EMOTION.items()
+                }
+                if recommender is None or recommender.catalog is not activities:
+                    recommender = ActivityRecommendationService(activities, mapping)
+                recent_ids: tuple[str, ...] = ()
+                if session.student_id:
+                    previous = sorted(
+                        (item for item in sessions.list_sessions_by_student(session.student_id)
+                         if item.id != session.id and item.activity_id),
+                        key=lambda item: item.started_at, reverse=True,
+                    )
+                    recent_ids = tuple(item.activity_id for item in previous[:1] if item.activity_id)
+                recommendation = recommender.recommend_varied(expression.emotion, exclude_ids=recent_ids)
+                return {
+                    "type": "recommendation", "state": "choosing_activity",
+                    "message": "Expresión registrada. Revisa la actividad sugerida",
+                    "emotion": expression.emotion,
+                    "emotion_confidence": expression.confidence,
+                    "activity": _activity_payload(recommendation) if recommendation else None,
+                    "activities": [_activity_payload(item) for item in activities.list_all()],
+                    "progress": 0.0,
+                }
 
             while True:
                 event = await websocket.receive()
@@ -194,29 +248,69 @@ def create_analysis_router(
                     except (ValueError, TypeError):
                         await websocket.send_json({"type": "error", "message": "Comando inválido"})
                         continue
-                    if command.get("type") == "cancel":
-                        sessions.cancel_session(session.id)
-                        await websocket.send_json({"type": "cancelled"})
+                    command_type = command.get("type") if isinstance(command, dict) else None
+                    if command_type == "cancel":
+                        closed = sessions.cancel_session(session.id)
+                        await websocket.send_json({
+                            "type": "cancelled",
+                            "recognition_kept": closed.recognized_at is not None,
+                            "exercise_result": closed.exercise_result,
+                        })
                         break
-                    if command.get("type") == "select_activity" and adaptive:
-                        if stable_emotion is None or processor is not None:
-                            await websocket.send_json({"type": "error", "message": "Primero completa el reconocimiento facial"})
+                    if command_type == "confirm_expression" and adaptive:
+                        if recognized is not None:
+                            await websocket.send_json({"type": "confirm_rejected", "message": "Esta sesión ya registró una expresión. Inicia una nueva para registrar otra."})
                             continue
                         try:
-                            current_claims = authentication.decode_access_token(str(credentials.get("token", "")))
-                            current_user = users.get_by_id(user.id)
-                            current_session = sessions.get_session(session.id)
-                            if (current_user is None or not current_user.is_active or current_user.must_change_password
-                                    or current_claims.get("tv") != current_user.token_version
-                                    or current_user.role is not user.role
-                                    or current_session is None or current_session.state is not SessionState.IN_PROGRESS):
-                                raise PermissionError("Sesión no autorizada")
-                            sessions.require_active_consent(session.student_id)
+                            require_authorized(SessionState.IN_PROGRESS)
+                        except (jwt.InvalidTokenError, PermissionError):
+                            await _error(websocket, "No se pudo registrar la expresión", 4403)
+                            break
+                        # El servidor registra su propio último resultado estable;
+                        # cualquier etiqueta que envíe el cliente se ignora.
+                        try:
+                            candidate = tracker.confirm()
+                        except ValueError as reason:
+                            await websocket.send_json({"type": "confirm_rejected", "message": str(reason)})
+                            continue
+                        stored = sessions.record_recognition(
+                            session.id, candidate.emotion, candidate.confidence, model_id, model_version,
+                        )
+                        recognized = candidate
+                        await websocket.send_json({
+                            "type": "recognized", "state": "recognized",
+                            "message": "Expresión registrada",
+                            "emotion": stored.initial_emotion,
+                            "emotion_confidence": stored.emotion_confidence,
+                            "recognized_at": stored.recognized_at.isoformat() if stored.recognized_at else None,
+                        })
+                        await websocket.send_json(recommendation_message(recognized))
+                        continue
+                    if command_type == "finish_without_activity" and adaptive:
+                        if recognized is None or processor is not None:
+                            await websocket.send_json({"type": "error", "message": "Primero registra una expresión"})
+                            continue
+                        finished = sessions.finish_without_activity(session.id)
+                        await websocket.send_json({
+                            "type": "completed", "state": "completed",
+                            "message": "Sesión finalizada sin actividad. Tu expresión quedó registrada.",
+                            "emotion": finished.initial_emotion,
+                            "emotion_confidence": finished.emotion_confidence,
+                            "exercise_result": finished.exercise_result,
+                            "progress": 0.0,
+                        })
+                        break
+                    if command_type == "select_activity" and adaptive:
+                        if recognized is None or processor is not None:
+                            await websocket.send_json({"type": "error", "message": "Primero registra una expresión"})
+                            continue
+                        try:
+                            require_authorized(SessionState.RECOGNIZED)
                             selected = activities.get(str(command.get("activity_id", "")).strip())
                             sessions.assign_activity(session.id, selected.id)
                             assert analyzer is not None and adaptive_processor_factory is not None
                             processor = await asyncio.to_thread(
-                                adaptive_processor_factory, selected, analyzer, stable_emotion,
+                                adaptive_processor_factory, selected, analyzer, recognized,
                             )
                         except (jwt.InvalidTokenError, PermissionError, KeyError, ValueError):
                             await _error(websocket, "No se pudo iniciar la actividad seleccionada", 4403)
@@ -225,8 +319,8 @@ def create_analysis_router(
                             "type": "activity_started", "state": "waiting_for_posture",
                             "message": "Adopta la postura indicada", "progress": 0.0,
                             "activity": _activity_payload(selected),
-                            "emotion": stable_emotion.emotion,
-                            "emotion_confidence": stable_emotion.confidence,
+                            "emotion": recognized.emotion,
+                            "emotion_confidence": recognized.confidence,
                         })
                     continue
                 frame_bytes = event.get("bytes")
@@ -244,7 +338,7 @@ def create_analysis_router(
                     await _error(websocket, "Usuario no autorizado", 4401)
                     break
                 current_session = sessions.get_session(session.id)
-                if current_session is None or current_session.state is not SessionState.IN_PROGRESS:
+                if current_session is None or current_session.state not in OPEN_STATES:
                     await _error(websocket, "La sesión ya no está en progreso", 4409)
                     break
                 if session.student_id is not None:
@@ -262,44 +356,14 @@ def create_analysis_router(
                     continue
 
                 if adaptive and processor is None:
-                    if stable_emotion is not None:
+                    if recognized is not None:
+                        # Expresión registrada y actividad sin elegir: no hay nada que analizar.
                         continue
                     assert analyzer is not None
-                    prediction = await asyncio.to_thread(analyzer.analyze, frame)
-                    if prediction is not None:
-                        stable_emotion = stabilizer.update(*prediction)
-                    if stable_emotion is None:
-                        await websocket.send_json({
-                            "type": "status", "state": "analyzing_emotion",
-                            "message": "Ubica el rostro frente a la cámara" if prediction is None else "Analizando la expresión facial",
-                            "progress": 0.0,
-                        })
-                        continue
-                    available_ids = set(activities.ids)
-                    mapping = {
-                        emotion: tuple(item_id for item_id in ids if item_id in available_ids)
-                        for emotion, ids in DEFAULT_ACTIVITIES_BY_EMOTION.items()
-                    }
-                    if recommender is None or recommender.catalog is not activities:
-                        recommender = ActivityRecommendationService(activities, mapping)
-                    recent_ids: tuple[str, ...] = ()
-                    if session.student_id:
-                        previous = sorted(
-                            (item for item in sessions.list_sessions_by_student(session.student_id)
-                             if item.id != session.id and item.activity_id),
-                            key=lambda item: item.started_at, reverse=True,
-                        )
-                        recent_ids = tuple(item.activity_id for item in previous[:1] if item.activity_id)
-                    recommendation = recommender.recommend_varied(stable_emotion.emotion, exclude_ids=recent_ids)
-                    await websocket.send_json({
-                        "type": "recommendation", "state": "choosing_activity",
-                        "message": "Expresión reconocida. Revisa la actividad sugerida",
-                        "emotion": stable_emotion.emotion,
-                        "emotion_confidence": stable_emotion.confidence,
-                        "activity": _activity_payload(recommendation) if recommendation else None,
-                        "activities": [_activity_payload(item) for item in activities.list_all()],
-                        "progress": 0.0,
-                    })
+                    # Fase en vivo: un mensaje por frame procesado y nada persistido.
+                    prediction, distribution = await asyncio.to_thread(_analyze_detailed, analyzer, frame)
+                    reading = tracker.update(prediction, distribution)
+                    await websocket.send_json(_live_message(reading, live))
                     continue
 
                 assert processor is not None
@@ -319,8 +383,12 @@ def create_analysis_router(
                     "landmarks": _landmarks(processor) if include_landmarks else None,
                 }
                 if status.completed:
-                    sessions.complete_from_activity_status(session.id, status)
+                    stored = sessions.complete_from_activity_status(session.id, status)
                     payload["type"] = "completed"
+                    payload["exercise_result"] = stored.exercise_result
+                    # La expresión registrada en vivo prevalece sobre la del procesador.
+                    payload["emotion"] = stored.initial_emotion
+                    payload["emotion_confidence"] = stored.emotion_confidence
                 await websocket.send_json(payload)
                 if status.completed:
                     break
@@ -339,7 +407,9 @@ def create_analysis_router(
                     pass
             if active_session_id is not None and sessions is not None:
                 current = sessions.get_session(active_session_id)
-                if current is not None and current.state is SessionState.IN_PROGRESS:
+                if current is not None and current.state in OPEN_STATES:
+                    # Con expresión registrada, cancel_session conserva la sesión
+                    # (completada con actividad cancelada); sin ella, la cancela.
                     try:
                         sessions.cancel_session(active_session_id)
                     except RuntimeError:
@@ -357,6 +427,32 @@ async def _error(websocket: WebSocket, message: str, code: int) -> None:
     # depender del evento de cierre, que puede llegar después del mensaje.
     await websocket.send_json({"type": "error", "message": message, "code": code})
     await websocket.close(code=code)
+
+
+def _analyze_detailed(
+    analyzer: EmotionAnalyzer, frame: np.ndarray,
+) -> tuple[tuple[str, float] | None, dict[str, float] | None]:
+    detailed = getattr(analyzer, "analyze_detailed", None)
+    if detailed is None:
+        return analyzer.analyze(frame), None
+    result = detailed(frame)
+    return (None, None) if result is None else result
+
+
+def _live_message(reading: LiveReading, live: LiveExpressionSettings) -> dict[str, object]:
+    expression = reading.expression
+    return {
+        "type": "live",
+        "state": "live",
+        "face_detected": reading.face_detected,
+        "emotion": expression.emotion if expression else None,
+        "emotion_confidence": expression.confidence if expression else None,
+        "top": [{"emotion": label, "probability": probability} for label, probability in reading.top],
+        "stable_seconds": round(reading.stable_seconds, 2),
+        "required_stable_seconds": live.stable_seconds,
+        "can_confirm": reading.can_confirm,
+        "blocked_reason": reading.blocked_reason,
+    }
 
 
 def _activity_payload(activity: Activity) -> dict[str, object]:

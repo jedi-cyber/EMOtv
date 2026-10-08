@@ -80,6 +80,28 @@ El servidor valida la finalización estudiantil; no acepta que un estudiante
 declare un resultado completado mediante REST. La cámara pertenece al navegador,
 no al servidor: no existen rutas de cámara del servidor.
 
+### Análisis en vivo (sesión sin actividad previa)
+
+| Dirección | Mensaje | Contenido |
+| --- | --- | --- |
+| servidor → cliente | `ready` | `state: "live"`, `live_stable_seconds`, `live_min_confidence` |
+| servidor → cliente | `live` | uno por frame procesado: `face_detected`, `emotion` (clave del modelo, estabilizada), `emotion_confidence`, `top` (tres clases más probables si el modelo da la distribución), `stable_seconds`, `required_stable_seconds`, `can_confirm`, `blocked_reason` |
+| cliente → servidor | `confirm_expression` | sin etiqueta; cualquier `emotion` enviada se ignora |
+| servidor → cliente | `confirm_rejected` | `message` con el motivo (sin rostro, sin expresión estable, confianza baja o poco tiempo estable) |
+| servidor → cliente | `recognized` | la expresión que el servidor **realmente** registró y `recognized_at`; después llega `recommendation` |
+| cliente → servidor | `select_activity` | `activity_id`; inicia la actividad |
+| cliente → servidor | `finish_without_activity` | cierra como `completed` con `exercise_result: "skipped"` |
+| cliente → servidor | `cancel` | responde `cancelled` con `recognition_kept` |
+
+La fase en vivo no escribe en la base de datos ni genera recomendación. El
+registro solo se acepta si hay rostro y la expresión lleva al menos
+`LIVE_STABLE_SECONDS` sin cambiar (1 por defecto) con confianza media de al
+menos `LIVE_MIN_CONFIDENCE` (0.5 por defecto), ambos configurables en `.env`.
+El servidor envía un mensaje `live` por frame procesado y el navegador envía el
+siguiente frame solo al recibir la respuesta, así que no hay mensajes extra.
+Con la expresión ya registrada, desconectarse o cancelar conserva la sesión
+(`completed` con `exercise_result: "cancelled"`); ver [Sesiones](sessions.md).
+
 `GET /analysis/models` es solo para administración. El estudiante analiza
 siempre con FER+; si envía un `emotion_model_id` distinto, el WebSocket lo
 rechaza con `4403`.

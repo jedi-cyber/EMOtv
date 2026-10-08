@@ -13,12 +13,20 @@ memoria y los descarta; no guarda fotografías ni video.
 ```text
 Navegador (getUserMedia)
     -> JPEG por WebSocket /ws/activity (token, sesión, actividad)
-    -> EmotionFrameAnalyzer: YuNet (rostro) + FER+ ONNX (expresión)
-    -> EmotionStabilizer -> ActivityRecommendationService (2+ posturas)
+    -> EmotionFrameAnalyzer: YuNet (rostro) + FER+ ONNX (expresión y distribución)
+    -> LiveExpressionTracker (EmotionStabilizer): lectura en vivo, nada persistido
+    -> el estudiante confirma -> SessionService.record_recognition (expresión elegida)
+    -> ActivityRecommendationService (2+ posturas) -> actividad u omitirla
     -> PoseService: MediaPipe + PostureValidator (solo posturas)
     -> BrowserActivityService -> progreso y estado al navegador
     -> SessionService -> PostgreSQL (resultado, sin imágenes)
 ```
+
+En la fase en vivo el estudiante practica producir y reconocer expresiones: ve
+la estimación del modelo mientras cambia de gesto y decide cuál registrar. El
+servidor registra su propio último resultado estable, nunca una etiqueta del
+cliente, y solo si hubo rostro, estabilidad y confianza suficientes
+(`LIVE_STABLE_SECONDS`, `LIVE_MIN_CONFIDENCE`).
 
 La expresión se estima solo a partir del rostro. El cuerpo se usa
 exclusivamente para verificar posturas; nunca se infieren emociones desde los

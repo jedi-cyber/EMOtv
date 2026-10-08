@@ -3,12 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from emotv.domain.session_state import SessionState
+from emotv.domain.session_state import ActivityOutcome, SessionState
 
 
 @dataclass(frozen=True, slots=True)
 class EmotionalSession:
-    """Registro inmutable del ciclo de una actividad emocional guiada."""
+    """Registro inmutable del ciclo de una actividad emocional guiada.
+
+    recognized_at marca la expresión elegida por el estudiante en el análisis
+    en vivo; es nulo en sesiones anteriores a ese flujo o sin confirmación.
+    """
 
     id: str
     started_at: datetime
@@ -22,6 +26,7 @@ class EmotionalSession:
     student_id: str | None = None
     emotion_model_id: str | None = None
     emotion_model_version: str | None = None
+    recognized_at: datetime | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -91,17 +96,30 @@ class EmotionalSession:
                 raise ValueError("exercise_duration_seconds no puede ser negativa")
             object.__setattr__(self, "exercise_duration_seconds", duration)
 
+        if self.recognized_at is not None:
+            if not isinstance(self.recognized_at, datetime):
+                raise TypeError("recognized_at debe ser datetime")
+            if self.recognized_at.tzinfo is None or self.recognized_at.utcoffset() is None:
+                raise ValueError("recognized_at debe incluir zona horaria")
+            if self.recognized_at < self.started_at:
+                raise ValueError("recognized_at no puede ser anterior a started_at")
+            if emotion is None:
+                raise ValueError("recognized_at requiere la expresión registrada")
+        if state is SessionState.RECOGNIZED and self.recognized_at is None:
+            raise ValueError("una sesión reconocida requiere recognized_at")
+
         if state is SessionState.COMPLETED:
-            required_results = (
-                emotion,
-                activity_id,
-                exercise_result,
-                self.exercise_duration_seconds,
-            )
-            if any(value is None for value in required_results):
+            if emotion is None or exercise_result is None:
                 raise ValueError(
-                    "una sesión completada requiere emoción, actividad y resultado "
-                    "del ejercicio"
+                    "una sesión completada requiere emoción y resultado de la actividad"
+                )
+            # Omitir o cancelar la actividad conserva la expresión registrada;
+            # solo una actividad completada exige actividad y duración.
+            if exercise_result == ActivityOutcome.COMPLETED.value and (
+                activity_id is None or self.exercise_duration_seconds is None
+            ):
+                raise ValueError(
+                    "una sesión con actividad completada requiere actividad y duración"
                 )
 
         object.__setattr__(self, "id", session_id)

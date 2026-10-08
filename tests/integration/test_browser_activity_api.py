@@ -20,6 +20,7 @@ from emotv.domain.emotional_activity_status import EmotionalActivityStatus, Emot
 from emotv.domain.stabilized_emotion import StabilizedEmotion
 from emotv.infrastructure.persistence import Base, PostgresUserRepository, PostgresStudentRepository, PostgresConsentRepository, PostgresSessionRepository
 from emotv.interfaces.web.session_router import create_session_router
+from emotv.config import LiveExpressionSettings
 from emotv.interfaces.web.analysis_router import create_analysis_router
 
 
@@ -41,6 +42,23 @@ class Processor:
 class AdaptiveAnalyzer:
     def analyze(self, frame):
         return "sadness", .9
+
+    def analyze_detailed(self, frame):
+        return ("sadness", .9), {"sadness": .9, "neutral": .05, "happiness": .03, "fear": .02}
+
+
+class FakeClock:
+    """Reloj de estabilidad controlado por la prueba (sin esperas reales)."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+CLOCK = FakeClock()
+STABLE_FRAMES = 5  # EMOTION_STABILIZER_MIN_SAMPLES por defecto
 
 
 class AdaptiveProcessor(Processor):
@@ -77,6 +95,7 @@ class AdaptiveProcessor(Processor):
 
 @pytest.fixture
 def flow(request):
+    CLOCK.now = 0.0
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -105,7 +124,9 @@ def flow(request):
                                                  state=getattr(request, "param", "SUPPORTED"),
                                                  reasons=["RAM insuficiente"] if getattr(request, "param", "SUPPORTED") == "BLOCKED" else []),
                                              emotion_analyzer_factory=lambda model_id: AdaptiveAnalyzer(),
-                                             adaptive_processor_factory=lambda activity, analyzer, emotion: _adaptive_processor(activity, emotion, processors)))
+                                             adaptive_processor_factory=lambda activity, analyzer, emotion: _adaptive_processor(activity, emotion, processors),
+                                             live_settings=LiveExpressionSettings(stable_seconds=1.0, min_confidence=0.5),
+                                             live_clock=CLOCK))
     with TestClient(app) as client:
         yield client, auth, user, other, student, sessions, identity, processors, users
     engine.dispose()
@@ -121,34 +142,189 @@ def _adaptive_processor(activity, emotion, processors):
     return instance
 
 
-def test_recognize_then_recommend_then_complete_activity(flow):
-    client, auth, user, _, student, sessions, _, processors, _ = flow
+JPEG = cv2.imencode(".jpg", np.zeros((32, 32, 3), dtype=np.uint8))[1].tobytes()
+
+
+def _open_adaptive(client, auth, user, session_id, socket):
+    socket.send_json({"type": "authenticate", "token": auth.create_access_token(user),
+                      "session_id": session_id, "emotion_model_id": "ferplus_onnx"})
+    ready = socket.receive_json()
+    assert ready["type"] == "ready" and ready["state"] == "live"
+
+
+def _live_frames(socket, count=STABLE_FRAMES):
+    messages = []
+    for _ in range(count):
+        socket.send_bytes(JPEG)
+        messages.append(socket.receive_json())
+    return messages
+
+
+def _recognize(socket, **extra):
+    """Estabiliza, mantiene la expresión 1 s (reloj falso) y la registra."""
+    _live_frames(socket)
+    CLOCK.now += 1.0
+    socket.send_json({"type": "confirm_expression", **extra})
+    recognized = socket.receive_json()
+    assert recognized["type"] == "recognized"
+    recommendation = socket.receive_json()
+    assert recommendation["type"] == "recommendation"
+    return recognized, recommendation
+
+
+def _student_session(client, auth, user):
     headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
     response = client.post("/sessions", headers=headers, json={})
     assert response.status_code == 201
-    session_id = response.json()["id"]
+    return response.json()["id"]
+
+
+def test_recognize_then_recommend_then_complete_activity(flow):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session_id = _student_session(client, auth, user)
     with client.websocket_connect("/ws/activity") as socket:
-        socket.send_json({"type": "authenticate", "token": auth.create_access_token(user),
-                          "session_id": session_id, "emotion_model_id": "ferplus_onnx"})
-        assert socket.receive_json()["type"] == "ready"
-        _, jpeg = cv2.imencode(".jpg", np.zeros((32, 32, 3), dtype=np.uint8))
-        for _ in range(4):
-            socket.send_bytes(jpeg.tobytes())
-            assert socket.receive_json()["state"] == "analyzing_emotion"
-        socket.send_bytes(jpeg.tobytes())
-        suggestion = socket.receive_json()
-        assert suggestion["type"] == "recommendation"
-        assert suggestion["emotion"] == "sadness"
+        _open_adaptive(client, auth, user, session_id, socket)
+        recognized, suggestion = _recognize(socket)
+        assert recognized["emotion"] == suggestion["emotion"] == "sadness"
         assert suggestion["activity"]["id"] in {"morning_mobility", "open_and_reach", "arms_up_5s"}
-        assert sessions.get_session(session_id).activity_id is None
+        stored = sessions.get_session(session_id)
+        assert stored.state is SessionState.RECOGNIZED and stored.activity_id is None
         socket.send_json({"type": "select_activity", "activity_id": "arms_up_5s"})
         assert socket.receive_json()["type"] == "activity_started"
+        assert sessions.get_session(session_id).state is SessionState.IN_PROGRESS
         assert sessions.get_session(session_id).activity_id == "arms_up_5s"
-        socket.send_bytes(jpeg.tobytes())
-        assert socket.receive_json()["type"] == "completed"
-    assert sessions.get_session(session_id).state is SessionState.COMPLETED
-    assert sessions.get_session(session_id).initial_emotion == "sadness"
+        socket.send_bytes(JPEG)
+        completed = socket.receive_json()
+        assert completed["type"] == "completed" and completed["exercise_result"] == "completed"
+    final = sessions.get_session(session_id)
+    assert final.state is SessionState.COMPLETED
+    assert final.exercise_result == "completed"
+    assert final.initial_emotion == "sadness"
+    assert final.recognized_at == stored.recognized_at
     assert processors[-1].closed
+
+
+def test_live_phase_streams_readings_without_writing_to_database(flow):
+    client, auth, user, _, _, sessions, _, processors, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        before = sessions.get_session(session_id)
+        writes = []
+        original_save = sessions.repository.save
+        sessions.repository.save = lambda item: writes.append(item) or original_save(item)
+        try:
+            messages = _live_frames(socket, STABLE_FRAMES + 2)
+        finally:
+            sessions.repository.save = original_save
+        assert writes == []
+        assert sessions.get_session(session_id) == before
+    assert all(message["type"] == "live" for message in messages)
+    assert messages[0]["emotion"] is None and not messages[0]["can_confirm"]
+    last = messages[-1]
+    assert last["face_detected"] and last["emotion"] == "sadness"
+    assert [item["emotion"] for item in last["top"]] == ["sadness", "neutral", "happiness"]
+    assert last["required_stable_seconds"] == 1.0
+    assert not last["can_confirm"] and last["blocked_reason"]
+    assert not processors
+
+
+def test_confirmation_requires_stability_and_uses_server_expression(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _live_frames(socket)
+        socket.send_json({"type": "confirm_expression"})
+        rejected = socket.receive_json()
+        assert rejected["type"] == "confirm_rejected" and "momento" in rejected["message"]
+        assert sessions.get_session(session_id).initial_emotion is None
+        CLOCK.now += 1.0
+        # El cliente intenta imponer otra etiqueta; el servidor la ignora.
+        socket.send_json({"type": "confirm_expression", "emotion": "happiness", "emotion_confidence": 1.0})
+        recognized = socket.receive_json()
+        assert recognized["type"] == "recognized" and recognized["emotion"] == "sadness"
+        socket.receive_json()  # recomendación
+        stored = sessions.get_session(session_id)
+        assert stored.state is SessionState.RECOGNIZED
+        assert (stored.initial_emotion, stored.emotion_confidence) == ("sadness", .9)
+        assert stored.recognized_at is not None
+        socket.send_json({"type": "confirm_expression"})
+        assert socket.receive_json()["type"] == "confirm_rejected"  # una sola expresión por sesión
+
+
+def test_confirmation_without_face_is_rejected(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        socket.send_json({"type": "confirm_expression"})
+        rejected = socket.receive_json()
+        assert rejected["type"] == "confirm_rejected" and "rostro" in rejected["message"]
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.IN_PROGRESS:
+        time.sleep(0.01)
+    assert sessions.get_session(session_id).state is SessionState.CANCELLED
+
+
+def test_confirmation_then_disconnect_keeps_expression(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _recognize(socket)
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.RECOGNIZED:
+        time.sleep(0.01)
+    final = sessions.get_session(session_id)
+    assert final.state is SessionState.COMPLETED
+    assert final.exercise_result == "cancelled"
+    assert final.initial_emotion == "sadness" and final.recognized_at is not None
+
+
+def test_confirmation_then_finish_without_activity(flow):
+    client, auth, user, _, _, sessions, _, processors, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _recognize(socket)
+        socket.send_json({"type": "finish_without_activity"})
+        finished = socket.receive_json()
+        assert finished["type"] == "completed" and finished["exercise_result"] == "skipped"
+    final = sessions.get_session(session_id)
+    assert final.state is SessionState.COMPLETED
+    assert final.exercise_result == "skipped"
+    assert final.activity_id is None and final.initial_emotion == "sadness"
+    assert not processors
+
+
+def test_cancel_during_activity_keeps_expression(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _recognize(socket)
+        socket.send_json({"type": "select_activity", "activity_id": "arms_up_5s"})
+        assert socket.receive_json()["type"] == "activity_started"
+        socket.send_json({"type": "cancel"})
+        cancelled = socket.receive_json()
+        assert cancelled["type"] == "cancelled" and cancelled["recognition_kept"] is True
+    final = sessions.get_session(session_id)
+    assert (final.state, final.exercise_result, final.initial_emotion) == (SessionState.COMPLETED, "cancelled", "sadness")
+
+
+def test_session_without_confirmation_is_still_cancelled(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _live_frames(socket)
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.IN_PROGRESS:
+        time.sleep(0.01)
+    final = sessions.get_session(session_id)
+    assert final.state is SessionState.CANCELLED
+    assert final.initial_emotion is None and final.recognized_at is None
 
 
 def test_start_complete_and_reject_cancel_of_completed_session(flow):
@@ -180,6 +356,12 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
             if command == "cancel":
                 socket.send_json({"type": "cancel"})
                 assert socket.receive_json()["type"] == "cancelled"
+        # El finally del servidor corre en otro hilo tras la desconexión.
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and (
+            sessions.get_session(session.id).state is SessionState.IN_PROGRESS or not processors[-1].closed
+        ):
+            time.sleep(0.01)
         assert sessions.get_session(session.id).state is SessionState.CANCELLED
         assert processors[-1].closed
 
@@ -216,17 +398,11 @@ def test_recommended_sequence_uses_same_session_and_exposes_every_step(flow):
     client, auth, user, _, _, sessions, _, processors, _ = flow
     headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
     session_id = client.post("/sessions", headers=headers, json={}).json()["id"]
-    _, jpeg = cv2.imencode(".jpg", np.zeros((32, 32, 3), dtype=np.uint8))
+    jpeg = np.frombuffer(JPEG, dtype=np.uint8)
 
     with client.websocket_connect("/ws/activity") as socket:
-        socket.send_json({"type": "authenticate", "token": auth.create_access_token(user),
-                          "session_id": session_id, "emotion_model_id": "ferplus_onnx"})
-        assert socket.receive_json()["type"] == "ready"
-        for _ in range(4):
-            socket.send_bytes(jpeg.tobytes())
-            assert socket.receive_json()["state"] == "analyzing_emotion"
-        socket.send_bytes(jpeg.tobytes())
-        recommendation = socket.receive_json()
+        _open_adaptive(client, auth, user, session_id, socket)
+        _, recommendation = _recognize(socket)
         activity = recommendation["activity"]
         assert recommendation["type"] == "recommendation"
         assert len(activity["steps"]) >= 2

@@ -58,15 +58,13 @@ class FerPlusEmotionClassifier:
         self.output_name = self.session.get_outputs()[0].name
 
     def predict(self, cropped_face: CroppedFace) -> tuple[str, float]:
-        """
-        Predice la emoción a partir de un rostro preprocesado.
+        """Devuelve (emoción dominante, confianza) para un rostro preprocesado."""
+        distribution = self.predict_distribution(cropped_face)
+        emotion = max(distribution, key=distribution.__getitem__)
+        return emotion, distribution[emotion]
 
-        Args:
-            cropped_face: Objeto CroppedFace con imagen normalizada.
-
-        Returns:
-            tuple[str, float]: (emoción, confianza)
-        """
+    def predict_distribution(self, cropped_face: CroppedFace) -> dict[str, float]:
+        """Probabilidad de cada clase FER+ (suman 1)."""
         # 1. Verificar que la imagen tenga el tamaño correcto
         img = cropped_face.image
         if img.shape[:2] != self.input_size:
@@ -95,13 +93,7 @@ class FerPlusEmotionClassifier:
         exp_logits = np.exp(logits - np.max(logits, axis=1, keepdims=True))
         probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
         probs = probs[0]  # (8,)
-
-        # 5. Emoción dominante
-        top_idx = np.argmax(probs)
-        emotion = self.EMOTIONS[top_idx]
-        confidence = float(probs[top_idx])
-
-        return emotion, confidence
+        return {label: float(probability) for label, probability in zip(self.EMOTIONS, probs)}
 
 
 # Compatibilidad con los imports y scripts anteriores.

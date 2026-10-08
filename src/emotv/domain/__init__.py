@@ -13,7 +13,7 @@ from emotv.domain.pose_result import PoseResult
 from emotv.domain.posture_id import PostureId
 from emotv.domain.posture_result import PostureResult
 from emotv.domain.session import EmotionalSession
-from emotv.domain.session_state import SessionState
+from emotv.domain.session_state import ActivityOutcome, SessionState
 from emotv.domain.consent import ConsentRecord
 from emotv.domain.role import Role
 from emotv.domain.user import Student, User
@@ -36,6 +36,7 @@ __all__ = [
     "PostureResult",
     "EmotionalSession",
     "SessionState",
+    "ActivityOutcome",
     "ConsentRecord",
     "Role",
     "Student",

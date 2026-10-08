@@ -23,19 +23,48 @@ PostgreSQL son intercambiables sin modificar detectores ni validadores.
 
 `EmotionalSession` es una entidad inmutable con ID, timestamps con zona horaria,
 estado, emoción inicial, confianza, actividad, resultado y duración. Sus estados
-son `created`, `in_progress`, `completed` y `cancelled`.
+son `created`, `in_progress`, `recognized`, `completed` y `cancelled`.
 Puede conservar `emotion_model_id` y `emotion_model_version` juntos cuando el
 análisis web carga un clasificador. Las sesiones históricas y las iniciadas sin
 clasificación facial conservan ambos valores nulos.
 
 ```text
-CREATED -> IN_PROGRESS -> COMPLETED
+CREATED -> IN_PROGRESS -> COMPLETED                      (actividad elegida de antemano)
     |            |
-    +------------+------> CANCELLED
+    |            +-> RECOGNIZED -> IN_PROGRESS -> COMPLETED (completed | cancelled)
+    |            |        |
+    |            |        +-> COMPLETED (skipped: sin actividad; cancelled: se cerró)
+    +------------+------> CANCELLED                      (sin expresión registrada)
 ```
 
-Una sesión completada exige todos los datos del resultado. Una cancelada puede
-conservar información parcial. No se permite modificar una sesión terminal.
+### Expresión registrada en el análisis en vivo
+
+En el analizador adaptativo el estudiante ve en tiempo real la expresión que
+estima el modelo y decide con un botón cuál registrar. La lectura en vivo no se
+guarda en ningún lado. Al confirmar, `SessionService.record_recognition` guarda
+en ese momento la expresión, su confianza, el modelo y `recognized_at` (con zona
+horaria), y la sesión pasa a `recognized`. Una sesión registra **una sola**
+expresión; para otra se inicia una sesión nueva.
+
+`exercise_result` guarda el resultado de la actividad corporal, separado de la
+expresión:
+
+| Valor | Significado |
+| --- | --- |
+| `completed` | actividad terminada; exige `activity_id` y duración |
+| `skipped` | el estudiante finalizó sin actividad (`finish_without_activity`) |
+| `cancelled` | se canceló o se cerró la conexión después de registrar la expresión |
+
+Con expresión registrada, cancelar (REST `/cancel`, mensaje `cancel` o cierre
+del WebSocket) **no pierde la sesión**: queda `completed` con resultado
+`cancelled`. Sin expresión registrada, la sesión se cancela como antes.
+Completar la actividad no sobrescribe la expresión registrada.
+
+Una sesión completada exige expresión y resultado; solo `completed` exige además
+actividad y duración. Una cancelada puede conservar información parcial. No se
+permite modificar una sesión terminal. La migración `20261008_11` agrega
+`recognized_at` y amplía las restricciones; las sesiones anteriores quedan con
+`recognized_at` nulo, porque no se registraron así.
 
 ## Aplicación e infraestructura
 
@@ -68,7 +97,8 @@ crea el esquema automáticamente; las tablas serán administradas con Alembic.
 | `activity_id` | `varchar(128)` | Sí | Actividad corporal recomendada |
 | `emotion_model_id` | `varchar(128)` | Sí | Identificador del clasificador usado |
 | `emotion_model_version` | `varchar(128)` | Sí | Versión/revisión del clasificador usado |
-| `exercise_result` | `varchar(32)` | Sí | Resultado del ejercicio |
+| `recognized_at` | `timestamptz` | Sí | Momento en que el estudiante registró la expresión |
+| `exercise_result` | `varchar(32)` | Sí | Resultado de la actividad: `completed`, `skipped` o `cancelled` |
 | `exercise_duration_seconds` | `double precision` | Sí | Duración no negativa |
 | `student_id` | `varchar(64)` | Sí | Estudiante asociado, con clave foránea |
 

@@ -13,7 +13,8 @@ from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
                           FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
-                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits)
+                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
+                          get_live_expression_settings)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -113,6 +114,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
             activity, analyzer, PoseService(), initial_emotion=emotion,
         ),
+        live_settings=get_live_expression_settings(),
     ))
     flowise_client = FlowiseClient(FLOWISE_API_URL, FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS) if FLOWISE_API_URL else None
     app.include_router(create_chat_router(flowise_client, authentication_service, user_repository))

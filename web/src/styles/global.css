@@ -159,6 +159,11 @@ input:focus, select:focus { outline: 3px solid rgba(25,116,81,.18); border-color
 .progress-label { display: flex; justify-content: space-between; margin-top: 2rem; }
 .progress-track { overflow: hidden; height: .75rem; margin: .5rem 0 1.5rem; border-radius: 999px; background: #dfe8e2; }
 .progress-track div { height: 100%; border-radius: inherit; background: #27a46f; transition: width .2s ease; }
+.progress-track.small { height: .4rem; margin: .25rem 0 .5rem; }
+.live-expression-name { margin: .5rem 0; font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+.live-expression-face { font-weight: 600; }
+.live-top { margin: 0 0 1rem; padding: 0; list-style: none; font-size: .9rem; }
+.live-expression .progress-label { margin-top: .75rem; }
 .form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .form-grid .wide { grid-column: span 2; }
 td small { display: block; margin-top: .2rem; color: #758078; }
@@ -182,6 +187,7 @@ th { color: #617067; background: #f8faf8; font-size: .78rem; text-transform: upp
 tbody tr:last-child td { border-bottom: 0; }
 .status-created { background: #e8edf1; }
 .status-in_progress { color: #72570a; background: #fff2bf; }
+.status-recognized { color: #1f4f8a; background: #e1ecfb; }
 .status-completed { color: #166044; background: #dcf3e7; }
 .status-cancelled { color: #8f3030; background: #fde4e1; }
 

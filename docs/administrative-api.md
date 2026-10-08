@@ -56,7 +56,8 @@ de reiniciar FastAPI.
 | `DELETE /users/{id}/assigned-students/{student_id}` | Administración: retira la asignación; `404` si no existía |
 
 El endpoint de finalización recibe `initial_emotion`, `emotion_confidence` (0–1),
-`activity_id`, `exercise_result` (`completed`) y `exercise_duration_seconds`.
+`activity_id`, `exercise_result` (solo `completed`) y `exercise_duration_seconds`.
+Si el estudiante ya registró su expresión en vivo, esa expresión se conserva.
 No permite cambiar la actividad de una sesión ya asociada. Los estudiantes
 completan la sesión mediante el análisis del servidor en `/ws/activity`, no
 mediante resultados declarados por el cliente.

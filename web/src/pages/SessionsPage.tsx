@@ -7,10 +7,8 @@ import { useAuth } from "../auth/useAuth";
 import { PageState } from "../components/PageState";
 import { Alert } from "../components/Alert";
 import { PageHeader } from "../components/PageHeader";
+import { activityOutcomeName, sessionStateName } from "../sessions/labels";
 
-const stateNames: Record<string, string> = {
-  created: "Creada", in_progress: "En progreso", completed: "Completada", cancelled: "Cancelada",
-};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -56,8 +54,8 @@ export function SessionsPage() {
       {appliedFilter && <p className="filter-summary">Mostrando sesiones del estudiante <strong>{appliedFilter}</strong>.</p>}
       {actionError && <Alert variant="error">{actionError}</Alert>}
       <PageState {...query} empty={!query.loading && !query.error && sessions.length === 0} emptyMessage={user?.role === "psychologist" ? "No hay sesiones de tus estudiantes asignados." : "Todavía no tienes sesiones registradas."} onRetry={query.reload} />
-      {sessions.length > 0 && <div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th>{user?.role !== "student" && <th>Estudiante</th>}<th>Actividad</th><th>Emoción inicial</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
-        {sessions.map((session) => <tr key={session.id}><td><Link to={`/sessions/${session.id}`}>{formatDate(session.started_at)}</Link></td><td><span className={`status status-${session.state}`}>{stateNames[session.state] ?? session.state}</span></td>{user?.role !== "student" && <td>{session.student_id ?? "Sin asociar"}</td>}<td>{session.activity_id ?? "—"}</td><td>{session.initial_emotion ?? "—"}</td><td>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</td><td>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds.toFixed(1)} s`}</td></tr>)}
+      {sessions.length > 0 && <div className="table-wrap"><table><thead><tr><th>Fecha</th><th>Estado</th>{user?.role !== "student" && <th>Estudiante</th>}<th>Actividad</th><th>Resultado de la actividad</th><th>Emoción inicial</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
+        {sessions.map((session) => <tr key={session.id}><td><Link to={`/sessions/${session.id}`}>{formatDate(session.started_at)}</Link></td><td><span className={`status status-${session.state}`}>{sessionStateName(session.state)}</span></td>{user?.role !== "student" && <td>{session.student_id ?? "Sin asociar"}</td>}<td>{session.activity_id ?? "—"}</td><td>{activityOutcomeName(session.exercise_result)}</td><td>{session.initial_emotion ?? "—"}</td><td>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</td><td>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds.toFixed(1)} s`}</td></tr>)}
       </tbody></table></div>}
     </section>
   );

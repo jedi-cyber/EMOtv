@@ -32,7 +32,7 @@ class SessionRecord(Base):
     __tablename__ = "sessions"
     __table_args__ = (
         CheckConstraint(
-            "state IN ('created', 'in_progress', 'completed', 'cancelled')",
+            "state IN ('created', 'in_progress', 'recognized', 'completed', 'cancelled')",
             name="ck_sessions_state_valid",
         ),
         CheckConstraint(
@@ -51,14 +51,20 @@ class SessionRecord(Base):
         ),
         CheckConstraint(
             "(state IN ('completed', 'cancelled') AND completed_at IS NOT NULL) OR "
-            "(state IN ('created', 'in_progress') AND completed_at IS NULL)",
+            "(state IN ('created', 'in_progress', 'recognized') AND completed_at IS NULL)",
             name="ck_sessions_completion_timestamp",
         ),
         CheckConstraint(
             "state <> 'completed' OR "
-            "(initial_emotion IS NOT NULL AND activity_id IS NOT NULL AND "
-            "exercise_result IS NOT NULL AND exercise_duration_seconds IS NOT NULL)",
+            "(initial_emotion IS NOT NULL AND exercise_result IS NOT NULL AND "
+            "(exercise_result <> 'completed' OR "
+            "(activity_id IS NOT NULL AND exercise_duration_seconds IS NOT NULL)))",
             name="ck_sessions_completed_result",
+        ),
+        CheckConstraint(
+            "(recognized_at IS NULL OR (initial_emotion IS NOT NULL AND recognized_at >= started_at)) AND "
+            "(state <> 'recognized' OR recognized_at IS NOT NULL)",
+            name="ck_sessions_recognition",
         ),
         CheckConstraint(
             "(emotion_model_id IS NULL AND emotion_model_version IS NULL) OR "
@@ -83,6 +89,7 @@ class SessionRecord(Base):
     activity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     emotion_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     emotion_model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recognized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exercise_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exercise_duration_seconds: Mapped[float | None] = mapped_column(
         Float,
