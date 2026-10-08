@@ -1,4 +1,4 @@
-import { expressionName } from "./expressionLabels";
+import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 
 export type LiveReading = {
   face_detected: boolean;
@@ -22,6 +22,7 @@ function Bar({ label, value, small = false }: { label: string; value: number; sm
 
 /** Lectura en vivo del modelo. Solo muestra el último mensaje; no guarda historial. */
 export function LiveExpressionPanel({ live }: { live: LiveReading | null }) {
+  const { label: expressionName } = useExpressionCatalog();
   const required = live?.required_stable_seconds ?? 1;
   const stability = required > 0 ? percent((live?.stable_seconds ?? 0) / required) : (live?.emotion ? 100 : 0);
   return <div className="live-expression" aria-live="polite">

@@ -10,11 +10,13 @@ import { useAuth } from "../auth/useAuth";
 import { paths } from "../routes/paths";
 import { PageHeader } from "../components/PageHeader";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
+import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 
 
 export function SessionDetailPage() {
   const { sessionId = "" } = useParams();
   const { token, user } = useAuth();
+  const { label: expressionLabel } = useExpressionCatalog();
   const query = useApiQuery<EmotionalSession>(`/sessions/${encodeURIComponent(sessionId)}`);
   const session = query.data;
   const [confirming, setConfirming] = useState(false);
@@ -38,7 +40,7 @@ export function SessionDetailPage() {
   return <section><Link className="back-link" to={paths.sessions}>← Volver a sesiones</Link><PageState {...query} onRetry={query.reload} />{session && <>
     <PageHeader section="Seguimiento" title="Detalle de sesión" description={`Identificador: ${session.id}`} actions={canCancel ? <button className="button danger" onClick={() => setConfirming(true)}>Cancelar sesión</button> : undefined} />
     {message && <Alert variant="success">{message}</Alert>}{error && <Alert variant="error">{error}</Alert>}
-    <dl className="detail-grid"><div><dt>Estado</dt><dd><span className={`status status-${session.state}`}>{sessionStateName(session.state)}</span></dd></div><div><dt>Inicio</dt><dd>{new Date(session.started_at).toLocaleString("es-PE")}</dd></div><div><dt>Finalización</dt><dd>{session.completed_at ? new Date(session.completed_at).toLocaleString("es-PE") : "—"}</dd></div><div><dt>Estudiante</dt><dd>{session.student_id ?? "Sin asociación"}</dd></div><div><dt>Actividad</dt><dd>{session.activity_id ?? "—"}</dd></div><div><dt>Modelo facial</dt><dd>{session.emotion_model_id ?? "No registrado"}</dd></div><div><dt>Versión del modelo</dt><dd>{session.emotion_model_version ?? "—"}</dd></div><div><dt>Emoción inicial</dt><dd>{session.initial_emotion ?? "—"}</dd></div><div><dt>Expresión registrada el</dt><dd>{session.recognized_at ? new Date(session.recognized_at).toLocaleString("es-PE") : "—"}</dd></div><div><dt>Confianza</dt><dd>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</dd></div><div><dt>Resultado de la actividad</dt><dd>{activityOutcomeName(session.exercise_result)}</dd></div><div><dt>Duración</dt><dd>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds} s`}</dd></div></dl>
+    <dl className="detail-grid"><div><dt>Estado</dt><dd><span className={`status status-${session.state}`}>{sessionStateName(session.state)}</span></dd></div><div><dt>Inicio</dt><dd>{new Date(session.started_at).toLocaleString("es-PE")}</dd></div><div><dt>Finalización</dt><dd>{session.completed_at ? new Date(session.completed_at).toLocaleString("es-PE") : "—"}</dd></div><div><dt>Estudiante</dt><dd>{session.student_id ?? "Sin asociación"}</dd></div><div><dt>Actividad</dt><dd>{session.activity_id ?? "—"}</dd></div><div><dt>Modelo facial</dt><dd>{session.emotion_model_id ?? "No registrado"}</dd></div><div><dt>Versión del modelo</dt><dd>{session.emotion_model_version ?? "—"}</dd></div><div><dt>Expresión registrada</dt><dd>{expressionLabel(session.initial_emotion)}</dd></div><div><dt>Expresión registrada el</dt><dd>{session.recognized_at ? new Date(session.recognized_at).toLocaleString("es-PE") : "—"}</dd></div><div><dt>Confianza</dt><dd>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</dd></div><div><dt>Resultado de la actividad</dt><dd>{activityOutcomeName(session.exercise_result)}</dd></div><div><dt>Duración</dt><dd>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds} s`}</dd></div></dl>
     <ConfirmDialog open={confirming} title="Cancelar sesión" message={recognitionKept ? "La expresión ya quedó registrada y se conserva; solo se cancelará la actividad." : "La sesión quedará cerrada y no podrá reanudarse."} confirming={cancelling} confirmLabel="Cancelar sesión" onCancel={() => setConfirming(false)} onConfirm={cancelSession} />
   </>}</section>;
 }

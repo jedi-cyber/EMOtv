@@ -182,3 +182,30 @@ class ConsentPolicyRecord(Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class ExpressionInfoRecord(Base):
+    """Texto educativo por expresión, revisable por Psicología."""
+
+    __tablename__ = "expression_info"
+    __table_args__ = (
+        CheckConstraint("review_status IN ('draft', 'reviewed')", name="ck_expression_info_review_status"),
+        CheckConstraint(
+            "(review_status = 'draft' AND reviewed_at IS NULL AND reviewed_by_user_id IS NULL) OR "
+            "(review_status = 'reviewed' AND reviewed_at IS NOT NULL)",
+            name="ck_expression_info_review_fields",
+        ),
+    )
+    expression_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label_es: Mapped[str] = mapped_column(String(60), nullable=False)
+    what_it_is: Mapped[str] = mapped_column(String(1200), nullable=False)
+    why_it_occurs: Mapped[str] = mapped_column(String(1200), nullable=False)
+    facial_cues: Mapped[str] = mapped_column(String(1200), nullable=False)
+    practice_tip: Mapped[str] = mapped_column(String(1200), nullable=False)
+    limitation_note: Mapped[str] = mapped_column(String(1200), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

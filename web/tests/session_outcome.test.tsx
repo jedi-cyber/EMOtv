@@ -37,11 +37,15 @@ describe("resultado de la actividad", () => {
     expect(within(rows[1]).getByText("Cancelada")).toBeInTheDocument();
     expect(within(rows[2]).getAllByText("Completada")).toHaveLength(2);
     expect(within(rows[3]).getByText("Expresión registrada")).toBeInTheDocument();
+    // Etiquetas en español en el historial, nunca la clave del modelo.
+    expect(within(rows[0]).getByText("Tristeza")).toBeInTheDocument();
+    expect(screen.queryByText("sadness")).not.toBeInTheDocument();
   });
 
   it("el detalle muestra la actividad omitida y cuándo se registró la expresión", () => {
     renderAt("/sessions/s-skipped", <SessionDetailPage />, "/sessions/:sessionId");
     expect(screen.getByText("Resultado de la actividad").nextElementSibling).toHaveTextContent("Omitida");
     expect(screen.getByText("Expresión registrada el").nextElementSibling).not.toHaveTextContent("—");
+    expect(screen.getByText("Expresión registrada").nextElementSibling).toHaveTextContent("Tristeza");
   });
 });

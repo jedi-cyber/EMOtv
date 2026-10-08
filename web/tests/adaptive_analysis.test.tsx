@@ -1,10 +1,12 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdaptiveAnalysisPage } from "../src/pages/AdaptiveAnalysisPage";
 import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest } from "../src/api/http";
+import { AssistantProvider } from "../src/components/AssistantContext";
+import { AssistantWidget } from "../src/components/AssistantWidget";
 
 const { admissions } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] }] } }));
 vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
@@ -24,9 +26,29 @@ class Socket {
   constructor() { Socket.instances.push(this); }
 }
 
-function page(role: "student" | "admin" = "student") {
-  const router = createMemoryRouter([{ path: "/analysis", element: <AdaptiveAnalysisPage /> }], { initialEntries: ["/analysis"] });
+function page(role: "student" | "admin" = "student", withAssistant = false) {
+  const element = withAssistant
+    ? <AssistantProvider><AdaptiveAnalysisPage /><AssistantWidget /></AssistantProvider>
+    : <AdaptiveAnalysisPage />;
+  const router = createMemoryRouter([{ path: "/analysis", element }], { initialEntries: ["/analysis"] });
   return render(<AuthContext.Provider value={{ user: { id: "u", email: "student@example.com", role, is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
+}
+
+const sadnessInfo = {
+  expression_key: "sadness", label_es: "Tristeza",
+  what_it_is: "La tristeza es una emoción relacionada con la pérdida. Se muestra con un gesto de decaimiento.",
+  why_it_occurs: "En general aparece ante pérdidas o despedidas. Favorece la reflexión.",
+  facial_cues: "Las cejas internas se elevan. Las comisuras descienden.",
+  practice_tip: "Eleva la parte interna de las cejas. Observa la lectura en vivo.",
+  limitation_note: "La cultura, el contexto, la iluminación y el ángulo influyen. Solo indica una expresión compatible con tristeza.",
+  common_limitation: "El reconocimiento facial estima una expresión a partir de la imagen y no determina por sí mismo el estado emocional ni psicológico de la persona.",
+  review_status: "draft", reviewed_by_user_id: null, reviewed_at: null, updated_at: "2026-10-08T09:00:00Z",
+};
+
+function recognize(socket: Socket, expression: Record<string, unknown> | null) {
+  const activity = { id: "morning_mobility", name: "Movilidad suave", description: "Realiza tres posturas", required_posture: "arms_open", duration_seconds: 4, repetitions: 1, steps: [{ posture: "arms_open", instruction: "Abre los brazos", duration_seconds: 4 }, { posture: "arms_up", instruction: "Eleva los brazos", duration_seconds: 4 }] };
+  act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recognized", message: "Expresión registrada", emotion: "sadness", emotion_confidence: .9 }) }));
+  act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recommendation", message: "Actividad sugerida", emotion: "sadness", emotion_confidence: .9, activity, activities: [activity, { ...activity, id: "open_and_reach", name: "Abrir y alcanzar" }], expression }) }));
 }
 
 function camera(getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] })) {
@@ -43,9 +65,9 @@ function liveReading(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function openLive() {
+async function openLive(withAssistant = false) {
   camera();
-  page();
+  page("student", withAssistant);
   await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
   await waitFor(() => expect(Socket.instances).toHaveLength(1));
   const socket = Socket.instances[0];
@@ -134,12 +156,12 @@ describe("analizador emoción → recomendación → postura", () => {
     const activity = { id: "morning_mobility", name: "Movilidad suave", description: "Realiza tres posturas", required_posture: "arms_open", duration_seconds: 4, repetitions: 1, steps: [{ posture: "arms_open", instruction: "Abre los brazos", duration_seconds: 4 }, { posture: "arms_up", instruction: "Eleva los brazos", duration_seconds: 4 }] };
     const alternative = { ...activity, id: "open_and_reach", name: "Abrir y alcanzar" };
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recognized", state: "recognized", message: "Expresión registrada", emotion: "sadness", emotion_confidence: .9 }) }));
-    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recommendation", state: "choosing_activity", message: "Actividad sugerida", emotion: "sadness", emotion_confidence: .9, activity, activities: [activity, alternative] }) }));
-    expect(screen.getByText(/Expresión registrada:/)).toHaveTextContent("Tristeza (90 %)");
-    expect(screen.queryByRole("heading", { name: "Movilidad suave" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recommendation", state: "choosing_activity", message: "Actividad sugerida", emotion: "sadness", emotion_confidence: .9, activity, activities: [activity, alternative], expression: sadnessInfo }) }));
+    expect(screen.getByRole("heading", { name: "Tristeza" })).toBeInTheDocument();
+    expect(screen.getByText(/Confianza del modelo/)).toHaveTextContent("90 %");
     expect(screen.getByRole("heading", { name: "Movilidad suave" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Finalizar sin actividad" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Analizar otra expresión" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pasos de la actividad" })).toBeInTheDocument();
     expect(screen.getByText("Abre los brazos")).toBeInTheDocument();
     expect(screen.getByText("Eleva los brazos")).toBeInTheDocument();
@@ -148,7 +170,7 @@ describe("analizador emoción → recomendación → postura", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ver otras actividades" }));
     expect(screen.getByLabelText("Actividad que deseas realizar")).toHaveValue("open_and_reach");
     expect(screen.getByRole("option", { name: "Abrir y alcanzar" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Realizar actividad recomendada" }));
+    await userEvent.click(screen.getByRole("button", { name: "Realizar actividad" }));
     expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toEqual({ type: "select_activity", activity_id: "morning_mobility" });
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "activity_started", activity, message: "Adopta la postura" }) }));
     expect(screen.getByRole("heading", { name: "Movilidad suave" })).toBeInTheDocument();
@@ -162,7 +184,7 @@ describe("analizador emoción → recomendación → postura", () => {
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", activity, message: "Completada", progress: 1, exercise_result: "completed" }) }));
     expect(screen.getByRole("link", { name: "Ver resultado" })).toHaveAttribute("href", "/sessions/session-1");
     expect(stop).toHaveBeenCalledOnce();
-    await userEvent.click(screen.getByRole("button", { name: "Registrar otra expresión" }));
+    await userEvent.click(screen.getByRole("button", { name: "Analizar otra expresión" }));
     await waitFor(() => expect(Socket.instances).toHaveLength(2));
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === "/sessions")).toHaveLength(2);
@@ -211,12 +233,58 @@ describe("analizador emoción → recomendación → postura", () => {
     const socket = await openLive();
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recognized", message: "Expresión registrada", emotion: "neutral", emotion_confidence: .7 }) }));
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recommendation", message: "Actividad sugerida", emotion: "neutral", emotion_confidence: .7, activity: null, activities: [] }) }));
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
     await userEvent.click(screen.getByRole("button", { name: "Finalizar sin actividad" }));
     expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toEqual({ type: "finish_without_activity" });
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", message: "Sesión finalizada", emotion: "neutral", emotion_confidence: .7, exercise_result: "skipped" }) }));
     expect(screen.getByText("Sesión finalizada sin actividad. Tu expresión quedó registrada.")).toBeInTheDocument();
     expect(screen.getByText(/Expresión registrada:/)).toHaveTextContent("Neutral (70 %)");
-    expect(screen.getByRole("button", { name: "Registrar otra expresión" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Analizar otra expresión" })).toBeInTheDocument();
+  });
+
+  it("muestra el resultado educativo en el orden indicado, con la limitación y la nota de borrador", async () => {
+    const socket = await openLive();
+    recognize(socket, sadnessInfo);
+    const article = screen.getByRole("article");
+    const headings = within(article).getAllByRole("heading").map((heading) => heading.textContent);
+    expect(headings).toEqual(["Tristeza", "¿Qué es?", "¿Por qué suele presentarse?", "¿Cómo se reconoce en el rostro?", "Para practicar"]);
+    expect(within(article).getByText(/Confianza del modelo/)).toHaveTextContent("90 %");
+    expect(within(article).getByText(sadnessInfo.why_it_occurs)).toBeInTheDocument();
+    const limitation = within(article).getByRole("note");
+    expect(limitation).toHaveTextContent("no determina por sí mismo el estado emocional ni psicológico");
+    const draftNote = within(article).getByText("Contenido pendiente de revisión por profesionales de Psicología.");
+    expect(limitation.compareDocumentPosition(draftNote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // La actividad recomendada y sus botones van debajo del resultado.
+    const activityHeading = screen.getByRole("heading", { name: "Movilidad suave" });
+    expect(article.compareDocumentPosition(activityHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const name of ["Realizar actividad", "Ver otras actividades", "Finalizar sin actividad", "Analizar otra expresión"])
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === "/chat")).toBe(false);
+  });
+
+  it("no muestra la nota de borrador cuando el texto está revisado y usa respaldo si falta el catálogo", async () => {
+    const socket = await openLive();
+    recognize(socket, { ...sadnessInfo, review_status: "reviewed", reviewed_at: "2026-10-08T10:00:00Z", reviewed_by_user_id: "admin" });
+    expect(screen.queryByText(/pendiente de revisión/)).not.toBeInTheDocument();
+    cleanup(); Socket.instances = [];
+    const fallbackSocket = await openLive();
+    recognize(fallbackSocket, null);
+    expect(screen.getByRole("heading", { name: "Tristeza" })).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("no determina por sí mismo");
+  });
+
+  it("abre a Emi con una pregunta general editable, sin datos de la sesión, y no envía hasta pulsar Enviar", async () => {
+    const socket = await openLive(true);
+    recognize(socket, sadnessInfo);
+    await userEvent.click(screen.getByRole("button", { name: "Preguntar a Emi sobre esta expresión" }));
+    const question = screen.getByLabelText("Tu pregunta") as HTMLTextAreaElement;
+    expect(question).toBeVisible();
+    expect(question.value).toBe("¿Qué es la tristeza y cómo se reconoce en el rostro?");
+    expect(question.value).not.toMatch(/\d|%|session|sesión|confianza/i);
+    expect(vi.mocked(apiRequest).mock.calls.some(([path]) => path === "/chat")).toBe(false);
+    await userEvent.clear(question);
+    await userEvent.type(question, "¿Qué diferencia hay entre la tristeza y la neutralidad?");
+    await userEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    const chatCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === "/chat");
+    expect(JSON.parse(String(chatCall?.[1]?.body))).toEqual({ question: "¿Qué diferencia hay entre la tristeza y la neutralidad?" });
   });
 });

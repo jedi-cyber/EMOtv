@@ -27,6 +27,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.users, label: "Usuarios", icon: "users" },
     { to: paths.students, label: "Estudiantes", icon: "students" },
     { to: paths.adminActivities, label: "Administrar actividades", icon: "manage" },
+    { to: paths.adminExpressions, label: "Catálogo de expresiones", icon: "manage" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
   ],
 };

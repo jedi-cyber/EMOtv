@@ -59,6 +59,7 @@ def create_analysis_router(
     adaptive_processor_factory: AdaptiveProcessorFactory | None = None,
     live_settings: LiveExpressionSettings | None = None,
     live_clock: Callable[[], float] | None = None,
+    expression_info: Callable[[str], dict[str, object] | None] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
@@ -235,6 +236,8 @@ def create_analysis_router(
                     "emotion_confidence": expression.confidence,
                     "activity": _activity_payload(recommendation) if recommendation else None,
                     "activities": [_activity_payload(item) for item in activities.list_all()],
+                    # Texto educativo fijo del catálogo; nunca generado por un LLM.
+                    "expression": expression_info(expression.emotion) if expression_info else None,
                     "progress": 0.0,
                 }
 

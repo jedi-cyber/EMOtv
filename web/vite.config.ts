@@ -12,6 +12,8 @@ export default defineConfig({
       "/users": "http://127.0.0.1:8000",
       "/activities": "http://127.0.0.1:8000",
       "/analysis": "http://127.0.0.1:8000",
+      "/expressions": "http://127.0.0.1:8000",
+      "/chat": "http://127.0.0.1:8000",
       "/consent-policy": "http://127.0.0.1:8000",
       "/ws": { target: "ws://127.0.0.1:8000", ws: true }
     }

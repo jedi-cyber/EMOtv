@@ -276,3 +276,16 @@ tbody tr:last-child td { border-bottom: 0; }
   .assistant-widget { right: max(.75rem, env(safe-area-inset-right)); bottom: max(.75rem, env(safe-area-inset-bottom)); }
   .assistant-panel { width: calc(100vw - 1.5rem); height: min(38rem, calc(100dvh - 6rem)); }
 }
+
+/* Resultado educativo de la expresión registrada */
+.expression-result { display: grid; gap: .75rem; margin-bottom: 1.5rem; }
+.expression-result h3 { margin: .25rem 0; font-size: 1rem; }
+.expression-result p { margin: 0; }
+.expression-result-name { margin: 0; font-size: 2rem; }
+.expression-limitation { font-weight: 600; }
+.review-note { font-size: .85rem; font-style: italic; }
+
+/* Edición del catálogo de expresiones */
+.form-stack { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.form-stack label, .form-stack .form-field { display: grid; gap: .35rem; }
+.form-stack textarea { width: 100%; resize: vertical; }

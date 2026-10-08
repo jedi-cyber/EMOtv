@@ -2,10 +2,11 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiRequest, ApiError } from "../api/http";
 import { useAuth } from "../auth/useAuth";
 import { Alert } from "../components/Alert";
+import type { AssistantDraft } from "./AssistantContext";
 
 interface Message { role: "user" | "assistant"; text: string }
 
-export function ChatConversation({ open }: { open: boolean }) {
+export function ChatConversation({ open, draft = null }: { open: boolean; draft?: AssistantDraft | null }) {
   const { token } = useAuth();
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -16,6 +17,10 @@ export function ChatConversation({ open }: { open: boolean }) {
   useEffect(() => {
     if (open) inputRef.current?.focus();
   }, [open]);
+  // Una pregunta sugerida solo rellena el campo; la persona la edita y decide si enviarla.
+  useEffect(() => {
+    if (draft) { setQuestion(draft.text); inputRef.current?.focus(); }
+  }, [draft]);
   useEffect(() => {
     const container = messagesRef.current;
     if (open && container) container.scrollTop = container.scrollHeight;

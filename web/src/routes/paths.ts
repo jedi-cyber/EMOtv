@@ -17,6 +17,7 @@ export const paths = {
   studentSessionsPattern: "/students/:studentId/sessions",
   users: "/users",
   adminActivities: "/admin/activities",
+  adminExpressions: "/admin/expressions",
   unauthorized: "/unauthorized",
   connectionError: "/connection-error",
 } as const;

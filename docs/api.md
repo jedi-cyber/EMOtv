@@ -68,6 +68,19 @@ Al actualizar, el ID del cuerpo y el de la ruta deben coincidir. El catálogo es
 persistente en PostgreSQL cuando se ejecuta FastAPI con la base configurada.
 La migración `20260915_04` crea y carga tres actividades iniciales.
 
+## Catálogo informativo de expresiones
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `GET` | `/expressions` | Cualquier usuario autenticado |
+| `GET` | `/expressions/{key}` | Cualquier usuario autenticado; `404` si la clave no existe |
+| `PUT` | `/expressions/{key}` | Administración; `422` si un texto no cumple la longitud |
+
+Cada registro trae `label_es`, `what_it_is`, `why_it_occurs`, `facial_cues`,
+`practice_tip`, `limitation_note`, `common_limitation`, `review_status`
+(`draft` o `reviewed`), `reviewed_by_user_id`, `reviewed_at` y `updated_at`.
+Detalles y reglas de redacción en [Catálogo de expresiones](expression-catalog.md).
+
 ## Identidades, consentimiento y análisis web
 
 Las rutas `/users`, `/students` y `/students/{id}/consents` están descritas en
@@ -89,6 +102,7 @@ no al servidor: no existen rutas de cámara del servidor.
 | cliente → servidor | `confirm_expression` | sin etiqueta; cualquier `emotion` enviada se ignora |
 | servidor → cliente | `confirm_rejected` | `message` con el motivo (sin rostro, sin expresión estable, confianza baja o poco tiempo estable) |
 | servidor → cliente | `recognized` | la expresión que el servidor **realmente** registró y `recognized_at`; después llega `recommendation` |
+| servidor → cliente | `recommendation` | actividad sugerida, actividades disponibles y `expression` con todos los campos del catálogo (o `null` si no se pudo leer) |
 | cliente → servidor | `select_activity` | `activity_id`; inicia la actividad |
 | cliente → servidor | `finish_without_activity` | cierra como `completed` con `exercise_result: "skipped"` |
 | cliente → servidor | `cancel` | responde `cancelled` con `recognition_kept` |

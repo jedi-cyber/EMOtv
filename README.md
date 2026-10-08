@@ -121,6 +121,7 @@ finaliza y `R` reinicia. Ver [scripts/README.md](scripts/README.md).
 - [Etapa de reconocimiento corporal](docs/pose-estimation.md)
 - [MVP de actividad emocional](docs/emotional-activity-mvp.md)
 - [Sesiones y persistencia](docs/sessions.md)
+- [Catálogo de expresiones](docs/expression-catalog.md): resultado educativo y revisión de textos
 - [API HTTP](docs/api.md)
 - [Frontend web](web/README.md)
 - [Privacidad y gobierno de datos](docs/privacy-data-governance.md)

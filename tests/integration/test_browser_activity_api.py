@@ -22,6 +22,8 @@ from emotv.infrastructure.persistence import Base, PostgresUserRepository, Postg
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.config import LiveExpressionSettings
 from emotv.interfaces.web.analysis_router import create_analysis_router
+from emotv.interfaces.web.expression_router import expression_payload
+from tests.integration.test_expressions_api import seeded_items
 
 
 class Processor:
@@ -59,6 +61,7 @@ class FakeClock:
 
 CLOCK = FakeClock()
 STABLE_FRAMES = 5  # EMOTION_STABILIZER_MIN_SAMPLES por defecto
+CATALOG = {item.expression_key: item for item in seeded_items()}
 
 
 class AdaptiveProcessor(Processor):
@@ -126,7 +129,8 @@ def flow(request):
                                              emotion_analyzer_factory=lambda model_id: AdaptiveAnalyzer(),
                                              adaptive_processor_factory=lambda activity, analyzer, emotion: _adaptive_processor(activity, emotion, processors),
                                              live_settings=LiveExpressionSettings(stable_seconds=1.0, min_confidence=0.5),
-                                             live_clock=CLOCK))
+                                             live_clock=CLOCK,
+                                             expression_info=lambda key: expression_payload(CATALOG.get(key))))
     with TestClient(app) as client:
         yield client, auth, user, other, student, sessions, identity, processors, users
     engine.dispose()
@@ -186,6 +190,11 @@ def test_recognize_then_recommend_then_complete_activity(flow):
         _open_adaptive(client, auth, user, session_id, socket)
         recognized, suggestion = _recognize(socket)
         assert recognized["emotion"] == suggestion["emotion"] == "sadness"
+        expression = suggestion["expression"]
+        assert expression["expression_key"] == "sadness" and expression["label_es"] == "Tristeza"
+        assert {"what_it_is", "why_it_occurs", "facial_cues", "practice_tip", "limitation_note",
+                "common_limitation", "review_status"} <= expression.keys()
+        assert expression["review_status"] == "draft"
         assert suggestion["activity"]["id"] in {"morning_mobility", "open_and_reach", "arms_up_5s"}
         stored = sessions.get_session(session_id)
         assert stored.state is SessionState.RECOGNIZED and stored.activity_id is None
@@ -261,7 +270,7 @@ def test_confirmation_without_face_is_rejected(flow):
         socket.send_json({"type": "confirm_expression"})
         rejected = socket.receive_json()
         assert rejected["type"] == "confirm_rejected" and "rostro" in rejected["message"]
-    deadline = time.monotonic() + 1
+    deadline = time.monotonic() + 3  # el cierre ocurre en el hilo del servidor
     while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.IN_PROGRESS:
         time.sleep(0.01)
     assert sessions.get_session(session_id).state is SessionState.CANCELLED
@@ -273,7 +282,7 @@ def test_confirmation_then_disconnect_keeps_expression(flow):
     with client.websocket_connect("/ws/activity") as socket:
         _open_adaptive(client, auth, user, session_id, socket)
         _recognize(socket)
-    deadline = time.monotonic() + 1
+    deadline = time.monotonic() + 3  # el cierre ocurre en el hilo del servidor
     while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.RECOGNIZED:
         time.sleep(0.01)
     final = sessions.get_session(session_id)
@@ -319,7 +328,7 @@ def test_session_without_confirmation_is_still_cancelled(flow):
     with client.websocket_connect("/ws/activity") as socket:
         _open_adaptive(client, auth, user, session_id, socket)
         _live_frames(socket)
-    deadline = time.monotonic() + 1
+    deadline = time.monotonic() + 3  # el cierre ocurre en el hilo del servidor
     while time.monotonic() < deadline and sessions.get_session(session_id).state is SessionState.IN_PROGRESS:
         time.sleep(0.01)
     final = sessions.get_session(session_id)
@@ -357,7 +366,7 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
                 socket.send_json({"type": "cancel"})
                 assert socket.receive_json()["type"] == "cancelled"
         # El finally del servidor corre en otro hilo tras la desconexión.
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + 3  # el cierre ocurre en el hilo del servidor
         while time.monotonic() < deadline and (
             sessions.get_session(session.id).state is SessionState.IN_PROGRESS or not processors[-1].closed
         ):
@@ -382,7 +391,7 @@ def test_admin_selected_model_reaches_processor(flow, model_id):
         assert ready["type"] == "ready"
         assert ready["emotion_model_id"] == model_id
     assert processors[-1].model_id == model_id
-    deadline = time.monotonic() + 1
+    deadline = time.monotonic() + 3  # el cierre ocurre en el hilo del servidor
     while time.monotonic() < deadline and (
         not processors[-1].closed
         or sessions.get_session(session.id).state is SessionState.IN_PROGRESS
