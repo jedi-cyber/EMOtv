@@ -6,6 +6,7 @@ from emotv.application.identity_registration_service import IdentityRegistration
 from emotv.application.activity_recommendation_service import (
     ActivityRecommendationService,
     DEFAULT_ACTIVITIES_BY_EMOTION,
+    StaticRecommendations,
 )
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.emotion_model_catalog import (
@@ -27,6 +28,7 @@ __all__ = [
     "ActivityRecommendationService",
     "DEFAULT_ACTIVITIES",
     "DEFAULT_ACTIVITIES_BY_EMOTION",
+    "StaticRecommendations",
     "EmotionStabilizer",
     "EmotionClassifier",
     "EmotionModelCatalog",

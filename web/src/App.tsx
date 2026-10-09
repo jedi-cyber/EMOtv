@@ -21,10 +21,13 @@ import { ConsentPage } from "./pages/ConsentPage";
 import { ActiveSessionProvider } from "./analysis/ActiveSessionContext";
 import { paths } from "./routes/paths";
 import { AssistantWidget } from "./components/AssistantWidget";
+import { AssistantProvider } from "./components/AssistantContext";
+import { ExpressionCatalogProvider } from "./expressions/ExpressionCatalog";
+import { AdminExpressionsPage } from "./pages/AdminExpressionsPage";
 
 export function App() {
   return (
-    <ActiveSessionProvider><Routes>
+    <ExpressionCatalogProvider><AssistantProvider><ActiveSessionProvider><Routes>
       <Route path={paths.login} element={<LoginPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path={paths.firstAccess} element={<FirstAccessPage />} />
@@ -41,11 +44,12 @@ export function App() {
           <Route path={paths.studentSessionsPattern} element={<RoleRoute allowed={["psychologist", "admin"]}><StudentSessionsPage /></RoleRoute>} />
           <Route path={paths.users} element={<RoleRoute allowed={["admin"]}><UsersPage /></RoleRoute>} />
           <Route path={paths.adminActivities} element={<RoleRoute allowed={["admin"]}><AdminActivitiesPage /></RoleRoute>} />
+          <Route path={paths.adminExpressions} element={<RoleRoute allowed={["admin"]}><AdminExpressionsPage /></RoleRoute>} />
           <Route path={paths.unauthorized} element={<UnauthorizedPage />} />
           <Route path={paths.connectionError} element={<ConnectionErrorPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
-    </Routes><AssistantWidget /></ActiveSessionProvider>
+    </Routes><AssistantWidget /></ActiveSessionProvider></AssistantProvider></ExpressionCatalogProvider>
   );
 }

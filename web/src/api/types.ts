@@ -24,7 +24,8 @@ export interface AssignedStudent extends Student {
   assigned_at: string;
 }
 
-export type SessionState = "created" | "in_progress" | "completed" | "cancelled";
+export type SessionState = "created" | "in_progress" | "recognized" | "completed" | "cancelled";
+export type ActivityOutcome = "completed" | "skipped" | "cancelled";
 
 export interface EmotionalSession {
   id: string;
@@ -39,4 +40,5 @@ export interface EmotionalSession {
   exercise_duration_seconds: number | null;
   emotion_model_id: string | null;
   emotion_model_version: string | null;
+  recognized_at?: string | null;
 }

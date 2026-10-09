@@ -4,8 +4,8 @@ import { useApiQuery } from "../api/useApiQuery";
 import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
 import { PageHeader } from "../components/PageHeader";
+import { sessionStateName } from "../sessions/labels";
 
-const stateNames = { created: "Creada", in_progress: "En progreso", completed: "Completada", cancelled: "Cancelada" };
 
 export function StudentSessionsPage() {
   const { studentId = "" } = useParams();
@@ -13,6 +13,6 @@ export function StudentSessionsPage() {
   const sessions = query.data ?? [];
   return <section><Link className="back-link" to={paths.students}>← Volver a estudiantes</Link><PageHeader section="Seguimiento" title="Sesiones del estudiante" description={`Identificador: ${studentId}`} />
     <PageState {...query} empty={!query.loading && !query.error && sessions.length === 0} onRetry={query.reload} />
-    {sessions.length > 0 && <div className="card-list">{sessions.map((session) => <Link className="card row-card" to={paths.session(session.id)} key={session.id}><div><strong>{new Date(session.started_at).toLocaleString("es-PE")}</strong><span>{session.activity_id ?? "Actividad sin completar"}</span></div><span className={`status status-${session.state}`}>{stateNames[session.state]}</span></Link>)}</div>}
+    {sessions.length > 0 && <div className="card-list">{sessions.map((session) => <Link className="card row-card" to={paths.session(session.id)} key={session.id}><div><strong>{new Date(session.started_at).toLocaleString("es-PE")}</strong><span>{session.activity_id ?? "Actividad sin completar"}</span></div><span className={`status status-${session.state}`}>{sessionStateName(session.state)}</span></Link>)}</div>}
   </section>;
 }

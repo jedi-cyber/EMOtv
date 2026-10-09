@@ -44,6 +44,31 @@ class LoginLimits:
     window_minutes: int = 15
 
 
+@dataclass(frozen=True)
+class LiveExpressionSettings:
+    """Condiciones para registrar la expresión elegida en el análisis en vivo."""
+
+    stable_seconds: float = 1.0
+    min_confidence: float = 0.5
+
+
+def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> LiveExpressionSettings:
+    source = os.environ if environ is None else environ
+    defaults = LiveExpressionSettings()
+    values = []
+    for name, default, maximum in (("LIVE_STABLE_SECONDS", defaults.stable_seconds, 30.0),
+                                   ("LIVE_MIN_CONFIDENCE", defaults.min_confidence, 1.0)):
+        raw = source.get(name, "").strip()
+        try:
+            value = float(raw) if raw else default
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número") from error
+        if not 0.0 <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre 0 y {maximum:g}")
+        values.append(value)
+    return LiveExpressionSettings(*values)
+
+
 def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
     source = os.environ if environ is None else environ
     defaults = LoginLimits()

@@ -14,6 +14,7 @@ import type { PoseLandmarks } from "../analysis/drawPoseOverlay";
 import { speakExercise, speakStep, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { PageHeader } from "../components/PageHeader";
 import { AdaptiveAnalysisPage } from "./AdaptiveAnalysisPage";
+import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 
 interface ModelAdmission {
   model_id: string;
@@ -52,6 +53,7 @@ export function AnalysisPage() {
 function ManualActivityAnalysisPage() {
   const [params] = useSearchParams();
   const { token, user } = useAuth();
+  const { label: expressionLabel } = useExpressionCatalog();
   // Solo administración elige modelo; el estudiante usa siempre FER+ (el servidor lo exige).
   const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
@@ -280,7 +282,7 @@ function ManualActivityAnalysisPage() {
         <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? status.state}</span>
         <h2>{status.message}</h2><p>{status.step ? `Paso ${(status.step_index ?? 0) + 1} de ${status.step_count ?? 1}: ${status.step.instruction}` : activity?.description}</p>
         {activity && status.type !== "completed" && speechAvailable() && <button className="button secondary" onClick={() => status.step ? speakStep(status.step, status.step_index ?? 0, status.step_count ?? 1) : speakExercise(activity)}>Repetir instrucción</button>}
-        {status.emotion && <p>Emoción inicial: <strong>{status.emotion}</strong> ({Math.round((status.emotion_confidence ?? 0) * 100)} %)</p>}
+        {status.emotion && <p>Expresión estimada: <strong>{expressionLabel(status.emotion)}</strong> ({Math.round((status.emotion_confidence ?? 0) * 100)} %)</p>}
         <div className="progress-label"><span>Progreso</span><strong>{progress} %</strong></div>
         <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div>
         {status.type !== "completed" ? <button className="button danger" onClick={() => setConfirmCancel(true)}>Cancelar sesión</button> : <Link className="button primary action-link" to={`/sessions/${session.id}`}>Ver resultado</Link>}

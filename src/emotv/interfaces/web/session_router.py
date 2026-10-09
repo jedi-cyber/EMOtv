@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -21,7 +22,7 @@ class CompleteSessionRequest(BaseModel):
     initial_emotion: str = Field(min_length=1, max_length=64)
     emotion_confidence: float = Field(ge=0, le=1)
     activity_id: str = Field(min_length=1, max_length=128)
-    exercise_result: str = "completed"
+    exercise_result: Literal["completed"] = "completed"
     exercise_duration_seconds: float = Field(ge=0)
 
 
@@ -38,6 +39,7 @@ class SessionResponse(BaseModel):
     exercise_duration_seconds: float | None
     emotion_model_id: str | None
     emotion_model_version: str | None
+    recognized_at: datetime | None = None
 
     @classmethod
     def from_domain(cls, session: EmotionalSession) -> "SessionResponse":
@@ -50,7 +52,8 @@ class SessionResponse(BaseModel):
                    exercise_result=session.exercise_result,
                    exercise_duration_seconds=session.exercise_duration_seconds,
                    emotion_model_id=session.emotion_model_id,
-                   emotion_model_version=session.emotion_model_version)
+                   emotion_model_version=session.emotion_model_version,
+                   recognized_at=session.recognized_at)
 
 
 def create_session_router(

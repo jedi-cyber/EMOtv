@@ -13,7 +13,8 @@ from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
                           FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
-                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits)
+                          YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
+                          get_live_expression_settings)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -22,6 +23,8 @@ from emotv.infrastructure.persistence import (
     PostgresConsentPolicyRepository,
     PostgresLoginAttemptRepository,
     PostgresAssignmentRepository,
+    PostgresExpressionInfoRepository,
+    PostgresRecommendationRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -34,6 +37,10 @@ from emotv.interfaces.web.activity_router import create_activity_router
 from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.interfaces.web.chat_router import create_chat_router
+from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
+from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.application.recommendation_config_service import RecommendationConfigService
+from emotv.application.expression_catalog_service import ExpressionCatalogService
 from emotv.infrastructure.chat import FlowiseClient
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
@@ -62,6 +69,23 @@ if DATABASE_URL and JWT_SECRET_KEY:
     authentication_service = AuthenticationService(user_repository, JWT_SECRET_KEY)
     activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
     assignment_repository = PostgresAssignmentRepository(database_sessions)
+    expression_catalog = ExpressionCatalogService(PostgresExpressionInfoRepository(database_sessions))
+    recommendation_repository = PostgresRecommendationRepository(database_sessions)
+    recommendation_config = RecommendationConfigService(recommendation_repository, activity_catalog)
+    app.include_router(create_recommendation_router(recommendation_config, authentication_service, user_repository))
+
+    def expression_label(key: str) -> str:
+        info = expression_catalog.get(key)
+        return info.label_es if info else key
+
+    app.include_router(create_expression_router(expression_catalog, authentication_service, user_repository))
+
+    def expression_info_for(key: str) -> dict[str, object] | None:
+        try:
+            return expression_payload(expression_catalog.get(key))
+        except SQLAlchemyError:
+            return None  # La pantalla de resultado usa su texto de respaldo.
+
     # Psicología accede solo a estudiantes asignados; la misma política en todos los routers.
     authorization_service = AuthorizationService(assignment_repository.is_assigned)
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
@@ -79,6 +103,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         activity_catalog,
         authentication_service,
         user_repository,
+        recommendations=recommendation_config,
+        expression_label=expression_label,
     ))
     app.include_router(create_session_router(
         session_service,
@@ -113,6 +139,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
         adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
             activity, analyzer, PoseService(), initial_emotion=emotion,
         ),
+        live_settings=get_live_expression_settings(),
+        expression_info=expression_info_for,
+        recommendations=recommendation_repository,
     ))
     flowise_client = FlowiseClient(FLOWISE_API_URL, FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS) if FLOWISE_API_URL else None
     app.include_router(create_chat_router(flowise_client, authentication_service, user_repository))
@@ -123,6 +152,8 @@ else:
     app.include_router(create_session_router(None, None, None, None))
     app.include_router(create_analysis_router(None, None, None, None, None, None))
     app.include_router(create_chat_router(None, None, None))
+    app.include_router(create_expression_router(None, None, None))
+    app.include_router(create_recommendation_router(None, None, None))
 
 
 @app.on_event("startup")

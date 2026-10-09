@@ -71,6 +71,7 @@ class PostgresSessionRepository:
             student_id=session.student_id,
             emotion_model_id=session.emotion_model_id,
             emotion_model_version=session.emotion_model_version,
+            recognized_at=session.recognized_at,
         )
 
     @staticmethod
@@ -89,6 +90,7 @@ class PostgresSessionRepository:
         record.student_id = session.student_id
         record.emotion_model_id = session.emotion_model_id
         record.emotion_model_version = session.emotion_model_version
+        record.recognized_at = session.recognized_at
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -109,6 +111,11 @@ class PostgresSessionRepository:
             student_id=record.student_id,
             emotion_model_id=record.emotion_model_id,
             emotion_model_version=record.emotion_model_version,
+            recognized_at=(
+                cls._as_aware(record.recognized_at)
+                if record.recognized_at is not None
+                else None
+            ),
         )
 
     @staticmethod

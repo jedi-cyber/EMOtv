@@ -32,7 +32,7 @@ class SessionRecord(Base):
     __tablename__ = "sessions"
     __table_args__ = (
         CheckConstraint(
-            "state IN ('created', 'in_progress', 'completed', 'cancelled')",
+            "state IN ('created', 'in_progress', 'recognized', 'completed', 'cancelled')",
             name="ck_sessions_state_valid",
         ),
         CheckConstraint(
@@ -51,14 +51,20 @@ class SessionRecord(Base):
         ),
         CheckConstraint(
             "(state IN ('completed', 'cancelled') AND completed_at IS NOT NULL) OR "
-            "(state IN ('created', 'in_progress') AND completed_at IS NULL)",
+            "(state IN ('created', 'in_progress', 'recognized') AND completed_at IS NULL)",
             name="ck_sessions_completion_timestamp",
         ),
         CheckConstraint(
             "state <> 'completed' OR "
-            "(initial_emotion IS NOT NULL AND activity_id IS NOT NULL AND "
-            "exercise_result IS NOT NULL AND exercise_duration_seconds IS NOT NULL)",
+            "(initial_emotion IS NOT NULL AND exercise_result IS NOT NULL AND "
+            "(exercise_result <> 'completed' OR "
+            "(activity_id IS NOT NULL AND exercise_duration_seconds IS NOT NULL)))",
             name="ck_sessions_completed_result",
+        ),
+        CheckConstraint(
+            "(recognized_at IS NULL OR (initial_emotion IS NOT NULL AND recognized_at >= started_at)) AND "
+            "(state <> 'recognized' OR recognized_at IS NOT NULL)",
+            name="ck_sessions_recognition",
         ),
         CheckConstraint(
             "(emotion_model_id IS NULL AND emotion_model_version IS NULL) OR "
@@ -83,6 +89,7 @@ class SessionRecord(Base):
     activity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     emotion_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     emotion_model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recognized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exercise_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exercise_duration_seconds: Mapped[float | None] = mapped_column(
         Float,
@@ -175,3 +182,46 @@ class ConsentPolicyRecord(Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class ExpressionInfoRecord(Base):
+    """Texto educativo por expresión, revisable por Psicología."""
+
+    __tablename__ = "expression_info"
+    __table_args__ = (
+        CheckConstraint("review_status IN ('draft', 'reviewed')", name="ck_expression_info_review_status"),
+        CheckConstraint(
+            "(review_status = 'draft' AND reviewed_at IS NULL AND reviewed_by_user_id IS NULL) OR "
+            "(review_status = 'reviewed' AND reviewed_at IS NOT NULL)",
+            name="ck_expression_info_review_fields",
+        ),
+    )
+    expression_key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label_es: Mapped[str] = mapped_column(String(60), nullable=False)
+    what_it_is: Mapped[str] = mapped_column(String(1200), nullable=False)
+    why_it_occurs: Mapped[str] = mapped_column(String(1200), nullable=False)
+    facial_cues: Mapped[str] = mapped_column(String(1200), nullable=False)
+    practice_tip: Mapped[str] = mapped_column(String(1200), nullable=False)
+    limitation_note: Mapped[str] = mapped_column(String(1200), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmotionActivityRecommendationRecord(Base):
+    """Actividad recomendada para una expresión; menor priority = primera opción."""
+
+    __tablename__ = "emotion_activity_recommendations"
+    __table_args__ = (
+        CheckConstraint("priority >= 0", name="ck_emotion_activity_recommendations_priority"),
+    )
+    expression_key: Mapped[str] = mapped_column(
+        ForeignKey("expression_info.expression_key", ondelete="CASCADE"), primary_key=True
+    )
+    activity_id: Mapped[str] = mapped_column(
+        ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)

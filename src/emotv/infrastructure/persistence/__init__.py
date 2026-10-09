@@ -17,9 +17,21 @@ from emotv.infrastructure.persistence.postgres_consent_policy_repository import 
 from emotv.infrastructure.persistence.postgres_login_attempt_repository import PostgresLoginAttemptRepository
 from emotv.infrastructure.persistence.postgres_assignment_repository import PostgresAssignmentRepository
 from emotv.infrastructure.persistence.in_memory_assignment_repository import InMemoryAssignmentRepository
+from emotv.infrastructure.persistence.postgres_recommendation_repository import (
+    InMemoryRecommendationRepository,
+    PostgresRecommendationRepository,
+)
+from emotv.infrastructure.persistence.postgres_expression_info_repository import (
+    InMemoryExpressionInfoRepository,
+    PostgresExpressionInfoRepository,
+)
 
 __all__ = [
     "InMemoryAssignmentRepository",
+    "InMemoryExpressionInfoRepository",
+    "InMemoryRecommendationRepository",
+    "PostgresRecommendationRepository",
+    "PostgresExpressionInfoRepository",
     "PostgresAssignmentRepository",
     "PostgresLoginAttemptRepository",
     "PostgresActivityRepository",

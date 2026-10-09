@@ -54,9 +54,15 @@ de reiniciar FastAPI.
 | `GET /users/{id}/assigned-students` | Administración: estudiantes asignados a una cuenta de psicología |
 | `PUT /users/{id}/assigned-students/{student_id}` | Administración: asigna (idempotente) |
 | `DELETE /users/{id}/assigned-students/{student_id}` | Administración: retira la asignación; `404` si no existía |
+| `GET /expressions`, `GET /expressions/{key}` | Cualquier usuario autenticado |
+| `PUT /expressions/{key}` | Administración: edita textos; `review_status: "reviewed"` registra quién y cuándo |
+| `GET /recommendations`, `GET /recommendations/{key}` | Administración: actividades recomendadas por expresión, en orden de prioridad |
+| `PUT /recommendations/{key}` | Administración: `{"activity_ids": [...]}`; el orden es la prioridad; `422` si una actividad no existe, se repite o tiene menos de dos pasos |
+| `PUT /activities/{id}` | `409` si la actividad está recomendada y quedaría con menos de dos pasos; el mensaje nombra las expresiones afectadas |
 
 El endpoint de finalización recibe `initial_emotion`, `emotion_confidence` (0–1),
-`activity_id`, `exercise_result` (`completed`) y `exercise_duration_seconds`.
+`activity_id`, `exercise_result` (solo `completed`) y `exercise_duration_seconds`.
+Si el estudiante ya registró su expresión en vivo, esa expresión se conserva.
 No permite cambiar la actividad de una sesión ya asociada. Los estudiantes
 completan la sesión mediante el análisis del servidor en `/ws/activity`, no
 mediante resultados declarados por el cliente.

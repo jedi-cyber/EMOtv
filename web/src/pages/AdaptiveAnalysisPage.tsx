@@ -14,17 +14,25 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
+import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
+import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
+import { ExpressionResult } from "../expressions/ExpressionResult";
+import { LiveExpressionPanel, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
 
-type Phase = "ready" | "recognizing" | "choosing" | "exercise" | "completed";
+type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
-type Message = {
-  type: "ready" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
+type Message = Partial<LiveReading> & {
+  type: "ready" | "live" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
   state?: string; message?: string; progress?: number; code?: number;
   emotion?: string | null; emotion_confidence?: number | null;
   activity?: Activity | null; activities?: Activity[];
   step?: ActivityStep; step_index?: number; step_count?: number;
   landmarks?: PoseLandmarks | null;
+  exercise_result?: string | null; recognition_kept?: boolean;
+  expression?: ExpressionInfo | null;
+  notice?: string | null; stage?: string;
 };
+
 
 const postureNames: Record<string, string> = {
   arms_up: "Brazos arriba", arms_open: "Brazos abiertos",
@@ -50,8 +58,19 @@ export function AdaptiveAnalysisPage() {
   const [session, setSession] = useState<EmotionalSession | null>(null);
   const [message, setMessage] = useState("Preparado para reconocer tu expresión facial.");
   const [error, setError] = useState("");
+  // emotion/confidence: solo la expresión registrada. La lectura en vivo vive
+  // en `live` y se descarta; no se guarda en ningún almacenamiento del navegador.
   const [emotion, setEmotion] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
+  const [live, setLive] = useState<LiveReading | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmNotice, setConfirmNotice] = useState("");
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [expressionInfo, setExpressionInfo] = useState<ExpressionInfo | null>(null);
+  const restartAfterFinishRef = useRef(false);
+  const { label: expressionLabel } = useExpressionCatalog();
+  const expressionRecorded = phase === "result" || phase === "exercise";
   const [recommendation, setRecommendation] = useState<Activity | null>(null);
   const [availableActivities, setAvailableActivities] = useState<Activity[]>([]);
   const [selectedActivityId, setSelectedActivityId] = useState("");
@@ -196,7 +215,7 @@ export function AdaptiveAnalysisPage() {
   async function start() {
     if (modelBlocked || !token) return;
     const lifecycle = lifecycleRef.current;
-    setStarting(true); setError(""); completedRef.current = false;
+    setStarting(true); setError(""); setNotice(""); completedRef.current = false;
     let created: EmotionalSession | null = null;
     try {
       await requireConsent();
@@ -222,13 +241,36 @@ export function AdaptiveAnalysisPage() {
         catch { failAnalysis("El analizador devolvió una respuesta inválida."); return; }
         if (result.type === "error" && result.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
         if (result.type === "error") { failAnalysis(result.message ?? "No se pudo completar el análisis."); return; }
-        if (result.type === "cancelled") { releaseMedia(); setSession(null); sessionRef.current = null; setPhase("ready"); return; }
+        if (result.type === "cancelled") {
+          releaseMedia(); setSession(null); sessionRef.current = null; setPhase("ready"); setLive(null);
+          if (result.recognition_kept) setNotice("Actividad cancelada. Tu expresión quedó registrada.");
+          return;
+        }
+        if (result.type === "live") {
+          // Lectura momentánea: solo se muestra; no se acumula ni se persiste.
+          setLive({
+            face_detected: Boolean(result.face_detected), emotion: result.emotion ?? null,
+            emotion_confidence: result.emotion_confidence ?? null, top: result.top ?? [],
+            stable_seconds: result.stable_seconds ?? 0, required_stable_seconds: result.required_stable_seconds ?? 1,
+            can_confirm: Boolean(result.can_confirm), blocked_reason: result.blocked_reason ?? null,
+          });
+          return;
+        }
+        if (result.type === "confirm_rejected") {
+          setConfirming(false); setConfirmNotice(result.message ?? "Todavía no se puede registrar la expresión.");
+          return;
+        }
         setMessage(result.message ?? "Procesando…");
-        if (result.emotion) setEmotion(result.emotion);
-        if (result.emotion_confidence != null) setConfidence(result.emotion_confidence);
-        if (result.type === "ready") { setPhase("recognizing"); resumeFrames(); }
-        else if (result.type === "recommendation") {
-          pauseFrames(); setPhase("choosing"); setSelectingActivity(false);
+        if (result.type !== "status" && result.emotion) setEmotion(result.emotion);
+        if (result.type !== "status" && result.emotion_confidence != null) setConfidence(result.emotion_confidence);
+        if (result.type === "ready") { setPhase("live"); resumeFrames(); }
+        else if (result.type === "recognized") {
+          // El servidor responde con la expresión que realmente registró.
+          pauseFrames(); setConfirming(false); setConfirmNotice(""); setLive(null); setPhase("result");
+        } else if (result.type === "recommendation") {
+          setExpressionInfo(result.expression ?? null);
+          if (result.notice) setNotice(result.notice);
+          setSelectingActivity(false);
           setShowAlternatives(false);
           setRecommendation(result.activity ?? null);
           setAvailableActivities(result.activities ?? []);
@@ -245,7 +287,12 @@ export function AdaptiveAnalysisPage() {
             else speakExercise(result.activity);
           }
         } else if (result.type === "completed") {
-          setProgress(1); setPhase("completed"); completedRef.current = true;
+          if (restartAfterFinishRef.current) {
+            // "Analizar otra expresión": esta sesión ya quedó cerrada como omitida; se inicia otra.
+            restartAfterFinishRef.current = false; completedRef.current = true; analyzeAgain(); return;
+          }
+          setOutcome(result.exercise_result ?? null);
+          setProgress(result.exercise_result === "completed" ? 1 : 0); setPhase("completed"); completedRef.current = true;
           releaseMedia(); setPreviewing(false);
         } else if (result.type === "status") {
           setProgress(result.progress ?? 0); drawLandmarks(result.landmarks);
@@ -284,6 +331,20 @@ export function AdaptiveAnalysisPage() {
     socketRef.current.send(JSON.stringify({ type: "select_activity", activity_id: activityId }));
   }
 
+  function confirmExpression() {
+    if (!live?.can_confirm || confirming || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    // Sin etiqueta: el servidor registra su propio último resultado estable.
+    setConfirming(true); setConfirmNotice("");
+    socketRef.current.send(JSON.stringify({ type: "confirm_expression" }));
+  }
+
+  function finishWithoutActivity(analyzeAnother = false) {
+    if (selectingActivity || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    setSelectingActivity(true);
+    restartAfterFinishRef.current = analyzeAnother;
+    socketRef.current.send(JSON.stringify({ type: "finish_without_activity" }));
+  }
+
   function showOtherActivities() {
     const firstAlternative = availableActivities.find(
       (item) => item.id !== recommendation?.id,
@@ -300,6 +361,13 @@ export function AdaptiveAnalysisPage() {
     setPreviewing(false);
     setEmotion(null);
     setConfidence(null);
+    setLive(null);
+    setConfirming(false);
+    setConfirmNotice("");
+    setOutcome(null);
+    setExpressionInfo(null);
+    setSelectingActivity(false);
+    setNotice("");
     setRecommendation(null);
     setAvailableActivities([]);
     setShowAlternatives(false);
@@ -324,7 +392,8 @@ export function AdaptiveAnalysisPage() {
       await apiRequest(`/sessions/${current.id}/cancel`, { method: "POST", token });
       completedRef.current = true;
       releaseMedia(); setPreviewing(false); sessionRef.current = null; setSession(null);
-      setPhase("ready"); setConfirmCancel(false);
+      setNotice(expressionRecorded ? "Actividad cancelada. Tu expresión quedó registrada." : "");
+      setLive(null); setPhase("ready"); setConfirmCancel(false);
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No se pudo cancelar la sesión.");
@@ -349,6 +418,7 @@ export function AdaptiveAnalysisPage() {
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
     <PageHeader section="Analizador facial" title="Reconoce tu expresión y recibe una actividad" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
     {error && <Alert variant="error">{error}</Alert>}
+    {notice && <Alert variant="info">{notice}</Alert>}
     <div className="analysis-preflight card">
       <div>
         <div className="video-stage adaptive-video-stage">
@@ -381,10 +451,16 @@ export function AdaptiveAnalysisPage() {
           <p className="muted">El análisis ocurre en el servidor. {canChooseModel ? "Si el modelo está bloqueado, consulta el motivo mostrado arriba." : "Si el servidor no puede analizar, te mostraremos el motivo."}</p>
         </>}
         {phase !== "ready" && <>
-          <p className="step-caption">{phase === "recognizing" ? "Paso 1 de 3 · Reconocimiento" : phase === "choosing" ? "Paso 2 de 3 · Actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
-          <span role="status" className="analysis-state">{message}</span>
-          {emotion && <p>Expresión detectada: <strong>{emotion}</strong>{confidence != null && ` (${Math.round(confidence * 100)} %)`}</p>}
-          {phase === "choosing" && <>
+          <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
+          {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
+          {phase === "live" && <LiveExpressionPanel live={live} />}
+          {phase === "live" && <>
+            <button className="button primary" disabled={!live?.can_confirm || confirming} aria-describedby="confirm-help" onClick={confirmExpression}>{confirming ? "Registrando…" : "Registrar esta expresión"}</button>
+            <p id="confirm-help" className="muted">{confirmNotice || (live?.can_confirm ? "Puedes registrar la expresión que ves ahora. Se guarda solo la que registres." : live?.blocked_reason ?? "Esperando la primera lectura del modelo.")}</p>
+          </>}
+          {phase !== "live" && phase !== "result" && emotion && <p>Expresión registrada: <strong>{expressionLabel(emotion)}</strong>{confidence != null && ` (${percent(confidence)} %)`}</p>}
+          {phase === "result" && emotion && <ExpressionResult expressionKey={emotion} confidence={confidence} info={expressionInfo} />}
+          {phase === "result" && <>
             {recommendation ? <div className="recommendation-card">
               <p className="step-caption">Actividad recomendada</p>
               <h2>{recommendation.name}</h2>
@@ -402,7 +478,7 @@ export function AdaptiveAnalysisPage() {
                   </li>}
                 </ol>
               </div>
-              <button className="button primary" disabled={selectingActivity} onClick={() => chooseActivity(recommendation.id)}>{selectingActivity ? "Preparando actividad…" : "Realizar actividad recomendada"}</button>
+              <button className="button primary" disabled={selectingActivity} onClick={() => chooseActivity(recommendation.id)}>{selectingActivity ? "Preparando actividad…" : "Realizar actividad"}</button>
             </div> : <p>No hay una recomendación automática para esta expresión. Puedes elegir una actividad disponible.</p>}
             {recommendation && availableActivities.some((item) => item.id !== recommendation.id) && !showAlternatives &&
               <button className="button secondary" disabled={selectingActivity} onClick={showOtherActivities}>Ver otras actividades</button>}
@@ -413,8 +489,13 @@ export function AdaptiveAnalysisPage() {
               </select>
               <button className="button primary" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</button>
             </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
+            <div className="inline-actions">
+              <button className="button secondary" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</button>
+              <button className="button secondary" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</button>
+            </div>
             <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>
           </>}
+          {phase === "completed" && !activity && outcome === "skipped" && <p>Sesión finalizada sin actividad. Tu expresión quedó registrada.</p>}
           {(phase === "exercise" || phase === "completed") && activity && <>
             <h2>{activity.name}</h2><p>{activity.description}</p>
             {phase === "exercise" && speechAvailable() && <button className="button secondary" onClick={() => currentStep ? speakStep(currentStep, stepNumber, stepCount) : speakExercise(activity)}>Repetir instrucción</button>}
@@ -423,11 +504,14 @@ export function AdaptiveAnalysisPage() {
             <div className="progress-label"><span>Progreso</span><strong>{Math.round(progress * 100)} %</strong></div>
             <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
           </>}
-          {phase === "completed" && session ? <div className="inline-actions"><Link className="button secondary action-link" to={paths.session(session.id)}>Ver resultado</Link><button className="button primary" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Volver a analizar mi expresión"}</button></div>
-            : <button className="button danger" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar análisis</button>}
+          {phase === "completed" && session ? <div className="inline-actions"><Link className="button secondary action-link" to={paths.session(session.id)}>Ver resultado</Link><button className="button primary" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</button></div>
+            : <>
+              <button className="button danger" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar análisis</button>
+              {expressionRecorded && <p className="muted">Tu expresión ya quedó registrada; cancelar solo detiene la actividad.</p>}
+            </>}
         </>}
       </div>
     </div>
-    <ConfirmDialog open={confirmCancel} title="Cancelar análisis" message="Se cancelará la sesión y se apagará la cámara." confirming={cancelling} confirmLabel="Cancelar sesión" onCancel={() => setConfirmCancel(false)} onConfirm={() => { void cancel(); }} />
+    <ConfirmDialog open={confirmCancel} title="Cancelar análisis" message={expressionRecorded ? "Tu expresión ya quedó registrada y se conserva. Se cancelará la actividad y se apagará la cámara." : "Se cancelará la sesión y se apagará la cámara."} confirming={cancelling} confirmLabel="Cancelar sesión" onCancel={() => setConfirmCancel(false)} onConfirm={() => { void cancel(); }} />
   </section>;
 }

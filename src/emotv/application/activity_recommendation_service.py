@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import logging
+import random
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
-import random
-from threading import Lock
 
 from emotv.application.activity_catalog import ActivityCatalog
+from emotv.application.ports.recommendation_repository import RecommendationSource
 from emotv.domain.activity import Activity
 
+logger = logging.getLogger(__name__)
 
-# Asociaciones provisionales para demostrar el flujo técnico del MVP.
-# Deben ser revisadas por profesionales de Psicología antes de uso real.
+MINIMUM_RECOMMENDED_STEPS = 2
+
+# Asociaciones por defecto solo para el flujo local (scripts de diagnóstico y
+# pruebas). La web las lee de PostgreSQL (emotion_activity_recommendations),
+# donde administración las edita sin cambiar código; la migración 20261009_13
+# las cargó como valores iniciales. Deben revisarlas profesionales de Psicología.
 DEFAULT_ACTIVITIES_BY_EMOTION: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
         "sadness": ("morning_mobility", "open_and_reach"),
@@ -25,71 +31,89 @@ DEFAULT_ACTIVITIES_BY_EMOTION: Mapping[str, tuple[str, ...]] = MappingProxyType(
 )
 
 
+class StaticRecommendations:
+    """Fuente de asociaciones fija, para el flujo local sin base de datos."""
+
+    def __init__(self, activities_by_emotion: Mapping[str, Sequence[str]]) -> None:
+        self._mapping = MappingProxyType({
+            _normalize(emotion): tuple(ids) for emotion, ids in activities_by_emotion.items()
+        })
+
+    def activity_ids_for(self, expression_key: str) -> tuple[str, ...]:
+        return self._mapping.get(_normalize(expression_key), ())
+
+
 class ActivityRecommendationService:
-    """Recomienda actividades mediante asociaciones locales por emoción."""
+    """Recomienda actividades según asociaciones configurables por expresión.
+
+    No guarda estado entre llamadas: lee las asociaciones cada vez, así que un
+    cambio de administración se aplica en la siguiente recomendación y puede
+    compartirse entre conexiones y procesos. Los datos de configuración
+    inválidos (actividad inexistente o con menos de dos pasos) se descartan
+    con un aviso en el log; nunca interrumpen el análisis.
+    """
 
     def __init__(
         self,
         catalog: ActivityCatalog | None = None,
-        activities_by_emotion: Mapping[str, Sequence[str]] = (
-            DEFAULT_ACTIVITIES_BY_EMOTION
-        ),
-        minimum_steps: int = 2,
+        activities_by_emotion: Mapping[str, Sequence[str]] | None = None,
+        minimum_steps: int = MINIMUM_RECOMMENDED_STEPS,
+        *,
+        source: RecommendationSource | None = None,
     ) -> None:
         if isinstance(minimum_steps, bool) or minimum_steps < 1:
             raise ValueError("minimum_steps debe ser un entero mayor o igual que 1")
+        if source is not None and activities_by_emotion is not None:
+            raise ValueError("indica source o activities_by_emotion, no ambos")
         self.catalog = catalog or ActivityCatalog()
-        normalized_mapping: dict[str, tuple[str, ...]] = {}
-
-        for emotion, activity_ids in activities_by_emotion.items():
-            normalized_emotion = self._normalize_emotion(emotion)
-            normalized_ids = tuple(activity_ids)
-            for activity_id in normalized_ids:
-                activity = self.catalog.get(activity_id)
-                if len(activity.steps) < minimum_steps:
-                    raise ValueError(
-                        f"La actividad recomendada {activity_id} debe tener al menos "
-                        f"{minimum_steps} steps"
-                    )
-            normalized_mapping[normalized_emotion] = normalized_ids
-
-        self._activities_by_emotion = MappingProxyType(normalized_mapping)
-        self._last_by_emotion: dict[str, str] = {}
-        self._lock = Lock()
-
-    @property
-    def supported_emotions(self) -> frozenset[str]:
-        return frozenset(self._activities_by_emotion)
+        self.source = source or StaticRecommendations(
+            DEFAULT_ACTIVITIES_BY_EMOTION if activities_by_emotion is None else activities_by_emotion
+        )
+        self.minimum_steps = minimum_steps
 
     def recommend(self, emotion: str) -> Activity | None:
-        """Devuelve la primera actividad configurada o ``None``."""
+        """Devuelve la primera actividad válida configurada o ``None``."""
 
         activities = self.recommend_all(emotion)
         return activities[0] if activities else None
 
     def recommend_all(self, emotion: str) -> tuple[Activity, ...]:
-        """Devuelve todas las actividades asociadas en orden de prioridad."""
+        """Devuelve las actividades válidas asociadas, en orden de prioridad."""
 
-        normalized_emotion = self._normalize_emotion(emotion)
-        activity_ids = self._activities_by_emotion.get(normalized_emotion, ())
-        return tuple(self.catalog.get(activity_id) for activity_id in activity_ids)
+        key = _normalize(emotion)
+        valid: list[Activity] = []
+        for activity_id in self.source.activity_ids_for(key):
+            try:
+                activity = self.catalog.get(activity_id)
+            except KeyError:
+                logger.warning(
+                    "Recomendación omitida: la actividad %s asociada a %s no existe", activity_id, key,
+                )
+                continue
+            if len(activity.steps) < self.minimum_steps:
+                logger.warning(
+                    "Recomendación omitida: la actividad %s asociada a %s tiene %d paso(s); "
+                    "se requieren al menos %d", activity_id, key, len(activity.steps), self.minimum_steps,
+                )
+                continue
+            valid.append(activity)
+        return tuple(valid)
 
     def recommend_varied(self, emotion: str, *, exclude_ids: Sequence[str] = ()) -> Activity | None:
-        """Elige entre candidatos configurados, evitando la última elección si es posible."""
+        """Elige al azar entre los candidatos válidos, evitando ``exclude_ids`` si es posible.
+
+        La variación la aporta el llamador (por ejemplo, la última actividad del
+        historial del estudiante), no un estado en memoria del proceso.
+        """
         candidates = self.recommend_all(emotion)
         if not candidates:
             return None
-        key = self._normalize_emotion(emotion)
-        with self._lock:
-            preferred = [item for item in candidates if item.id not in exclude_ids
-                         and item.id != self._last_by_emotion.get(key)]
-            selected = random.SystemRandom().choice(preferred or [item for item in candidates if item.id not in exclude_ids] or list(candidates))
-            self._last_by_emotion[key] = selected.id
-            return selected
+        preferred = [item for item in candidates if item.id not in exclude_ids]
+        return random.SystemRandom().choice(preferred or list(candidates))
 
-    @staticmethod
-    def _normalize_emotion(emotion: str) -> str:
-        normalized = emotion.strip().lower()
-        if not normalized:
-            raise ValueError("emotion no puede estar vacía")
-        return normalized
+
+def _normalize(emotion: str) -> str:
+    normalized = emotion.strip().lower()
+    if not normalized:
+        raise ValueError("emotion no puede estar vacía")
+    return normalized

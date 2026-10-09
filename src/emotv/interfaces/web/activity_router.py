@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService
+from emotv.application.activity_recommendation_service import MINIMUM_RECOMMENDED_STEPS
 from emotv.application.ports import UserRepository
+from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.domain import AccessAction, Activity, PostureId, User
 from emotv.domain.activity import ActivityStep
 
@@ -58,6 +62,8 @@ def create_activity_router(
     authentication: AuthenticationService | None,
     users: UserRepository | None,
     authorization: AuthorizationService | None = None,
+    recommendations: RecommendationConfigService | None = None,
+    expression_label: Callable[[str], str] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/activities", tags=["activities"])
     policy = authorization or AuthorizationService()
@@ -108,8 +114,19 @@ def create_activity_router(
         user: User = Depends(current_user),
     ) -> ActivityResponse:
         require_management(user)
+        updated = request.to_domain()
+        if recommendations is not None:
+            # Una actividad recomendada debe conservar al menos dos posturas.
+            blocking = recommendations.expressions_blocking_update(updated)
+            if blocking:
+                names = ", ".join(expression_label(key) if expression_label else key for key in blocking)
+                raise HTTPException(status_code=409, detail=(
+                    f"La actividad {updated.id} se recomienda para: {names}. Una actividad recomendada "
+                    f"necesita al menos {MINIMUM_RECOMMENDED_STEPS} pasos; quítala primero de esas "
+                    "recomendaciones o conserva sus pasos."
+                ))
         try:
-            activity = configured_catalog().update(activity_id, request.to_domain())
+            activity = configured_catalog().update(activity_id, updated)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error.args[0])) from error
         except ValueError as error:

@@ -10,7 +10,7 @@ from emotv.application.ports.consent_repository import ConsentRepository
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.domain.emotional_activity_status import EmotionalActivityStatus
 from emotv.domain.session import EmotionalSession
-from emotv.domain.session_state import SessionState
+from emotv.domain.session_state import ActivityOutcome, SessionState
 
 
 Clock = Callable[[], datetime]
@@ -131,10 +131,16 @@ class SessionService:
         exercise_result: str,
         exercise_duration_seconds: float,
     ) -> EmotionalSession:
-        """Completa y guarda una sesión con el resultado íntegro del MVP."""
+        """Completa y guarda una sesión con el resultado íntegro del MVP.
+
+        Si el estudiante ya registró su expresión, esa expresión se conserva.
+        """
 
         current = self._get_required(session_id)
         self._require_state(current, SessionState.IN_PROGRESS, "completar")
+        if current.recognized_at is not None:
+            initial_emotion = current.initial_emotion
+            emotion_confidence = current.emotion_confidence
         completed = replace(
             current,
             state=SessionState.COMPLETED,
@@ -171,13 +177,19 @@ class SessionService:
         )
 
     def cancel_session(self, session_id: str) -> EmotionalSession:
-        """Cancela y guarda una sesión creada o en progreso."""
+        """Cancela una sesión abierta.
+
+        Si ya hay una expresión registrada, la sesión no se pierde: se cierra
+        como completada con la actividad cancelada.
+        """
 
         current = self._get_required(session_id)
-        if current.state not in {SessionState.CREATED, SessionState.IN_PROGRESS}:
+        if current.state not in {SessionState.CREATED, SessionState.IN_PROGRESS, SessionState.RECOGNIZED}:
             raise RuntimeError(
                 f"No se puede cancelar una sesión en estado {current.state.value}"
             )
+        if current.recognized_at is not None:
+            return self._close_recognized(current, ActivityOutcome.CANCELLED)
         cancelled = replace(
             current,
             state=SessionState.CANCELLED,
@@ -199,18 +211,64 @@ class SessionService:
             current, emotion_model_id=model_id, emotion_model_version=model_version,
         ))
 
-    def assign_activity(self, session_id: str, activity_id: str) -> EmotionalSession:
-        """Fija la actividad elegida tras reconocer la emoción en una sesión web."""
+    def record_recognition(
+        self,
+        session_id: str,
+        emotion: str,
+        confidence: float,
+        model_id: str,
+        model_version: str,
+    ) -> EmotionalSession:
+        """Persiste la expresión que el estudiante eligió registrar.
+
+        Una sesión registra una sola expresión; para otra se inicia una sesión nueva.
+        """
         current = self._get_required(session_id)
-        self._require_state(current, SessionState.IN_PROGRESS, "asignar actividad")
+        self._require_state(current, SessionState.IN_PROGRESS, "registrar la expresión de")
+        if current.recognized_at is not None or current.initial_emotion is not None:
+            raise RuntimeError("La sesión ya tiene una expresión registrada")
+        if current.emotion_model_id is not None and (
+            (current.emotion_model_id, current.emotion_model_version) != (model_id, model_version)
+        ):
+            raise ValueError("La sesión ya tiene otro modelo facial registrado")
+        return self.repository.save(replace(
+            current,
+            state=SessionState.RECOGNIZED,
+            recognized_at=self.clock(),
+            initial_emotion=emotion,
+            emotion_confidence=confidence,
+            emotion_model_id=model_id,
+            emotion_model_version=model_version,
+        ))
+
+    def finish_without_activity(self, session_id: str) -> EmotionalSession:
+        """Cierra una sesión reconocida sin actividad, conservando la expresión."""
+        current = self._get_required(session_id)
+        self._require_state(current, SessionState.RECOGNIZED, "finalizar sin actividad")
+        return self._close_recognized(current, ActivityOutcome.SKIPPED)
+
+    def assign_activity(self, session_id: str, activity_id: str) -> EmotionalSession:
+        """Inicia la actividad elegida tras registrar la expresión (RECOGNIZED -> IN_PROGRESS)."""
+        current = self._get_required(session_id)
+        self._require_state(current, SessionState.RECOGNIZED, "asignar actividad")
         normalized_id = activity_id.strip().lower()
         if not normalized_id:
             raise ValueError("activity_id no puede estar vacío")
-        if current.activity_id is not None:
-            if current.activity_id != normalized_id:
-                raise ValueError("La sesión ya tiene otra actividad")
-            return current
-        return self.repository.save(replace(current, activity_id=normalized_id))
+        if current.activity_id is not None and current.activity_id != normalized_id:
+            raise ValueError("La sesión ya tiene otra actividad")
+        return self.repository.save(replace(
+            current, state=SessionState.IN_PROGRESS, activity_id=normalized_id,
+        ))
+
+    def _close_recognized(
+        self, current: EmotionalSession, outcome: ActivityOutcome,
+    ) -> EmotionalSession:
+        return self.repository.save(replace(
+            current,
+            state=SessionState.COMPLETED,
+            completed_at=self.clock(),
+            exercise_result=outcome.value,
+        ))
 
     def get_session(self, session_id: str) -> EmotionalSession | None:
         return self.repository.get_by_id(session_id)

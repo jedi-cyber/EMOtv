@@ -72,6 +72,8 @@ services:
       LOGIN_MAX_FAILURES_PER_ACCOUNT: ${LOGIN_MAX_FAILURES_PER_ACCOUNT:-5}
       LOGIN_MAX_FAILURES_PER_IP: ${LOGIN_MAX_FAILURES_PER_IP:-20}
       LOGIN_ATTEMPT_WINDOW_MINUTES: ${LOGIN_ATTEMPT_WINDOW_MINUTES:-15}
+      LIVE_STABLE_SECONDS: ${LIVE_STABLE_SECONDS:-1}
+      LIVE_MIN_CONFIDENCE: ${LIVE_MIN_CONFIDENCE:-0.5}
     volumes:
       - emotv_models:/app/models/weights:ro
     # Sin puertos publicados: se accede a través de web.
