@@ -209,3 +209,19 @@ class ExpressionInfoRecord(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmotionActivityRecommendationRecord(Base):
+    """Actividad recomendada para una expresión; menor priority = primera opción."""
+
+    __tablename__ = "emotion_activity_recommendations"
+    __table_args__ = (
+        CheckConstraint("priority >= 0", name="ck_emotion_activity_recommendations_priority"),
+    )
+    expression_key: Mapped[str] = mapped_column(
+        ForeignKey("expression_info.expression_key", ondelete="CASCADE"), primary_key=True
+    )
+    activity_id: Mapped[str] = mapped_column(
+        ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)

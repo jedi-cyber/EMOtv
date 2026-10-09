@@ -50,8 +50,12 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 - `PoseService` y `ExerciseService`: validación de postura y tiempo sostenido.
 - `EmotionStabilizer`: emoción dominante en una ventana móvil con confianza,
   muestras y acuerdo mínimos.
-- `ActivityRecommendationService` y `ActivityCatalog`: reglas locales
-  provisionales emoción → actividad; no son una recomendación clínica.
+- `ActivityRecommendationService` y `ActivityCatalog`: asociaciones
+  expresión → actividad leídas de PostgreSQL (`emotion_activity_recommendations`)
+  en cada recomendación, sin estado en memoria. Descarta con un aviso en el log
+  las actividades inexistentes o de un solo paso y nunca interrumpe el análisis.
+  No son una recomendación clínica. `RecommendationConfigService` valida su
+  edición por administración.
 - `EmotionModelCatalog` y el contrato `EmotionClassifier`.
 - `evaluate_resources`: política de admisión `SUPPORTED`/`WARNING`/`BLOCKED`.
 - `SessionService`, `AuthenticationService`, `AuthorizationService`,

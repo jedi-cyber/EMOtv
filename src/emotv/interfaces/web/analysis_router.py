@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 import json
+import logging
 import time
 from typing import Protocol
 
@@ -10,6 +11,7 @@ import cv2
 import jwt
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from sqlalchemy.exc import SQLAlchemyError
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 from emotv.application import (
@@ -19,10 +21,8 @@ from emotv.application import (
     BrowserActivityService,
     SessionService,
 )
-from emotv.application.activity_recommendation_service import (
-    ActivityRecommendationService,
-    DEFAULT_ACTIVITIES_BY_EMOTION,
-)
+from emotv.application.activity_recommendation_service import ActivityRecommendationService
+from emotv.application.ports.recommendation_repository import RecommendationSource
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.application.live_expression import LiveExpressionTracker, LiveReading
@@ -44,6 +44,29 @@ EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, "hardlyhumans_vit")
 # Estados en los que la sesión sigue abierta en el WebSocket.
 OPEN_STATES = (SessionState.IN_PROGRESS, SessionState.RECOGNIZED)
 
+logger = logging.getLogger(__name__)
+
+# Mensaje para el estudiante según la etapa que falló; el detalle técnico va
+# solo al log del servidor (nunca datos de imagen).
+STAGE_MESSAGES = {
+    "recognition": "Falló el reconocimiento de la expresión. Intenta de nuevo en unos minutos.",
+    "activity": "Falló la verificación de la actividad. Si ya registraste tu expresión, se conserva.",
+    "persistence": "No se pudo guardar el estado de la sesión. Intenta de nuevo en unos minutos.",
+    "server": "Ocurrió un error inesperado en el análisis. Intenta de nuevo en unos minutos.",
+}
+RECOMMENDATION_UNAVAILABLE = (
+    "No se pudo calcular la actividad recomendada. Tu expresión quedó registrada; "
+    "puedes elegir una actividad de la lista o finalizar sin actividad."
+)
+
+
+class AnalysisStageError(Exception):
+    """Fallo de una etapa concreta del análisis (reconocimiento o actividad)."""
+
+    def __init__(self, stage: str) -> None:
+        super().__init__(stage)
+        self.stage = stage
+
 
 def create_analysis_router(
     sessions: SessionService | None,
@@ -60,11 +83,16 @@ def create_analysis_router(
     live_settings: LiveExpressionSettings | None = None,
     live_clock: Callable[[], float] | None = None,
     expression_info: Callable[[str], dict[str, object] | None] | None = None,
+    recommendations: RecommendationSource | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
     policy = authorization or AuthorizationService()
-    recommender: ActivityRecommendationService | None = None
+    # Un recomendador por router y sin estado mutable: lee las asociaciones en
+    # cada recomendación, así que sirve igual con varias conexiones y procesos.
+    recommender = (
+        ActivityRecommendationService(activities, source=recommendations) if activities is not None else None
+    )
 
     @router.get("/analysis/models")
     def available_models(user=Depends(create_current_user_dependency(authentication, users))):
@@ -212,23 +240,25 @@ def create_analysis_router(
                 sessions.require_active_consent(session.student_id)
 
             def recommendation_message(expression: StabilizedEmotion) -> dict[str, object]:
-                nonlocal recommender
-                available_ids = set(activities.ids)
-                mapping = {
-                    emotion: tuple(item_id for item_id in ids if item_id in available_ids)
-                    for emotion, ids in DEFAULT_ACTIVITIES_BY_EMOTION.items()
-                }
-                if recommender is None or recommender.catalog is not activities:
-                    recommender = ActivityRecommendationService(activities, mapping)
-                recent_ids: tuple[str, ...] = ()
-                if session.student_id:
-                    previous = sorted(
-                        (item for item in sessions.list_sessions_by_student(session.student_id)
-                         if item.id != session.id and item.activity_id),
-                        key=lambda item: item.started_at, reverse=True,
-                    )
-                    recent_ids = tuple(item.activity_id for item in previous[:1] if item.activity_id)
-                recommendation = recommender.recommend_varied(expression.emotion, exclude_ids=recent_ids)
+                assert recommender is not None
+                notice: str | None = None
+                try:
+                    # La variación sale del historial del estudiante (su última
+                    # actividad), no de memoria del proceso.
+                    recent_ids: tuple[str, ...] = ()
+                    if session.student_id:
+                        previous = sorted(
+                            (item for item in sessions.list_sessions_by_student(session.student_id)
+                             if item.id != session.id and item.activity_id),
+                            key=lambda item: item.started_at, reverse=True,
+                        )
+                        recent_ids = tuple(item.activity_id for item in previous[:1] if item.activity_id)
+                    recommendation = recommender.recommend_varied(expression.emotion, exclude_ids=recent_ids)
+                except SQLAlchemyError:
+                    # La recomendación es opcional: con la expresión ya guardada,
+                    # el estudiante puede elegir de la lista o terminar.
+                    logger.exception("Etapa de recomendación fallida en la sesión %s", session.id)
+                    recommendation, notice = None, RECOMMENDATION_UNAVAILABLE
                 return {
                     "type": "recommendation", "state": "choosing_activity",
                     "message": "Expresión registrada. Revisa la actividad sugerida",
@@ -238,6 +268,7 @@ def create_analysis_router(
                     "activities": [_activity_payload(item) for item in activities.list_all()],
                     # Texto educativo fijo del catálogo; nunca generado por un LLM.
                     "expression": expression_info(expression.emotion) if expression_info else None,
+                    "notice": notice,
                     "progress": 0.0,
                 }
 
@@ -311,13 +342,17 @@ def create_analysis_router(
                             require_authorized(SessionState.RECOGNIZED)
                             selected = activities.get(str(command.get("activity_id", "")).strip())
                             sessions.assign_activity(session.id, selected.id)
-                            assert analyzer is not None and adaptive_processor_factory is not None
-                            processor = await asyncio.to_thread(
-                                adaptive_processor_factory, selected, analyzer, recognized,
-                            )
                         except (jwt.InvalidTokenError, PermissionError, KeyError, ValueError):
                             await _error(websocket, "No se pudo iniciar la actividad seleccionada", 4403)
                             break
+                        assert analyzer is not None and adaptive_processor_factory is not None
+                        try:
+                            processor = await asyncio.to_thread(
+                                adaptive_processor_factory, selected, analyzer, recognized,
+                            )
+                        except (OSError, RuntimeError, ValueError) as error:
+                            # Pesos de pose ausentes o MediaPipe que no arranca.
+                            raise AnalysisStageError("activity") from error
                         await websocket.send_json({
                             "type": "activity_started", "state": "waiting_for_posture",
                             "message": "Adopta la postura indicada", "progress": 0.0,
@@ -364,13 +399,19 @@ def create_analysis_router(
                         continue
                     assert analyzer is not None
                     # Fase en vivo: un mensaje por frame procesado y nada persistido.
-                    prediction, distribution = await asyncio.to_thread(_analyze_detailed, analyzer, frame)
+                    try:
+                        prediction, distribution = await asyncio.to_thread(_analyze_detailed, analyzer, frame)
+                    except (cv2.error, OSError, RuntimeError, ValueError) as error:
+                        raise AnalysisStageError("recognition") from error
                     reading = tracker.update(prediction, distribution)
                     await websocket.send_json(_live_message(reading, live))
                     continue
 
                 assert processor is not None
-                status = await asyncio.to_thread(processor.process_frame, frame)
+                try:
+                    status = await asyncio.to_thread(processor.process_frame, frame)
+                except (cv2.error, OSError, RuntimeError, ValueError) as error:
+                    raise AnalysisStageError("activity") from error
                 payload: dict[str, object] = {
                     "type": "status",
                     "state": status.state.value,
@@ -397,17 +438,20 @@ def create_analysis_router(
                     break
         except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
+        except AnalysisStageError as error:
+            logger.error("Etapa %s fallida en la sesión %s", error.stage, active_session_id, exc_info=error.__cause__)
+            await _report_stage(websocket, error.stage)
+        except SQLAlchemyError:
+            logger.exception("Error de base de datos durante el análisis de la sesión %s", active_session_id)
+            await _report_stage(websocket, "persistence")
         except Exception:
-            try:
-                await websocket.send_json({"type": "error", "message": "No se pudo procesar la actividad. Revisa la configuración del servidor."})
-            except Exception:
-                pass
+            # Último recurso: el detalle queda en el log y el estudiante recibe un mensaje claro.
+            logger.exception("Error inesperado durante el análisis de la sesión %s", active_session_id)
+            await _report_stage(websocket, "server")
         finally:
-            if processor is not None:
-                try:
-                    await asyncio.to_thread(processor.close)
-                except Exception:
-                    pass
+            # Primero lo síncrono: si la tarea se canceló (apagado del servidor),
+            # cualquier await de este bloque puede interrumpirse y la sesión
+            # quedaría abierta.
             if active_session_id is not None and sessions is not None:
                 current = sessions.get_session(active_session_id)
                 if current is not None and current.state in OPEN_STATES:
@@ -417,12 +461,24 @@ def create_analysis_router(
                         sessions.cancel_session(active_session_id)
                     except RuntimeError:
                         pass
+            if processor is not None:
+                try:
+                    processor.close()  # Libera MediaPipe; es rápido y no debe depender de un await.
+                except Exception:
+                    logger.exception("No se pudo cerrar el procesador de la sesión %s", active_session_id)
             try:
                 await websocket.close()
             except Exception:
                 pass
 
     return router
+
+
+async def _report_stage(websocket: WebSocket, stage: str) -> None:
+    try:
+        await websocket.send_json({"type": "error", "stage": stage, "message": STAGE_MESSAGES[stage]})
+    except (WebSocketDisconnect, RuntimeError):
+        pass  # El cliente ya se desconectó; el fallo quedó en el log.
 
 
 async def _error(websocket: WebSocket, message: str, code: int) -> None:

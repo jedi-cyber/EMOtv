@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 
 from emotv.application.activity_catalog import DEFAULT_ACTIVITIES
-from emotv.application.activity_recommendation_service import DEFAULT_ACTIVITIES_BY_EMOTION
+from emotv.application.activity_recommendation_service import MINIMUM_RECOMMENDED_STEPS
 from emotv.infrastructure.persistence.database import (
     create_database_engine,
     create_session_factory,
@@ -12,25 +12,27 @@ from emotv.infrastructure.persistence.database import (
 from emotv.infrastructure.persistence.postgres_activity_repository import (
     PostgresActivityRepository,
 )
+from emotv.infrastructure.persistence.postgres_recommendation_repository import (
+    PostgresRecommendationRepository,
+)
 from emotv.infrastructure.vision.movement_analysis import PostureValidator
 
 
-MIN_RECOMMENDED_STEPS = 2
+MIN_RECOMMENDED_STEPS = MINIMUM_RECOMMENDED_STEPS
 
 
-def recommended_ids() -> frozenset[str]:
+def recommended_ids(recommendations: PostgresRecommendationRepository) -> frozenset[str]:
+    """Actividades asociadas a alguna expresión en emotion_activity_recommendations."""
     return frozenset(
-        activity_id
-        for activity_ids in DEFAULT_ACTIVITIES_BY_EMOTION.values()
-        for activity_id in activity_ids
+        activity_id for ids in recommendations.list_all().values() for activity_id in ids
     )
 
 
-def audit(repository: PostgresActivityRepository) -> tuple[str, ...]:
+def audit(repository: PostgresActivityRepository, recommended: frozenset[str]) -> tuple[str, ...]:
     supported = PostureValidator().supported_postures
     activities = {activity.id: activity for activity in repository.list_all()}
     problems: list[str] = []
-    for activity_id in sorted(recommended_ids()):
+    for activity_id in sorted(recommended):
         activity = activities.get(activity_id)
         if activity is None:
             problems.append(f"{activity_id}: no existe en PostgreSQL")
@@ -49,9 +51,9 @@ def audit(repository: PostgresActivityRepository) -> tuple[str, ...]:
     return tuple(problems)
 
 
-def repair(repository: PostgresActivityRepository) -> None:
+def repair(repository: PostgresActivityRepository, recommended: frozenset[str]) -> None:
     defaults = {activity.id: activity for activity in DEFAULT_ACTIVITIES}
-    for activity_id in sorted(recommended_ids()):
+    for activity_id in sorted(recommended):
         expected = defaults.get(activity_id)
         if expected is None or len(expected.steps) < MIN_RECOMMENDED_STEPS:
             raise RuntimeError(
@@ -75,13 +77,15 @@ def main() -> int:
     arguments = parser.parse_args()
     engine = create_database_engine()
     try:
-        repository = PostgresActivityRepository(create_session_factory(engine))
-        before = audit(repository)
+        factory = create_session_factory(engine)
+        repository = PostgresActivityRepository(factory)
+        recommended = recommended_ids(PostgresRecommendationRepository(factory))
+        before = audit(repository, recommended)
         if arguments.repair and before:
-            repair(repository)
-        after = audit(repository)
+            repair(repository, recommended)
+        after = audit(repository, recommended)
         for activity in repository.list_all():
-            marker = "RECOMENDADA" if activity.id in recommended_ids() else "CATALOGO"
+            marker = "RECOMENDADA" if activity.id in recommended else "CATALOGO"
             print(f"[{marker}] {activity.id}: {len(activity.steps)} steps")
         if after:
             print("Problemas:")

@@ -30,6 +30,7 @@ type Message = Partial<LiveReading> & {
   landmarks?: PoseLandmarks | null;
   exercise_result?: string | null; recognition_kept?: boolean;
   expression?: ExpressionInfo | null;
+  notice?: string | null; stage?: string;
 };
 
 
@@ -268,6 +269,7 @@ export function AdaptiveAnalysisPage() {
           pauseFrames(); setConfirming(false); setConfirmNotice(""); setLive(null); setPhase("result");
         } else if (result.type === "recommendation") {
           setExpressionInfo(result.expression ?? null);
+          if (result.notice) setNotice(result.notice);
           setSelectingActivity(false);
           setShowAlternatives(false);
           setRecommendation(result.activity ?? null);

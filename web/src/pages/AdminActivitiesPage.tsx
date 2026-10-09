@@ -8,6 +8,7 @@ import { Alert } from "../components/Alert";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageState } from "../components/PageState";
 import { PageHeader } from "../components/PageHeader";
+import { RecommendationsEditor, type ExpressionRecommendation } from "../components/RecommendationsEditor";
 
 type ActivityForm = Omit<Activity, "steps"> & { steps: ActivityStep[] };
 const emptyForm: ActivityForm = { id: "", name: "", description: "", required_posture: "arms_up", duration_seconds: 5, repetitions: 1, steps: [] };
@@ -23,6 +24,7 @@ export function AdminActivitiesPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const activities = query.data ?? [];
+  const recommendationsQuery = useApiQuery<ExpressionRecommendation[]>("/recommendations");
 
   function edit(activity: Activity) {
     setForm({ ...activity, steps: activity.steps ?? [] }); setEditing(true); setMessage(""); setError("");
@@ -56,7 +58,7 @@ export function AdminActivitiesPage() {
     try {
       await apiRequest<Activity>(editing ? `/activities/${encodeURIComponent(normalized.id)}` : "/activities", { method: editing ? "PUT" : "POST", body: JSON.stringify(normalized), token });
       setMessage(editing ? "Actividad actualizada correctamente." : "Actividad creada correctamente.");
-      setForm(emptyForm); setEditing(false); await query.reload();
+      setForm(emptyForm); setEditing(false); await Promise.all([query.reload(), recommendationsQuery.reload()]);
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo guardar la actividad"); }
     finally { setSaving(false); }
   }
@@ -66,7 +68,7 @@ export function AdminActivitiesPage() {
     setDeleting(true); setError("");
     try {
       await apiRequest<void>(`/activities/${encodeURIComponent(selected.id)}`, { method: "DELETE", token });
-      setMessage("Actividad eliminada."); setSelected(null); await query.reload();
+      setMessage("Actividad eliminada. Si estaba recomendada para alguna expresión, también se quitó de esas recomendaciones."); setSelected(null); await Promise.all([query.reload(), recommendationsQuery.reload()]);
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo eliminar la actividad"); }
     finally { setDeleting(false); }
   }
@@ -80,6 +82,8 @@ export function AdminActivitiesPage() {
       <div className="inline-actions"><button className="button primary" disabled={saving}>{saving ? "Guardando…" : editing ? "Guardar cambios" : "Crear actividad"}</button>{editing && <button className="button secondary" type="button" onClick={() => { setEditing(false); setForm(emptyForm); }}>Cancelar edición</button>}</div></form>
     <PageState {...query} empty={!query.loading && !query.error && activities.length === 0} onRetry={query.reload} />
     {activities.length > 0 && <div className="table-wrap"><table><thead><tr><th>Actividad</th><th>Postura</th><th>Duración</th><th>Acciones</th></tr></thead><tbody>{activities.map((activity) => <tr key={activity.id}><td><strong>{activity.name}</strong><small>{activity.id}</small></td><td>{activity.required_posture}</td><td>{activity.duration_seconds} s</td><td><div className="inline-actions"><button className="button secondary compact" onClick={() => edit(activity)}>Editar</button><button className="button danger compact" onClick={() => setSelected(activity)}>Eliminar</button></div></td></tr>)}</tbody></table></div>}
+    <PageState {...recommendationsQuery} onRetry={recommendationsQuery.reload} />
+    {recommendationsQuery.data && <RecommendationsEditor recommendations={recommendationsQuery.data} activities={activities} onSaved={recommendationsQuery.reload} />}
     <ConfirmDialog open={selected != null} title="Eliminar actividad" message={`¿Deseas eliminar “${selected?.name ?? ""}”? Esta acción no se puede deshacer.`} confirming={deleting} confirmLabel="Eliminar" onCancel={() => setSelected(null)} onConfirm={remove} />
   </section>;
 }

@@ -289,3 +289,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .form-stack { display: grid; gap: 1rem; margin-top: 1.5rem; }
 .form-stack label, .form-stack .form-field { display: grid; gap: .35rem; }
 .form-stack textarea { width: 100%; resize: vertical; }
+
+/* Editor de recomendaciones por expresión */
+.recommendations-editor { margin-top: 2rem; }
+.recommendation-order { display: grid; gap: .5rem; padding-left: 1.25rem; }
+.recommendation-order li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }

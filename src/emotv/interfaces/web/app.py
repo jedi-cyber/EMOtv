@@ -24,6 +24,7 @@ from emotv.infrastructure.persistence import (
     PostgresLoginAttemptRepository,
     PostgresAssignmentRepository,
     PostgresExpressionInfoRepository,
+    PostgresRecommendationRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -37,6 +38,8 @@ from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
+from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
 from emotv.infrastructure.chat import FlowiseClient
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
@@ -67,6 +70,14 @@ if DATABASE_URL and JWT_SECRET_KEY:
     activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
     assignment_repository = PostgresAssignmentRepository(database_sessions)
     expression_catalog = ExpressionCatalogService(PostgresExpressionInfoRepository(database_sessions))
+    recommendation_repository = PostgresRecommendationRepository(database_sessions)
+    recommendation_config = RecommendationConfigService(recommendation_repository, activity_catalog)
+    app.include_router(create_recommendation_router(recommendation_config, authentication_service, user_repository))
+
+    def expression_label(key: str) -> str:
+        info = expression_catalog.get(key)
+        return info.label_es if info else key
+
     app.include_router(create_expression_router(expression_catalog, authentication_service, user_repository))
 
     def expression_info_for(key: str) -> dict[str, object] | None:
@@ -92,6 +103,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         activity_catalog,
         authentication_service,
         user_repository,
+        recommendations=recommendation_config,
+        expression_label=expression_label,
     ))
     app.include_router(create_session_router(
         session_service,
@@ -128,6 +141,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         ),
         live_settings=get_live_expression_settings(),
         expression_info=expression_info_for,
+        recommendations=recommendation_repository,
     ))
     flowise_client = FlowiseClient(FLOWISE_API_URL, FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS) if FLOWISE_API_URL else None
     app.include_router(create_chat_router(flowise_client, authentication_service, user_repository))
@@ -139,6 +153,7 @@ else:
     app.include_router(create_analysis_router(None, None, None, None, None, None))
     app.include_router(create_chat_router(None, None, None))
     app.include_router(create_expression_router(None, None, None))
+    app.include_router(create_recommendation_router(None, None, None))
 
 
 @app.on_event("startup")

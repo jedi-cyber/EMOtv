@@ -287,4 +287,21 @@ describe("analizador emoción → recomendación → postura", () => {
     const chatCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === "/chat");
     expect(JSON.parse(String(chatCall?.[1]?.body))).toEqual({ question: "¿Qué diferencia hay entre la tristeza y la neutralidad?" });
   });
+
+  it("si la recomendación falla, avisa y deja elegir de la lista o finalizar", async () => {
+    const socket = await openLive();
+    const notice = "No se pudo calcular la actividad recomendada. Tu expresión quedó registrada; puedes elegir una actividad de la lista o finalizar sin actividad.";
+    const option = { id: "open_and_reach", name: "Abrir y alcanzar", description: "Varias posturas", required_posture: "arms_open", duration_seconds: 4, repetitions: 1, steps: [] };
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recognized", emotion: "sadness", emotion_confidence: .9 }) }));
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "recommendation", emotion: "sadness", emotion_confidence: .9, activity: null, activities: [option], notice }) }));
+    expect(screen.getByText(notice)).toBeInTheDocument();
+    expect(screen.getByLabelText("Actividad que deseas realizar")).toHaveValue("open_and_reach");
+    expect(screen.getByRole("button", { name: "Finalizar sin actividad" })).toBeInTheDocument();
+  });
+
+  it("muestra qué etapa falló", async () => {
+    const socket = await openLive();
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "error", stage: "recognition", message: "Falló el reconocimiento de la expresión. Intenta de nuevo en unos minutos." }) }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Falló el reconocimiento de la expresión");
+  });
 });

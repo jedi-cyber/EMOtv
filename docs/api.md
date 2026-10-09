@@ -102,7 +102,8 @@ no al servidor: no existen rutas de cámara del servidor.
 | cliente → servidor | `confirm_expression` | sin etiqueta; cualquier `emotion` enviada se ignora |
 | servidor → cliente | `confirm_rejected` | `message` con el motivo (sin rostro, sin expresión estable, confianza baja o poco tiempo estable) |
 | servidor → cliente | `recognized` | la expresión que el servidor **realmente** registró y `recognized_at`; después llega `recommendation` |
-| servidor → cliente | `recommendation` | actividad sugerida, actividades disponibles y `expression` con todos los campos del catálogo (o `null` si no se pudo leer) |
+| servidor → cliente | `recommendation` | actividad sugerida (o `null`), actividades disponibles, `expression` con todos los campos del catálogo y `notice` si la recomendación no se pudo calcular |
+| servidor → cliente | `error` con `stage` | etapa que falló: `recognition`, `activity`, `persistence` o `server`; el detalle técnico queda solo en el log del servidor |
 | cliente → servidor | `select_activity` | `activity_id`; inicia la actividad |
 | cliente → servidor | `finish_without_activity` | cierra como `completed` con `exercise_result: "skipped"` |
 | cliente → servidor | `cancel` | responde `cancelled` con `recognition_kept` |
