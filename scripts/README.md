@@ -84,6 +84,19 @@ tiempo y una barra de progreso. Teclas:
 - `scripts/emotion/check_model_availability.py`: muestra si FER+ y ViT están
   habilitados por los pesos, benchmarks y recursos locales. No modifica archivos.
 
+## Evaluación de Emi
+
+```powershell
+python scripts/chatbot/run_eval.py --base-url http://localhost:8080
+```
+
+Envía las 35 preguntas de `tests/chatbot/emi_eval.md` a `/chat` con una cuenta
+de prueba (`PRUEBA-NN`, consentimiento aceptado) y guarda en
+`reports/chatbot/` (ignorado por git) un informe con fecha para revisión
+humana. No califica las respuestas. Pide el correo y la contraseña por consola
+o los lee de `EMOTV_EVAL_EMAIL` y `EMOTV_EVAL_PASSWORD`; no los escribe en el
+informe. Consume cuota de Groq y espera cuando EMOtv responde 429.
+
 ## Otros
 
 - `scripts/run_camera_test.py`: verifica la captura básica.

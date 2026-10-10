@@ -64,10 +64,16 @@ def create_activity_router(
     authorization: AuthorizationService | None = None,
     recommendations: RecommendationConfigService | None = None,
     expression_label: Callable[[str], str] | None = None,
+    on_change: Callable[[], None] | None = None,
 ) -> APIRouter:
+    """``on_change`` se llama tras crear, editar o eliminar (p. ej. para invalidar el conocimiento de Emi)."""
     router = APIRouter(prefix="/activities", tags=["activities"])
     policy = authorization or AuthorizationService()
     current_user = create_current_user_dependency(authentication, users)
+
+    def changed() -> None:
+        if on_change is not None:
+            on_change()
 
     def configured_catalog() -> ActivityCatalog:
         if catalog is None:
@@ -105,6 +111,7 @@ def create_activity_router(
             activity = configured_catalog().add(request.to_domain())
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        changed()
         return ActivityResponse.from_domain(activity)
 
     @router.put("/{activity_id}", response_model=ActivityResponse)
@@ -131,6 +138,7 @@ def create_activity_router(
             raise HTTPException(status_code=404, detail=str(error.args[0])) from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        changed()
         return ActivityResponse.from_domain(activity)
 
     @router.delete("/{activity_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -143,6 +151,7 @@ def create_activity_router(
             configured_catalog().remove(activity_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error.args[0])) from error
+        changed()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return router

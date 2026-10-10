@@ -3,7 +3,7 @@
 FastAPI es responsable de la autenticación, los límites, el filtro de riesgo,
 el historial y la retención; n8n clasifica el alcance y genera la respuesta.
 Al webhook solo llegan la pregunta, el historial de esa conversación dentro de
-alcance y ``knowledge``: nunca resultados emocionales, sesiones, nombres,
+alcance y ``knowledge`` (conocimiento general de EMOtv): nunca resultados emocionales, sesiones, nombres,
 correos ni el id del usuario.
 """
 from __future__ import annotations
@@ -63,12 +63,15 @@ class ChatService:
         settings: ChatSettings,
         clock: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
+        knowledge: Callable[[], str] | None = None,
     ) -> None:
         self.repository = repository
         self.gateway = gateway
         self.settings = settings
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_factory = id_factory or (lambda: str(uuid4()))
+        # Conocimiento verificado de EMOtv (emi_knowledge); nunca datos de usuarios.
+        self.knowledge = knowledge or (lambda: "")
 
     def current_conversation(self, user_id: str) -> tuple[str | None, list[StoredChatMessage]]:
         conversation_id = self.repository.latest_conversation(user_id)
@@ -113,7 +116,7 @@ class ChatService:
         self.repository.purge(now - timedelta(days=self.settings.retention_days), include_conversations=False)
         message_id = self.repository.add_user_message(conversation_id, text, now)
         try:
-            reply = await self.gateway.ask(request_id, text, history, knowledge="")
+            reply = await self.gateway.ask(request_id, text, history, knowledge=self.knowledge())
         except ChatGatewayError as error:
             logger.warning("Emi request_id=%s n8n_status=%s error=%s", request_id,
                            error.status_code if error.status_code is not None else "sin_respuesta", error.kind)

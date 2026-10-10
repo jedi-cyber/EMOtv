@@ -20,6 +20,7 @@ class ChatResponse(BaseModel):
     conversation_id: str | None
     answer: str
     in_scope: bool
+    category: str
 
 
 class ChatMessageResponse(BaseModel):
@@ -49,7 +50,7 @@ def create_chat_router(service: ChatService | None, authentication=None, users=N
         except ChatError as error:
             raise HTTPException(error.status_code, error.message) from error
         return ChatResponse(conversation_id=answer.conversation_id, answer=answer.answer,
-                            in_scope=answer.in_scope)
+                            in_scope=answer.in_scope, category=answer.category)
 
     @router.get("/conversations/current", response_model=ConversationResponse)
     def current(user: User = Depends(current_user)) -> ConversationResponse:

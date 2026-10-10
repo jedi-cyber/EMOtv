@@ -46,6 +46,7 @@ from emotv.application.recommendation_config_service import RecommendationConfig
 from emotv.application.expression_catalog_service import ExpressionCatalogService
 from emotv.infrastructure.chat import N8nWebhookChatGateway
 from emotv.application.chat_service import ChatService
+from emotv.application.emi_knowledge import EmiKnowledge
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
@@ -77,6 +78,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
     activity_catalog = ActivityCatalog(repository=PostgresActivityRepository(database_sessions))
     assignment_repository = PostgresAssignmentRepository(database_sessions)
     expression_catalog = ExpressionCatalogService(PostgresExpressionInfoRepository(database_sessions))
+    # Conocimiento de EMOtv para Emi; se invalida cuando administración edita contenido.
+    emi_knowledge = EmiKnowledge(activity_catalog.list_all, expression_catalog.list_all)
     recommendation_repository = PostgresRecommendationRepository(database_sessions)
     recommendation_config = RecommendationConfigService(recommendation_repository, activity_catalog)
     app.include_router(create_recommendation_router(recommendation_config, authentication_service, user_repository))
@@ -85,7 +88,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         info = expression_catalog.get(key)
         return info.label_es if info else key
 
-    app.include_router(create_expression_router(expression_catalog, authentication_service, user_repository))
+    app.include_router(create_expression_router(expression_catalog, authentication_service, user_repository,
+                                                on_change=emi_knowledge.invalidate))
 
     def expression_info_for(key: str) -> dict[str, object] | None:
         try:
@@ -112,6 +116,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         user_repository,
         recommendations=recommendation_config,
         expression_label=expression_label,
+        on_change=emi_knowledge.invalidate,
     ))
     app.include_router(create_session_router(
         session_service,
@@ -157,7 +162,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
     else:
         # El resto de la API arranca igual; POST /chat responde 503.
         logger.warning("N8N_WEBHOOK_KEY está vacía: Emi responderá 503 hasta configurarla")
-    chat_service = ChatService(PostgresChatRepository(database_sessions), chat_gateway, chat_settings)
+    chat_service = ChatService(PostgresChatRepository(database_sessions), chat_gateway, chat_settings,
+                               knowledge=emi_knowledge.get)
     app.include_router(create_chat_router(chat_service, authentication_service, user_repository))
 else:
     app.include_router(create_identity_router(None, None, None, None))

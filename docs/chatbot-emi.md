@@ -27,21 +27,32 @@ Petición: `POST N8N_WEBHOOK_URL` con la cabecera `X-EMOtv-Key: N8N_WEBHOOK_KEY`
   "request_id": "uuid generado por FastAPI",
   "question": "texto de la pregunta",
   "history": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}],
-  "knowledge": ""
+  "knowledge": "# Conocimiento de EMOtv ... (posturas, actividades, expresiones, flujo, datos y roles)"
 }
 ```
 
 | Respuesta | Cuerpo | EMOtv responde |
 | --- | --- | --- |
-| 200 | `{"answer", "in_scope", "category", "request_id"}` | 200. Sin `answer` o sin `in_scope` booleano se trata como error (502) |
+| 200 | `{"answer", "in_scope", "category", "request_id"}` | 200 con `{conversation_id, answer, in_scope, category}`. Sin `answer` o sin `in_scope` booleano se trata como error (502) |
 | 502 | `{"error": "llm_unavailable", "answer", "request_id"}` | 502: el servicio de IA no está disponible |
 | 401/403 | La clave no coincide | 502: problema de configuración del servidor |
 | 404 | El workflow no está publicado | 502: el asistente no está activo |
 | Timeout (`N8N_TIMEOUT_SECONDS`, 30 s) | — | 504 |
 | Cualquier otro fallo | — | 502 |
 
-`knowledge` se envía vacío por ahora. Al webhook **nunca** se envían
-resultados emocionales, sesiones, nombres, correos ni el id del usuario.
+`knowledge` lleva el conocimiento verificado de EMOtv que genera
+`emotv.application.emi_knowledge` desde la base de datos: las cinco posturas,
+las actividades y sus pasos, los textos del catálogo de expresiones (qué es,
+por qué suele presentarse y cómo se reconoce), el flujo de uso, qué se guarda y
+los roles. Se guarda en caché en memoria, se regenera cuando administración
+edita actividades o el catálogo (y, como respaldo, cada 10 minutos) y su tamaño
+se registra en el log. Debe quedar por debajo de 12 000 caracteres, porque el
+workflow corta lo que exceda; si el contenido crece, los textos se acortan y
+una prueba falla si se supera el límite. No incluye datos de ningún usuario.
+
+Al webhook **nunca** se envían resultados emocionales, sesiones, nombres,
+correos ni el id del usuario. La configuración de n8n está en
+[chatbot/n8n-setup.md](chatbot/n8n-setup.md).
 
 ## Qué hace FastAPI antes de llamar a n8n
 
@@ -81,7 +92,7 @@ mensajes.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
-| `POST` | `/chat` | `{conversation_id?, question}` → `{conversation_id, answer, in_scope}` |
+| `POST` | `/chat` | `{conversation_id?, question}` → `{conversation_id, answer, in_scope, category}` |
 | `GET` | `/chat/conversations/current` | Últimos 30 mensajes de la conversación más reciente |
 | `POST` | `/chat/conversations` | Crea una conversación nueva |
 

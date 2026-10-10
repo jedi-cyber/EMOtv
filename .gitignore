@@ -92,3 +92,5 @@ backups/
 docker/certs/*.crt
 docker/certs/*.cer
 .claude/settings.local.json
+# Informes de la evaluación de Emi: contienen respuestas para revisión humana.
+reports/chatbot/

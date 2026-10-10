@@ -117,6 +117,19 @@ def test_sends_key_header_and_contract_body_without_user_data(emi):
         assert private not in raw
 
 
+def test_knowledge_travels_in_every_request_and_category_is_returned(emi):
+    client, service, _, fake, _, accounts = emi
+    service.knowledge = lambda: "## Posturas\n- Brazos arriba"
+    _, headers = accounts["PRUEBA-01"]
+    fake.next.append("out")
+
+    first = ask(client, headers, "¿Qué es una postura?").json()
+    ask(client, headers, "Otra pregunta", first["conversation_id"])
+
+    assert first["category"] == "fuera_de_alcance"
+    assert [body["knowledge"] for body in fake.bodies()] == ["## Posturas\n- Brazos arriba"] * 2
+
+
 def test_history_is_trimmed_and_excludes_out_of_scope_exchanges(emi):
     client, service, _, fake, _, accounts = emi
     service.settings = replace(service.settings, history_messages=4)
@@ -212,7 +225,8 @@ def test_risk_message_never_reaches_the_webhook(emi):
     response = ask(client, headers, "A veces pienso en QUITARME LA VIDA")
 
     assert response.status_code == 200
-    assert response.json() == {"conversation_id": None, "answer": service.settings.risk_message, "in_scope": False}
+    assert response.json() == {"conversation_id": None, "answer": service.settings.risk_message,
+                               "in_scope": False, "category": RISK_CATEGORY}
     assert "emergencia" in response.json()["answer"] and not any(char.isdigit() for char in response.json()["answer"])
     assert fake.requests == []
     assert repository.rejection_counts() == {RISK_CATEGORY: 1}
