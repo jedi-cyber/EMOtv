@@ -25,6 +25,8 @@ import { Checkbox } from "../components/Checkbox";
 import { NavIcon } from "../components/NavIcon";
 import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { useConsentStatus } from "../consent/useConsentStatus";
+import { postureName } from "../components/PostureIcon";
+import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
@@ -46,11 +48,27 @@ type RequirementState = "ready" | "pending" | "blocked" | "checking";
 type Requirement = { key: string; label: string; state: RequirementState; detail: string; action?: ReactNode };
 const requirementText: Record<RequirementState, string> = { ready: "Listo", pending: "Pendiente", blocked: "Bloqueado", checking: "Comprobando" };
 const requirementTone: Record<RequirementState, StatusTone> = { ready: "success", pending: "progress", blocked: "error", checking: "neutral" };
-
-const postureNames: Record<string, string> = {
-  arms_up: "Brazos arriba", arms_open: "Brazos abiertos",
-  hands_on_hips: "Manos en las caderas", arms_forward: "Brazos al frente", squat: "Sentadilla",
+const cameraProblemShort: Record<CameraProblem, string> = {
+  insecure: "Requiere una conexión segura (https).",
+  denied: "El navegador bloqueó el permiso.",
+  busy: "Otra aplicación la está usando.",
+  not_found: "No se encontró ninguna cámara.",
+  unknown: "No se pudo abrir.",
 };
+
+/** Guía previa: lo que más influye en la lectura del rostro y en la verificación de posturas. */
+export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
+  return <section className="analysis-guide" aria-labelledby="analysis-guide-title">
+    <h2 id="analysis-guide-title">Antes de empezar</h2>
+    <ul>
+      <li><strong>Luz de frente.</strong> Ponte mirando hacia la ventana o la lámpara, no de espaldas a ella.</li>
+      <li><strong>Rostro centrado.</strong> Mira a la cámara con la cara completa dentro del encuadre.</li>
+      <li><strong>{activity ? "Cuerpo completo." : "Para la actividad, aléjate."}</strong> {activity
+        ? "Aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, con espacio para mover los brazos."
+        : "Después del registro, colócate a unos dos metros para que la cámara vea tu cuerpo completo."}</li>
+    </ul>
+  </section>;
+}
 
 export function AdaptiveAnalysisPage() {
   const { token, user } = useAuth();
@@ -66,7 +84,7 @@ export function AdaptiveAnalysisPage() {
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const [cameraBlocked, setCameraBlocked] = useState(false);
+  const [cameraIssue, setCameraIssue] = useState<CameraProblem | null>(null);
   const consentStatus = useConsentStatus(user?.role === "student");
   const [service, setService] = useState<"checking" | "ready" | "blocked">("checking");
   const [includeLandmarks, setIncludeLandmarks] = useState(true);
@@ -131,6 +149,13 @@ export function AdaptiveAnalysisPage() {
     };
   }, [token]);
 
+  // Al cerrar o recargar la pestaña la cámara se apaga aunque React no llegue a desmontar.
+  useEffect(() => {
+    const release = () => { releaseMedia(); setPreviewing(false); };
+    window.addEventListener("pagehide", release);
+    return () => window.removeEventListener("pagehide", release);
+  }, []);
+
   async function checkService() {
     setService("checking");
     try { await apiRequest("/health", { token }); setService("ready"); }
@@ -141,8 +166,8 @@ export function AdaptiveAnalysisPage() {
 
   const consentReady = consentStatus.state === "active" || consentStatus.state === "not_required";
   const requirements: Requirement[] = [
-    { key: "camera", label: "Cámara", state: previewing ? "ready" : cameraBlocked ? "blocked" : "pending",
-      detail: previewing ? "La vista previa funciona." : cameraBlocked ? "El navegador no permitió usar la cámara." : "Pruébala para comprobar que el navegador puede usarla.",
+    { key: "camera", label: "Cámara", state: previewing ? "ready" : cameraIssue ? "blocked" : "pending",
+      detail: previewing ? "La vista previa funciona." : cameraIssue ? cameraProblemShort[cameraIssue] : "Pruébala para comprobar que el navegador puede usarla.",
       action: <Button variant="secondary" size="sm" onClick={() => { void previewCamera(); }}>Probar cámara</Button> },
     { key: "consent", label: "Consentimiento vigente",
       state: consentStatus.state === "loading" ? "checking" : consentReady ? "ready"
@@ -175,7 +200,7 @@ export function AdaptiveAnalysisPage() {
       socketRef.current.close(); socketRef.current = null;
     }
     awaitingFrame.current = false;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopStream(streamRef.current);
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     lastLandmarksRef.current = null;
@@ -184,8 +209,9 @@ export function AdaptiveAnalysisPage() {
 
   async function previewCamera(): Promise<boolean> {
     if (streamRef.current) return true;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError("La cámara requiere HTTPS o localhost y un navegador compatible.");
+    const unavailable = cameraUnavailableReason();
+    if (unavailable) {
+      setCameraIssue(unavailable); setError(cameraProblemMessages[unavailable]);
       return false;
     }
     setError("");
@@ -193,18 +219,16 @@ export function AdaptiveAnalysisPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       if (lifecycle !== lifecycleRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
+        stopStream(stream);
         return false;
       }
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      setPreviewing(true); setCameraBlocked(false);
+      setPreviewing(true); setCameraIssue(null);
       return true;
     } catch (reason) {
-      releaseMedia(); setCameraBlocked(true);
-      if (reason instanceof DOMException && reason.name === "NotAllowedError") setError("Permite el acceso a la cámara en el navegador.");
-      else if (reason instanceof DOMException && reason.name === "NotFoundError") setError("No se encontró una cámara en este dispositivo.");
-      else setError("No se pudo abrir la cámara. Comprueba sus permisos y que no esté ocupada.");
+      releaseMedia(); setPreviewing(false);
+      setCameraIssue(cameraProblem(reason)); setError(cameraErrorMessage(reason));
       return false;
     }
   }
@@ -298,7 +322,7 @@ export function AdaptiveAnalysisPage() {
         if (result.type === "error" && result.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
         if (result.type === "error") { failAnalysis(result.message ?? "No se pudo completar el análisis."); return; }
         if (result.type === "cancelled") {
-          releaseMedia(); setSession(null); sessionRef.current = null; setPhase("ready"); setLive(null);
+          releaseMedia(); setPreviewing(false); setSession(null); sessionRef.current = null; setPhase("ready"); setLive(null);
           if (result.recognition_kept) setNotice("Actividad cancelada. Tu expresión quedó registrada.");
           return;
         }
@@ -369,7 +393,7 @@ export function AdaptiveAnalysisPage() {
           }
         }
       };
-      socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Revisa que FastAPI esté activo.");
+      socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Comprueba tu conexión y vuelve a intentarlo.");
       socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
         ? expireAnalysis()
         : failAnalysis("Se perdió la conexión con el analizador. La cámara se apagó.");
@@ -503,6 +527,7 @@ export function AdaptiveAnalysisPage() {
       </div>
       <div className="adaptive-analysis-panel">
         {phase === "ready" && <>
+          <AnalysisGuide />
           <h2>Requisitos</h2>
           <ul className="requirement-list" aria-label="Requisitos para empezar">
             {requirements.map((item) => <li key={item.key} className="requirement">
@@ -526,7 +551,7 @@ export function AdaptiveAnalysisPage() {
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
           <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0} aria-describedby="start-help" onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
-          <p id="start-help" className="muted">{pendingRequirements.length > 0
+          <p id="start-help" className="muted" aria-live="polite">{pendingRequirements.length > 0
             ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
             : "Todo listo. La cámara se usará solo mientras dure el análisis."}</p>
         </>}
@@ -551,10 +576,10 @@ export function AdaptiveAnalysisPage() {
                 <ol>
                   {recommendation.steps?.length ? recommendation.steps.map((step, index) => <li key={`${step.posture}-${index}`}>
                     <span>{step.instruction}</span>
-                    <small>{postureNames[step.posture] ?? step.posture} · {step.duration_seconds} s</small>
+                    <small>{postureName(step.posture)} · {step.duration_seconds} s</small>
                   </li>) : <li>
                     <span>{recommendation.description}</span>
-                    <small>{postureNames[recommendation.required_posture] ?? recommendation.required_posture} · {recommendation.duration_seconds} s</small>
+                    <small>{postureName(recommendation.required_posture)} · {recommendation.duration_seconds} s</small>
                   </li>}
                 </ol>
               </div>
@@ -569,6 +594,9 @@ export function AdaptiveAnalysisPage() {
               </select>
               <Button variant="primary" type="submit" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</Button>
             </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
+            {(recommendation || availableActivities.length > 0) && <Callout variant="info" role="note">
+              <strong>Antes de la actividad:</strong> aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, y deja espacio para mover los brazos.
+            </Callout>}
             <div className="inline-actions">
               <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</Button>
               <Button variant="secondary" type="submit" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</Button>
@@ -581,10 +609,13 @@ export function AdaptiveAnalysisPage() {
             {phase === "exercise" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</Button>}
             {currentStep && <p><strong>Paso {position.step} de {position.steps}:</strong> {currentStep.instruction}</p>}
             {phase === "exercise" && <p>Repetición {position.repetition} de {position.repetitions}</p>}
-            <p>Postura esperada: {postureNames[currentStep?.posture ?? activity.required_posture] ?? currentStep?.posture ?? activity.required_posture} · Mantén {currentStep?.duration_seconds ?? activity.duration_seconds} s</p>
+            <p>Postura esperada: {postureName(currentStep?.posture ?? activity.required_posture)} · Mantén {currentStep?.duration_seconds ?? activity.duration_seconds} s</p>
             {phase === "exercise" && stepRemaining != null && <p>Tiempo restante del paso: {remainingSeconds(stepRemaining)} s</p>}
             <div className="progress-label"><span>Progreso</span><strong>{Math.round(progress * 100)} %</strong></div>
             <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
+            {phase === "completed" && <p>{outcome === "completed"
+              ? "Terminaste todos los pasos. La cámara ya se apagó."
+              : "La actividad terminó sin completar todos los pasos. La cámara ya se apagó."}</p>}
           </>}
           {phase === "completed" && session ? <div className="inline-actions"><ButtonLink variant="secondary" to={paths.session(session.id)}>Ver resultado</ButtonLink><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</Button></div>
             : <>

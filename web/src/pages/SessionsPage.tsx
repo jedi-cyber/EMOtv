@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, apiRequest } from "../api/http";
-import type { Activity, EmotionalSession } from "../api/types";
+import type { Activity, EmotionalSession, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
@@ -37,6 +37,8 @@ export function SessionsPage() {
   );
   const activitiesQuery = useApiQuery<Activity[]>("/activities");
   const activityNames = new Map((activitiesQuery.data ?? []).map((item) => [item.id, item.name]));
+  const studentsQuery = useApiQuery<Student[]>(user?.role === "student" ? null : "/students");
+  const studentCodes = new Map((studentsQuery.data ?? []).map((item) => [item.id, item.student_code]));
   const [actionError, setActionError] = useState("");
   const [starting, setStarting] = useState(false);
   const sessions = query.data ?? [];
@@ -53,7 +55,7 @@ export function SessionsPage() {
   async function startSession() {
     const targetStudent = student ? "" : appliedFilter;
     if (!student && !targetStudent) {
-      setActionError("Aplica primero el ID del estudiante para iniciar una sesión asociada.");
+      setActionError("Elige primero un estudiante en el filtro para iniciar una sesión asociada.");
       return;
     }
     setStarting(true);
@@ -74,8 +76,11 @@ export function SessionsPage() {
     <section>
       <PageHeader title={student ? "Mis sesiones" : "Sesiones"} description="Revisa actividades realizadas y resultados registrados."
         actions={user?.role === "psychologist" ? undefined : <Button variant="secondary" disabled={starting} onClick={startSession}>{starting ? "Iniciando…" : "Nueva sesión"}</Button>} />
-      {!student && <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); setAppliedFilter(studentFilter.trim()); setActionError(""); }}><label>ID del estudiante<input value={studentFilter} placeholder="student-..." onChange={(event) => setStudentFilter(event.target.value)} /></label><Button variant="secondary" type="submit">Aplicar filtro</Button>{appliedFilter && <Button variant="secondary" onClick={() => { setStudentFilter(""); setAppliedFilter(""); }}>Mostrar todas</Button>}</form>}
-      {appliedFilter && <p className="filter-summary">Mostrando sesiones del estudiante <strong>{appliedFilter}</strong>.</p>}
+      {!student && <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); setAppliedFilter(studentFilter); setActionError(""); }}><label>Estudiante<select value={studentFilter} onChange={(event) => setStudentFilter(event.target.value)}>
+        <option value="">Todos los estudiantes</option>
+        {(studentsQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.student_code}</option>)}
+      </select></label><Button variant="secondary" type="submit">Aplicar filtro</Button>{appliedFilter && <Button variant="secondary" onClick={() => { setStudentFilter(""); setAppliedFilter(""); }}>Mostrar todas</Button>}</form>}
+      {appliedFilter && <p className="filter-summary" role="status">Mostrando sesiones de <strong>{studentCodes.get(appliedFilter) ?? "el estudiante elegido"}</strong>.</p>}
       {actionError && <Callout variant="error">{actionError}</Callout>}
       <PageState {...query} onRetry={query.reload} />
       {!query.loading && !query.error && sessions.length === 0 && <div className="empty-state">
@@ -94,7 +99,7 @@ export function SessionsPage() {
             }}>
               <td data-label="Fecha"><Link className="row-link" to={paths.session(session.id)}>{formatDate(session.started_at)}</Link></td>
               <td data-label="Estado"><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></td>
-              {!student && <td data-label="Estudiante">{session.student_id ?? "Sin asociar"}</td>}
+              {!student && <td data-label="Estudiante">{session.student_id ? studentCodes.get(session.student_id) ?? "Sin código disponible" : "Sin asociar"}</td>}
               <td data-label="Actividad">{activityName(session.activity_id)}</td>
               <td data-label="Resultado de la actividad">{session.exercise_result ? activityOutcomeName(session.exercise_result) : EMPTY}</td>
               <td data-label="Expresión registrada">{session.initial_emotion ? expressionLabel(session.initial_emotion) : EMPTY}</td>

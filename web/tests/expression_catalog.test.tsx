@@ -67,7 +67,7 @@ describe("administración del catálogo", () => {
   it("administración edita y marca como revisado", async () => {
     vi.mocked(apiRequest).mockResolvedValue({ ...sadness, review_status: "reviewed", reviewed_at: "2026-10-08T10:00:00Z", reviewed_by_user_id: "admin-1" } as never);
     renderAs("admin", <RoleRoute allowed={["admin"]}><AdminExpressionsPage /></RoleRoute>, "/admin/expressions");
-    const row = screen.getByRole("row", { name: /sadness/ });
+    const row = screen.getByRole("row", { name: /Tristeza/ });
     expect(within(row).getByText("Borrador")).toBeInTheDocument();
     await userEvent.click(within(row).getByRole("button", { name: "Editar Tristeza revisada" }));
     const form = screen.getByRole("form", { name: "Editar Tristeza revisada" });

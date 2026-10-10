@@ -18,15 +18,18 @@ const sessions = [
 ];
 
 vi.mock("../src/api/useApiQuery", () => ({
-  useApiQuery: (path: string) => ({
-    data: path.startsWith("/sessions/") ? sessions.find((item) => path.endsWith(item.id)) : sessions,
+  useApiQuery: (path: string | null) => ({
+    data: path === null ? null : path.startsWith("/sessions/") ? sessions.find((item) => path.endsWith(item.id))
+      : path === "/sessions" ? sessions
+        : path === "/students" ? [{ id: "student-1", user_id: "u1", student_code: "PRUEBA-03" }]
+          : path === "/activities" ? [{ id: "arms_up_5s", name: "Brazos arriba breve", description: "", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }] : [],
     loading: false, error: "", reload: vi.fn(),
   }),
 }));
 
-function renderAt(path: string, element: React.ReactNode, route: string) {
+function renderAt(path: string, element: React.ReactNode, route: string, role: "student" | "psychologist" = "student") {
   const router = createMemoryRouter([{ path: route, element }], { initialEntries: [path] });
-  return render(<AuthContext.Provider value={{ user: { id: "u", email: "s@example.com", role: "student", is_active: true }, token: "t", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
+  return render(<AuthContext.Provider value={{ user: { id: "u", email: "s@example.com", role, is_active: true }, token: "t", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
 }
 
 describe("resultado de la actividad", () => {
@@ -47,5 +50,20 @@ describe("resultado de la actividad", () => {
     expect(screen.getByText("Resultado de la actividad").nextElementSibling).toHaveTextContent("Omitida");
     expect(screen.getByText("Expresión registrada el").nextElementSibling).not.toHaveTextContent("—");
     expect(screen.getByText("Expresión registrada").nextElementSibling).toHaveTextContent("Tristeza");
+  });
+
+  it("el detalle no muestra identificadores internos ni claves del modelo", () => {
+    renderAt("/sessions/s-done", <SessionDetailPage />, "/sessions/:sessionId", "psychologist");
+    expect(screen.getByText("Estudiante").nextElementSibling).toHaveTextContent("PRUEBA-03");
+    expect(screen.getByText("Actividad").nextElementSibling).toHaveTextContent("Brazos arriba breve");
+    expect(screen.getByText("Modelo facial").nextElementSibling).toHaveTextContent("FER+ · versión 1.0");
+    for (const hidden of ["s-done", "student-1", "arms_up_5s", "ferplus_onnx"]) expect(screen.queryByText(new RegExp(hidden))).not.toBeInTheDocument();
+  });
+
+  it("al estudiante no le muestra el modelo ni su propio identificador", () => {
+    renderAt("/sessions/s-done", <SessionDetailPage />, "/sessions/:sessionId");
+    expect(screen.queryByText("Modelo facial")).not.toBeInTheDocument();
+    expect(screen.queryByText("Estudiante")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Nuevo análisis" })).toHaveAttribute("href", "/analysis");
   });
 });

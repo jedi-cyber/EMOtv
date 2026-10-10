@@ -5,15 +5,18 @@ import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
 import { PageHeader } from "../components/PageHeader";
 import { ButtonLink } from "../components/Button";
+import { postureName } from "../components/PostureIcon";
+import { useAuth } from "../auth/useAuth";
 
 export function ActivityDetailPage() {
   const { activityId = "" } = useParams();
   const query = useApiQuery<Activity>(`/activities/${encodeURIComponent(activityId)}`);
   const activity = query.data;
+  const { user } = useAuth();
   return <section><ButtonLink variant="ghost" className="back-link" to={paths.activities}>← Volver a actividades</ButtonLink><PageState {...query} onRetry={query.reload} />{activity && <>
     <PageHeader title={activity.name} description={activity.description} />
     <dl className="detail-grid"><div><dt>Pasos</dt><dd>{activity.steps?.length ?? 1}</dd></div><div><dt>Duración estimada</dt><dd>{(activity.steps?.reduce((total, step) => total + step.duration_seconds, 0) ?? activity.duration_seconds) * activity.repetitions} segundos</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl>
-    <ol>{activity.steps?.map((step, index) => <li key={index}>{step.instruction} · {step.duration_seconds} s</li>)}</ol>
-    <ButtonLink variant="primary" to={paths.analysis}>Reconocer expresión primero</ButtonLink>
+    <ol>{activity.steps?.map((step, index) => <li key={index}><strong>{postureName(step.posture)}.</strong> {step.instruction} · {step.duration_seconds} s</li>)}</ol>
+    {user?.role === "student" && <ButtonLink variant="primary" to={paths.analysisForActivity(activity.id)}>Empezar actividad</ButtonLink>}
   </>}</section>;
 }

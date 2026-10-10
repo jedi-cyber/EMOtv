@@ -78,17 +78,17 @@ export function AdminExpressionsPage() {
       description="Textos fijos que ve el estudiante tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
     {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
-    <PageState {...query} onRetry={query.reload} />
-    {items.length > 0 && <div className="table-wrap"><table><thead><tr><th>Clave del modelo</th><th>Etiqueta</th><th>Estado</th><th>Revisado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
+    <PageState {...query} empty={!query.loading && !query.error && items.length === 0} emptyMessage="El catálogo de expresiones está vacío. Revisa que el servidor haya cargado los textos iniciales." onRetry={query.reload} />
+    {items.length > 0 && <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Estado</th><th>Revisado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
       {items.map((item) => <tr key={item.expression_key}>
-        <td><code>{item.expression_key}</code></td><td>{item.label_es}</td>
+        <td>{item.label_es}</td>
         <td><StatusChip tone={item.review_status === "reviewed" ? "success" : "neutral"}>{item.review_status === "reviewed" ? "Revisado" : "Borrador"}</StatusChip></td>
         <td>{item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("es-PE") : "—"}</td>
         <td><Button variant="secondary" type="button" onClick={() => edit(item)} aria-label={`Editar ${item.label_es}`}>Editar</Button></td>
       </tr>)}
     </tbody></table></div>}
     {form && selected && <form className="card form-stack" onSubmit={save} aria-label={`Editar ${selected.label_es}`}>
-      <h2>Editar: <code>{selected.expression_key}</code></h2>
+      <h2>Editar: {selected.label_es}</h2>
       <label>Etiqueta en español<input value={form.label_es} maxLength={LABEL_MAX} required
         onChange={(event) => setForm({ ...form, label_es: event.target.value })} /></label>
       {textFields.map(({ key, label, help }) => <div key={key} className="form-field">

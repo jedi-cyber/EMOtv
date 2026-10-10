@@ -112,6 +112,65 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("muestra la guía previa: luz de frente, rostro centrado y distancia para la actividad", () => {
+    camera();
+    page();
+    const guide = screen.getByRole("region", { name: "Antes de empezar" });
+    expect(guide).toHaveTextContent("Luz de frente");
+    expect(guide).toHaveTextContent("Rostro centrado");
+    expect(guide).toHaveTextContent("cuerpo completo");
+  });
+
+  it.each([
+    ["NotReadableError", "Otra aplicación está usando la cámara", "Otra aplicación la está usando."],
+    ["NotFoundError", "No encontramos ninguna cámara", "No se encontró ninguna cámara."],
+    ["SecurityError", "conexión segura", "Requiere una conexión segura (https)."],
+  ])("explica el error %s de getUserMedia", async (name, message, detail) => {
+    camera(vi.fn().mockRejectedValue(new DOMException("x", name)));
+    page();
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(within(screen.getByRole("list", { name: "Requisitos para empezar" })).getByText(detail)).toBeInTheDocument();
+  });
+
+  it("avisa del contexto no seguro sin pedir la cámara", async () => {
+    const getUserMedia = camera();
+    vi.stubGlobal("isSecureContext", false);
+    page();
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
+    expect(await screen.findByRole("alert")).toHaveTextContent("https://");
+    expect(getUserMedia).not.toHaveBeenCalled();
+    vi.stubGlobal("isSecureContext", true);
+  });
+
+  it("apaga todas las pistas al salir de la página y al cerrar la pestaña", async () => {
+    const stopVideo = vi.fn(); const stopOther = vi.fn();
+    camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: stopVideo }, { stop: stopOther }] }));
+    const view = page();
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
+    await screen.findByRole("button", { name: "Apagar cámara" });
+    act(() => { window.dispatchEvent(new Event("pagehide")); });
+    expect(stopVideo).toHaveBeenCalledOnce(); expect(stopOther).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
+    view.unmount();
+    expect(stopVideo).toHaveBeenCalledTimes(2); expect(stopOther).toHaveBeenCalledTimes(2);
+  });
+
+  it("apaga la cámara al cancelar el análisis", async () => {
+    const stop = vi.fn();
+    camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
+    page();
+    await startAnalysis();
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    act(() => Socket.instances[0].onopen?.());
+    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "ready", state: "live", message: "Cámara conectada" }) }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar análisis" }));
+    await userEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancelar sesión" }));
+    await waitFor(() => expect(stop).toHaveBeenCalledOnce());
+    expect(apiRequest).toHaveBeenCalledWith("/sessions/session-1/cancel", expect.objectContaining({ method: "POST" }));
+    expect(screen.getAllByRole("button", { name: "Probar cámara" }).length).toBeGreaterThan(0);
+  });
+
   it("explica la falta de consentimiento antes de abrir la cámara", async () => {
     const getUserMedia = camera();
     vi.mocked(apiRequest).mockImplementation(async (path) => path === "/consent-policy" ? { id: "EMOTV-CONSENT-DEMO-001:v0.1", mode: "demo", available: true } as never : path === "/students" ? [{ id: "student-1" }] as never : null as never);
@@ -129,8 +188,10 @@ describe("analizador emoción → recomendación → postura", () => {
     camera(vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError")));
     page();
     await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Permite el acceso a la cámara");
-    expect(within(screen.getByRole("list", { name: "Requisitos para empezar" })).getByText("Bloqueado")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("El navegador bloqueó la cámara");
+    const requirements = screen.getByRole("list", { name: "Requisitos para empezar" });
+    expect(within(requirements).getByText("Bloqueado")).toBeInTheDocument();
+    expect(within(requirements).getByText("El navegador bloqueó el permiso.")).toBeInTheDocument();
     expect(apiRequest).not.toHaveBeenCalledWith("/sessions", expect.anything());
   });
 
@@ -217,7 +278,7 @@ describe("analizador emoción → recomendación → postura", () => {
     act(() => socket.onmessage?.({ data: JSON.stringify(liveReading()) }));
     expect(screen.getByText("Felicidad", { selector: ".live-expression-name" })).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Confianza de la expresión estimada" })).toHaveAttribute("aria-valuenow", "80");
-    expect(screen.getByRole("list", { name: "Clases más probables" }).children).toHaveLength(3);
+    expect(screen.getByRole("list", { name: "Expresiones más probables" }).children).toHaveLength(3);
     expect(screen.getByText(/Tristeza · 15 %/)).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Estabilidad de la expresión" })).toHaveAttribute("aria-valuenow", "40");
     expect(screen.getByText("Estimación del modelo sobre la expresión visible; no indica lo que sientes.")).toBeInTheDocument();
@@ -282,7 +343,7 @@ describe("analizador emoción → recomendación → postura", () => {
     const fallbackSocket = await openLive();
     recognize(fallbackSocket, null);
     expect(screen.getByRole("heading", { name: "Tristeza" })).toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent("no determina por sí mismo");
+    expect(within(screen.getByRole("article", { name: "Tristeza" })).getByRole("note")).toHaveTextContent("no determina por sí mismo");
   });
 
   it("abre a Emi con una pregunta general editable, sin datos de la sesión, y no envía hasta pulsar Enviar", async () => {

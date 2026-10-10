@@ -105,7 +105,7 @@ class BrowserActivityService:
                 )
             return self._status(
                 EmotionalActivityState.WAITING_FOR_POSTURE,
-                "Emoción estabilizada. Adopta la postura indicada",
+                "Expresión registrada. Adopta la postura indicada",
             )
 
         step = self.current_step

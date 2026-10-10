@@ -15,11 +15,22 @@ const activityOutcomeNames: Record<string, string> = {
   cancelled: "Cancelada",
 };
 
+// Nombres legibles de los modelos; la clave técnica nunca se muestra.
+const emotionModelNames: Record<string, string> = {
+  ferplus_onnx: "FER+",
+  hardlyhumans_vit: "HardlyHumans (experimental)",
+};
+
 export function activityOutcomeName(result: string | null | undefined): string {
   if (!result) return "—";
-  return activityOutcomeNames[result] ?? result;
+  return activityOutcomeNames[result] ?? "Sin resultado";
 }
 
 export function sessionStateName(state: string): string {
-  return sessionStateNames[state as SessionState] ?? state;
+  return sessionStateNames[state as SessionState] ?? "Estado desconocido";
+}
+
+export function emotionModelName(modelId: string | null | undefined): string {
+  if (!modelId) return "No registrado";
+  return emotionModelNames[modelId] ?? "Otro modelo";
 }

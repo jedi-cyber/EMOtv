@@ -40,7 +40,7 @@ describe("recorridos principales por rol", () => {
     await userEvent.click(screen.getByRole("link", { name: "Ver estudiantes" }));
     expect(screen.getByRole("heading", { level: 1, name: "Seguimiento de estudiantes" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: /E001/ }));
-    expect(screen.getByRole("heading", { level: 1, name: "Sesiones del estudiante" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /^Sesiones (de E001|del estudiante)$/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Volver a estudiantes/ })).toHaveAttribute("href", "/students");
   });
 
