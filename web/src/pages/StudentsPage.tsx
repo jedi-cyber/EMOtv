@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { ButtonLink } from "../components/Button";
+import { Card } from "../components/Card";
 import type { Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { PageHeader } from "../components/PageHeader";
@@ -11,14 +12,15 @@ export function StudentsPage() {
   const query = useApiQuery<Student[]>("/students");
   const students = query.data ?? [];
   return <section>
-    <PageHeader section="Psicología" title="Seguimiento de estudiantes" description={user?.role === "psychologist" ? "Solo ves a los estudiantes que administración te asignó." : "Selecciona un estudiante para consultar sus sesiones."} />
+    <PageHeader title="Seguimiento de estudiantes" description={user?.role === "psychologist" ? "Solo ves a los estudiantes que administración te asignó." : "Selecciona un estudiante para consultar sus sesiones."} />
     <PageState {...query} empty={!query.loading && !query.error && students.length === 0} emptyMessage={user?.role === "psychologist"
       ? "Aún no tienes estudiantes asignados. Administración debe asignarte los estudiantes que acompañas para que puedas ver su seguimiento."
       : "Todavía no hay estudiantes registrados."} onRetry={query.reload} />
     {students.length > 0 && <div className="card-list">{students.map((student) =>
-      <Link className="card row-card" to={paths.studentSessions(student.id)} key={student.id}>
-        <div><strong>{student.student_code}</strong><span>Ver sesiones del estudiante</span></div><span aria-hidden="true">→</span>
-      </Link>
+      <Card as="article" className="row-card" key={student.id}>
+        <strong>{student.student_code}</strong>
+        <ButtonLink variant="secondary" to={paths.studentSessions(student.id)} aria-label={`Ver sesiones del estudiante ${student.student_code}`}>Ver sesiones del estudiante</ButtonLink>
+      </Card>
     )}</div>}
   </section>;
 }

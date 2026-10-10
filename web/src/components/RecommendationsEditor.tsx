@@ -3,7 +3,8 @@ import { ApiError, apiRequest } from "../api/http";
 import type { Activity } from "../api/types";
 import { useAuth } from "../auth/useAuth";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
-import { Alert } from "./Alert";
+import { Callout } from "./Callout";
+import { Button } from "./Button";
 
 export interface ExpressionRecommendation {
   expression_key: string;
@@ -70,13 +71,13 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
     <h2 id="recommendations-title">Actividades recomendadas por expresión</h2>
     <p className="muted">El orden es la prioridad. Solo se pueden recomendar actividades con al menos {MIN_RECOMMENDED_STEPS} posturas.
       Si una expresión queda sin actividades, el estudiante elige de la lista completa. Estas asociaciones no son una recomendación clínica y deben revisarlas profesionales de Psicología.</p>
-    {message && <Alert variant="success">{message}</Alert>}
-    {error && <Alert variant="error">{error}</Alert>}
+    {message && <Callout variant="success">{message}</Callout>}
+    {error && <Callout variant="error">{error}</Callout>}
     <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Actividades (en orden)</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
       {recommendations.map((item) => <tr key={item.expression_key}>
         <td>{label(item.expression_key)}</td>
         <td>{item.activity_ids.length ? item.activity_ids.map(name).join(" → ") : <span className="muted">Sin recomendación automática</span>}</td>
-        <td><button type="button" className="button secondary compact" onClick={() => startEdit(item)} aria-label={`Editar recomendaciones de ${label(item.expression_key)}`}>Editar</button></td>
+        <td><Button variant="secondary" size="sm" type="button" onClick={() => startEdit(item)} aria-label={`Editar recomendaciones de ${label(item.expression_key)}`}>Editar</Button></td>
       </tr>)}
     </tbody></table></div>
     {editingKey && <div className="form-stack" role="group" aria-label={`Recomendaciones de ${label(editingKey)}`}>
@@ -85,9 +86,9 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
         : <ol className="recommendation-order">{draft.map((activityId, index) => <li key={activityId}>
           <span>{name(activityId)}</span>
           <div className="inline-actions">
-            <button type="button" className="button secondary compact" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Subir ${name(activityId)}`}>↑</button>
-            <button type="button" className="button secondary compact" disabled={index === draft.length - 1} onClick={() => move(index, 1)} aria-label={`Bajar ${name(activityId)}`}>↓</button>
-            <button type="button" className="button danger compact" onClick={() => setDraft(draft.filter((id) => id !== activityId))} aria-label={`Quitar ${name(activityId)}`}>Quitar</button>
+            <Button variant="secondary" size="sm" type="button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Subir ${name(activityId)}`}>↑</Button>
+            <Button variant="secondary" size="sm" type="button" disabled={index === draft.length - 1} onClick={() => move(index, 1)} aria-label={`Bajar ${name(activityId)}`}>↓</Button>
+            <Button variant="danger" size="sm" type="button" onClick={() => setDraft(draft.filter((id) => id !== activityId))} aria-label={`Quitar ${name(activityId)}`}>Quitar</Button>
           </div>
         </li>)}</ol>}
       {eligible.length > 0 && <div className="inline-actions">
@@ -96,11 +97,11 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
           <option value="">Selecciona…</option>
           {eligible.map((activity) => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
         </select>
-        <button type="button" className="button secondary" disabled={!toAdd} onClick={() => { setDraft([...draft, toAdd]); setToAdd(""); }}>Añadir</button>
+        <Button variant="secondary" type="button" disabled={!toAdd} onClick={() => { setDraft([...draft, toAdd]); setToAdd(""); }}>Añadir</Button>
       </div>}
       <div className="inline-actions">
-        <button type="button" className="button primary" disabled={saving} onClick={() => { void save(); }}>{saving ? "Guardando…" : "Guardar recomendaciones"}</button>
-        <button type="button" className="button secondary" onClick={() => setEditingKey(null)}>Cancelar</button>
+        <Button variant="primary" type="button" disabled={saving} onClick={() => { void save(); }}>{saving ? "Guardando…" : "Guardar recomendaciones"}</Button>
+        <Button variant="secondary" type="button" onClick={() => setEditingKey(null)}>Cancelar</Button>
       </div>
     </div>}
   </section>;

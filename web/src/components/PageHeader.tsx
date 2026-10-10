@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 
 interface PageHeaderProps {
-  section: string;
-  title: string;
-  description: string;
+  title: ReactNode;
+  description?: ReactNode;
   actions?: ReactNode;
 }
 
-export function PageHeader({ section, title, description, actions }: PageHeaderProps) {
+/** Título y subtítulo de la página, sin etiqueta en mayúsculas encima (DESIGN.md). */
+export function PageHeader({ title, description, actions }: PageHeaderProps) {
   return <div className="page-heading">
-    <div><p className="eyebrow">{section}</p><h1>{title}</h1><p className="lead">{description}</p></div>
+    <div><h1>{title}</h1>{description && <p className="lead">{description}</p>}</div>
     {actions && <div className="page-heading-actions">{actions}</div>}
   </div>;
 }

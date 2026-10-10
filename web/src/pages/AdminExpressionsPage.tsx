@@ -3,11 +3,14 @@ import type { FormEvent } from "react";
 import { ApiError, apiRequest } from "../api/http";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
+import { Checkbox } from "../components/Checkbox";
+import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
+import { Button } from "../components/Button";
 
 const TEXT_MIN = 20;
 const TEXT_MAX = 1200;
@@ -71,17 +74,17 @@ export function AdminExpressionsPage() {
   }
 
   return <section>
-    <PageHeader section="Administración" title="Catálogo de expresiones"
+    <PageHeader title="Catálogo de expresiones"
       description="Textos fijos que ve el estudiante tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
-    {message && <Alert variant="success">{message}</Alert>}
-    {error && <Alert variant="error">{error}</Alert>}
+    {message && <Callout variant="success">{message}</Callout>}
+    {error && <Callout variant="error">{error}</Callout>}
     <PageState {...query} onRetry={query.reload} />
     {items.length > 0 && <div className="table-wrap"><table><thead><tr><th>Clave del modelo</th><th>Etiqueta</th><th>Estado</th><th>Revisado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
       {items.map((item) => <tr key={item.expression_key}>
         <td><code>{item.expression_key}</code></td><td>{item.label_es}</td>
-        <td><span className={`status ${item.review_status === "reviewed" ? "status-completed" : "status-in_progress"}`}>{item.review_status === "reviewed" ? "Revisado" : "Borrador"}</span></td>
+        <td><StatusChip tone={item.review_status === "reviewed" ? "success" : "neutral"}>{item.review_status === "reviewed" ? "Revisado" : "Borrador"}</StatusChip></td>
         <td>{item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("es-PE") : "—"}</td>
-        <td><button type="button" className="button secondary" onClick={() => edit(item)} aria-label={`Editar ${item.label_es}`}>Editar</button></td>
+        <td><Button variant="secondary" type="button" onClick={() => edit(item)} aria-label={`Editar ${item.label_es}`}>Editar</Button></td>
       </tr>)}
     </tbody></table></div>}
     {form && selected && <form className="card form-stack" onSubmit={save} aria-label={`Editar ${selected.label_es}`}>
@@ -94,12 +97,12 @@ export function AdminExpressionsPage() {
           onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
         <small id={`help-${key}`} className="muted">{help} {form[key].trim().length}/{TEXT_MAX}</small>
       </div>)}
-      <label className="checkbox"><input type="checkbox" checked={form.reviewed}
-        onChange={(event) => setForm({ ...form, reviewed: event.target.checked })} />Marcar como revisado por Psicología (se registra quién y cuándo)</label>
+      <Checkbox checked={form.reviewed}
+        onChange={(event) => setForm({ ...form, reviewed: event.target.checked })}>Marcar como revisado por Psicología (se registra quién y cuándo)</Checkbox>
       <p className="muted">Guardar sin marcar deja el texto como borrador y elimina una revisión anterior.</p>
       <div className="inline-actions">
-        <button className="button primary" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</button>
-        <button type="button" className="button secondary" onClick={() => { setForm(null); setSelectedKey(""); }}>Cerrar</button>
+        <Button variant="primary" type="submit" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
+        <Button variant="secondary" type="button" onClick={() => { setForm(null); setSelectedKey(""); }}>Cerrar</Button>
       </div>
     </form>}
   </section>;

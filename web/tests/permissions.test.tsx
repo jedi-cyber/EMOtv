@@ -29,7 +29,9 @@ describe("rutas y navegación por rol", () => {
     expect(screen.queryByRole("heading", { name: /Reconoce tu expresión/ })).not.toBeInTheDocument();
   });
   it("mantiene los módulos en una configuración por rol", () => {
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/activities", "/analysis", "/consent", "/sessions"]);
+    // Orden del recorrido (DESIGN.md); Consentimiento va abajo y separado.
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/activities", "/sessions", "/consent"]);
+    expect(navigationByRole.student.filter((item) => item.placement === "footer").map((item) => item.to)).toEqual(["/consent"]);
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
     expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(true);
     expect(Object.values(navigationByRole).every((items) => items.every((item) => item.to !== "/chat"))).toBe(true);
@@ -103,7 +105,7 @@ describe("rutas y navegación por rol", () => {
     const brand = screen.getByRole("link", { name: "EMOtv" });
     brand.focus();
     await userEvent.tab({ shift: true });
-    expect(screen.getByRole("link", { name: "Mis sesiones" })).toHaveFocus();
+    expect(screen.getByRole("link", { name: "Consentimiento" })).toHaveFocus();
     await userEvent.click(screen.getByRole("link", { name: "Actividades" }));
     expect(screen.getByRole("main")).toHaveFocus();
     expect(screen.getByText("Listado de actividades")).toBeInTheDocument();

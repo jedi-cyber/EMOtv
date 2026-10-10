@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
 import type { Activity, ActivityStep, EmotionalSession } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageState } from "../components/PageState";
 import { useActiveSession } from "../analysis/ActiveSessionContext";
@@ -15,6 +15,10 @@ import { speakExercise, speakStep, speechAvailable, stopExerciseSpeech } from ".
 import { PageHeader } from "../components/PageHeader";
 import { AdaptiveAnalysisPage } from "./AdaptiveAnalysisPage";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
+import { Button, ButtonLink } from "../components/Button";
+import { CameraFrame } from "../components/CameraFrame";
+import { Checkbox } from "../components/Checkbox";
+import { StatusChip } from "../components/StatusChip";
 
 interface ModelAdmission {
   model_id: string;
@@ -252,12 +256,12 @@ function ManualActivityAnalysisPage() {
     }
   }
 
-  if (!activityId) return <section><PageHeader section="Analizador facial" title="Selecciona una actividad" description="Elige una actividad corporal para preparar el análisis." /><Link className="button primary action-link" to="/activities">Ver actividades</Link></section>;
+  if (!activityId) return <section><PageHeader title="Selecciona una actividad" description="Elige una actividad corporal para preparar el análisis." /><ButtonLink variant="primary" to="/activities">Ver actividades</ButtonLink></section>;
   const activity = query.data;
   const progress = Math.round(Math.max(0, Math.min(1, status.progress ?? 0)) * 100);
   const stepIndex = status.state === "completed" || status.state === "performing_exercise" ? 2 : status.state === "waiting_for_posture" ? 1 : 0;
-  return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <Link className="back-link" to="/activities">← Volver a actividades</Link>}<PageHeader section="Actividad corporal" title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Alert variant="error">{error}</Alert>}
-    {activity && !session && <div className="analysis-preflight card"><div><span className="pill">{postureNames[activity.required_posture] ?? activity.required_posture}</span><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)} />Mostrar puntos y líneas</label><label className="checkbox"><input type="checkbox" checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)} />Leer instrucciones en voz alta</label><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><button className="button primary" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</button></div></div>}
+  return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <ButtonLink variant="ghost" className="back-link" to="/activities">← Volver a actividades</ButtonLink>}<PageHeader title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Callout variant="error">{error}</Callout>}
+    {activity && !session && <div className="analysis-preflight card"><div><StatusChip tone="neutral">{postureNames[activity.required_posture] ?? activity.required_posture}</StatusChip><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><Checkbox checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)}>Mostrar puntos y líneas</Checkbox><Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</Button></div></div>}
     {canChooseModel && activity && !session && <fieldset className="card" disabled={starting}>
       <legend>Modelo de reconocimiento facial</legend>
       <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
@@ -267,25 +271,25 @@ function ManualActivityAnalysisPage() {
       </select>
       <p id="emotion-model-help" className="muted">Elige el modelo que prefieras según su disponibilidad y rendimiento en el servidor. FER+ suele requerir menos recursos; HardlyHumans puede tardar más y usar más RAM. En esta versión el análisis ocurre en el servidor, no en tu dispositivo. No se ha demostrado que uno reconozca mejor las emociones en EMOtv. Puedes cambiarlo antes de iniciar la sesión.</p>
       <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
-      {selectedAdmission && <Alert variant={selectedAdmission.state === "BLOCKED" ? "error" : selectedAdmission.state === "WARNING" ? "warning" : "info"}>
+      {selectedAdmission && <Callout variant={selectedAdmission.state === "BLOCKED" ? "error" : selectedAdmission.state === "WARNING" ? "warning" : "info"}>
         {selectedAdmission.state}: {selectedAdmission.reasons.join("; ") || "Recursos suficientes según evaluación del servidor"}
-      </Alert>}
-      <button className="button" onClick={modelsQuery.reload}>Actualizar evaluación</button>
+      </Callout>}
+      <Button variant="secondary" type="submit" onClick={modelsQuery.reload}>Actualizar evaluación</Button>
     </fieldset>}
     {session && <div className="live-analysis">
-      <div className="video-stage"><video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted /><canvas ref={overlayRef} aria-hidden="true" width="640" height="480" /><canvas ref={captureRef} hidden /></div>
+      <CameraFrame className="video-stage"><video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted /><canvas ref={overlayRef} aria-hidden="true" width="640" height="480" /><canvas ref={captureRef} hidden /></CameraFrame>
       <aside className="analysis-panel">
         <p className="step-caption">Etapa {stepIndex + 1} de {analysisSteps.length}</p>
         <ol className="analysis-steps" aria-label="Etapas del análisis">{analysisSteps.map((step, index) => <li key={step} className={index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"} aria-current={index === stepIndex ? "step" : undefined}>{step}</li>)}</ol>
         <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>
-        {status.admission?.state === "WARNING" && <Alert variant="warning">{status.admission.reasons.join("; ")}</Alert>}
+        {status.admission?.state === "WARNING" && <Callout variant="warning">{status.admission.reasons.join("; ")}</Callout>}
         <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? status.state}</span>
         <h2>{status.message}</h2><p>{status.step ? `Paso ${(status.step_index ?? 0) + 1} de ${status.step_count ?? 1}: ${status.step.instruction}` : activity?.description}</p>
-        {activity && status.type !== "completed" && speechAvailable() && <button className="button secondary" onClick={() => status.step ? speakStep(status.step, status.step_index ?? 0, status.step_count ?? 1) : speakExercise(activity)}>Repetir instrucción</button>}
+        {activity && status.type !== "completed" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => status.step ? speakStep(status.step, status.step_index ?? 0, status.step_count ?? 1) : speakExercise(activity)}>Repetir instrucción</Button>}
         {status.emotion && <p>Expresión estimada: <strong>{expressionLabel(status.emotion)}</strong> ({Math.round((status.emotion_confidence ?? 0) * 100)} %)</p>}
         <div className="progress-label"><span>Progreso</span><strong>{progress} %</strong></div>
         <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div>
-        {status.type !== "completed" ? <button className="button danger" onClick={() => setConfirmCancel(true)}>Cancelar sesión</button> : <Link className="button primary action-link" to={`/sessions/${session.id}`}>Ver resultado</Link>}
+        {status.type !== "completed" ? <Button variant="danger" type="submit" onClick={() => setConfirmCancel(true)}>Cancelar sesión</Button> : <ButtonLink variant="primary" to={`/sessions/${session.id}`}>Ver resultado</ButtonLink>}
       </aside></div>}
     <ConfirmDialog open={confirmCancel} title="Cancelar actividad" message="Se cerrará la sesión y se apagará la cámara." confirming={cancelling} confirmLabel="Cancelar actividad" onCancel={() => setConfirmCancel(false)} onConfirm={cancel} />
   </section>;
