@@ -165,7 +165,7 @@ def create_analysis_router(
             activity: Activity | None = None
             if adaptive:
                 if emotion_analyzer_factory is None or adaptive_processor_factory is None:
-                    await _error(websocket, "Análisis emocional no configurado", 1011)
+                    await _error(websocket, "El análisis de expresiones no está configurado en el servidor", 1011)
                     return
             else:
                 if not activity_id or session.activity_id != activity_id:

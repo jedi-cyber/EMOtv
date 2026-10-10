@@ -10,12 +10,13 @@ Lo que necesita una cámara y personas reales no se automatiza: está en
 ## Qué cubren
 
 | Archivo | Pruebas |
-|---|---|
+| --- | --- |
 | `auth.spec.ts` | inicio de sesión correcto e incorrecto; bloqueo tras el límite de intentos; primer acceso con cambio de contraseña |
 | `consent.spec.ts` | aceptar la política vigente desde el modal y revocar el consentimiento |
 | `analysis.spec.ts` | la cámara simulada abre en el analizador; resultado con expresión en español, confianza, información y limitación; finalizar sin actividad y verla en el historial; la actividad no avanza con un video sin persona |
 | `psychologist.spec.ts` | Psicología no ve a un estudiante sin asignación (interfaz y API) y sí lo ve después de asignarlo |
 | `emi.spec.ts` | Emi con un n8n falso: respuesta dentro del alcance, fuera del alcance y error 502 `llm_unavailable` |
+| `screenshots.spec.ts` | capturas de cada vista para `docs/thesis-evidence/screenshots/`; solo con `E2E_SCREENSHOTS=1` |
 
 Cada prueba crea sus propias cuentas (`e2e-…@emotv.local`, códigos `E2E-…`)
 con la API de administración. Por eso **nunca se ejecutan contra una base con
@@ -41,7 +42,7 @@ contraseña solo vive en variables del proceso: no se guarda en archivos ni se
 muestra. Variables útiles:
 
 | Variable | Uso |
-|---|---|
+| --- | --- |
 | `E2E_ENV_FILE` | archivo de entorno de Compose (por defecto `.env.docker`) |
 | `E2E_WEB_PORT` | puerto del stack aislado (por defecto 8081) |
 | `E2E_SKIP_UP=1` | no reconstruye el stack; usa el que ya está levantado |

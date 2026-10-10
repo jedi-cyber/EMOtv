@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from emotv import __version__
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
@@ -55,7 +56,7 @@ from emotv.infrastructure.vision.emotion_classifier.model_admission import Serve
 
 # Inicializar FastAPI
 web_settings = load_web_settings()
-app = FastAPI(title="EMOtv API", version="1.0.0", docs_url=None if web_settings.production else "/docs",
+app = FastAPI(title="EMOtv API", version=__version__, docs_url=None if web_settings.production else "/docs",
               redoc_url=None if web_settings.production else "/redoc",
               openapi_url=None if web_settings.production else "/openapi.json")
 configure_web_security(app, web_settings)

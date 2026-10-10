@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emotv"
-version = "0.1.0"
+version = "1.0.0rc1"
 description = "Sistema experimental de análisis emocional y corporal mediante visión por computadora"
 requires-python = ">=3.12"
 
@@ -23,7 +23,7 @@ dependencies = [
     "python-dotenv>=1.0,<2",
     "pwdlib[argon2]>=0.3,<1",
     "PyJWT>=2.10,<3",
-    "python-multipart",  # Opcional, pero útil para subir archivos
+    "python-multipart",  # Necesario para el formulario de /auth/token (OAuth2PasswordRequestForm)
     "httpx>=0.27,<1",
 ]
 

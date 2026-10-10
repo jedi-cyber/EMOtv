@@ -101,6 +101,9 @@ export async function assignStudent(psychologist: Account, studentId: string): P
  * queda guardada); con `expectFailure` se queda en la página para comprobar el error.
  */
 export async function signIn(page: Page, email: string, password: string, { expectFailure = false } = {}): Promise<void> {
+  // Si la página ya tenía una sesión, el login redirigiría: se cierra antes de entrar con otra cuenta.
+  await page.goto("/login");
+  await page.evaluate(() => window.sessionStorage.clear());
   await page.goto("/login");
   await page.getByLabel("Correo institucional", { exact: true }).fill(email);
   await page.getByLabel("Contraseña", { exact: true }).fill(password);
