@@ -96,3 +96,4 @@ docker/certs/*.cer
 reports/chatbot/
 # Actas de eliminación de datos de voluntarios (delete_test_data.py --save).
 reports/deletions/
+DESIGN.md
