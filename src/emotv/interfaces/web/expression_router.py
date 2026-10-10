@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
 
@@ -64,7 +65,9 @@ def create_expression_router(
     catalog: ExpressionCatalogService | None,
     authentication: AuthenticationService | None,
     users: UserRepository | None,
+    on_change: Callable[[], None] | None = None,
 ) -> APIRouter:
+    """``on_change`` se llama tras editar un texto (p. ej. para invalidar el conocimiento de Emi)."""
     router = APIRouter(prefix="/expressions", tags=["expressions"])
     current_user = create_current_user_dependency(authentication, users)
 
@@ -99,6 +102,8 @@ def create_expression_router(
             raise HTTPException(404, "Expresión no encontrada") from error
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
+        if on_change is not None:
+            on_change()
         return ExpressionInfoResponse.from_domain(updated)
 
     return router

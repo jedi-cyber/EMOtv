@@ -5,7 +5,7 @@ Uso (desde cualquier carpeta del repositorio):
     python scripts/security/check_secrets.py --all    # todos los archivos versionados
 
 Lee el contenido desde el índice de Git, es decir, exactamente lo que se va a
-confirmar. Reglas: asignaciones a password/passwd/secret/api_key/token con un
+confirmar. Reglas: asignaciones a password/passwd/secret/api_key/webhook_key/token con un
 literal de 12+ caracteres, URLs con usuario y clave, claves de Groq (gsk_),
 claves privadas PEM, valores reales de variables secretas en archivos .env
 versionados, contraseñas literales pasadas a authenticate()/login() en Python
@@ -35,7 +35,8 @@ from pathlib import PurePosixPath
 
 ALLOWLIST_PATH = ".secrets-allowlist"
 MAX_BYTES = 5 * 1024 * 1024
-SECRET_WORDS = "(?:" + "|".join(("password", "passwd", "secret", r"api[_-]?key", "token")) + ")"
+# webhook_key: N8N_WEBHOOK_KEY permite gastar la cuota de Groq del workflow de Emi.
+SECRET_WORDS = "(?:" + "|".join(("password", "passwd", "secret", r"api[_-]?key", r"webhook[_-]?key", "token")) + ")"
 
 ASSIGNMENT = re.compile(
     rf"""(?ix)

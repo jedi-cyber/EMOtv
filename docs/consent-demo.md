@@ -1,6 +1,6 @@
 # EMOtv: consentimiento de prueba para pruebas funcionales
 
-**Código:** EMOTV-CONSENT-DEMO-002 · **Versión:** v0.2
+**Código:** EMOTV-CONSENT-DEMO-003 · **Versión:** v0.3
 
 Esta es una **política de prueba que no ha sido aprobada por la universidad**
 ni por ninguna otra institución. Solo sirve para las pruebas funcionales del
@@ -27,16 +27,28 @@ por un código, nunca por tu nombre):
 
 - la expresión facial estimada y su nivel de confianza;
 - la actividad realizada, con sus pasos y su resultado;
-- la duración de la actividad.
+- la duración de la actividad;
+- tus preguntas al asistente Emi y sus respuestas.
 
 ## Preguntas al asistente virtual
 
-Las preguntas que escribas al asistente Emi se envían a un **servicio externo
-de inteligencia artificial** para generar la respuesta. EMOtv no las guarda en
-su base de datos, pero ese servicio puede conservar un historial de la
-conversación, que el responsable elimina junto con los demás datos. **No
-escribas datos personales ni información sensible en tus preguntas.** El
-asistente no ofrece atención psicológica.
+Las preguntas que escribas al asistente Emi se procesan en **n8n Cloud**, el
+servicio que coordina al asistente, y en **Groq**, el servicio de inteligencia
+artificial que genera la respuesta. A esos servicios solo se envían tu
+pregunta y los mensajes anteriores de la misma conversación; nunca tu nombre,
+tu correo, tu cuenta ni tus resultados. n8n no conserva las conversaciones que
+procesa con éxito.
+
+EMOtv guarda en su base de datos tus preguntas y las respuestas de Emi durante
+un máximo de **90 días**, para mostrarte la conversación y aplicar límites de
+uso. En esta prueba se eliminan antes, junto con los demás datos de tu cuenta
+de prueba (ver «Eliminación de los datos»). Las preguntas sobre temas de
+riesgo, como hacerse daño, no se envían a esos servicios ni se guardan: Emi te
+indica que busques apoyo en una persona de confianza o en un profesional y,
+en una emergencia, en los servicios de emergencia de tu localidad.
+
+**No escribas datos personales ni información sensible en tus preguntas.** El
+asistente no ofrece atención psicológica ni sustituye a un profesional.
 
 ## Eliminación de los datos
 

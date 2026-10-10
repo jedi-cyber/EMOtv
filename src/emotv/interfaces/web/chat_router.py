@@ -1,41 +1,67 @@
 from __future__ import annotations
 
-from typing import Protocol
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from emotv.application.chat_service import ChatError, ChatService
 from emotv.domain import User
-from emotv.infrastructure.chat import FlowiseError
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 
-class ChatClient(Protocol):
-    async def ask(self, question: str) -> str: ...
-
-
 class ChatRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
+    conversation_id: str | None = Field(default=None, max_length=36)
+    # El límite real (CHAT_MAX_QUESTION_CHARS) lo aplica el servicio con un mensaje en español.
+    question: str = Field(max_length=20000)
 
 
 class ChatResponse(BaseModel):
+    conversation_id: str | None
     answer: str
+    in_scope: bool
+    category: str
 
 
-def create_chat_router(client: ChatClient | None, authentication=None, users=None) -> APIRouter:
+class ChatMessageResponse(BaseModel):
+    role: str
+    content: str
+    created_at: datetime
+
+
+class ConversationResponse(BaseModel):
+    conversation_id: str | None
+    messages: list[ChatMessageResponse]
+
+
+def create_chat_router(service: ChatService | None, authentication=None, users=None) -> APIRouter:
     router = APIRouter(prefix="/chat", tags=["chat"])
     current_user = create_current_user_dependency(authentication, users)
 
+    def require_service() -> ChatService:
+        if service is None:
+            raise HTTPException(503, "Emi no está disponible en este servidor")
+        return service
+
     @router.post("", response_model=ChatResponse)
-    async def chat(request: ChatRequest, _: User = Depends(current_user)) -> ChatResponse:
-        if client is None:
-            raise HTTPException(503, "El chatbot no está configurado")
-        question = request.question.strip()
-        if not question:
-            raise HTTPException(422, "La pregunta no puede estar vacía")
+    async def chat(request: ChatRequest, user: User = Depends(current_user)) -> ChatResponse:
         try:
-            return ChatResponse(answer=await client.ask(question))
-        except FlowiseError as exc:
-            raise HTTPException(502, str(exc)) from exc
+            answer = await require_service().ask(user.id, request.question, request.conversation_id)
+        except ChatError as error:
+            raise HTTPException(error.status_code, error.message) from error
+        return ChatResponse(conversation_id=answer.conversation_id, answer=answer.answer,
+                            in_scope=answer.in_scope, category=answer.category)
+
+    @router.get("/conversations/current", response_model=ConversationResponse)
+    def current(user: User = Depends(current_user)) -> ConversationResponse:
+        conversation_id, messages = require_service().current_conversation(user.id)
+        return ConversationResponse(conversation_id=conversation_id, messages=[
+            ChatMessageResponse(role=item.role, content=item.content, created_at=item.created_at)
+            for item in messages
+        ])
+
+    @router.post("/conversations", response_model=ConversationResponse, status_code=201)
+    def new_conversation(user: User = Depends(current_user)) -> ConversationResponse:
+        return ConversationResponse(conversation_id=require_service().new_conversation(user.id), messages=[])
 
     return router

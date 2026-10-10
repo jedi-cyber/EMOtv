@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer, UniqueConstraint, Index, JSON, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer, Text, UniqueConstraint, Index, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -236,3 +236,47 @@ class EmotionActivityRecommendationRecord(Base):
         ForeignKey("activities.id", ondelete="CASCADE"), primary_key=True, index=True
     )
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ChatConversationRecord(Base):
+    """Conversación de un usuario con Emi. Nunca se envía a n8n."""
+
+    __tablename__ = "chat_conversations"
+    __table_args__ = (
+        Index("ix_chat_conversations_user_last_message", "user_id", "last_message_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ChatMessageRecord(Base):
+    """Mensaje de una conversación. in_scope es nulo mientras n8n no responde."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        CheckConstraint("role IN ('user','assistant')", name="ck_chat_messages_role_valid"),
+        Index("ix_chat_messages_conversation_id", "conversation_id", "id"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    in_scope: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class ChatRejectionCountRecord(Base):
+    """Rechazos de Emi por categoría, sin el texto de las preguntas."""
+
+    __tablename__ = "chat_rejection_counts"
+    __table_args__ = (
+        CheckConstraint("count >= 0", name="ck_chat_rejection_counts_non_negative"),
+    )
+    category: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

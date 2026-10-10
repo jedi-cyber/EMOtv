@@ -1,7 +1,7 @@
 # src/emotv/config.py
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,9 +19,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or None
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-FLOWISE_API_URL = os.getenv("FLOWISE_API_URL", "").strip() or None
-FLOWISE_API_KEY = os.getenv("FLOWISE_API_KEY", "").strip() or None
-FLOWISE_TIMEOUT_SECONDS = float(os.getenv("FLOWISE_TIMEOUT_SECONDS", "20"))
+N8N_PRODUCTION_WEBHOOK_URL = "https://emotv.app.n8n.cloud/webhook/emi-chat"
+DEFAULT_CHAT_RISK_MESSAGE = (
+    "Emi no puede ayudarte con este tema. Te pedimos que hables ahora con una "
+    "persona de confianza o con un profesional de la salud. Si estás en peligro "
+    "o se trata de una emergencia, comunícate de inmediato con los servicios de "
+    "emergencia de tu localidad."
+)
 
 
 def get_consent_mode(environ: Mapping[str, str] | None = None) -> str:
@@ -42,6 +46,52 @@ class LoginLimits:
     max_failures_per_account: int = 5
     max_failures_per_ip: int = 20
     window_minutes: int = 15
+
+
+@dataclass(frozen=True)
+class ChatSettings:
+    """Emi: webhook de n8n, historial, retención, límites de uso y filtro."""
+
+    webhook_url: str = N8N_PRODUCTION_WEBHOOK_URL
+    # Obligatoria: sin ella el chat responde 503. Nunca se escribe en logs.
+    webhook_key: str = field(default="", repr=False)
+    # Cada petición incluye dos llamadas a modelos (clasificación y respuesta).
+    timeout_seconds: float = 30.0
+    history_messages: int = 10
+    retention_days: int = 90
+    window_messages: int = 20
+    window_minutes: int = 10
+    daily_messages: int = 200
+    max_question_chars: int = 1000
+    risk_message: str = DEFAULT_CHAT_RISK_MESSAGE
+
+
+def get_chat_settings(environ: Mapping[str, str] | None = None) -> ChatSettings:
+    source = os.environ if environ is None else environ
+    defaults = ChatSettings()
+
+    def number(name: str, default: float, cast=int, minimum: float = 1):
+        raw = source.get(name, "").strip()
+        try:
+            value = cast(raw) if raw else default
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número") from error
+        if value < minimum:
+            raise ValueError(f"{name} debe ser al menos {minimum:g}")
+        return value
+
+    return ChatSettings(
+        webhook_url=source.get("N8N_WEBHOOK_URL", "").strip() or defaults.webhook_url,
+        webhook_key=source.get("N8N_WEBHOOK_KEY", "").strip(),
+        timeout_seconds=number("N8N_TIMEOUT_SECONDS", defaults.timeout_seconds, float, 1),
+        history_messages=number("CHAT_HISTORY_MESSAGES", defaults.history_messages, int, 0),
+        retention_days=number("CHAT_RETENTION_DAYS", defaults.retention_days),
+        window_messages=number("CHAT_LIMIT_WINDOW_MESSAGES", defaults.window_messages),
+        window_minutes=number("CHAT_LIMIT_WINDOW_MINUTES", defaults.window_minutes),
+        daily_messages=number("CHAT_LIMIT_DAILY_MESSAGES", defaults.daily_messages),
+        max_question_chars=number("CHAT_MAX_QUESTION_CHARS", defaults.max_question_chars),
+        risk_message=source.get("CHAT_RISK_MESSAGE", "").strip() or defaults.risk_message,
+    )
 
 
 @dataclass(frozen=True)

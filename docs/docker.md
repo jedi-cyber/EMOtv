@@ -18,7 +18,9 @@ guardan fotografías ni video.
 | `api` | API FastAPI; aplica migraciones al arrancar | interno |
 | `web` | Interfaz web (nginx) y proxy hacia la API y el WebSocket | http://localhost:8080 |
 | `https` (opcional) | HTTPS para usar la cámara desde otras computadoras | https://IP:8443 |
-| `flowise` (opcional) | Flowise local para el chatbot Emi | http://localhost:3000 |
+
+Emi, el chatbot, no tiene servicio propio: la API llama al workflow EMI
+publicado en n8n Cloud ([chatbot-emi.md](chatbot-emi.md)).
 
 ## 1. Requisitos
 
@@ -86,7 +88,10 @@ EMOtv en esta misma computadora. Variables importantes:
   institucional aprobada.
 - `CONSENT_MODE`: deja `demo`, el valor para pruebas funcionales y la
   presentación. Ver [Modos de consentimiento](#modos-de-consentimiento).
-- `FLOWISE_API_URL` y `FLOWISE_API_KEY`: chatbot Emi (opcional).
+- `N8N_WEBHOOK_URL` y `N8N_WEBHOOK_KEY`: chatbot Emi. La URL de producción
+  ya viene en el ejemplo; la clave es la de la credencial Header Auth del
+  webhook y solo se escribe en tu `.env.docker`. Sin clave, el resto de EMOtv
+  funciona y el chat responde 503.
 
 ### Modos de consentimiento
 
@@ -95,7 +100,7 @@ modo según quién va a usar EMOtv:
 
 | Modo | Cuándo usarlo | Qué hace |
 |------|---------------|----------|
-| `demo` | Pruebas con voluntarios y la presentación. **Valor recomendado.** | Activa la política de prueba v0.2 ([texto](consent-demo.md)). Cada cuenta debe aceptarla antes de analizar y puede revocarla desde la página de consentimiento. Quien aceptó la v0.1 debe aceptar la v0.2. |
+| `demo` | Pruebas con voluntarios y la presentación. **Valor recomendado.** | Activa la política de prueba v0.3 ([texto](consent-demo.md)). Cada cuenta debe aceptarla antes de analizar y puede revocarla desde la página de consentimiento. Quien aceptó una versión anterior debe aceptar la v0.3. |
 | `development` | Solo pruebas técnicas del desarrollador, sin otras personas frente a la cámara. | No exige consentimiento para analizar. **Nunca** con voluntarios. |
 | `production` | Uso institucional real. | Exige `ENVIRONMENT=production` y una política aprobada por la institución; rechaza políticas de prueba. |
 
@@ -255,17 +260,11 @@ chocar con un PostgreSQL instalado en Windows. Cámbialo con
 `POSTGRES_HOST_PORT`. Luego `python -m alembic upgrade head` y sigue el
 README.
 
-## Chatbot con Flowise local (opcional)
+## Chatbot Emi con n8n
 
-Por defecto EMOtv usa el Flowise externo de `FLOWISE_API_URL`. Para uno local:
-
-```powershell
-docker compose --env-file .env.docker --profile chatbot up -d
-```
-
-Abre http://localhost:3000, crea el flujo y pon en `.env.docker`
-`FLOWISE_API_URL=http://flowise:3000/api/v1/prediction/<id-del-flujo>`. Luego
-reinicia la API: `docker compose --env-file .env.docker up -d api`.
+Pon la clave real en `.env.docker` (`N8N_WEBHOOK_KEY=...`) y recrea la API:
+`docker compose --env-file .env.docker up -d api`. La prueba manual está en
+[chatbot-emi.md](chatbot-emi.md#prueba-manual-con-docker-compose).
 
 ## Consumo medido
 

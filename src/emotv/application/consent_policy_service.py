@@ -6,8 +6,8 @@ from typing import Protocol
 
 from emotv.domain.consent_policy import ConsentPolicy
 
-DEMO_POLICY_CODE = "EMOTV-CONSENT-DEMO-002"
-DEMO_POLICY_VERSION = "v0.2"
+DEMO_POLICY_CODE = "EMOTV-CONSENT-DEMO-003"
+DEMO_POLICY_VERSION = "v0.3"
 DEMO_POLICY_ID = f"{DEMO_POLICY_CODE}:{DEMO_POLICY_VERSION}"
 DEMO_POLICY_TITLE = "Consentimiento de prueba para pruebas funcionales"
 

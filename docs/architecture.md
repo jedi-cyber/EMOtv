@@ -72,7 +72,9 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 - `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
   `vision.movement_analysis` (`PostureValidator`, ángulos).
 - `persistence`: adaptadores PostgreSQL y en memoria, modelos ORM y conexión.
-- `chat.FlowiseClient` para Emi; nunca recibe resultados personales.
+- `chat.N8nWebhookChatGateway` para Emi: llama al workflow EMI de n8n Cloud,
+  que usa Groq. Nunca recibe resultados personales ni identificadores del
+  usuario. Ver [chatbot-emi.md](chatbot-emi.md).
 
 ### Interfaces (`emotv.interfaces.web`)
 
