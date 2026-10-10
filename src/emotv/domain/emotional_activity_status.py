@@ -25,8 +25,18 @@ class EmotionalActivityStatus:
     activity: Activity | None = None
     posture: PostureResult | None = None
     exercise: ExerciseStatus | None = None
+    # step_index cuenta en toda la secuencia (0 .. pasos × repeticiones - 1).
     step_index: int = 0
     step_count: int = 1
+    repetition_index: int = 0
+    repetition_count: int = 1
+    steps_completed: int = 0
+    step_elapsed_seconds: float = 0.0
+    step_duration_seconds: float = 0.0
+
+    @property
+    def step_remaining_seconds(self) -> float:
+        return max(0.0, self.step_duration_seconds - self.step_elapsed_seconds)
 
     @property
     def completed(self) -> bool:

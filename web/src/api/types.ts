@@ -41,4 +41,7 @@ export interface EmotionalSession {
   emotion_model_id: string | null;
   emotion_model_version: string | null;
   recognized_at?: string | null;
+  exercise_steps_completed?: number | null;
+  exercise_steps_total?: number | null;
+  exercise_repetitions?: number | null;
 }

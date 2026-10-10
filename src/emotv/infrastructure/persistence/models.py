@@ -71,6 +71,14 @@ class SessionRecord(Base):
             "(emotion_model_id IS NOT NULL AND emotion_model_version IS NOT NULL)",
             name="ck_sessions_emotion_model_fields_together",
         ),
+        CheckConstraint(
+            "(exercise_steps_completed IS NULL AND exercise_steps_total IS NULL "
+            "AND exercise_repetitions IS NULL) OR "
+            "(exercise_repetitions >= 1 AND exercise_steps_total >= exercise_repetitions "
+            "AND exercise_steps_completed >= 0 "
+            "AND exercise_steps_completed <= exercise_steps_total)",
+            name="ck_sessions_exercise_progress",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -98,6 +106,9 @@ class SessionRecord(Base):
     student_id: Mapped[str | None] = mapped_column(
         ForeignKey("students.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    exercise_steps_completed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exercise_steps_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exercise_repetitions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class UserRecord(Base):

@@ -91,6 +91,11 @@ class AdaptiveProcessor(Processor):
             ),
             step_index=self._next_step_index,
             step_count=step_count,
+            repetition_index=self._next_step_index // len(self.activity.steps),
+            repetition_count=self.activity.repetitions,
+            steps_completed=self._next_step_index + 1 if completed else self._next_step_index,
+            step_elapsed_seconds=0.5,
+            step_duration_seconds=self.current_step.duration_seconds,
         )
         self._next_step_index += 1
         return status
@@ -431,12 +436,36 @@ def test_recommended_sequence_uses_same_session_and_exposes_every_step(flow):
             received_steps.append(update["step"])
             assert update["step_index"] == expected_index
             assert update["step_count"] == len(activity["steps"])
+            assert update["repetition_index"] == 0 and update["repetition_count"] == 1
+            assert update["step_remaining_seconds"] == expected_step["duration_seconds"] - 0.5
             assert update["step"] == expected_step
             assert update["type"] == ("completed" if expected_index == len(activity["steps"]) - 1 else "status")
 
     assert received_steps == activity["steps"]
-    assert sessions.get_session(session_id).state is SessionState.COMPLETED
+    final = sessions.get_session(session_id)
+    assert final.state is SessionState.COMPLETED
+    assert final.exercise_steps_completed == final.exercise_steps_total == len(activity["steps"])
     assert processors[-1].closed
+
+
+def test_interrupted_sequence_keeps_the_step_reached(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_adaptive(client, auth, user, session_id, socket)
+        _, recommendation = _recognize(socket)
+        activity = recommendation["activity"]
+        socket.send_json({"type": "select_activity", "activity_id": activity["id"]})
+        assert socket.receive_json()["type"] == "activity_started"
+        for _ in range(2):
+            socket.send_bytes(JPEG)
+            assert socket.receive_json()["type"] == "status"
+        assert sessions.get_session(session_id).exercise_steps_completed == 1
+    final = sessions.get_session(session_id)
+    assert (final.state, final.exercise_result) == (SessionState.COMPLETED, "cancelled")
+    assert final.exercise_steps_completed == 1
+    assert final.exercise_steps_total == len(activity["steps"]) * activity["repetitions"]
+    assert final.exercise_repetitions == activity["repetitions"]
 
 
 def test_student_cannot_choose_non_default_model(flow):

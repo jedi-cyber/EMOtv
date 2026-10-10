@@ -40,6 +40,9 @@ class SessionResponse(BaseModel):
     emotion_model_id: str | None
     emotion_model_version: str | None
     recognized_at: datetime | None = None
+    exercise_steps_completed: int | None = None
+    exercise_steps_total: int | None = None
+    exercise_repetitions: int | None = None
 
     @classmethod
     def from_domain(cls, session: EmotionalSession) -> "SessionResponse":
@@ -53,7 +56,10 @@ class SessionResponse(BaseModel):
                    exercise_duration_seconds=session.exercise_duration_seconds,
                    emotion_model_id=session.emotion_model_id,
                    emotion_model_version=session.emotion_model_version,
-                   recognized_at=session.recognized_at)
+                   recognized_at=session.recognized_at,
+                   exercise_steps_completed=session.exercise_steps_completed,
+                   exercise_steps_total=session.exercise_steps_total,
+                   exercise_repetitions=session.exercise_repetitions)
 
 
 def create_session_router(

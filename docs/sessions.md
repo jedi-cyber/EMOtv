@@ -99,7 +99,10 @@ crea el esquema automáticamente; las tablas serán administradas con Alembic.
 | `emotion_model_version` | `varchar(128)` | Sí | Versión/revisión del clasificador usado |
 | `recognized_at` | `timestamptz` | Sí | Momento en que el estudiante registró la expresión |
 | `exercise_result` | `varchar(32)` | Sí | Resultado de la actividad: `completed`, `skipped` o `cancelled` |
-| `exercise_duration_seconds` | `double precision` | Sí | Duración no negativa |
+| `exercise_duration_seconds` | `double precision` | Sí | Tiempo sostenido en postura correcta, no negativo |
+| `exercise_steps_completed` | `integer` | Sí | Pasos completados; en una sesión interrumpida, hasta dónde llegó |
+| `exercise_steps_total` | `integer` | Sí | Pasos × repeticiones de la actividad |
+| `exercise_repetitions` | `integer` | Sí | Repeticiones de la secuencia |
 | `student_id` | `varchar(64)` | Sí | Estudiante asociado, con clave foránea |
 
 La tabla indexa `state` y `started_at`. Sus restricciones comprueban estados
@@ -107,7 +110,9 @@ válidos, rangos numéricos, registro conjunto de emoción y confianza, coherenc
 de `completed_at` y presencia del resultado cuando el estado es `completed`.
 La revisión `20260916_05` añade las columnas de modelo como opcionales y exige
 que se registren juntas, sin atribuir retrospectivamente un modelo a sesiones
-anteriores. Ejecutar `python -m alembic upgrade head` antes de usar la API con
+anteriores. La revisión `20261009_14` añade el avance de la actividad: las tres
+columnas se registran juntas (o quedan nulas en sesiones anteriores) y los pasos
+completados no superan el total. Ejecutar `python -m alembic upgrade head` antes de usar la API con
 un PostgreSQL existente.
 
 ## API de sesiones

@@ -91,3 +91,4 @@ backups/
 # CA locales para redes con inspección HTTPS (docker/certs/README.md)
 docker/certs/*.crt
 docker/certs/*.cer
+.claude/settings.local.json
