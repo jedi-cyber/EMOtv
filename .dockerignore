@@ -29,3 +29,8 @@ web/.vite
 .emotv_probe.tmp
 .vscode
 .idea
+# Pruebas e2e: video simulado, imágenes e informes (no van a la imagen)
+web/e2e/fixtures
+web/test-results
+web/playwright-report
+web/blob-report

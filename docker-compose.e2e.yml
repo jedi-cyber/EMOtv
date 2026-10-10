@@ -1,0 +1,32 @@
+# Stack aislado para las pruebas e2e (docs/testing/e2e.md). Se combina con el
+# docker-compose.yml principal y un nombre de proyecto propio:
+#
+#   docker compose -p emotv-e2e --env-file .env.docker \
+#     -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#   -> http://localhost:8081
+#
+# Usa su propia base de datos (nunca la que tiene cuentas de voluntarios) y
+# reutiliza los pesos ya descargados. Emi apunta al n8n falso que levantan las
+# pruebas en el equipo anfitrión; no se contacta el workflow publicado.
+
+services:
+  api:
+    environment:
+      N8N_WEBHOOK_URL: http://host.docker.internal:${E2E_FAKE_N8N_PORT:-5679}/webhook/emi-chat
+      # Clave solo para el n8n falso de las pruebas; no es la del workflow publicado.
+      N8N_WEBHOOK_KEY: ${E2E_FAKE_N8N_KEY:-clave-del-n8n-falso}
+      N8N_TIMEOUT_SECONDS: "10"
+      CONSENT_MODE: demo
+      # Varias ejecuciones seguidas no deben bloquear la IP del equipo de pruebas.
+      LOGIN_MAX_FAILURES_PER_IP: "200"
+      CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  web:
+    ports: !override
+      - "127.0.0.1:${E2E_WEB_PORT:-8081}:8080"
+
+volumes:
+  emotv_pgdata:
+    name: emotv_e2e_pgdata
