@@ -65,7 +65,7 @@ it("redirige al login con aviso cuando vence la sesión durante la navegación",
   tokenStorage.set(token(Math.floor(Date.now() / 1000) + 600));
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(user))));
   render(<MemoryRouter initialEntries={["/dashboard"]}><AuthProvider><App /></AuthProvider></MemoryRouter>);
-  expect(await screen.findByRole("heading", { name: "Hola, u" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 1, name: "Hola" })).toBeInTheDocument();
   act(() => window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT)));
   expect(await screen.findByRole("heading", { name: "Ingresa a EMOtv" })).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Tu sesión venció. Ingresa nuevamente.");

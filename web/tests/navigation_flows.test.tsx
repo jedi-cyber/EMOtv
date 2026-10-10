@@ -27,9 +27,10 @@ function renderAs(role: UserRole, path = "/dashboard") {
 describe("recorridos principales por rol", () => {
   it("lleva al estudiante directamente del inicio al reconocimiento facial", async () => {
     renderAs("student");
-    await userEvent.click(screen.getByRole("link", { name: "Abrir analizador" }));
-    expect(screen.getByRole("heading", { level: 1, name: "Reconoce tu expresión y recibe una actividad" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Probar cámara" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Abrir analizador" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Analizador" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Analizador" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Probar cámara" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Usuarios" })).not.toBeInTheDocument();
   });

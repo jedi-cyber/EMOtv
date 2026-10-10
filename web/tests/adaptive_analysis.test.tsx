@@ -65,10 +65,17 @@ function liveReading(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** La cámara es un requisito: se prueba primero y el botón se habilita cuando se cumplen los tres. */
+async function startAnalysis() {
+  await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+}
+
 async function openLive(withAssistant = false) {
   camera();
   page("student", withAssistant);
-  await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+  await startAnalysis();
   await waitFor(() => expect(Socket.instances).toHaveLength(1));
   const socket = Socket.instances[0];
   act(() => socket.onopen?.());
@@ -95,10 +102,12 @@ describe("analizador emoción → recomendación → postura", () => {
   it("prueba la cámara local sin iniciar sesión ni enviar frames", async () => {
     const stop = vi.fn(); const getUserMedia = camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
     page();
-    await userEvent.click(screen.getByRole("button", { name: "Probar cámara" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
     expect(getUserMedia).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Apagar cámara" })).toBeInTheDocument();
-    expect(apiRequest).not.toHaveBeenCalled();
+    // Solo se consultan los requisitos; probar la cámara no crea sesión ni abre el WebSocket.
+    expect(apiRequest).not.toHaveBeenCalledWith("/sessions", expect.anything());
+    expect(Socket.instances).toHaveLength(0);
     await userEvent.click(screen.getByRole("button", { name: "Apagar cámara" }));
     expect(stop).toHaveBeenCalledOnce();
   });
@@ -107,8 +116,11 @@ describe("analizador emoción → recomendación → postura", () => {
     const getUserMedia = camera();
     vi.mocked(apiRequest).mockImplementation(async (path) => path === "/consent-policy" ? { id: "EMOTV-CONSENT-DEMO-001:v0.1", mode: "demo", available: true } as never : path === "/students" ? [{ id: "student-1" }] as never : null as never);
     page();
-    await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Debes aceptar la versión vigente");
+    const requirements = await screen.findByRole("list", { name: "Requisitos para empezar" });
+    expect(await within(requirements).findByRole("link", { name: "Revisar consentimiento" })).toHaveAttribute("href", "/consent");
+    expect(within(requirements).getAllByText("Pendiente").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeDisabled();
+    expect(screen.getByText(/Para empezar falta: .*consentimiento vigente/)).toBeInTheDocument();
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(Socket.instances).toHaveLength(0);
   });
@@ -116,9 +128,10 @@ describe("analizador emoción → recomendación → postura", () => {
   it("explica el permiso de cámara denegado sin crear sesión", async () => {
     camera(vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError")));
     page();
-    await userEvent.click(screen.getByRole("button", { name: "Probar cámara" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
     expect(await screen.findByRole("alert")).toHaveTextContent("Permite el acceso a la cámara");
-    expect(apiRequest).not.toHaveBeenCalled();
+    expect(within(screen.getByRole("list", { name: "Requisitos para empezar" })).getByText("Bloqueado")).toBeInTheDocument();
+    expect(apiRequest).not.toHaveBeenCalledWith("/sessions", expect.anything());
   });
 
   it("impide a administración iniciar con un modelo bloqueado e indica el motivo", async () => {
@@ -132,7 +145,7 @@ describe("analizador emoción → recomendación → postura", () => {
     camera();
     page();
     expect(screen.queryByLabelText("Modelo facial")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+    await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onopen?.());
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: "ferplus_onnx" }));
@@ -143,7 +156,7 @@ describe("analizador emoción → recomendación → postura", () => {
   it("reconoce primero, muestra sugerencia y solo entonces asigna la actividad", async () => {
     const stop = vi.fn(); const getUserMedia = camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
     page();
-    await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+    await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     const socket = Socket.instances[0];
     act(() => socket.onopen?.());
