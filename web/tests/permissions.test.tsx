@@ -28,6 +28,16 @@ describe("rutas y navegación por rol", () => {
     expect(screen.getByRole("heading", { name: "Protege tu cuenta" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /Reconoce tu expresión/ })).not.toBeInTheDocument();
   });
+  it.each([["student", "Consentimiento"], ["psychologist", "Inicio"]] as const)(
+    "tras cambiar la clave provisional, %s sale de primer acceso hacia %s", (role, destination) => {
+      render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role, is_active: true, must_change_password: false }, token: "token", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}>
+        <MemoryRouter initialEntries={["/first-access"]}><Routes>
+          <Route element={<ProtectedRoute />}><Route path="/first-access" element={<p>Primer acceso</p>} /></Route>
+          <Route path="/consent" element={<p>Consentimiento</p>} /><Route path="/dashboard" element={<p>Inicio</p>} />
+        </Routes></MemoryRouter>
+      </AuthContext.Provider>);
+      expect(screen.getByText(destination)).toBeInTheDocument();
+    });
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md); Consentimiento va abajo y separado.
     expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/activities", "/sessions", "/consent"]);

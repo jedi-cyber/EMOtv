@@ -13,7 +13,8 @@ export function ProtectedRoute() {
   if (!user) return <Navigate to={paths.login} replace state={{ from: location }} />;
   if (user.must_change_password && location.pathname !== paths.firstAccess)
     return <Navigate to={paths.firstAccess} replace />;
+  // Tras el primer acceso, el estudiante continúa en el consentimiento.
   if (!user.must_change_password && location.pathname === paths.firstAccess)
-    return <Navigate to={paths.dashboard} replace />;
+    return <Navigate to={user.role === "student" ? paths.consent : paths.dashboard} replace />;
   return <Outlet />;
 }

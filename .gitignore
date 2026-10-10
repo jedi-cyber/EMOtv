@@ -97,3 +97,10 @@ reports/chatbot/
 # Actas de eliminación de datos de voluntarios (delete_test_data.py --save).
 reports/deletions/
 DESIGN.md
+# Pruebas e2e (Playwright): informes, trazas y la cámara simulada.
+# Las imágenes de rostro son del desarrollador y nunca se suben.
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/e2e/fixtures/*
+!web/e2e/fixtures/README.md
