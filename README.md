@@ -64,7 +64,7 @@ de datos» de Docker).
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-python scripts/download_models.py        # YuNet, FER+ y MediaPipe Pose, con SHA-256
+python scripts/download_models.py        # YuNet, FER+, MediaPipe Pose y HSEmotion (opcional), con SHA-256
 copy .env.example .env                   # DATABASE_URL, JWT_SECRET_KEY, ...
 python -m alembic upgrade head
 python -m uvicorn emotv.interfaces.web.app:app --reload   # API en :8000
@@ -107,7 +107,8 @@ valores reales.
 | `CORS_ORIGINS`, `TRUSTED_HOSTS` | orígenes y hosts permitidos |
 | `LOGIN_MAX_FAILURES_PER_ACCOUNT`, `LOGIN_MAX_FAILURES_PER_IP`, `LOGIN_ATTEMPT_WINDOW_MINUTES` | límite de intentos de inicio de sesión |
 | `LIVE_STABLE_SECONDS`, `LIVE_MIN_CONFIDENCE` | condiciones para registrar una expresión |
-| `EMOTION_*`, `FERPLUS_BENCHMARK_PATH` | admisión del modelo facial según el benchmark del servidor |
+| `LIVE_CALIBRATION_MIN_INCREASE` | aumento mínimo respecto a la base neutral (en memoria) para sugerir una expresión |
+| `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY`, `N8N_TIMEOUT_SECONDS` | workflow de Emi; sin clave, el chat responde 503 |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
 | `TEST_DATA_RETENTION_DAYS` | plazo (1 a 30 días) de las cuentas de voluntarios `PRUEBA-NN` |

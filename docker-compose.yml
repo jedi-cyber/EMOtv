@@ -36,12 +36,14 @@ services:
       retries: 20
     # Sin puertos publicados: solo el modo docker-compose.db.yml los expone.
 
-  # Descarga y verifica pesos (SHA-256). Además mide el benchmark de FER+ en este
-  # equipo si falta o venció: la API solo admite el modelo con un benchmark
-  # vigente medido en el mismo entorno (ver docs/docker.md).
+  # Descarga y verifica pesos (SHA-256). Además mide los benchmarks de FER+ y
+  # HSEmotion en este equipo si faltan o vencieron: la API solo admite un modelo
+  # con un benchmark vigente medido en el mismo entorno (ver docs/docker.md).
+  # Si HSEmotion no queda admitido, la lectura en vivo usa FER+.
   models:
     <<: *api-image
-    command: ["python", "scripts/download_models.py", "--ensure-benchmark", "/app/models/weights/benchmarks/ferplus.json"]
+    command: ["python", "scripts/download_models.py", "--ensure-benchmark", "/app/models/weights/benchmarks/ferplus.json",
+              "--ensure-hsemotion-benchmark", "/app/models/weights/benchmarks/hsemotion.json"]
     restart: "no"
     environment:
       EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
@@ -80,12 +82,14 @@ services:
       # httpx usa certifi; este almacén incluye las CA de docker/certs/.
       SSL_CERT_FILE: ${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
       FERPLUS_BENCHMARK_PATH: /app/models/weights/benchmarks/ferplus.json
+      HSEMOTION_BENCHMARK_PATH: /app/models/weights/benchmarks/hsemotion.json
       EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
       LOGIN_MAX_FAILURES_PER_ACCOUNT: ${LOGIN_MAX_FAILURES_PER_ACCOUNT:-5}
       LOGIN_MAX_FAILURES_PER_IP: ${LOGIN_MAX_FAILURES_PER_IP:-20}
       LOGIN_ATTEMPT_WINDOW_MINUTES: ${LOGIN_ATTEMPT_WINDOW_MINUTES:-15}
       LIVE_STABLE_SECONDS: ${LIVE_STABLE_SECONDS:-1}
       LIVE_MIN_CONFIDENCE: ${LIVE_MIN_CONFIDENCE:-0.5}
+      LIVE_CALIBRATION_MIN_INCREASE: ${LIVE_CALIBRATION_MIN_INCREASE:-0.10}
     volumes:
       - emotv_models:/app/models/weights:ro
     # Sin puertos publicados: se accede a través de web.

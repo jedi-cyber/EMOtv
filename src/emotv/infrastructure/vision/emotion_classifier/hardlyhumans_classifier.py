@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 from emotv.application.emotion_model_catalog import EmotionModelCatalog, FERPLUS_LABELS
-from emotv.config import HARDLYHUMANS_MODEL_DIR
+from emotv.config import FACE_PADDING_RATIO, HARDLYHUMANS_MODEL_DIR
 from emotv.domain.cropped_face import CroppedFace
 
 
@@ -25,7 +25,8 @@ def canonical_labels(id2label: dict) -> tuple[str, ...]:
 
 class HardlyHumansEmotionClassifier:
     """ViT local en CPU; sin código remoto, pickle ni descargas durante inferencia."""
-    face_preprocessor_options = dict(target_size=None, grayscale=False, normalize=False)
+    # La ficha no fija un margen; se conserva el de EMOtv. El procesador oficial redimensiona.
+    face_preprocessor_options = dict(padding_ratio=FACE_PADDING_RATIO, target_size=None, grayscale=False, normalize=False)
 
     def __init__(self, model_path: str | Path | None = None) -> None:
         self.model_path = Path(model_path) if model_path is not None else HARDLYHUMANS_MODEL_DIR

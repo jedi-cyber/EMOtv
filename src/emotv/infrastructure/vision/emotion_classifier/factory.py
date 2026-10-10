@@ -16,6 +16,9 @@ def create_emotion_classifier(
     if model.id == "hardlyhumans_vit":
         from emotv.infrastructure.vision.emotion_classifier.hardlyhumans_classifier import HardlyHumansEmotionClassifier
         return HardlyHumansEmotionClassifier(model_path=model_path)
+    if model.id == "hsemotion_enet_b0_8_best_afew":
+        from emotv.infrastructure.vision.emotion_classifier.hsemotion_classifier import HSEmotionClassifier
+        return HSEmotionClassifier(model_path=model_path)
     if model.id != "ferplus_onnx":
         raise ValueError(f"No hay adaptador implementado para el modelo: {model.id}")
     return FerPlusEmotionClassifier(model_path=model_path, input_size=model.input_size)

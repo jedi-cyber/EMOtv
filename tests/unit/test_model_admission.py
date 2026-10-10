@@ -78,3 +78,23 @@ def test_dynamic_cpu_block_and_recovery(evaluator, monkeypatch):
     assert service.evaluate("ferplus_onnx")["state"] == "BLOCKED"
     monkeypatch.setattr(module.psutil, "cpu_percent", lambda interval: 10)
     assert service.evaluate("ferplus_onnx")["state"] == "SUPPORTED"
+
+
+def test_hsemotion_uses_the_same_admission_with_its_own_report(evaluator, tmp_path):
+    service, ferplus_report, report = evaluator
+    weights, _ = service.paths["ferplus_onnx"]
+    version = module.EmotionModelCatalog().get("hsemotion_enet_b0_8_best_afew").version
+    # El informe de FER+ no admite a HSEmotion aunque los pesos coincidan.
+    service.paths["hsemotion_enet_b0_8_best_afew"] = weights, ferplus_report
+    assert service.evaluate("hsemotion_enet_b0_8_best_afew")["state"] == "BLOCKED"
+    own = tmp_path / "hsemotion.json"
+    own.write_text(json.dumps({**report, "model": {**report["model"], "id": "hsemotion_enet_b0_8_best_afew",
+                                                    "version": version}}), encoding="utf-8")
+    service.paths["hsemotion_enet_b0_8_best_afew"] = weights, own
+    assert service.evaluate("hsemotion_enet_b0_8_best_afew")["state"] == "SUPPORTED"
+    assert "HSEMOTION_BENCHMARK_PATH" not in str(service.evaluate("hsemotion_enet_b0_8_best_afew"))
+
+
+def test_hsemotion_report_path_is_configurable():
+    service = module.ServerModelAdmission({"HSEMOTION_BENCHMARK_PATH": "custom/hsemotion.json"})
+    assert service.paths["hsemotion_enet_b0_8_best_afew"][1].as_posix() == "custom/hsemotion.json"

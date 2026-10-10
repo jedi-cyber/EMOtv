@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import onnxruntime as ort
 
-from emotv.config import EMOTION_MODEL_PATH
+from emotv.config import EMOTION_MODEL_PATH, FACE_PADDING_RATIO
 from emotv.application.emotion_model_catalog import EmotionModelCatalog, FERPLUS_LABELS
 from emotv.domain.cropped_face import CroppedFace
 
@@ -22,6 +22,10 @@ class FerPlusEmotionClassifier:
 
     # Mapeo de índices a emociones (según FER+)
     EMOTIONS = list(FERPLUS_LABELS)
+    # ONNX Model Zoo (emotion_ferplus): escala de grises 64x64 sin normalizar.
+    # La fuente no fija un margen; se conserva el 20 % que EMOtv usa desde el inicio.
+    face_preprocessor_options = dict(padding_ratio=FACE_PADDING_RATIO, target_size=(64, 64),
+                                     grayscale=True, normalize=False)
 
     def __init__(
         self,

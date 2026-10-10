@@ -100,6 +100,10 @@ class LiveExpressionSettings:
 
     stable_seconds: float = 1.0
     min_confidence: float = 0.5
+    # Calibración neutral opcional: aumento mínimo (en proporción, 0.10 = 10
+    # puntos) que debe superar una clase respecto a la base para sugerirse.
+    calibration_min_increase: float = 0.10
+    calibration_seconds: float = 3.0
 
 
 def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> LiveExpressionSettings:
@@ -107,7 +111,8 @@ def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> Li
     defaults = LiveExpressionSettings()
     values = []
     for name, default, maximum in (("LIVE_STABLE_SECONDS", defaults.stable_seconds, 30.0),
-                                   ("LIVE_MIN_CONFIDENCE", defaults.min_confidence, 1.0)):
+                                   ("LIVE_MIN_CONFIDENCE", defaults.min_confidence, 1.0),
+                                   ("LIVE_CALIBRATION_MIN_INCREASE", defaults.calibration_min_increase, 1.0)):
         raw = source.get(name, "").strip()
         try:
             value = float(raw) if raw else default
@@ -202,6 +207,13 @@ PREPROCESS_NORMALIZE = False  # Normalizar píxeles a [0, 1]
 
 # --- Configuración de Modelo de Emociones ---
 EMOTION_MODEL_PATH = WEIGHTS_DIR / "emotion" / "emotion-ferplus-8.onnx"
+# HSEmotion enet_b0_8_best_afew (EmotiEffLib, commit af83348); ver
+# docs/emotion-model-candidates.md.
+HSEMOTION_MODEL_PATH = WEIGHTS_DIR / "emotion" / "enet_b0_8_best_afew.onnx"
+HSEMOTION_MODEL_URL = (
+    "https://github.com/sb-ai-lab/EmotiEffLib/raw/af833487321c3efdcb1768a91a6c656a1986fdf6/"
+    "models/affectnet_emotions/onnx/enet_b0_8_best_afew.onnx"
+)
 HARDLYHUMANS_MODEL_DIR = WEIGHTS_DIR / "hardlyhumans_vit"
 
 # --- Configuracion de Estimacion de Pose ---

@@ -77,6 +77,7 @@ def test_download_models_skips_valid_weights_without_network(tmp_path, monkeypat
     path.write_bytes(b"ok")
     weight = download_models.ModelWeight("x", "https://invalid.example", path, hashlib.sha256(b"ok").hexdigest())
     monkeypatch.setattr(download_models, "REQUIRED_WEIGHTS", (weight,))
+    monkeypatch.setattr(download_models, "OPTIONAL_WEIGHTS", (weight,))
     monkeypatch.setattr(download_models, "download", lambda _: pytest.fail("no debe descargar"))
 
     assert download_models.main([]) == 0
@@ -117,3 +118,22 @@ def test_create_admin_refuses_second_admin_without_force(admin_database, capsys)
 def test_create_admin_does_not_accept_password_argument(admin_database):
     with pytest.raises(SystemExit):
         create_admin.main(["--email", "a@ejemplo.local", "--password", "x" * 20])
+
+
+def test_missing_optional_weight_warns_without_failing(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "ok.onnx"
+    path.write_bytes(b"ok")
+    required = download_models.ModelWeight("x", "https://invalid.example", path, hashlib.sha256(b"ok").hexdigest())
+    optional = download_models.ModelWeight("HSEmotion", "https://invalid.example", tmp_path / "missing.onnx", "0" * 64)
+    monkeypatch.setattr(download_models, "REQUIRED_WEIGHTS", (required,))
+    monkeypatch.setattr(download_models, "OPTIONAL_WEIGHTS", (optional,))
+    # --check no descarga; la falta del opcional solo es un aviso (la API usa FER+).
+    assert download_models.main(["--check"]) == 0
+    assert "usará FER+" in capsys.readouterr().out
+
+
+def test_hsemotion_weight_is_pinned_and_optional():
+    weight, = download_models.OPTIONAL_WEIGHTS
+    assert "af833487321c3efdcb1768a91a6c656a1986fdf6" in weight.url
+    assert weight.sha256 == "7aa2ea31c1311f4f8aa9d3fdb085d418dd4e7a48c4b9ed41df8c044f91d0213f"
+    assert weight not in download_models.REQUIRED_WEIGHTS

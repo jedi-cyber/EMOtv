@@ -47,8 +47,9 @@ Dentro de la API, cada frame recorre esta cadena:
 ```text
 Navegador (getUserMedia)
     -> JPEG por WebSocket /ws/activity (token, sesión, actividad)
-    -> EmotionFrameAnalyzer: YuNet (rostro) + FER+ ONNX (expresión y distribución)
-    -> LiveExpressionTracker (EmotionStabilizer): lectura en vivo, nada persistido
+    -> EmotionFrameAnalyzer: YuNet (rostro) + HSEmotion o FER+ ONNX (expresión y distribución)
+    -> LiveExpressionTracker (EmotionStabilizer, calibración neutral opcional en memoria):
+       lectura en vivo, nada persistido
     -> el estudiante confirma -> SessionService.record_recognition (expresión elegida)
     -> ActivityRecommendationService (2+ posturas) -> actividad u omitirla
     -> PoseService: MediaPipe + PostureValidator (solo posturas)
@@ -120,7 +121,8 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 ### Infraestructura (`emotv.infrastructure`)
 
 - `vision.face_detection.YuNetFaceDetector` (`face_detection_yunet_2026may.onnx`).
-- `vision.emotion_classifier`: FER+ ONNX (predeterminado), HardlyHumans ViT
+- `vision.emotion_classifier`: FER+ ONNX, HSEmotion ONNX (lectura en vivo
+  predeterminada si su admisión es válida), HardlyHumans ViT
   (experimental, extra `emotion-vit`), fábrica, `EmotionFrameAnalyzer` y
   `ServerModelAdmission`.
 - `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
@@ -141,11 +143,13 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 
 ## Modelo facial
 
-El estudiante analiza siempre con FER+ (`ferplus_onnx`). Solo administración
-consulta `GET /analysis/models` y puede elegir otro `emotion_model_id` en el
-WebSocket; si un estudiante envía otro modelo, el servidor lo rechaza con
-`4403`. La UI oculta el selector a estudiantes, pero la restricción se aplica en
-FastAPI.
+En la lectura en vivo, el servidor elige el modelo: HSEmotion
+(`hsemotion_enet_b0_8_best_afew`) si su admisión es válida y, si no, FER+
+(`ferplus_onnx`). Solo administración consulta `GET /analysis/models` y puede
+forzar otro `emotion_model_id` en el WebSocket; si un estudiante pide un modelo
+distinto de esos dos, el servidor lo rechaza con `4403`. La UI oculta el
+selector a estudiantes, pero la restricción se aplica en FastAPI. Cada
+clasificador declara su propio recorte (margen, tamaño y color) según su fuente.
 
 Antes de cargar el clasificador, el WebSocket vuelve a evaluar la admisión del
 modelo: un cliente no puede evitar el bloqueo manipulando la interfaz y no hay
@@ -175,7 +179,8 @@ estudiante forma parte de `SessionRepository`. Detalles en
 
 Los pesos viven en `models/weights/` y no se versionan. `scripts/download_models.py`
 es la única descarga de los modelos requeridos (YuNet 2026may, FER+ y
-MediaPipe Pose); verifica SHA-256 y es idempotente. En Docker lo ejecuta el
+MediaPipe Pose) y de HSEmotion, que es opcional (si falta, se usa FER+);
+verifica SHA-256 y es idempotente. En Docker lo ejecuta el
 servicio `models` sobre su volumen antes de arrancar la API.
 
 ## Herramientas de diagnóstico local

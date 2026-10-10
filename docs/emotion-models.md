@@ -20,10 +20,13 @@ Los pesos se obtienen desde `EMOTION_MODEL_PATH`, actualmente:
 python scripts/emotion/download_emotion_model.py
 ```
 
-Se añadió el adaptador opcional experimental `hardlyhumans_vit`; no sustituye
-a FER+ como predeterminado. El selector web, visible solo para administración,
-distingue FER+ (ONNX) y HardlyHumans (ViT/PyTorch experimental), fijados antes
-de iniciar; el estudiante analiza siempre con FER+. La elección depende de la
+`FER+` sigue siendo el predeterminado del catálogo y de las actividades con
+actividad fija. En la lectura en vivo, el servidor usa
+`hsemotion_enet_b0_8_best_afew` (`HSEmotionClassifier`, ONNX) si su admisión es
+válida y, si no, FER+; la sesión registra cuál se usó. Se añadió también el
+adaptador opcional experimental `hardlyhumans_vit`. El selector web, visible
+solo para administración, permite dejar la elección automática o forzar FER+,
+HSEmotion o HardlyHumans antes de iniciar; el estudiante no elige. La elección depende de la
 disponibilidad y el rendimiento del servidor, pues allí se ejecuta la inferencia;
 el equipo del estudiante solo captura y envía imágenes. Su descarga, licencia declarada,
 preprocesamiento y límites están en [revisión de candidatos](emotion-model-candidates.md).
