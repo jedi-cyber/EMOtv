@@ -64,6 +64,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,api}
       ALLOWED_ADMIN_RESET_HOSTS: ${ALLOWED_ADMIN_RESET_HOSTS:-db}
+      # Plazo de las cuentas de voluntarios (scripts/testdata/delete_test_data.py --expired).
+      TEST_DATA_RETENTION_DAYS: ${TEST_DATA_RETENTION_DAYS:-30}
       # Emi (workflow de n8n Cloud). Sin N8N_WEBHOOK_KEY el chat responde 503.
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://emotv.app.n8n.cloud/webhook/emi-chat}
       N8N_WEBHOOK_KEY: ${N8N_WEBHOOK_KEY:-}
