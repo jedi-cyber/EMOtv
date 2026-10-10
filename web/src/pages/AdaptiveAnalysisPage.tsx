@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import type { ReactNode } from "react";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
 import type { Activity, ActivityStep, EmotionalSession, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
@@ -22,6 +22,9 @@ import { LiveExpressionPanel, percent, type LiveReading } from "../analysis/Live
 import { Button, ButtonLink } from "../components/Button";
 import { CameraFrame } from "../components/CameraFrame";
 import { Checkbox } from "../components/Checkbox";
+import { NavIcon } from "../components/NavIcon";
+import { StatusChip, type StatusTone } from "../components/StatusChip";
+import { useConsentStatus } from "../consent/useConsentStatus";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
@@ -38,6 +41,11 @@ type Message = Partial<LiveReading> & {
   notice?: string | null; stage?: string;
 };
 
+
+type RequirementState = "ready" | "pending" | "blocked" | "checking";
+type Requirement = { key: string; label: string; state: RequirementState; detail: string; action?: ReactNode };
+const requirementText: Record<RequirementState, string> = { ready: "Listo", pending: "Pendiente", blocked: "Bloqueado", checking: "Comprobando" };
+const requirementTone: Record<RequirementState, StatusTone> = { ready: "success", pending: "progress", blocked: "error", checking: "neutral" };
 
 const postureNames: Record<string, string> = {
   arms_up: "Brazos arriba", arms_open: "Brazos abiertos",
@@ -58,6 +66,9 @@ export function AdaptiveAnalysisPage() {
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [cameraBlocked, setCameraBlocked] = useState(false);
+  const consentStatus = useConsentStatus(user?.role === "student");
+  const [service, setService] = useState<"checking" | "ready" | "blocked">("checking");
   const [includeLandmarks, setIncludeLandmarks] = useState(true);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [session, setSession] = useState<EmotionalSession | null>(null);
@@ -120,6 +131,36 @@ export function AdaptiveAnalysisPage() {
     };
   }, [token]);
 
+  async function checkService() {
+    setService("checking");
+    try { await apiRequest("/health", { token }); setService("ready"); }
+    catch { setService("blocked"); }
+  }
+  // El servicio se comprueba al abrir la página; /health no revela configuración.
+  useEffect(() => { void checkService(); }, [token]);
+
+  const consentReady = consentStatus.state === "active" || consentStatus.state === "not_required";
+  const requirements: Requirement[] = [
+    { key: "camera", label: "Cámara", state: previewing ? "ready" : cameraBlocked ? "blocked" : "pending",
+      detail: previewing ? "La vista previa funciona." : cameraBlocked ? "El navegador no permitió usar la cámara." : "Pruébala para comprobar que el navegador puede usarla.",
+      action: <Button variant="secondary" size="sm" onClick={() => { void previewCamera(); }}>Probar cámara</Button> },
+    { key: "consent", label: "Consentimiento vigente",
+      state: consentStatus.state === "loading" ? "checking" : consentReady ? "ready"
+        : consentStatus.state === "missing" || consentStatus.state === "outdated" ? "pending" : "blocked",
+      detail: consentReady ? "Aceptaste la política vigente."
+        : consentStatus.state === "outdated" ? "La política cambió; acepta la nueva versión."
+          : consentStatus.state === "missing" ? "Acepta la política de análisis facial."
+            : consentStatus.state === "loading" ? "Comprobando…" : "No se puede solicitar el consentimiento ahora. Consulta con administración.",
+      action: consentStatus.state === "missing" || consentStatus.state === "outdated"
+        ? <ButtonLink variant="secondary" size="sm" to={paths.consent}>Revisar consentimiento</ButtonLink>
+        : consentStatus.state === "error" ? <Button variant="secondary" size="sm" onClick={() => { void consentStatus.reload(); }}>Comprobar de nuevo</Button> : undefined },
+    { key: "service", label: "Servicio de análisis", state: service === "ready" && modelBlocked ? "blocked" : service,
+      detail: service === "ready" ? (modelBlocked ? "El modelo elegido no está disponible." : "Responde correctamente.")
+        : service === "checking" ? "Comprobando…" : "No responde en este momento.",
+      action: service === "blocked" ? <Button variant="secondary" size="sm" onClick={() => { void checkService(); }}>Comprobar de nuevo</Button> : undefined },
+  ];
+  const pendingRequirements = requirements.filter((item) => item.state !== "ready");
+
   function pauseFrames() {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     timerRef.current = null;
@@ -157,10 +198,10 @@ export function AdaptiveAnalysisPage() {
       }
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      setPreviewing(true);
+      setPreviewing(true); setCameraBlocked(false);
       return true;
     } catch (reason) {
-      releaseMedia();
+      releaseMedia(); setCameraBlocked(true);
       if (reason instanceof DOMException && reason.name === "NotAllowedError") setError("Permite el acceso a la cámara en el navegador.");
       else if (reason instanceof DOMException && reason.name === "NotFoundError") setError("No se encontró una cámara en este dispositivo.");
       else setError("No se pudo abrir la cámara. Comprueba sus permisos y que no esté ocupada.");
@@ -440,7 +481,7 @@ export function AdaptiveAnalysisPage() {
 
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
-    <PageHeader title="Reconoce tu expresión y recibe una actividad" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
+    <PageHeader title="Analizador" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
     {error && <Callout variant="error">{error}</Callout>}
     {notice && <Callout variant="info">{notice}</Callout>}
     <div className="analysis-preflight card">
@@ -449,17 +490,30 @@ export function AdaptiveAnalysisPage() {
           <video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted />
           <canvas ref={overlayRef} aria-hidden="true" width="640" height="480" />
           <canvas ref={captureRef} hidden />
-          {!previewing && <p className="video-placeholder">La cámara está apagada. Puedes probarla antes de iniciar.</p>}
+          {!previewing && <div className="video-placeholder">
+            <NavIcon name="camera-off" />
+            <p>La cámara está apagada. Puedes probarla antes de iniciar.</p>
+            {phase === "ready" && <Button variant="secondary" onClick={() => { void previewCamera(); }}>Probar cámara</Button>}
+          </div>}
         </CameraFrame>
-        {phase === "ready" && <div className="camera-actions"><div className="inline-actions">
-          <Button variant="secondary" type="submit" onClick={() => { void previewCamera(); }}>Probar cámara</Button>
-          {previewing && <Button variant="secondary" type="submit" onClick={() => { releaseMedia(); setPreviewing(false); }}>Apagar cámara</Button>}
-        </div><p className="muted">Esta prueba es local: no crea una sesión ni envía imágenes al servidor.</p></div>}
+        {phase === "ready" && <div className="camera-actions">
+          {previewing && <Button variant="secondary" onClick={() => { releaseMedia(); setPreviewing(false); }}>Apagar cámara</Button>}
+          <p className="muted">Esta prueba es local: no crea una sesión ni envía imágenes al servidor.</p>
+        </div>}
       </div>
       <div className="adaptive-analysis-panel">
         {phase === "ready" && <>
-          <h2>Antes de comenzar</h2>
-          <p>Necesitas permiso de cámara, <Link className="inline-link" to={paths.consent}>consentimiento activo</Link> y un modelo disponible en el servidor.</p>
+          <h2>Requisitos</h2>
+          <ul className="requirement-list" aria-label="Requisitos para empezar">
+            {requirements.map((item) => <li key={item.key} className="requirement">
+              <div className="requirement-text">
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              <StatusChip tone={requirementTone[item.state]}>{requirementText[item.state]}</StatusChip>
+              {item.action && item.state !== "ready" && <div className="requirement-action">{item.action}</div>}
+            </li>)}
+          </ul>
           {canChooseModel && <>
             <label htmlFor="adaptive-model">Modelo facial</label>
             <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
@@ -471,8 +525,10 @@ export function AdaptiveAnalysisPage() {
           </>}
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
-          <Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
-          <p className="muted">El análisis ocurre en el servidor. {canChooseModel ? "Si el modelo está bloqueado, consulta el motivo mostrado arriba." : "Si el servidor no puede analizar, te mostraremos el motivo."}</p>
+          <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0} aria-describedby="start-help" onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
+          <p id="start-help" className="muted">{pendingRequirements.length > 0
+            ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
+            : "Todo listo. La cámara se usará solo mientras dure el análisis."}</p>
         </>}
         {phase !== "ready" && <>
           <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
