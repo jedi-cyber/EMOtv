@@ -40,7 +40,7 @@ Valores iniciales en `src/emotv/config.py`:
 | Parámetro | Valor | Significado |
 | --- | ---: | --- |
 | `POSE_MIN_LANDMARK_VISIBILITY` | `0.5` | Visibilidad mínima aceptada |
-| `ARMS_UP_WRIST_MARGIN` | `0.02` | Distancia vertical normalizada |
+| `ARMS_UP_WRIST_MARGIN` | `0.10` | Distancia vertical normalizada |
 | `ARMS_UP_ELBOW_TOLERANCE_DEGREES` | `25.0` | Desviación permitida desde 180° |
 | `ARMS_OPEN_WRIST_HEIGHT_TOLERANCE` | `0.08` | Diferencia vertical permitida |
 | `ARMS_OPEN_LATERAL_MARGIN` | `0.08` | Apertura mínima desde el hombro |
@@ -51,9 +51,26 @@ Valores iniciales en `src/emotv/config.py`:
 | `ARMS_FORWARD_ELBOW_TOLERANCE_DEGREES` | `35.0°` | Desviación máxima del codo extendido en 3D |
 | `SQUAT_MIN_KNEE_ANGLE` / `SQUAT_MAX_KNEE_ANGLE` | `65°` / `155°` | Flexión aceptada de ambas rodillas |
 | `ARMS_UP_HOLD_SECONDS` | `5.0` | Tiempo necesario para completar |
+| `POSE_DROPOUT_TOLERANCE_SECONDS` | `0.75` | Hueco sin landmarks que pausa un paso sin reiniciarlo |
 
 Estos valores son un punto de partida y deben calibrarse con usuarios, cámaras,
 distancias e iluminación representativas.
+
+### Revisión de umbrales (2026-10-09)
+
+- `arms_up`: el margen anterior (`0.02`) aceptaba brazos extendidos casi
+  horizontales, a 0,02–0,08 por encima del hombro. Esa misma pose también es
+  `arms_open` (tolerancia de altura `0.08`), así que en una secuencia
+  `arms_open → arms_up` el paso de brazos arriba podía contar sin levantar los
+  brazos. Se subió a `0.10`, mayor que la tolerancia de `arms_open`, para que
+  ambas posturas no se solapen. Las pruebas cubren esa pose y comprueban que cada
+  pose canónica solo la acepta su propio validador.
+- `arms_open`, `hands_on_hips` y `squat`: coherentes con su descripción; sin
+  cambios.
+- `arms_forward`: la tolerancia lateral (`0.25`) y de altura (`0.16`) es amplia,
+  pero la regla de profundidad (`z`) la distingue de `arms_open`. Se mantiene
+  sin cambios hasta calibrarla con vídeo real, porque la profundidad estimada
+  por MediaPipe es ruidosa.
 
 ## Contrato genérico de posturas
 

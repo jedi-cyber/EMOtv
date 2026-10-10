@@ -9,6 +9,7 @@ import { AnalysisNavigationGuard } from "../analysis/AnalysisNavigationGuard";
 import { drawPoseOverlay } from "../analysis/drawPoseOverlay";
 import type { PoseLandmarks } from "../analysis/drawPoseOverlay";
 import { speakExercise, speakStep, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
+import { remainingSeconds, stepPosition } from "../analysis/activityProgress";
 import { Alert } from "../components/Alert";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageHeader } from "../components/PageHeader";
@@ -27,6 +28,7 @@ type Message = Partial<LiveReading> & {
   emotion?: string | null; emotion_confidence?: number | null;
   activity?: Activity | null; activities?: Activity[];
   step?: ActivityStep; step_index?: number; step_count?: number;
+  repetition_index?: number; repetition_count?: number; step_remaining_seconds?: number;
   landmarks?: PoseLandmarks | null;
   exercise_result?: string | null; recognition_kept?: boolean;
   expression?: ExpressionInfo | null;
@@ -81,7 +83,12 @@ export function AdaptiveAnalysisPage() {
   const [currentStep, setCurrentStep] = useState<ActivityStep | null>(null);
   const [stepNumber, setStepNumber] = useState(0);
   const [stepCount, setStepCount] = useState(1);
+  const [repetitionCount, setRepetitionCount] = useState(1);
+  const [stepRemaining, setStepRemaining] = useState<number | null>(null);
+  // Índice global del último paso anunciado: la voz habla una vez por paso,
+  // no en cada frame.
   const announcedStepRef = useRef(-1);
+  const position = stepPosition(stepNumber, stepCount, repetitionCount);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const lastLandmarksRef = useRef<PoseLandmarks | null>(null);
@@ -177,6 +184,11 @@ export function AdaptiveAnalysisPage() {
   function resumeFrames() {
     pauseFrames();
     timerRef.current = window.setInterval(sendFrame, 250);
+  }
+
+  function announceStep(step: ActivityStep, index: number, count: number, repetitions: number) {
+    const at = stepPosition(index, count, repetitions);
+    speakStep(step, at.step - 1, at.steps, { index: at.repetition - 1, count: at.repetitions });
   }
 
   function drawLandmarks(landmarks: PoseLandmarks | null | undefined) {
@@ -278,12 +290,16 @@ export function AdaptiveAnalysisPage() {
         } else if (result.type === "activity_started") {
           setActivity(result.activity ?? null); setPhase("exercise"); setSelectingActivity(false); resumeFrames();
           const firstStep = result.activity?.steps?.[0];
+          const repetitions = result.activity?.repetitions ?? 1;
+          const total = (result.activity?.steps?.length ?? 1) * repetitions;
           setCurrentStep(firstStep ?? null);
           setStepNumber(0);
-          setStepCount((result.activity?.steps?.length ?? 1) * (result.activity?.repetitions ?? 1));
+          setStepCount(total);
+          setRepetitionCount(repetitions);
+          setStepRemaining(firstStep?.duration_seconds ?? result.activity?.duration_seconds ?? null);
           announcedStepRef.current = 0;
           if (voiceEnabled && result.activity) {
-            if (firstStep) speakStep(firstStep, 0, (result.activity.steps?.length ?? 1) * result.activity.repetitions);
+            if (firstStep) announceStep(firstStep, 0, total, repetitions);
             else speakExercise(result.activity);
           }
         } else if (result.type === "completed") {
@@ -297,11 +313,14 @@ export function AdaptiveAnalysisPage() {
         } else if (result.type === "status") {
           setProgress(result.progress ?? 0); drawLandmarks(result.landmarks);
           if (result.step && result.step_index != null) {
+            const repetitions = result.repetition_count ?? 1;
             setCurrentStep(result.step); setStepNumber(result.step_index);
             setStepCount(result.step_count ?? 1);
+            setRepetitionCount(repetitions);
+            setStepRemaining(result.step_remaining_seconds ?? result.step.duration_seconds);
             if (voiceEnabled && result.step_index !== announcedStepRef.current) {
               announcedStepRef.current = result.step_index;
-              speakStep(result.step, result.step_index, result.step_count ?? 1);
+              announceStep(result.step, result.step_index, result.step_count ?? 1, repetitions);
             }
           }
         }
@@ -376,6 +395,8 @@ export function AdaptiveAnalysisPage() {
     setCurrentStep(null);
     setStepNumber(0);
     setStepCount(1);
+    setRepetitionCount(1);
+    setStepRemaining(null);
     announcedStepRef.current = -1;
     setProgress(0);
     setMessage("Preparando un nuevo reconocimiento facial…");
@@ -498,9 +519,11 @@ export function AdaptiveAnalysisPage() {
           {phase === "completed" && !activity && outcome === "skipped" && <p>Sesión finalizada sin actividad. Tu expresión quedó registrada.</p>}
           {(phase === "exercise" || phase === "completed") && activity && <>
             <h2>{activity.name}</h2><p>{activity.description}</p>
-            {phase === "exercise" && speechAvailable() && <button className="button secondary" onClick={() => currentStep ? speakStep(currentStep, stepNumber, stepCount) : speakExercise(activity)}>Repetir instrucción</button>}
-            {currentStep && <p><strong>Paso {stepNumber + 1} de {stepCount}:</strong> {currentStep.instruction}</p>}
-            <p>Postura: {postureNames[currentStep?.posture ?? activity.required_posture] ?? currentStep?.posture ?? activity.required_posture} · Mantén {currentStep?.duration_seconds ?? activity.duration_seconds} s</p>
+            {phase === "exercise" && speechAvailable() && <button className="button secondary" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</button>}
+            {currentStep && <p><strong>Paso {position.step} de {position.steps}:</strong> {currentStep.instruction}</p>}
+            {phase === "exercise" && <p>Repetición {position.repetition} de {position.repetitions}</p>}
+            <p>Postura esperada: {postureNames[currentStep?.posture ?? activity.required_posture] ?? currentStep?.posture ?? activity.required_posture} · Mantén {currentStep?.duration_seconds ?? activity.duration_seconds} s</p>
+            {phase === "exercise" && stepRemaining != null && <p>Tiempo restante del paso: {remainingSeconds(stepRemaining)} s</p>}
             <div className="progress-label"><span>Progreso</span><strong>{Math.round(progress * 100)} %</strong></div>
             <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
           </>}

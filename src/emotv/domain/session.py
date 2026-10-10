@@ -27,6 +27,12 @@ class EmotionalSession:
     emotion_model_id: str | None = None
     emotion_model_version: str | None = None
     recognized_at: datetime | None = None
+    # Avance de una actividad secuencial: pasos completados de un total de
+    # pasos × repeticiones. Se guarda en cada cambio de paso, así una sesión
+    # interrumpida conserva hasta dónde llegó.
+    exercise_steps_completed: int | None = None
+    exercise_steps_total: int | None = None
+    exercise_repetitions: int | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -96,6 +102,8 @@ class EmotionalSession:
                 raise ValueError("exercise_duration_seconds no puede ser negativa")
             object.__setattr__(self, "exercise_duration_seconds", duration)
 
+        self._validate_progress()
+
         if self.recognized_at is not None:
             if not isinstance(self.recognized_at, datetime):
                 raise TypeError("recognized_at debe ser datetime")
@@ -130,6 +138,20 @@ class EmotionalSession:
         object.__setattr__(self, "student_id", student_id)
         object.__setattr__(self, "emotion_model_id", model_id)
         object.__setattr__(self, "emotion_model_version", model_version)
+
+    def _validate_progress(self) -> None:
+        values = (self.exercise_steps_completed, self.exercise_steps_total, self.exercise_repetitions)
+        if all(value is None for value in values):
+            return
+        if any(value is None for value in values):
+            raise ValueError("el avance de la actividad requiere pasos completados, total y repeticiones")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+            raise TypeError("el avance de la actividad debe expresarse con enteros")
+        completed, total, repetitions = values
+        if repetitions < 1 or total < repetitions or total % repetitions:
+            raise ValueError("el total de pasos debe ser un múltiplo positivo de las repeticiones")
+        if not 0 <= completed <= total:
+            raise ValueError("los pasos completados deben estar entre 0 y el total")
 
     @staticmethod
     def _normalize_optional_text(value: str | None, field_name: str) -> str | None:

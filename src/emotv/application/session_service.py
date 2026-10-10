@@ -130,6 +130,9 @@ class SessionService:
         activity_id: str,
         exercise_result: str,
         exercise_duration_seconds: float,
+        exercise_steps_completed: int | None = None,
+        exercise_steps_total: int | None = None,
+        exercise_repetitions: int | None = None,
     ) -> EmotionalSession:
         """Completa y guarda una sesión con el resultado íntegro del MVP.
 
@@ -151,7 +154,37 @@ class SessionService:
             exercise_result=exercise_result,
             exercise_duration_seconds=exercise_duration_seconds,
         )
+        if exercise_steps_total is not None:
+            completed = replace(
+                completed,
+                exercise_steps_completed=exercise_steps_completed,
+                exercise_steps_total=exercise_steps_total,
+                exercise_repetitions=exercise_repetitions,
+            )
         return self.repository.save(completed)
+
+    def record_activity_progress(
+        self,
+        session_id: str,
+        status: EmotionalActivityStatus,
+    ) -> EmotionalSession:
+        """Guarda hasta qué paso llegó la actividad en curso.
+
+        Se llama al iniciar la actividad y en cada cambio de paso (no en cada
+        frame). Si la actividad se interrumpe, la sesión conserva este avance.
+        """
+
+        if not isinstance(status, EmotionalActivityStatus):
+            raise TypeError("status debe ser un EmotionalActivityStatus")
+        current = self._get_required(session_id)
+        self._require_state(current, SessionState.IN_PROGRESS, "registrar el avance de")
+        return self.repository.save(replace(
+            current,
+            exercise_duration_seconds=status.exercise.elapsed_seconds if status.exercise else 0.0,
+            exercise_steps_completed=status.steps_completed,
+            exercise_steps_total=status.step_count,
+            exercise_repetitions=status.repetition_count,
+        ))
 
     def complete_from_activity_status(
         self,
@@ -174,6 +207,9 @@ class SessionService:
             activity_id=status.activity.id,
             exercise_result=status.exercise.state.value,
             exercise_duration_seconds=status.exercise.elapsed_seconds,
+            exercise_steps_completed=status.steps_completed,
+            exercise_steps_total=status.step_count,
+            exercise_repetitions=status.repetition_count,
         )
 
     def cancel_session(self, session_id: str) -> EmotionalSession:

@@ -72,6 +72,9 @@ class PostgresSessionRepository:
             emotion_model_id=session.emotion_model_id,
             emotion_model_version=session.emotion_model_version,
             recognized_at=session.recognized_at,
+            exercise_steps_completed=session.exercise_steps_completed,
+            exercise_steps_total=session.exercise_steps_total,
+            exercise_repetitions=session.exercise_repetitions,
         )
 
     @staticmethod
@@ -91,6 +94,9 @@ class PostgresSessionRepository:
         record.emotion_model_id = session.emotion_model_id
         record.emotion_model_version = session.emotion_model_version
         record.recognized_at = session.recognized_at
+        record.exercise_steps_completed = session.exercise_steps_completed
+        record.exercise_steps_total = session.exercise_steps_total
+        record.exercise_repetitions = session.exercise_repetitions
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -116,6 +122,9 @@ class PostgresSessionRepository:
                 if record.recognized_at is not None
                 else None
             ),
+            exercise_steps_completed=record.exercise_steps_completed,
+            exercise_steps_total=record.exercise_steps_total,
+            exercise_repetitions=record.exercise_repetitions,
         )
 
     @staticmethod

@@ -305,3 +305,44 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Falló el reconocimiento de la expresión");
   });
 });
+
+describe("actividad secuencial con repeticiones", () => {
+  it("muestra paso, repetición, postura esperada y tiempo restante, y anuncia cada paso una sola vez", async () => {
+    class Utterance { lang = ""; rate = 1; voice: unknown = null; constructor(public text: string) {} }
+    const synth = { getVoices: vi.fn(() => []), cancel: vi.fn(), speak: vi.fn() };
+    vi.stubGlobal("SpeechSynthesisUtterance", Utterance);
+    vi.stubGlobal("speechSynthesis", synth);
+    const socket = await openLive();
+    recognize(socket, sadnessInfo);
+    const steps = [
+      { posture: "arms_up", instruction: "Eleva los brazos", duration_seconds: 2 },
+      { posture: "arms_open", instruction: "Abre los brazos", duration_seconds: 2 },
+      { posture: "hands_on_hips", instruction: "Manos en las caderas", duration_seconds: 2 },
+    ];
+    const activity = { id: "flow", name: "Secuencia", description: "Tres posturas", required_posture: "arms_up", duration_seconds: 2, repetitions: 2, steps };
+    const status = (index: number, remaining: number) => ({
+      type: "status", state: "performing_exercise", message: "Mantén la postura", progress: index / 6,
+      step: steps[index % 3], step_index: index, step_count: 6,
+      repetition_index: Math.floor(index / 3), repetition_count: 2, step_remaining_seconds: remaining,
+    });
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "activity_started", activity, message: "Adopta la postura" }) }));
+    expect(screen.getByText(/Paso 1 de 3:/)).toBeInTheDocument();
+    expect(screen.getByText("Repetición 1 de 2")).toBeInTheDocument();
+
+    act(() => socket.onmessage?.({ data: JSON.stringify(status(0, 1.4)) }));
+    act(() => socket.onmessage?.({ data: JSON.stringify(status(0, 0.9)) }));
+    expect(screen.getByText("Tiempo restante del paso: 1 s")).toBeInTheDocument();
+    for (let frame = 0; frame < 3; frame += 1) act(() => socket.onmessage?.({ data: JSON.stringify(status(3, 2)) }));
+
+    expect(screen.getByText(/Paso 1 de 3:/)).toBeInTheDocument();
+    expect(screen.getByText("Repetición 2 de 2")).toBeInTheDocument();
+    expect(screen.getByText(/Postura esperada: Brazos arriba/)).toBeInTheDocument();
+    expect(screen.getByText("Tiempo restante del paso: 2 s")).toBeInTheDocument();
+    const spoken = synth.speak.mock.calls.map(([utterance]) => (utterance as Utterance).text);
+    expect(spoken).toEqual([
+      expect.stringContaining("Paso 1 de 3. Repetición 1 de 2. Eleva los brazos"),
+      expect.stringContaining("Paso 1 de 3. Repetición 2 de 2. Eleva los brazos"),
+    ]);
+    vi.unstubAllGlobals();
+  });
+});

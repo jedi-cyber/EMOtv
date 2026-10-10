@@ -6,6 +6,10 @@ from typing import Mapping, Sequence
 
 from emotv.domain.posture_id import PostureId
 
+# Convención de los validadores: la regla que exige landmarks suficientemente
+# visibles termina con este sufijo (p. ej. ``upper_body_visible``).
+VISIBILITY_RULE_SUFFIX = "_visible"
+
 
 @dataclass(frozen=True, slots=True)
 class PostureResult:
@@ -47,3 +51,9 @@ class PostureResult:
     @property
     def is_valid(self) -> bool:
         return self.detected
+
+    @property
+    def landmarks_visible(self) -> bool:
+        """Falso si algún landmark necesario no superó el umbral de visibilidad."""
+
+        return not any(rule.endswith(VISIBILITY_RULE_SUFFIX) for rule in self.failed_rules)

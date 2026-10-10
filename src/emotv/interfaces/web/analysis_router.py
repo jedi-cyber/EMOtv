@@ -110,6 +110,7 @@ def create_analysis_router(
         analyzer: EmotionAnalyzer | None = None
         recognized: StabilizedEmotion | None = None
         active_session_id: str | None = None
+        recorded_steps: int | None = None
         try:
             if any(value is None for value in (
                 sessions, activities, authentication, users, students, processor_factory
@@ -423,9 +424,19 @@ def create_analysis_router(
                     "posture_detected": status.posture.detected if status.posture else False,
                     "step_index": status.step_index,
                     "step_count": status.step_count,
+                    "repetition_index": status.repetition_index,
+                    "repetition_count": status.repetition_count,
+                    "steps_completed": status.steps_completed,
+                    "step_elapsed_seconds": status.step_elapsed_seconds,
+                    "step_remaining_seconds": status.step_remaining_seconds,
                     "step": _step_payload(getattr(processor, "current_step", processor.activity.steps[0])),
                     "landmarks": _landmarks(processor) if include_landmarks else None,
                 }
+                if not status.completed and status.steps_completed != recorded_steps:
+                    # Una escritura por cambio de paso (y al empezar), no por
+                    # frame: si la actividad se interrumpe, queda hasta dónde llegó.
+                    sessions.record_activity_progress(session.id, status)
+                    recorded_steps = status.steps_completed
                 if status.completed:
                     stored = sessions.complete_from_activity_status(session.id, status)
                     payload["type"] = "completed"

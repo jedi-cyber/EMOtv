@@ -29,7 +29,7 @@ from emotv.config import (
 )
 from emotv.domain.pose_landmarks import PoseLandmark, PoseLandmarks
 from emotv.domain.posture_id import PostureId
-from emotv.domain.posture_result import PostureResult
+from emotv.domain.posture_result import VISIBILITY_RULE_SUFFIX, PostureResult
 from emotv.infrastructure.vision.movement_analysis.angle_calculator import (
     calculate_angle,
     calculate_3d_angle,
@@ -37,6 +37,10 @@ from emotv.infrastructure.vision.movement_analysis.angle_calculator import (
 
 
 PostureEvaluator = Callable[[PoseLandmarks], PostureResult]
+UPPER_BODY_VISIBILITY_MESSAGE = (
+    "Aléjate un poco de la cámara y céntrate: deben verse los hombros, "
+    "los codos y las muñecas"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,19 +247,9 @@ class PostureValidator:
             "left_elbow_extended": left_elbow_angle >= minimum_angle,
             "right_elbow_extended": right_elbow_angle >= minimum_angle,
         }
-        failed_rules = tuple(name for name, passed in rules.items() if not passed)
-        confidence = sum(rules.values()) / len(rules)
-        detected = not failed_rules
-
-        return PostureResult(
+        return self._build_result(
             posture_id=PostureId.ARMS_UP,
-            detected=detected,
-            confidence=confidence,
-            message=(
-                "Postura correcta"
-                if detected
-                else "Ajusta la visibilidad, altura o extensión de los brazos"
-            ),
+            rules=rules,
             measurements={
                 "minimum_visibility": minimum_visibility,
                 "left_wrist_offset": left_wrist_offset,
@@ -263,7 +257,9 @@ class PostureValidator:
                 "left_elbow_angle": left_elbow_angle,
                 "right_elbow_angle": right_elbow_angle,
             },
-            failed_rules=failed_rules,
+            success_message="Postura correcta",
+            failure_message="Levanta ambos brazos extendidos por encima de los hombros",
+            visibility_message=UPPER_BODY_VISIBILITY_MESSAGE,
         )
 
     def _evaluate_arms_open(self, pose: PoseLandmarks) -> PostureResult:
@@ -332,6 +328,7 @@ class PostureValidator:
             },
             success_message="Postura de brazos abiertos correcta",
             failure_message="Alinea y extiende ambos brazos hacia los lados",
+            visibility_message=UPPER_BODY_VISIBILITY_MESSAGE,
         )
 
     def _evaluate_hands_on_hips(self, pose: PoseLandmarks) -> PostureResult:
@@ -419,6 +416,10 @@ class PostureValidator:
             },
             success_message="Postura de manos en las caderas correcta",
             failure_message="Acerca las manos a las caderas y abre los codos",
+            visibility_message=(
+                "Aléjate un poco de la cámara y céntrate: deben verse los brazos "
+                "y las caderas"
+            ),
         )
 
     def _evaluate_arms_forward(self, pose: PoseLandmarks) -> PostureResult:
@@ -474,6 +475,7 @@ class PostureValidator:
             measurements=measurements,
             success_message="Brazos al frente correctos",
             failure_message="Extiende ambos brazos al frente a la altura de hombros",
+            visibility_message=UPPER_BODY_VISIBILITY_MESSAGE,
         )
 
     def _evaluate_squat(self, pose: PoseLandmarks) -> PostureResult:
@@ -524,6 +526,10 @@ class PostureValidator:
             measurements=measurements,
             success_message="Sentadilla estática detectada",
             failure_message="Flexiona ambas rodillas suavemente y muestra el cuerpo completo",
+            visibility_message=(
+                "Aléjate de la cámara y céntrate: debe verse el cuerpo completo, "
+                "de los hombros a los tobillos"
+            ),
         )
 
     @staticmethod
@@ -533,14 +539,22 @@ class PostureValidator:
         measurements: dict[str, float],
         success_message: str,
         failure_message: str,
+        visibility_message: str,
     ) -> PostureResult:
         failed_rules = tuple(name for name, passed in rules.items() if not passed)
         detected = not failed_rules
+        # Sin landmarks visibles la geometría no es fiable: primero se pide
+        # encuadrar el cuerpo y no se corrige una postura que no se ve.
+        hidden = any(rule.endswith(VISIBILITY_RULE_SUFFIX) for rule in failed_rules)
         return PostureResult(
             posture_id=posture_id,
             detected=detected,
             confidence=sum(rules.values()) / len(rules),
-            message=success_message if detected else failure_message,
+            message=(
+                success_message if detected
+                else visibility_message if hidden
+                else failure_message
+            ),
             measurements=measurements,
             failed_rules=failed_rules,
         )
