@@ -3,6 +3,8 @@ por /ws/activity y nunca abre un dispositivo de captura propio."""
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -11,8 +13,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
-from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, FLOWISE_API_URL,
-                          FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS, get_consent_mode,
+from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_settings,
+                          get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings)
 from emotv.infrastructure.persistence import (
@@ -25,6 +27,7 @@ from emotv.infrastructure.persistence import (
     PostgresAssignmentRepository,
     PostgresExpressionInfoRepository,
     PostgresRecommendationRepository,
+    PostgresChatRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -41,7 +44,8 @@ from emotv.interfaces.web.expression_router import create_expression_router, exp
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
-from emotv.infrastructure.chat import FlowiseClient
+from emotv.infrastructure.chat import N8nWebhookChatGateway
+from emotv.application.chat_service import ChatService
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
@@ -57,6 +61,9 @@ configure_web_security(app, web_settings)
 activity_catalog = ActivityCatalog()
 model_admission = ServerModelAdmission()
 consent_mode = get_consent_mode()
+chat_settings = get_chat_settings()
+chat_service: ChatService | None = None
+logger = logging.getLogger("emotv.api")
 
 if DATABASE_URL and JWT_SECRET_KEY:
     database_engine = create_database_engine(DATABASE_URL)
@@ -143,8 +150,15 @@ if DATABASE_URL and JWT_SECRET_KEY:
         expression_info=expression_info_for,
         recommendations=recommendation_repository,
     ))
-    flowise_client = FlowiseClient(FLOWISE_API_URL, FLOWISE_API_KEY, FLOWISE_TIMEOUT_SECONDS) if FLOWISE_API_URL else None
-    app.include_router(create_chat_router(flowise_client, authentication_service, user_repository))
+    chat_gateway = None
+    if chat_settings.webhook_key:
+        chat_gateway = N8nWebhookChatGateway(chat_settings.webhook_url, chat_settings.webhook_key,
+                                             chat_settings.timeout_seconds)
+    else:
+        # El resto de la API arranca igual; POST /chat responde 503.
+        logger.warning("N8N_WEBHOOK_KEY está vacía: Emi responderá 503 hasta configurarla")
+    chat_service = ChatService(PostgresChatRepository(database_sessions), chat_gateway, chat_settings)
+    app.include_router(create_chat_router(chat_service, authentication_service, user_repository))
 else:
     app.include_router(create_identity_router(None, None, None, None))
     app.include_router(create_auth_router(None, None))
@@ -160,6 +174,11 @@ else:
 async def startup_event():
     if DATABASE_URL and JWT_SECRET_KEY and consent_mode == "demo":
         consent_policy_service.ensure_demo_policy(BASE_DIR / "docs" / "consent-demo.md")
+    if chat_service is not None:
+        try:
+            chat_service.purge_expired()  # Retención del historial de Emi.
+        except SQLAlchemyError:
+            logger.exception("No se pudo aplicar la retención del historial de Emi")
 
 
 @app.get("/")

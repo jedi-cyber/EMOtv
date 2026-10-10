@@ -1,4 +1,4 @@
-"""Política demo v0.2: re-aceptación desde v0.1, flujo demo y modo development."""
+"""Política demo vigente: re-aceptación desde una demo anterior, flujo demo y modo development."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -127,8 +127,8 @@ def test_demo_new_account_accepts_v02_and_analyzes():
         service.ensure_demo_policy(DEMO_DOCUMENT)
         student, headers, token = new_student(identity, auth, "PRUEBA-02")
         policy = client.get("/consent-policy", headers=headers).json()
-        assert policy["id"] == DEMO_POLICY_ID and policy["version"] == "v0.2" and policy["is_demo"]
-        assert policy["effective_at"] and "EMOTV-CONSENT-DEMO-002" in policy["content"]
+        assert policy["id"] == DEMO_POLICY_ID and policy["version"] == "v0.3" and policy["is_demo"]
+        assert policy["effective_at"] and "EMOTV-CONSENT-DEMO-003" in policy["content"]
         assert start(client, headers).status_code == 403
 
         assert accept(client, student, headers, policy["id"]).status_code == 201

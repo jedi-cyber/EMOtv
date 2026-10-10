@@ -1,3 +1,9 @@
-from emotv.infrastructure.chat.flowise_client import FlowiseClient, FlowiseError
+from emotv.infrastructure.chat.n8n_client import (
+    ChatGateway,
+    ChatGatewayError,
+    ChatReply,
+    HistoryMessage,
+    N8nWebhookChatGateway,
+)
 
-__all__ = ["FlowiseClient", "FlowiseError"]
+__all__ = ["ChatGateway", "ChatGatewayError", "ChatReply", "HistoryMessage", "N8nWebhookChatGateway"]

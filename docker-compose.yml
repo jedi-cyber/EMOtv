@@ -64,9 +64,19 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
       TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,api}
       ALLOWED_ADMIN_RESET_HOSTS: ${ALLOWED_ADMIN_RESET_HOSTS:-db}
-      FLOWISE_API_URL: ${FLOWISE_API_URL:-}
-      FLOWISE_API_KEY: ${FLOWISE_API_KEY:-}
-      FLOWISE_TIMEOUT_SECONDS: ${FLOWISE_TIMEOUT_SECONDS:-20}
+      # Emi (workflow de n8n Cloud). Sin N8N_WEBHOOK_KEY el chat responde 503.
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://emotv.app.n8n.cloud/webhook/emi-chat}
+      N8N_WEBHOOK_KEY: ${N8N_WEBHOOK_KEY:-}
+      N8N_TIMEOUT_SECONDS: ${N8N_TIMEOUT_SECONDS:-30}
+      CHAT_HISTORY_MESSAGES: ${CHAT_HISTORY_MESSAGES:-10}
+      CHAT_RETENTION_DAYS: ${CHAT_RETENTION_DAYS:-90}
+      CHAT_LIMIT_WINDOW_MESSAGES: ${CHAT_LIMIT_WINDOW_MESSAGES:-20}
+      CHAT_LIMIT_WINDOW_MINUTES: ${CHAT_LIMIT_WINDOW_MINUTES:-10}
+      CHAT_LIMIT_DAILY_MESSAGES: ${CHAT_LIMIT_DAILY_MESSAGES:-200}
+      CHAT_MAX_QUESTION_CHARS: ${CHAT_MAX_QUESTION_CHARS:-1000}
+      CHAT_RISK_MESSAGE: ${CHAT_RISK_MESSAGE:-}
+      # httpx usa certifi; este almacén incluye las CA de docker/certs/.
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
       FERPLUS_BENCHMARK_PATH: /app/models/weights/benchmarks/ferplus.json
       EMOTION_BENCHMARK_MAX_AGE_DAYS: ${EMOTION_BENCHMARK_MAX_AGE_DAYS:-30}
       LOGIN_MAX_FAILURES_PER_ACCOUNT: ${LOGIN_MAX_FAILURES_PER_ACCOUNT:-5}
@@ -106,15 +116,6 @@ services:
       - emotv_caddy_data:/data
       - emotv_caddy_config:/config
 
-  flowise:
-    image: flowiseai/flowise:latest
-    profiles: ["chatbot"]
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    volumes:
-      - emotv_flowise:/root/.flowise
-
 volumes:
   emotv_pgdata:
     name: emotv_pgdata
@@ -124,5 +125,3 @@ volumes:
     name: emotv_caddy_data
   emotv_caddy_config:
     name: emotv_caddy_config
-  emotv_flowise:
-    name: emotv_flowise

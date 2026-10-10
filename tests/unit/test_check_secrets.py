@@ -56,7 +56,7 @@ def test_detects_staged_secret_and_masks_value(repo, capsys):
     ("chat.py", "KEY = load('gsk_" + "a" * 4 + "Zx81mQ0pLk29dJ4nB7vT')\n", "clave-groq"),
     ("id_rsa.txt", "-----BEGIN " + "RSA PRIVATE KEY-----\nMIIE\n", "clave-privada-pem"),
     (".env", "JWT_SECRET_" + "KEY=Gq8xP2mZ7vR4tL9wK3nB6cY1hJ5sD0fA\n", "variable-secreta-env"),
-    (".env.production", "FLOWISE_API_" + "KEY=fw_Lk29dJ4nB7vT0pQ\n", "variable-secreta-env"),
+    (".env.production", "N8N_WEBHOOK_" + "KEY=n8n_Lk29dJ4nB7vT0pQ\n", "variable-secreta-env"),
     ("check.py", "auth.authenticate(\n    'admin@example.org',\n    'Mz8" + "qL2vX0pK',\n)\n", "clave-en-llamada-de-login"),
     (".tmp_check.py", "print('hola')\n", "archivo-temporal-versionado"),
 ])
@@ -79,8 +79,8 @@ def test_login_call_rule_needs_a_literal_after_a_literal_email(repo, capsys):
 
 @pytest.mark.parametrize("content", [
     "JWT_SECRET_" + "KEY=replace-with-at-least-32-random-characters\nPOSTGRES_PASSWORD=__GENERATE__\n"
-    "DATABASE_URL=postgresql+psycopg://emotv:change-me@localhost:5432/emotv\n# FLOWISE_API_KEY=\n",
-    "DATABASE_URL=postgresql://usuario:clave@localhost/emotv\nFLOWISE_API_KEY=<tu-clave>\n",
+    "DATABASE_URL=postgresql+psycopg://emotv:change-me@localhost:5432/emotv\nN8N_WEBHOOK_KEY=\n",
+    "DATABASE_URL=postgresql://usuario:clave@localhost/emotv\nN8N_WEBHOOK_KEY=<tu-clave>\n",
 ])
 def test_placeholders_in_env_example_are_ignored(repo, capsys, content):
     stage(repo, ".env.example", content)

@@ -122,6 +122,7 @@ finaliza y `R` reinicia. Ver [scripts/README.md](scripts/README.md).
 - [MVP de actividad emocional](docs/emotional-activity-mvp.md)
 - [Sesiones y persistencia](docs/sessions.md)
 - [Catálogo de expresiones](docs/expression-catalog.md): resultado educativo y revisión de textos
+- [Emi, chatbot con n8n](docs/chatbot-emi.md): contrato del webhook, límites y prueba manual
 - [API HTTP](docs/api.md)
 - [Frontend web](web/README.md)
 - [Privacidad y gobierno de datos](docs/privacy-data-governance.md)

@@ -34,6 +34,8 @@ impacto y designar responsables y canales para ejercer derechos.
 | Sesiones identificables | emoción facial, actividad, cumplimiento, duración | mientras exista atención activa + 12 meses | anonimizar o eliminar en 30 días |
 | Cuenta y perfil estudiantil | correo, código, rol | relación vigente + 90 días | eliminar o disociar |
 | Evidencia de consentimiento | versión, aceptación, revocación | relación vigente + 5 años, sujeto a validación legal | eliminación segura |
+| Conversaciones con Emi | preguntas y respuestas; se procesan en n8n Cloud y Groq sin datos de sesión ni identificadores | 90 días (`CHAT_RETENTION_DAYS`) | eliminación automática |
+| Rechazos de Emi | contador por categoría, sin texto | mientras se use Emi | eliminar con el sistema |
 | Logs de acceso y seguridad | usuario, acción, fecha, resultado | 12 meses | eliminación automática |
 | Backups cifrados | copia de datos persistentes | máximo 90 días, rotación cerrada | vencimiento automático |
 | Investigación | datos pseudonimizados | según protocolo aprobado y consentimiento separado | fecha del protocolo |

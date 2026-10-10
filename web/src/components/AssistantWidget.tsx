@@ -21,18 +21,18 @@ function AssistantPanel() {
     setOpen(false);
     launcherRef.current?.focus();
   }
-  return <aside className="assistant-widget" aria-label="Asistente EMOtv">
+  return <aside className="assistant-widget" aria-label="Emi, asistente de EMOtv">
     <section id="assistant-panel" className="assistant-panel" hidden={!open} aria-labelledby="assistant-title"
       onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); minimize(); } }}>
       <header className="assistant-header">
-        <div className="assistant-identity"><NavIcon name="chat" /><div><h2 id="assistant-title">Asistente EMOtv</h2><p>Te acompaño en cada pantalla</p></div></div>
-        <button type="button" className="assistant-minimize" onClick={minimize} aria-label="Minimizar asistente">−</button>
+        <div className="assistant-identity"><NavIcon name="chat" /><div><h2 id="assistant-title">Emi</h2><p>Asistente educativo de EMOtv</p></div></div>
+        <button type="button" className="assistant-minimize" onClick={minimize} aria-label="Minimizar a Emi">−</button>
       </header>
       <ChatConversation open={open} draft={shared?.draft ?? null} />
     </section>
     <button ref={launcherRef} type="button" className="assistant-launcher" aria-expanded={open} aria-controls="assistant-panel"
-      onClick={() => open ? minimize() : setOpen(true)} aria-label={open ? "Minimizar asistente" : "Abrir asistente EMOtv"}>
-      <NavIcon name="chat" /><span>Asistente EMOtv</span>
+      onClick={() => open ? minimize() : setOpen(true)} aria-label={open ? "Minimizar a Emi" : "Abrir a Emi"}>
+      <NavIcon name="chat" /><span>Emi</span>
     </button>
   </aside>;
 }

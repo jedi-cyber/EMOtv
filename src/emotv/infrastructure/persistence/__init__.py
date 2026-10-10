@@ -15,6 +15,7 @@ from emotv.infrastructure.persistence.postgres_user_repository import PostgresUs
 from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
 from emotv.infrastructure.persistence.postgres_consent_policy_repository import PostgresConsentPolicyRepository
 from emotv.infrastructure.persistence.postgres_login_attempt_repository import PostgresLoginAttemptRepository
+from emotv.infrastructure.persistence.postgres_chat_repository import PostgresChatRepository
 from emotv.infrastructure.persistence.postgres_assignment_repository import PostgresAssignmentRepository
 from emotv.infrastructure.persistence.in_memory_assignment_repository import InMemoryAssignmentRepository
 from emotv.infrastructure.persistence.postgres_recommendation_repository import (
@@ -34,6 +35,7 @@ __all__ = [
     "PostgresExpressionInfoRepository",
     "PostgresAssignmentRepository",
     "PostgresLoginAttemptRepository",
+    "PostgresChatRepository",
     "PostgresActivityRepository",
     "PostgresConsentPolicyRepository",
     "InMemorySessionRepository",
