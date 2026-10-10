@@ -7,6 +7,7 @@ export function useApiQuery<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState("");
   const [connectionError, setConnectionError] = useState(false);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -17,11 +18,13 @@ export function useApiQuery<T>(path: string | null) {
     setLoading(true);
     setError("");
     setConnectionError(false);
+    setErrorStatus(null);
     try {
       setData(await apiRequest<T>(path, { token }));
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) return;
       setConnectionError(isConnectionError(reason));
+      setErrorStatus(reason instanceof ApiError ? reason.status : null);
       setError(isConnectionError(reason)
         ? "No pudimos cargar esta información porque el servicio no responde."
         : reason instanceof Error ? reason.message : "Error inesperado");
@@ -31,5 +34,5 @@ export function useApiQuery<T>(path: string | null) {
   }, [path, token]);
 
   useEffect(() => { void reload(); }, [reload]);
-  return { data, error, connectionError, loading, reload };
+  return { data, error, connectionError, errorStatus, loading, reload };
 }

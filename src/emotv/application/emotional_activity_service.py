@@ -60,7 +60,7 @@ class EmotionalActivityService:
         self._elapsed_total = 0.0
         self._status = EmotionalActivityStatus(
             state=EmotionalActivityState.ANALYZING_EMOTION,
-            message="Analizando expresión emocional",
+            message="Analizando la expresión facial",
         )
 
     @property
@@ -87,7 +87,7 @@ class EmotionalActivityService:
         if stabilized is None:
             self._status = EmotionalActivityStatus(
                 state=EmotionalActivityState.ANALYZING_EMOTION,
-                message="Reuniendo predicciones emocionales",
+                message="Reuniendo lecturas de la expresión",
             )
             return self._status
 
@@ -95,7 +95,7 @@ class EmotionalActivityService:
         if activity is None:
             self._status = EmotionalActivityStatus(
                 state=EmotionalActivityState.ANALYZING_EMOTION,
-                message="La emoción estable no tiene una actividad configurada",
+                message="La expresión registrada no tiene una actividad configurada",
                 emotion=stabilized,
             )
             return self._status
@@ -193,7 +193,7 @@ class EmotionalActivityService:
         self._elapsed_total = 0.0
         self._status = EmotionalActivityStatus(
             state=EmotionalActivityState.ANALYZING_EMOTION,
-            message="Analizando expresión emocional",
+            message="Analizando la expresión facial",
         )
         return self._status
 

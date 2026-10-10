@@ -71,7 +71,7 @@ describe("cámara y ciclo de actividad", () => {
   });
   it("muestra advertencias para HardlyHumans", async () => {
     page(false, "admin"); await userEvent.selectOptions(screen.getByRole("combobox"), "hardlyhumans_vit");
-    expect(screen.getByText(/WARNING: Latencia elevada/)).toBeInTheDocument();
+    expect(screen.getByText(/Modelo con advertencias: Latencia elevada/)).toBeInTheDocument();
   });
   it.each(["ferplus_onnx", "hardlyhumans_vit"])("administración envía el modelo %s al WebSocket", async (modelId) => {
     camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
@@ -89,7 +89,7 @@ describe("cámara y ciclo de actividad", () => {
   it("no crea una sesión si el navegador no admite cámara", async () => {
     vi.stubGlobal("navigator", Object.create(navigator, { mediaDevices: { value: undefined } }));
     page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("HTTPS o localhost"); expect(apiRequest).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("conexión segura"); expect(apiRequest).not.toHaveBeenCalled();
   });
   it("no solicita cámara si falta consentimiento", async () => {
     const getMedia = camera(); vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(403, "El estudiante no tiene consentimiento activo"));

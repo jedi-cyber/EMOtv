@@ -32,7 +32,7 @@ export function LiveExpressionPanel({ live }: { live: LiveReading | null }) {
           <p className="live-expression-name">{live.emotion ? expressionName(live.emotion) : "Analizando…"}</p>
           <div className="progress-label"><span>Confianza</span><strong>{percent(live.emotion_confidence)} %</strong></div>
           <Bar label="Confianza de la expresión estimada" value={percent(live.emotion_confidence)} />
-          {live.top.length > 0 && <ul className="live-top" aria-label="Clases más probables">
+          {live.top.length > 0 && <ul className="live-top" aria-label="Expresiones más probables">
             {live.top.map((item) => <li key={item.emotion}>
               <span>{expressionName(item.emotion)} · {percent(item.probability)} %</span>
               <Bar small label={`Probabilidad de ${expressionName(item.emotion)}`} value={percent(item.probability)} />

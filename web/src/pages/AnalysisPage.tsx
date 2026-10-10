@@ -13,7 +13,9 @@ import { drawPoseOverlay } from "../analysis/drawPoseOverlay";
 import type { PoseLandmarks } from "../analysis/drawPoseOverlay";
 import { speakExercise, speakStep, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { PageHeader } from "../components/PageHeader";
-import { AdaptiveAnalysisPage } from "./AdaptiveAnalysisPage";
+import { AdaptiveAnalysisPage, AnalysisGuide } from "./AdaptiveAnalysisPage";
+import { postureName } from "../components/PostureIcon";
+import { cameraErrorMessage, cameraProblemMessages, cameraUnavailableReason, stopStream } from "../analysis/camera";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { Button, ButtonLink } from "../components/Button";
 import { CameraFrame } from "../components/CameraFrame";
@@ -38,14 +40,12 @@ interface AnalysisMessage {
   step?: ActivityStep; step_index?: number; step_count?: number;
 }
 
-const postureNames: Record<string, string> = {
-  arms_up: "Brazos arriba", arms_open: "Brazos abiertos",
-  arms_forward: "Brazos al frente", hands_on_hips: "Manos en las caderas",
-  squat: "Sentadilla",
-};
 const stateNames: Record<string, string> = {
-  analyzing_emotion: "Analizando emoción", waiting_for_posture: "Postura incorrecta",
-  performing_exercise: "Manteniendo postura", completed: "Actividad completada",
+  analyzing_emotion: "Analizando la expresión", waiting_for_posture: "Esperando la postura",
+  performing_exercise: "Manteniendo la postura", completed: "Actividad completada",
+};
+const admissionNames: Record<ModelAdmission["state"], string> = {
+  SUPPORTED: "Modelo disponible", WARNING: "Modelo con advertencias", BLOCKED: "Modelo no disponible",
 };
 const analysisSteps = ["Reconocer expresión", "Preparar postura", "Realizar actividad"];
 
@@ -106,7 +106,7 @@ function ManualActivityAnalysisPage() {
       socketRef.current.close(); socketRef.current = null;
     }
     awaitingFrame.current = false;
-    streamRef.current?.getTracks().forEach((track) => track.stop()); streamRef.current = null;
+    stopStream(streamRef.current); streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
   }
 
@@ -121,6 +121,13 @@ function ManualActivityAnalysisPage() {
     releaseMedia();
     };
   }, [token, activityId]);
+
+  // Al cerrar o recargar la pestaña la cámara se apaga aunque React no llegue a desmontar.
+  useEffect(() => {
+    const release = () => releaseMedia();
+    window.addEventListener("pagehide", release);
+    return () => window.removeEventListener("pagehide", release);
+  }, []);
 
   function expireAnalysis() {
     failAnalysis(SESSION_EXPIRED_ANALYSIS_MESSAGE);
@@ -160,10 +167,8 @@ function ManualActivityAnalysisPage() {
   async function start() {
     if (!query.data || !token) return;
     if (modelBlocked) { setError("El modelo seleccionado no está autorizado para iniciar. Actualiza la evaluación."); return; }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError("La cámara no está disponible. Usa un navegador compatible y HTTPS o localhost.");
-      return;
-    }
+    const unavailable = cameraUnavailableReason();
+    if (unavailable) { setError(cameraProblemMessages[unavailable]); return; }
     const lifecycle = lifecycleRef.current;
     setStarting(true); setError(""); completedRef.current = false;
     setStatus({ type: "ready", state: "analyzing_emotion", message: "Preparado", progress: 0 });
@@ -177,7 +182,7 @@ function ManualActivityAnalysisPage() {
       }
       sessionRef.current = created; setSession(created);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } }, audio: false });
-      if (lifecycle !== lifecycleRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      if (lifecycle !== lifecycleRef.current) { stopStream(stream); return; }
       streamRef.current = stream;
       if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       if (lifecycle !== lifecycleRef.current) return;
@@ -210,7 +215,7 @@ function ManualActivityAnalysisPage() {
         }
         if (message.type === "completed") { completedRef.current = true; releaseMedia(); }
       };
-      socket.onerror = () => failAnalysis("No se pudo conectar con el analizador.");
+      socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Comprueba tu conexión y vuelve a intentarlo.");
       socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
         ? expireAnalysis()
         : failAnalysis("Se perdió la conexión con el analizador. La cámara se ha apagado.");
@@ -221,11 +226,9 @@ function ManualActivityAnalysisPage() {
       }
       releaseMedia();
       if (created) { await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined); sessionRef.current = null; setSession(null); }
-      if (reason instanceof DOMException && reason.name === "NotAllowedError") setError("Debes permitir el acceso a la cámara para continuar.");
-      else if (reason instanceof DOMException && reason.name === "NotFoundError") setError("No se encontró una cámara conectada a tu dispositivo.");
-      else if (reason instanceof ApiError && reason.status === 403 && /consentimiento/i.test(reason.message))
-        setError("No se puede iniciar el análisis sin consentimiento activo. Registra el consentimiento correspondiente antes de usar la cámara.");
-      else setError(reason instanceof ApiError ? reason.message : "No fue posible iniciar la cámara.");
+      if (reason instanceof ApiError && reason.status === 403 && /consentimiento/i.test(reason.message))
+        setError("No se puede iniciar el análisis sin consentimiento activo. Acepta la política vigente en Consentimiento antes de usar la cámara.");
+      else setError(reason instanceof ApiError ? reason.message : cameraErrorMessage(reason));
     } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
   }
 
@@ -261,7 +264,7 @@ function ManualActivityAnalysisPage() {
   const progress = Math.round(Math.max(0, Math.min(1, status.progress ?? 0)) * 100);
   const stepIndex = status.state === "completed" || status.state === "performing_exercise" ? 2 : status.state === "waiting_for_posture" ? 1 : 0;
   return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <ButtonLink variant="ghost" className="back-link" to="/activities">← Volver a actividades</ButtonLink>}<PageHeader title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Callout variant="error">{error}</Callout>}
-    {activity && !session && <div className="analysis-preflight card"><div><StatusChip tone="neutral">{postureNames[activity.required_posture] ?? activity.required_posture}</StatusChip><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Duración</dt><dd>{activity.duration_seconds} s</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl></div><div className="preflight-actions"><Checkbox checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)}>Mostrar puntos y líneas</Checkbox><Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</Button></div></div>}
+    {activity && !session && <div className="analysis-preflight card"><div><StatusChip tone="neutral">{postureName(activity.steps?.[0]?.posture ?? activity.required_posture)}</StatusChip><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Pasos</dt><dd>{activity.steps?.length || 1}</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl><AnalysisGuide activity /></div><div className="preflight-actions"><Checkbox checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)}>Mostrar puntos y líneas</Checkbox><Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</Button></div></div>}
     {canChooseModel && activity && !session && <fieldset className="card" disabled={starting}>
       <legend>Modelo de reconocimiento facial</legend>
       <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
@@ -272,7 +275,7 @@ function ManualActivityAnalysisPage() {
       <p id="emotion-model-help" className="muted">Elige el modelo que prefieras según su disponibilidad y rendimiento en el servidor. FER+ suele requerir menos recursos; HardlyHumans puede tardar más y usar más RAM. En esta versión el análisis ocurre en el servidor, no en tu dispositivo. No se ha demostrado que uno reconozca mejor las emociones en EMOtv. Puedes cambiarlo antes de iniciar la sesión.</p>
       <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
       {selectedAdmission && <Callout variant={selectedAdmission.state === "BLOCKED" ? "error" : selectedAdmission.state === "WARNING" ? "warning" : "info"}>
-        {selectedAdmission.state}: {selectedAdmission.reasons.join("; ") || "Recursos suficientes según evaluación del servidor"}
+        {admissionNames[selectedAdmission.state]}: {selectedAdmission.reasons.join("; ") || "recursos suficientes según la evaluación del servidor"}
       </Callout>}
       <Button variant="secondary" type="submit" onClick={modelsQuery.reload}>Actualizar evaluación</Button>
     </fieldset>}
@@ -281,15 +284,18 @@ function ManualActivityAnalysisPage() {
       <aside className="analysis-panel">
         <p className="step-caption">Etapa {stepIndex + 1} de {analysisSteps.length}</p>
         <ol className="analysis-steps" aria-label="Etapas del análisis">{analysisSteps.map((step, index) => <li key={step} className={index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"} aria-current={index === stepIndex ? "step" : undefined}>{step}</li>)}</ol>
-        <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>
+        {canChooseModel && <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>}
         {status.admission?.state === "WARNING" && <Callout variant="warning">{status.admission.reasons.join("; ")}</Callout>}
-        <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? status.state}</span>
+        <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? "En curso"}</span>
         <h2>{status.message}</h2><p>{status.step ? `Paso ${(status.step_index ?? 0) + 1} de ${status.step_count ?? 1}: ${status.step.instruction}` : activity?.description}</p>
         {activity && status.type !== "completed" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => status.step ? speakStep(status.step, status.step_index ?? 0, status.step_count ?? 1) : speakExercise(activity)}>Repetir instrucción</Button>}
         {status.emotion && <p>Expresión estimada: <strong>{expressionLabel(status.emotion)}</strong> ({Math.round((status.emotion_confidence ?? 0) * 100)} %)</p>}
         <div className="progress-label"><span>Progreso</span><strong>{progress} %</strong></div>
         <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div style={{ width: `${progress}%` }} /></div>
-        {status.type !== "completed" ? <Button variant="danger" type="submit" onClick={() => setConfirmCancel(true)}>Cancelar sesión</Button> : <ButtonLink variant="primary" to={`/sessions/${session.id}`}>Ver resultado</ButtonLink>}
+        {status.type !== "completed" ? <Button variant="danger" type="submit" onClick={() => setConfirmCancel(true)}>Cancelar sesión</Button> : <>
+          <p>Actividad terminada. La cámara ya se apagó.</p>
+          <ButtonLink variant="primary" to={`/sessions/${session.id}`}>Ver resultado</ButtonLink>
+        </>}
       </aside></div>}
     <ConfirmDialog open={confirmCancel} title="Cancelar actividad" message="Se cerrará la sesión y se apagará la cámara." confirming={cancelling} confirmLabel="Cancelar actividad" onCancel={() => setConfirmCancel(false)} onConfirm={cancel} />
   </section>;

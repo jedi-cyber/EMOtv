@@ -281,7 +281,7 @@ def create_analysis_router(
                     try:
                         command = json.loads(event["text"])
                     except (ValueError, TypeError):
-                        await websocket.send_json({"type": "error", "message": "Comando inválido"})
+                        await websocket.send_json({"type": "error", "message": "La aplicación envió una instrucción no válida. Recarga la página."})
                         continue
                     command_type = command.get("type") if isinstance(command, dict) else None
                     if command_type == "cancel":
@@ -387,11 +387,11 @@ def create_analysis_router(
                         await _error(websocket, "Consentimiento revocado", 4403)
                         break
                 if len(frame_bytes) > MAX_FRAME_BYTES:
-                    await websocket.send_json({"type": "error", "message": "Frame demasiado grande"})
+                    await websocket.send_json({"type": "error", "message": "La imagen de la cámara es demasiado grande. Recarga la página."})
                     continue
                 frame = cv2.imdecode(np.frombuffer(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
                 if frame is None:
-                    await websocket.send_json({"type": "error", "message": "Frame inválido"})
+                    await websocket.send_json({"type": "error", "message": "No se pudo leer la imagen de la cámara. Vuelve a intentarlo."})
                     continue
 
                 if adaptive and processor is None:

@@ -34,10 +34,11 @@ export function FirstAccessPage() {
     {error && <Callout variant="error">{error}</Callout>}
     <form onSubmit={(event) => { void submit(event); }}>
       <label>Contraseña provisional<input type="password" autoComplete="current-password" value={current} onChange={(event) => setCurrent(event.target.value)} required /></label>
-      <label>Contraseña nueva<input type="password" autoComplete="new-password" value={next} onChange={(event) => setNext(event.target.value)} minLength={12} required /></label>
+      <label>Contraseña nueva<input type="password" autoComplete="new-password" value={next} onChange={(event) => setNext(event.target.value)} minLength={12} required aria-describedby="new-password-help" /></label>
+      <p id="new-password-help" className="muted field-help">Al menos 12 caracteres. No reutilices la contraseña provisional.</p>
       <label>Repite la contraseña nueva<input type="password" autoComplete="new-password" value={repeat} onChange={(event) => setRepeat(event.target.value)} required /></label>
       <Button variant="primary" type="submit" disabled={busy}>{busy ? "Guardando…" : "Cambiar contraseña"}</Button>
     </form>
-    <Button variant="secondary" type="submit" onClick={() => logout()}>Cerrar sesión</Button>
+    <Button variant="ghost" onClick={() => logout()}>Cerrar sesión</Button>
   </section></main>;
 }

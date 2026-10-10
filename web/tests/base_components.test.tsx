@@ -9,9 +9,10 @@ import { Button } from "../src/components/Button";
 import { CameraFrame } from "../src/components/CameraFrame";
 import { Checkbox } from "../src/components/Checkbox";
 import { Modal } from "../src/components/Modal";
+import { PageState } from "../src/components/PageState";
 import { StatusChip, toneForSession } from "../src/components/StatusChip";
 import { AppLayout } from "../src/layouts/AppLayout";
-import { sessionStateName } from "../src/sessions/labels";
+import { activityOutcomeName, emotionModelName, sessionStateName } from "../src/sessions/labels";
 
 describe("componentes base de DESIGN.md", () => {
   it("Button deshabilitado no ejecuta la acción", async () => {
@@ -114,5 +115,25 @@ describe("menú lateral en móvil", () => {
     await userEvent.click(screen.getByRole("button", { name: "Abrir menú" }));
     await userEvent.click(screen.getByRole("button", { name: "Cerrar panel de navegación" }));
     expect(screen.getByRole("button", { name: "Abrir menú" })).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+describe("estados de página y etiquetas", () => {
+  it.each([
+    [403, "No tienes permiso para ver esta información"],
+    [404, "No encontramos lo que buscas"],
+  ])("el error %i ofrece volver al inicio en lugar de reintentar", (status, text) => {
+    render(<MemoryRouter><PageState loading={false} error="Detalle técnico" errorStatus={status} onRetry={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByRole("alert")).toHaveTextContent(text);
+    expect(screen.getByRole("link", { name: "Volver al inicio" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.queryByRole("button", { name: "Reintentar" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Detalle técnico")).not.toBeInTheDocument();
+  });
+
+  it("nunca muestra claves técnicas desconocidas", () => {
+    expect(sessionStateName("IN_PROGRESS")).toBe("Estado desconocido");
+    expect(activityOutcomeName("timeout")).toBe("Sin resultado");
+    expect(emotionModelName("ferplus_onnx")).toBe("FER+");
+    expect(emotionModelName("otro_modelo")).toBe("Otro modelo");
   });
 });
