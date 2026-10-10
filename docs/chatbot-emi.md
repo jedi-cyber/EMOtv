@@ -86,7 +86,8 @@ mensajes.
   el texto de las preguntas.
 - Retención: se borran los mensajes de más de `CHAT_RETENTION_DAYS` días (90)
   al arrancar la API y en cada pregunta. En las pruebas con voluntarios, los
-  datos de su cuenta se eliminan como máximo a los 30 días.
+  datos de su cuenta se eliminan como máximo a los 30 días
+  ([testing/volunteer-protocol.md](testing/volunteer-protocol.md)).
 
 ## API
 

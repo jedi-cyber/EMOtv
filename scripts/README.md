@@ -97,6 +97,24 @@ humana. No califica las respuestas. Pide el correo y la contraseña por consola
 o los lee de `EMOTV_EVAL_EMAIL` y `EMOTV_EVAL_PASSWORD`; no los escribe en el
 informe. Consume cuota de Groq y espera cuando EMOtv responde 429.
 
+## Cuentas de voluntarios (PRUEBA-NN)
+
+```powershell
+python scripts/testdata/create_test_accounts.py --count 3
+python scripts/testdata/delete_test_data.py --code PRUEBA-07 --save
+python scripts/testdata/delete_test_data.py --expired
+python scripts/testdata/delete_test_data.py --all-test-accounts
+```
+
+El primero crea cuentas de estudiante con código consecutivo, correo ficticio
+`prueba-NN@emotv.local`, contraseña aleatoria mostrada una vez e
+`is_test_account=True`. El segundo elimina cuentas de prueba y todos sus
+registros en una transacción, verifica que no quede nada e imprime el texto del
+acta (`--save` lo guarda en `reports/deletions/`, ignorado por git). Nunca toca
+cuentas sin `is_test_account`. Solo admiten PostgreSQL local o los hosts de
+`ALLOWED_ADMIN_RESET_HOSTS`. Procedimiento completo:
+[docs/testing/volunteer-protocol.md](../docs/testing/volunteer-protocol.md).
+
 ## Otros
 
 - `scripts/run_camera_test.py`: verifica la captura básica.

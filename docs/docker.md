@@ -156,8 +156,10 @@ docker compose --env-file .env.docker exec api python scripts/create_demo_role_a
 
 1. Abre http://localhost:8080 en Chrome, Edge o Firefox.
 2. Inicia sesión con el administrador y cambia la contraseña.
-3. Crea las cuentas desde **Usuarios**. Los voluntarios usan cuentas
-   identificadas por código (`PRUEBA-NN`), nunca por su nombre.
+3. Crea las cuentas de personal desde **Usuarios**. Las de voluntarios se
+   crean con `scripts/testdata/create_test_accounts.py` y se identifican por
+   código (`PRUEBA-NN`), nunca por su nombre: sigue
+   [testing/volunteer-protocol.md](testing/volunteer-protocol.md).
 4. Al entrar en **Análisis** con una cuenta de estudiante, el navegador pedirá
    permiso para la cámara: elige **Permitir**.
 
@@ -223,7 +225,9 @@ python scripts/docker/restore_db.py backups/emotv-20261005-164449.dump
 La restauración **reemplaza toda la base actual**: pide escribir `RESTAURAR`,
 detiene la API mientras restaura y la vuelve a iniciar. La carpeta `backups/`
 no se sube al repositorio. Guarda los respaldos en un lugar seguro: contienen
-datos personales.
+datos personales. Un respaldo hecho antes de eliminar los datos de un
+voluntario todavía los contiene: elimina o regenera los respaldos con más de
+30 días.
 
 ## 11. Borrar todo, incluidos los datos
 
@@ -232,9 +236,11 @@ docker compose --env-file .env.docker down -v
 ```
 
 `-v` elimina los volúmenes: **se pierden usuarios, sesiones y pesos**. Úsalo
-para empezar de cero o para eliminar los datos de voluntarios (como máximo 30
-días después de cada prueba). La base nueva se crea con
-`alembic upgrade head` al siguiente `up`.
+para empezar de cero. Para eliminar solo los datos de voluntarios (como máximo
+30 días después de crear su cuenta), usa
+`scripts/testdata/delete_test_data.py`, que deja un acta con la verificación
+([testing/volunteer-protocol.md](testing/volunteer-protocol.md)). La base nueva
+se crea con `alembic upgrade head` al siguiente `up`.
 
 ## Modo solo base de datos (desarrollo local)
 

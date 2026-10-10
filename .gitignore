@@ -94,3 +94,5 @@ docker/certs/*.cer
 .claude/settings.local.json
 # Informes de la evaluación de Emi: contienen respuestas para revisión humana.
 reports/chatbot/
+# Actas de eliminación de datos de voluntarios (delete_test_data.py --save).
+reports/deletions/

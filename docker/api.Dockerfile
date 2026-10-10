@@ -64,7 +64,8 @@ COPY docs/consent-demo.md ./docs/consent-demo.md
 COPY docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
 
 # El volumen emotv_models hereda este dueño la primera vez que se crea.
-RUN mkdir -p models/weights && chown -R emotv:emotv models \
+# reports/deletions recibe las actas de scripts/testdata/delete_test_data.py --save.
+RUN mkdir -p models/weights reports/deletions && chown -R emotv:emotv models reports \
     && chmod 0755 /usr/local/bin/api-entrypoint.sh
 
 USER emotv

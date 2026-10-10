@@ -137,6 +137,24 @@ def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
     return LoginLimits(*values)
 
 
+def get_test_data_retention_days(environ: Mapping[str, str] | None = None) -> int:
+    """Días que se conservan las cuentas de voluntarios (PRUEBA-NN).
+
+    El consentimiento en papel promete eliminarlas como máximo a los 30 días,
+    así que no se acepta un plazo mayor.
+    """
+
+    source = os.environ if environ is None else environ
+    raw = source.get("TEST_DATA_RETENTION_DAYS", "").strip()
+    try:
+        days = int(raw) if raw else 30
+    except ValueError as error:
+        raise ValueError("TEST_DATA_RETENTION_DAYS debe ser un número entero") from error
+    if not 1 <= days <= 30:
+        raise ValueError("TEST_DATA_RETENTION_DAYS debe estar entre 1 y 30 (plazo del consentimiento)")
+    return days
+
+
 def get_database_url(environ: Mapping[str, str] | None = None) -> str:
     """Obtiene DATABASE_URL y falla de forma explícita si no está configurada."""
 

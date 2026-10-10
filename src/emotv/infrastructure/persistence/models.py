@@ -124,6 +124,8 @@ class UserRecord(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Cuenta de voluntario (PRUEBA-NN): la única que borra scripts/testdata/delete_test_data.py.
+    is_test_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class PsychologistAssignmentRecord(Base):
