@@ -10,6 +10,40 @@ EMOtv tiene dos piezas que se despliegan por separado:
 **El servidor nunca abre una cámara física.** Recibe frames, los procesa en
 memoria y los descarta; no guarda fotografías ni video.
 
+Las versiones visuales de estos diagramas están en
+[thesis-evidence/diagrams/](thesis-evidence/diagrams/). Si difieren, la fuente
+de verdad son el código y las migraciones.
+
+## Diagrama del sistema
+
+```mermaid
+flowchart LR
+  subgraph Cliente["Equipo del estudiante"]
+    CAM["Cámara<br/>getUserMedia"] --> SPA["SPA React + Vite<br/>web/"]
+  end
+  subgraph Docker["Docker Compose"]
+    WEB["web: nginx<br/>estáticos + proxy"]
+    API["api: FastAPI<br/>emotv.interfaces.web.app"]
+    MOD["models: descarga pesos<br/>y mide el benchmark"]
+    DB[("db: PostgreSQL 16<br/>migraciones Alembic")]
+    VOL[["volumen emotv_models<br/>YuNet · FER+ · MediaPipe"]]
+  end
+  subgraph Externo["Servicios externos"]
+    N8N["n8n Cloud<br/>workflow «Version 1.0 EMI»"]
+    GROQ["Groq (LLM)"]
+  end
+  SPA -->|"REST /auth /sessions /students ..."| WEB
+  SPA -->|"WebSocket /ws/activity<br/>frames JPEG, sin guardar"| WEB
+  WEB --> API
+  API --> DB
+  MOD --> VOL
+  VOL -->|solo lectura| API
+  API -->|"POST + X-EMOtv-Key<br/>pregunta, historial, conocimiento"| N8N
+  N8N --> GROQ
+```
+
+Dentro de la API, cada frame recorre esta cadena:
+
 ```text
 Navegador (getUserMedia)
     -> JPEG por WebSocket /ws/activity (token, sesión, actividad)
@@ -22,11 +56,31 @@ Navegador (getUserMedia)
     -> SessionService -> PostgreSQL (resultado, sin imágenes)
 ```
 
-En la fase en vivo el estudiante practica producir y reconocer expresiones: ve
-la estimación del modelo mientras cambia de gesto y decide cuál registrar. El
-servidor registra su propio último resultado estable, nunca una etiqueta del
-cliente, y solo si hubo rostro, estabilidad y confianza suficientes
-(`LIVE_STABLE_SECONDS`, `LIVE_MIN_CONFIDENCE`).
+## Flujo del estudiante
+
+```mermaid
+flowchart TD
+  L["Inicio de sesión"] --> P{"¿Contraseña<br/>provisional?"}
+  P -- sí --> FA["Primer acceso:<br/>cambia la contraseña"] --> C
+  P -- no --> H["Inicio"]
+  H --> C{"¿Consentimiento<br/>vigente?"}
+  C -- no --> CP["Consentimiento:<br/>lee y acepta la política"] --> AN
+  C -- sí --> AN["Analizador: guía previa<br/>y requisitos (cámara,<br/>consentimiento, servicio)"]
+  AN --> LV["Lectura en vivo<br/>de la expresión"]
+  LV --> RG["Registra la expresión<br/>(estable y con confianza suficiente)"]
+  RG --> RS["Resultado educativo:<br/>expresión en español, confianza,<br/>información y limitación"]
+  RS --> D{"¿Hace la actividad?"}
+  D -- "no" --> FIN["Finaliza sin actividad<br/>(la expresión queda guardada)"]
+  D -- "sí" --> AC["Actividad de 2+ posturas:<br/>cada paso se verifica con MediaPipe"]
+  AC --> OK["Actividad completada<br/>o cancelada"]
+  FIN --> HS["Mis sesiones / detalle"]
+  OK --> HS
+  RS -. "opcional" .-> EMI["Emi: preguntas educativas<br/>(sin resultados personales)"]
+```
+
+En cualquier momento el estudiante puede revocar el consentimiento: los
+análisis nuevos quedan bloqueados y las sesiones registradas se conservan.
+Salir de la página, cancelar o terminar apaga la cámara.
 
 La expresión se estima solo a partir del rostro. El cuerpo se usa
 exclusivamente para verificar posturas; nunca se infieren emociones desde los
@@ -131,6 +185,10 @@ Solo los usan scripts que abren la webcam del equipo del desarrollador para
 probar modelos a mano (`scripts/run_*_test.py`, `scripts/poses/run_*`,
 `scripts/emotion/run_face_detection_test.py`). Quedan fuera del producto: la API
 no los importa y la imagen Docker no los ejecuta. No usarlos con voluntarios.
+
+## Modelo de datos
+
+Tablas, relaciones y reglas de borrado en [data-model.md](data-model.md).
 
 ## Decisiones relevantes
 

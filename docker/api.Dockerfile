@@ -16,14 +16,12 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
-# Solo pyproject y un paquete mínimo: la capa se reutiliza mientras no cambien
-# las dependencias, aunque cambie el código.
-COPY pyproject.toml ./
-RUN mkdir -p src/emotv && touch src/emotv/__init__.py \
-    && pip install . \
-    # emotv se ejecuta desde /app/src: config.py calcula BASE_DIR desde su
-    # propia ubicación y necesita ver models/, docs/ y migrations/ en /app.
-    && pip uninstall -y emotv
+# Versiones exactas de requirements.lock (pip freeze de esta misma imagen):
+# el build es reproducible. emotv no se instala como paquete: se ejecuta desde
+# /app/src porque config.py calcula BASE_DIR desde su propia ubicación y
+# necesita ver models/, docs/ y migrations/ en /app.
+COPY requirements.lock ./
+RUN pip install --no-deps -r requirements.lock && pip check
 
 
 # --- Etapa 2: runtime ---

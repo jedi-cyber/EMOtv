@@ -272,6 +272,22 @@ Pon la clave real en `.env.docker` (`N8N_WEBHOOK_KEY=...`) y recrea la API:
 `docker compose --env-file .env.docker up -d api`. La prueba manual está en
 [chatbot-emi.md](chatbot-emi.md#prueba-manual-con-docker-compose).
 
+## Dependencias fijadas
+
+La imagen de la API instala exactamente las versiones de `requirements.lock`
+(`pip install --no-deps -r requirements.lock` y `pip check`). Cuando cambies
+las dependencias de `pyproject.toml`, resuelve las versiones en la misma base
+de la imagen (Python 3.12, Linux) y reemplaza la lista del archivo:
+
+```bash
+docker run --rm -v "$PWD/pyproject.toml:/b/pyproject.toml:ro" -w /b python:3.12-slim sh -c \
+  "mkdir -p src/emotv && touch src/emotv/__init__.py && pip install -q . && pip freeze --exclude-editable | grep -v '^emotv=='"
+```
+
+Conserva las tres líneas de comentario del inicio de `requirements.lock` y
+vuelve a construir la imagen. El frontend usa `web/package-lock.json` con
+`npm ci`.
+
 ## Consumo medido
 
 Medido con `docker stats` en un equipo Windows 11 x86_64 con 5,6 GiB asignados
