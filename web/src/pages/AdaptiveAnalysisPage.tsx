@@ -10,7 +10,7 @@ import { drawPoseOverlay } from "../analysis/drawPoseOverlay";
 import type { PoseLandmarks } from "../analysis/drawPoseOverlay";
 import { speakExercise, speakStep, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { remainingSeconds, stepPosition } from "../analysis/activityProgress";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
@@ -19,6 +19,9 @@ import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { ExpressionResult } from "../expressions/ExpressionResult";
 import { LiveExpressionPanel, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
+import { Button, ButtonLink } from "../components/Button";
+import { CameraFrame } from "../components/CameraFrame";
+import { Checkbox } from "../components/Checkbox";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
@@ -437,26 +440,26 @@ export function AdaptiveAnalysisPage() {
 
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
-    <PageHeader section="Analizador facial" title="Reconoce tu expresión y recibe una actividad" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
-    {error && <Alert variant="error">{error}</Alert>}
-    {notice && <Alert variant="info">{notice}</Alert>}
+    <PageHeader title="Reconoce tu expresión y recibe una actividad" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
+    {error && <Callout variant="error">{error}</Callout>}
+    {notice && <Callout variant="info">{notice}</Callout>}
     <div className="analysis-preflight card">
       <div>
-        <div className="video-stage adaptive-video-stage">
+        <CameraFrame className="video-stage adaptive-video-stage" stable={phase === "live" && Boolean(live?.can_confirm)}>
           <video ref={videoRef} aria-label="Vista previa de tu cámara" playsInline muted />
           <canvas ref={overlayRef} aria-hidden="true" width="640" height="480" />
           <canvas ref={captureRef} hidden />
           {!previewing && <p className="video-placeholder">La cámara está apagada. Puedes probarla antes de iniciar.</p>}
-        </div>
+        </CameraFrame>
         {phase === "ready" && <div className="camera-actions"><div className="inline-actions">
-          <button className="button secondary" onClick={() => { void previewCamera(); }}>Probar cámara</button>
-          {previewing && <button className="button secondary" onClick={() => { releaseMedia(); setPreviewing(false); }}>Apagar cámara</button>}
+          <Button variant="secondary" type="submit" onClick={() => { void previewCamera(); }}>Probar cámara</Button>
+          {previewing && <Button variant="secondary" type="submit" onClick={() => { releaseMedia(); setPreviewing(false); }}>Apagar cámara</Button>}
         </div><p className="muted">Esta prueba es local: no crea una sesión ni envía imágenes al servidor.</p></div>}
       </div>
       <div className="adaptive-analysis-panel">
         {phase === "ready" && <>
           <h2>Antes de comenzar</h2>
-          <p>Necesitas permiso de cámara, <Link to={paths.consent}>consentimiento activo</Link> y un modelo disponible en el servidor.</p>
+          <p>Necesitas permiso de cámara, <Link className="inline-link" to={paths.consent}>consentimiento activo</Link> y un modelo disponible en el servidor.</p>
           {canChooseModel && <>
             <label htmlFor="adaptive-model">Modelo facial</label>
             <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
@@ -464,11 +467,11 @@ export function AdaptiveAnalysisPage() {
               <option value="hardlyhumans_vit">HardlyHumans · ViT/PyTorch</option>
             </select>
             <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
-            {admission && <Alert variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Alert>}
+            {admission && <Callout variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Callout>}
           </>}
-          <label className="checkbox"><input type="checkbox" checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }} />Mostrar puntos y líneas durante la actividad</label>
-          <label className="checkbox"><input type="checkbox" checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)} />Leer instrucciones en voz alta</label>
-          <button className="button primary" disabled={starting || modelBlocked} onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</button>
+          <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
+          <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
+          <Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
           <p className="muted">El análisis ocurre en el servidor. {canChooseModel ? "Si el modelo está bloqueado, consulta el motivo mostrado arriba." : "Si el servidor no puede analizar, te mostraremos el motivo."}</p>
         </>}
         {phase !== "ready" && <>
@@ -476,7 +479,7 @@ export function AdaptiveAnalysisPage() {
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
           {phase === "live" && <LiveExpressionPanel live={live} />}
           {phase === "live" && <>
-            <button className="button primary" disabled={!live?.can_confirm || confirming} aria-describedby="confirm-help" onClick={confirmExpression}>{confirming ? "Registrando…" : "Registrar esta expresión"}</button>
+            <Button variant="primary" type="submit" disabled={!live?.can_confirm || confirming} aria-describedby="confirm-help" onClick={confirmExpression}>{confirming ? "Registrando…" : "Registrar esta expresión"}</Button>
             <p id="confirm-help" className="muted">{confirmNotice || (live?.can_confirm ? "Puedes registrar la expresión que ves ahora. Se guarda solo la que registres." : live?.blocked_reason ?? "Esperando la primera lectura del modelo.")}</p>
           </>}
           {phase !== "live" && phase !== "result" && emotion && <p>Expresión registrada: <strong>{expressionLabel(emotion)}</strong>{confidence != null && ` (${percent(confidence)} %)`}</p>}
@@ -499,27 +502,27 @@ export function AdaptiveAnalysisPage() {
                   </li>}
                 </ol>
               </div>
-              <button className="button primary" disabled={selectingActivity} onClick={() => chooseActivity(recommendation.id)}>{selectingActivity ? "Preparando actividad…" : "Realizar actividad"}</button>
+              <Button variant="primary" type="submit" disabled={selectingActivity} onClick={() => chooseActivity(recommendation.id)}>{selectingActivity ? "Preparando actividad…" : "Realizar actividad"}</Button>
             </div> : <p>No hay una recomendación automática para esta expresión. Puedes elegir una actividad disponible.</p>}
             {recommendation && availableActivities.some((item) => item.id !== recommendation.id) && !showAlternatives &&
-              <button className="button secondary" disabled={selectingActivity} onClick={showOtherActivities}>Ver otras actividades</button>}
+              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={showOtherActivities}>Ver otras actividades</Button>}
             {(!recommendation || showAlternatives) && availableActivities.length > 0 ? <>
               <label htmlFor="suggested-activity">Actividad que deseas realizar</label>
               <select id="suggested-activity" value={selectedActivityId} onChange={(event) => setSelectedActivityId(event.target.value)}>
                 {availableActivities.filter((item) => !recommendation || item.id !== recommendation.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
-              <button className="button primary" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</button>
+              <Button variant="primary" type="submit" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</Button>
             </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
             <div className="inline-actions">
-              <button className="button secondary" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</button>
-              <button className="button secondary" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</button>
+              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</Button>
+              <Button variant="secondary" type="submit" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</Button>
             </div>
             <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>
           </>}
           {phase === "completed" && !activity && outcome === "skipped" && <p>Sesión finalizada sin actividad. Tu expresión quedó registrada.</p>}
           {(phase === "exercise" || phase === "completed") && activity && <>
             <h2>{activity.name}</h2><p>{activity.description}</p>
-            {phase === "exercise" && speechAvailable() && <button className="button secondary" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</button>}
+            {phase === "exercise" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</Button>}
             {currentStep && <p><strong>Paso {position.step} de {position.steps}:</strong> {currentStep.instruction}</p>}
             {phase === "exercise" && <p>Repetición {position.repetition} de {position.repetitions}</p>}
             <p>Postura esperada: {postureNames[currentStep?.posture ?? activity.required_posture] ?? currentStep?.posture ?? activity.required_posture} · Mantén {currentStep?.duration_seconds ?? activity.duration_seconds} s</p>
@@ -527,9 +530,9 @@ export function AdaptiveAnalysisPage() {
             <div className="progress-label"><span>Progreso</span><strong>{Math.round(progress * 100)} %</strong></div>
             <div className="progress-track" role="progressbar" aria-label="Progreso de la actividad" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
           </>}
-          {phase === "completed" && session ? <div className="inline-actions"><Link className="button secondary action-link" to={paths.session(session.id)}>Ver resultado</Link><button className="button primary" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</button></div>
+          {phase === "completed" && session ? <div className="inline-actions"><ButtonLink variant="secondary" to={paths.session(session.id)}>Ver resultado</ButtonLink><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</Button></div>
             : <>
-              <button className="button danger" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar análisis</button>
+              <Button variant="danger" type="submit" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar análisis</Button>
               {expressionRecorded && <p className="muted">Tu expresión ya quedó registrada; cancelar solo detiene la actividad.</p>}
             </>}
         </>}

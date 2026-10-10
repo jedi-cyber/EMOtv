@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { paths } from "../routes/paths";
+import { Button } from "../components/Button";
 
 export function FirstAccessPage() {
   const { user, changePassword, logout } = useAuth();
@@ -30,13 +31,13 @@ export function FirstAccessPage() {
   return <main className="centered"><section className="card onboarding-card">
     <h1>Protege tu cuenta</h1>
     <p>Esta cuenta tiene una contraseña provisional. Cámbiala antes de continuar.</p>
-    {error && <Alert variant="error">{error}</Alert>}
+    {error && <Callout variant="error">{error}</Callout>}
     <form onSubmit={(event) => { void submit(event); }}>
       <label>Contraseña provisional<input type="password" autoComplete="current-password" value={current} onChange={(event) => setCurrent(event.target.value)} required /></label>
       <label>Contraseña nueva<input type="password" autoComplete="new-password" value={next} onChange={(event) => setNext(event.target.value)} minLength={12} required /></label>
       <label>Repite la contraseña nueva<input type="password" autoComplete="new-password" value={repeat} onChange={(event) => setRepeat(event.target.value)} required /></label>
-      <button className="button primary" disabled={busy}>{busy ? "Guardando…" : "Cambiar contraseña"}</button>
+      <Button variant="primary" type="submit" disabled={busy}>{busy ? "Guardando…" : "Cambiar contraseña"}</Button>
     </form>
-    <button className="button secondary" onClick={() => logout()}>Cerrar sesión</button>
+    <Button variant="secondary" type="submit" onClick={() => logout()}>Cerrar sesión</Button>
   </section></main>;
 }

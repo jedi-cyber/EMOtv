@@ -3,10 +3,12 @@ import { apiRequest } from "../api/http";
 import type { CurrentUser, UserRole } from "../auth/types";
 import { useAuth } from "../auth/useAuth";
 import { useApiQuery } from "../api/useApiQuery";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { PageState } from "../components/PageState";
 import { PageHeader } from "../components/PageHeader";
 import { AssignmentsPanel } from "../components/AssignmentsPanel";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Button } from "../components/Button";
 
 const roleNames = { student: "Estudiante", psychologist: "Psicología", admin: "Administración" };
 type CreatedUser = CurrentUser & { temporary_password: string | null };
@@ -22,6 +24,7 @@ export function UsersPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [assigning, setAssigning] = useState<CurrentUser | null>(null);
+  const [resetting, setResetting] = useState<CurrentUser | null>(null);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setCreated(null);
@@ -38,7 +41,6 @@ export function UsersPage() {
   }
 
   async function resetPassword(item: CurrentUser) {
-    if (!window.confirm(`¿Restablecer la contraseña de ${item.email}? Cerrará sus sesiones activas.`)) return;
     setBusy(true); setError(""); setCreated(null);
     try {
       const result = await apiRequest<CreatedUser>(`/users/${encodeURIComponent(item.id)}/reset-password`,
@@ -46,11 +48,11 @@ export function UsersPage() {
       setCreated(result);
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo restablecer la contraseña."); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setResetting(null); }
   }
 
-  return <section><PageHeader section="Administración" title="Usuarios" description="Crea cuentas y consulta sus roles." />
-    {error && <Alert variant="error">{error}</Alert>}
+  return <section><PageHeader title="Usuarios" description="Crea cuentas y consulta sus roles." />
+    {error && <Callout variant="error">{error}</Callout>}
     <form className="card onboarding-card" onSubmit={(event) => { void create(event); }}>
       <h2>Crear cuenta</h2>
       <p>Se generará una contraseña provisional única. La persona deberá cambiarla en su primer acceso.</p>
@@ -59,16 +61,20 @@ export function UsersPage() {
         <option value="student">Estudiante</option><option value="psychologist">Psicología</option><option value="admin">Administración</option>
       </select></label>
       {role === "student" && <label>Código de estudiante<input value={studentCode} onChange={(event) => setStudentCode(event.target.value)} required /></label>}
-      <button className="button primary" disabled={busy}>{busy ? "Creando…" : "Crear cuenta"}</button>
+      <Button variant="primary" type="submit" disabled={busy}>{busy ? "Creando…" : "Crear cuenta"}</Button>
     </form>
-    {created?.temporary_password && <Alert variant="info">
+    {created?.temporary_password && <Callout variant="info">
       Cuenta creada para {created.email}. Contraseña provisional (solo se muestra ahora):
       <code className="temporary-secret">{created.temporary_password}</code>
       Compártela por un canal seguro. El consentimiento lo decidirá el estudiante al ingresar.
-      <button className="button secondary" onClick={() => setCreated(null)}>Ocultar contraseña</button>
-    </Alert>}
+      <Button variant="secondary" type="submit" onClick={() => setCreated(null)}>Ocultar contraseña</Button>
+    </Callout>}
     <PageState {...query} empty={!query.loading && !query.error && users.length === 0} onRetry={query.reload} />
-    {users.length > 0 && <div className="table-wrap"><table><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td>{item.email}</td><td>{roleNames[item.role]}</td><td>{item.must_change_password ? "Debe cambiar contraseña" : item.is_active ? "Activo" : "Inactivo"}</td><td className="inline-actions"><button className="button secondary" disabled={busy} onClick={() => { void resetPassword(item); }}>Restablecer clave</button>{item.role === "psychologist" && <button className="button secondary" onClick={() => setAssigning(item)}>Estudiantes asignados</button>}</td></tr>)}</tbody></table></div>}
+    {users.length > 0 && <div className="table-wrap"><table><thead><tr><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td>{item.email}</td><td>{roleNames[item.role]}</td><td>{item.must_change_password ? "Debe cambiar contraseña" : item.is_active ? "Activo" : "Inactivo"}</td><td className="inline-actions"><Button variant="secondary" type="submit" disabled={busy} onClick={() => setResetting(item)}>Restablecer clave</Button>{item.role === "psychologist" && <Button variant="secondary" type="submit" onClick={() => setAssigning(item)}>Estudiantes asignados</Button>}</td></tr>)}</tbody></table></div>}
+    <ConfirmDialog open={resetting != null} title="Restablecer clave"
+      message={`¿Restablecer la contraseña de ${resetting?.email ?? ""}? Cerrará sus sesiones activas.`}
+      confirming={busy} confirmLabel="Restablecer clave" onCancel={() => setResetting(null)}
+      onConfirm={() => { if (resetting) void resetPassword(resetting); }} />
     {assigning && <AssignmentsPanel key={assigning.id} psychologist={assigning} onClose={() => setAssigning(null)} />}
   </section>;
 }

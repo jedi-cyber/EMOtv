@@ -1,6 +1,8 @@
 import { useAssistant } from "../components/AssistantContext";
 import { COMMON_LIMITATION, emiQuestionFor, useExpressionCatalog } from "./ExpressionCatalog";
 import type { ExpressionInfo } from "./ExpressionCatalog";
+import { Button } from "../components/Button";
+import { Callout } from "../components/Callout";
 
 const percent = (value: number) => Math.round(Math.max(0, Math.min(1, value)) * 100);
 
@@ -28,10 +30,10 @@ export function ExpressionResult({ expressionKey, confidence, info: provided }: 
       <section><h3>Para practicar</h3><p>{info.practice_tip}</p></section>
       <p className="muted">{info.limitation_note}</p>
     </> : <p className="muted">La información sobre esta expresión no está disponible en este momento.</p>}
-    <div className="alert alert-warning expression-limitation" role="note">{info?.common_limitation ?? COMMON_LIMITATION}</div>
+    <Callout variant="warning" role="note" className="expression-limitation">{info?.common_limitation ?? COMMON_LIMITATION}</Callout>
     {info?.review_status === "draft" && <p className="muted review-note">Contenido pendiente de revisión por profesionales de Psicología.</p>}
-    {assistant && <button type="button" className="button secondary" onClick={() => assistant.askAssistant(emiQuestionFor(expressionKey, label))}>
+    {assistant && <Button variant="secondary" type="button" onClick={() => assistant.askAssistant(emiQuestionFor(expressionKey, label))}>
       Preguntar a Emi sobre esta expresión
-    </button>}
+    </Button>}
   </article>;
 }

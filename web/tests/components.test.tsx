@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Alert } from "../src/components/Alert";
+import { Callout } from "../src/components/Callout";
 import { ConfirmDialog } from "../src/components/ConfirmDialog";
 import { Spinner } from "../src/components/Spinner";
 import { PageState } from "../src/components/PageState";
@@ -10,13 +10,13 @@ import { MemoryRouter } from "react-router-dom";
 
 describe("componentes accesibles", () => {
   it("usa un encabezado de página común con título y acción opcional", () => {
-    render(<PageHeader section="Seguimiento" title="Sesiones" description="Consulta tus sesiones." actions={<button>Nueva sesión</button>} />);
+    render(<PageHeader title="Sesiones" description="Consulta tus sesiones." actions={<button>Nueva sesión</button>} />);
     expect(screen.getByRole("heading", { level: 1, name: "Sesiones" })).toBeInTheDocument();
-    expect(screen.getByText("Seguimiento")).toBeInTheDocument();
+    expect(screen.getByText("Consulta tus sesiones.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nueva sesión" })).toBeInTheDocument();
   });
   it("anuncia errores e indicadores de carga", () => {
-    render(<><Alert variant="error">Sin conexión</Alert><Spinner label="Cargando sesiones" /></>);
+    render(<><Callout variant="error">Sin conexión</Callout><Spinner label="Cargando sesiones" /></>);
     expect(screen.getByRole("alert")).toHaveTextContent("Sin conexión");
     expect(screen.getByRole("status")).toHaveTextContent("Cargando sesiones");
   });
@@ -39,9 +39,11 @@ describe("componentes accesibles", () => {
     const trigger = screen.getByRole("button", { name: "Abrir" }); trigger.focus();
     view.rerender(<><button>Abrir</button><ConfirmDialog {...props} open /></>);
     expect(screen.getByRole("alertdialog")).toHaveAccessibleName("Eliminar actividad");
-    expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
+    // DESIGN.md: al abrirse, el foco pasa al título.
+    expect(screen.getByRole("heading", { name: "Eliminar actividad" })).toHaveFocus();
     await user.tab({ shift: true });
     expect(screen.getByRole("button", { name: "Confirmar" })).toHaveFocus();
+    await user.tab(); expect(screen.getByRole("button", { name: "Cerrar" })).toHaveFocus();
     await user.tab(); expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
     await user.keyboard("{Escape}"); expect(cancel).toHaveBeenCalledOnce();
     view.rerender(<><button>Abrir</button><ConfirmDialog {...props} open={false} /></>);

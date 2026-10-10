@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { apiRequest, ApiError } from "../api/http";
 import { useAuth } from "../auth/useAuth";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import type { AssistantDraft } from "./AssistantContext";
+import { Button } from "./Button";
 
 interface Message { role: "user" | "assistant"; text: string }
 interface StoredConversation { conversation_id: string | null; messages?: { role: "user" | "assistant"; content: string }[] }
@@ -88,9 +89,9 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
   }
 
   return <div className="chat-panel">
-      <Alert variant="info">Emi ofrece orientación educativa sobre EMOtv; no reemplaza la atención psicológica ni los servicios de emergencia.</Alert>
+      <Callout variant="info">Emi ofrece orientación educativa sobre EMOtv; no reemplaza la atención psicológica ni los servicios de emergencia.</Callout>
       <div className="inline-actions">
-        <button type="button" className="button secondary" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</button>
+        <Button variant="secondary" type="button" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</Button>
       </div>
       <div ref={messagesRef} className="chat-messages" role="log" aria-label="Conversación con Emi" aria-live="polite">
         {messages.length === 0 && <div className="assistant-welcome"><strong>Hola, soy Emi</strong><p>Puedo orientarte sobre la plataforma, sus actividades y las expresiones faciales. ¿En qué te ayudo?</p></div>}
@@ -99,12 +100,12 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
         </div>)}
         {sending && <p role="status" className="muted">Emi está escribiendo… La respuesta puede tardar unos segundos.</p>}
       </div>
-      {error && <Alert variant="error">{error}</Alert>}
+      {error && <Callout variant="error">{error}</Callout>}
       <form className="chat-form" onSubmit={send}>
         <label htmlFor="chat-question">Tu pregunta</label>
         <textarea ref={inputRef} id="chat-question" value={question} maxLength={MAX_QUESTION_CHARS} rows={3} aria-busy={sending}
           onChange={(event) => setQuestion(event.target.value)} placeholder="¿Cómo funciona una actividad?" />
-        <button className="button primary" disabled={sending || !question.trim()}>{sending ? "Enviando…" : "Enviar"}</button>
+        <Button variant="primary" type="submit" disabled={sending || !question.trim()}>{sending ? "Enviando…" : "Enviar"}</Button>
       </form>
     </div>;
 }

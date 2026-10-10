@@ -6,15 +6,18 @@ export interface NavigationItem {
   to: string;
   label: string;
   icon: NavIconName;
+  /** "footer": abajo y separado del recorrido principal (Consentimiento). */
+  placement?: "main" | "footer";
 }
 
 export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
+  // Orden del recorrido (DESIGN.md): Inicio, Analizador, Actividades, Mis sesiones.
   student: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
-    { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
-    { to: paths.consent, label: "Consentimiento", icon: "users" },
+    { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
+    { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
   ],
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },

@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/http";
 import { useApiQuery } from "../api/useApiQuery";
 import type { Student } from "../api/types";
 import { useAuth } from "../auth/useAuth";
-import { Alert } from "../components/Alert";
+import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
+import { Button, ButtonAnchor, ButtonLink } from "../components/Button";
+import { Checkbox } from "../components/Checkbox";
 
 type Policy = { id?: string | null; code?: string | null; version: string | null;
   title?: string | null; content?: string | null; effective_at?: string | null; is_demo?: boolean;
@@ -57,10 +59,10 @@ export function ConsentPage() {
   }
 
   return <section>
-    <PageHeader section="Tu privacidad" title="Consentimiento para el análisis facial"
+    <PageHeader title="Consentimiento para el análisis facial"
       description="Tú decides si deseas usar el analizador. No aceptar no impide consultar las demás secciones." />
-    {error && <Alert variant="error">{error}</Alert>}
-    {notice && <Alert variant="info">{notice}</Alert>}
+    {error && <Callout variant="error">{error}</Callout>}
+    {notice && <Callout variant="info">{notice}</Callout>}
     <PageState {...students} onRetry={students.reload} />
     <PageState {...policy} onRetry={policy.reload} />
     {student && <PageState {...active} onRetry={active.reload} />}
@@ -70,30 +72,30 @@ export function ConsentPage() {
       <p>{policy.data.code ?? "Política"} · versión {policy.data.version}
         {policy.data.effective_at && <> · vigente desde el {formatDate(policy.data.effective_at)}</>}</p>
       {active.data
-        ? <p>Puedes retirar tu participación cuando quieras: <a href="#revocar">Revocar mi consentimiento</a></p>
+        ? <p>Puedes retirar tu participación cuando quieras: <ButtonAnchor variant="ghost" href="#revocar">Revocar mi consentimiento</ButtonAnchor></p>
         : <p>No tienes un consentimiento activo. Si lo aceptas, podrás revocarlo desde esta página en cualquier momento.</p>}
     </div>}
     {active.data ? <div className="card onboarding-card" id="revocar">
       <h2>Consentimiento activo</h2>
       <p>Versión aceptada: {active.data.policy_version}</p>
       {policy.data?.available && (policy.data.id ?? policy.data.version) !== active.data.policy_version &&
-        <Alert variant="warning">La política vigente cambió. Lee y acepta la nueva versión para volver a usar el analizador.</Alert>}
+        <Callout variant="warning">La política vigente cambió. Lee y acepta la nueva versión para volver a usar el analizador.</Callout>}
       <p>Registrado: {new Date(active.data.granted_at).toLocaleString("es-PE")}</p>
-      <button className="button danger" disabled={busy} onClick={() => { void revoke(); }}>Revocar consentimiento</button>
+      <Button variant="danger" type="submit" disabled={busy} onClick={() => { void revoke(); }}>Revocar consentimiento</Button>
     </div> : null}
     {student && !active.loading && (!active.data || (policy.data?.available && (policy.data.id ?? policy.data.version) !== active.data.policy_version)) && <div className="card onboarding-card">
       {!policy.data?.available ? <>
         <p>{policy.data?.mode === "development" ? "Modo técnico de desarrollo: el consentimiento no bloquea el analizador. No uses este modo con personas reales." : "No hay una política activa. No es posible solicitar tu consentimiento por ahora."}</p>
-        {policy.data?.mode === "development" && <Link to={paths.analysis}>Ir al analizador</Link>}
+        {policy.data?.mode === "development" && <ButtonLink variant="secondary" to={paths.analysis}>Ir al analizador</ButtonLink>}
       </> : <>
         <p>{policy.data.is_demo ? "POLÍTICA PROVISIONAL DE DEMOSTRACIÓN: no está aprobada para despliegue institucional." : "Política institucional activa"} · {policy.data.code ?? ""} {policy.data.version}</p>
         <h3>{policy.data.title}</h3>
         {policy.data.content && <pre className="consent-document">{policy.data.content}</pre>}
-        {!policy.data.content && policy.data.url && <p><a href={policy.data.url} target="_blank" rel="noopener noreferrer">Leer política de consentimiento</a></p>}
-        <label className="checkbox"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />He leído la política y acepto el análisis facial descrito en ella.</label>
+        {!policy.data.content && policy.data.url && <p><ButtonAnchor variant="secondary" href={policy.data.url} target="_blank" rel="noopener noreferrer">Leer política de consentimiento</ButtonAnchor></p>}
+        <Checkbox checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)}>He leído la política y acepto el análisis facial descrito en ella.</Checkbox>
         <div className="inline-actions">
-          <button className="button primary" disabled={!confirmed || busy} onClick={() => { void accept(); }}>{active.data ? "Acepto la nueva versión" : "Acepto y quiero usar el analizador"}</button>
-          <Link className="button secondary" to={paths.dashboard}>No acepto por ahora</Link>
+          <Button variant="primary" type="submit" disabled={!confirmed || busy} onClick={() => { void accept(); }}>{active.data ? "Acepto la nueva versión" : "Acepto y quiero usar el analizador"}</Button>
+          <ButtonLink variant="secondary" to={paths.dashboard}>No acepto por ahora</ButtonLink>
         </div>
       </>}
     </div>}
