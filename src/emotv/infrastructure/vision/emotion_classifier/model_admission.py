@@ -13,7 +13,7 @@ import psutil
 
 from emotv.application.model_admission import AdmissionLimits, evaluate_resources
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
-from emotv.config import BASE_DIR, EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR
+from emotv.config import BASE_DIR, EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR, HSEMOTION_MODEL_PATH
 
 
 class AdmissionUnavailable(ValueError):
@@ -35,6 +35,7 @@ class ServerModelAdmission:
             raise ValueError("Vigencia de benchmark inválida")
         self.paths = {
             "ferplus_onnx": (Path(EMOTION_MODEL_PATH), Path(env.get("FERPLUS_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/ferplus-baseline.json")))),
+            "hsemotion_enet_b0_8_best_afew": (HSEMOTION_MODEL_PATH, Path(env.get("HSEMOTION_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/hsemotion-baseline.json")))),
             "hardlyhumans_vit": (HARDLYHUMANS_MODEL_DIR / "model.safetensors", Path(env.get("HARDLYHUMANS_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/hardlyhumans-check-01.json")))),
         }
         self._hashes = {}
@@ -76,7 +77,7 @@ class ServerModelAdmission:
             expected = dict(os=platform.system(), architecture=platform.machine(), cpu=platform.processor(), logical_cpus=psutil.cpu_count(), python=platform.python_version())
             if any(environment.get(k) != v for k, v in expected.items()):
                 raise AdmissionUnavailable("Benchmark de un entorno diferente; mide en este servidor")
-            packages = ("onnxruntime",) if model_id == "ferplus_onnx" else ("torch", "transformers")
+            packages = ("torch", "transformers") if model_id == "hardlyhumans_vit" else ("onnxruntime",)
             if any(str(environment.get(package, "")).split("+")[0] != version(package).split("+")[0] for package in packages):
                 raise AdmissionUnavailable("Runtime diferente al benchmark; repite la medición")
             if model_id == "hardlyhumans_vit" and environment.get("device") != "cpu":

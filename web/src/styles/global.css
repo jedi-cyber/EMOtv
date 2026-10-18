@@ -333,6 +333,10 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .live-expression-face { color: var(--color-ink); font-weight: var(--weight-semibold); }
 .live-top { margin: 0 0 var(--space-md); padding: 0; list-style: none; font-size: var(--text-body-sm); font-variant-numeric: tabular-nums; }
 .live-expression .progress-label { margin-top: var(--space-sm); }
+.live-calibration-status { display: grid; gap: var(--space-xxs); margin: var(--space-sm) 0; font-size: var(--text-body-sm); }
+.live-calibration-status p { margin: 0; }
+.live-calibration p, .live-calibration-notice { margin: 0 0 var(--space-xs); font-size: var(--text-body-sm); }
+.live-calibration-notice { color: var(--color-warning); }
 .expression-result { display: grid; gap: var(--space-sm); margin-bottom: var(--space-lg); }
 .expression-result h3 { margin: var(--space-xxs) 0; font-size: var(--text-body-md); }
 .expression-result p { margin: 0; }

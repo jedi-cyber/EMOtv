@@ -18,7 +18,8 @@ import { paths } from "../routes/paths";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { ExpressionResult } from "../expressions/ExpressionResult";
-import { LiveExpressionPanel, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
+import { LiveExpressionPanel, NO_CALIBRATION, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
+import { emotionModelName } from "../sessions/labels";
 import { Button, ButtonLink } from "../components/Button";
 import { CameraFrame } from "../components/CameraFrame";
 import { Checkbox } from "../components/Checkbox";
@@ -30,8 +31,10 @@ import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavail
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
+const LIVE_MODEL_ID = "hsemotion_enet_b0_8_best_afew";
 type Message = Partial<LiveReading> & {
-  type: "ready" | "live" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
+  type: "ready" | "live" | "calibration_started" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
+  emotion_model_id?: string;
   state?: string; message?: string; progress?: number; code?: number;
   emotion?: string | null; emotion_confidence?: number | null;
   activity?: Activity | null; activities?: Activity[];
@@ -72,13 +75,17 @@ export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
 
 export function AdaptiveAnalysisPage() {
   const { token, user } = useAuth();
-  // Solo administración elige modelo; el estudiante usa siempre FER+ (el servidor lo exige).
+  // Solo administración elige modelo. Sin elección ("" = automático) el servidor usa
+  // HSEmotion si su admisión es válida y, si no, FER+; el estudiante nunca elige.
   const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
   const modelsQuery = useApiQuery<Admission[]>(canChooseModel ? "/analysis/models" : null);
-  const [modelId, setModelId] = useState("ferplus_onnx");
-  const admission = modelsQuery.data?.find((item) => item.model_id === modelId);
+  const [modelId, setModelId] = useState("");
+  const admissionOf = (id: string) => modelsQuery.data?.find((item) => item.model_id === id);
+  const automaticModel = [LIVE_MODEL_ID, "ferplus_onnx"].map(admissionOf).find((item) => item && item.state !== "BLOCKED");
+  const admission = modelId ? admissionOf(modelId) : automaticModel ?? admissionOf("ferplus_onnx");
   const modelBlocked = canChooseModel && (modelsQuery.loading || Boolean(modelsQuery.error) || !admission || admission.state === "BLOCKED");
+  const [activeModel, setActiveModel] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("ready");
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -311,8 +318,9 @@ export function AdaptiveAnalysisPage() {
       const socket = new WebSocket(apiWebSocketUrl("/ws/activity"));
       socket.binaryType = "arraybuffer"; socketRef.current = socket;
       socket.onopen = () => socket.send(JSON.stringify({
-        type: "authenticate", token, session_id: created?.id,
-        emotion_model_id: modelId, include_landmarks: includeLandmarks,
+        type: "authenticate", token, session_id: created?.id, include_landmarks: includeLandmarks,
+        // Sin modelo, el servidor elige el de la lectura en vivo.
+        ...(canChooseModel && modelId ? { emotion_model_id: modelId } : {}),
       }));
       socket.onmessage = (event) => {
         awaitingFrame.current = false;
@@ -330,10 +338,15 @@ export function AdaptiveAnalysisPage() {
           // Lectura momentánea: solo se muestra; no se acumula ni se persiste.
           setLive({
             face_detected: Boolean(result.face_detected), emotion: result.emotion ?? null,
-            emotion_confidence: result.emotion_confidence ?? null, top: result.top ?? [],
+            emotion_confidence: result.emotion_confidence ?? null, distribution: result.distribution ?? [],
+            calibration: result.calibration ?? NO_CALIBRATION,
             stable_seconds: result.stable_seconds ?? 0, required_stable_seconds: result.required_stable_seconds ?? 1,
             can_confirm: Boolean(result.can_confirm), blocked_reason: result.blocked_reason ?? null,
           });
+          return;
+        }
+        if (result.type === "calibration_started") {
+          setLive((current) => current && { ...current, calibration: { ...NO_CALIBRATION, state: "calibrating" } });
           return;
         }
         if (result.type === "confirm_rejected") {
@@ -343,7 +356,7 @@ export function AdaptiveAnalysisPage() {
         setMessage(result.message ?? "Procesando…");
         if (result.type !== "status" && result.emotion) setEmotion(result.emotion);
         if (result.type !== "status" && result.emotion_confidence != null) setConfidence(result.emotion_confidence);
-        if (result.type === "ready") { setPhase("live"); resumeFrames(); }
+        if (result.type === "ready") { setActiveModel(result.emotion_model_id ?? null); setPhase("live"); resumeFrames(); }
         else if (result.type === "recognized") {
           // El servidor responde con la expresión que realmente registró.
           pauseFrames(); setConfirming(false); setConfirmNotice(""); setLive(null); setPhase("result");
@@ -418,6 +431,12 @@ export function AdaptiveAnalysisPage() {
     socketRef.current.send(JSON.stringify({ type: "select_activity", activity_id: activityId }));
   }
 
+  function calibrate() {
+    if (live?.calibration.state === "calibrating" || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    // La base neutral la calcula el servidor y vive solo en esta conexión.
+    socketRef.current.send(JSON.stringify({ type: "calibrate" }));
+  }
+
   function confirmExpression() {
     if (!live?.can_confirm || confirming || socketRef.current?.readyState !== WebSocket.OPEN) return;
     // Sin etiqueta: el servidor registra su propio último resultado estable.
@@ -449,6 +468,7 @@ export function AdaptiveAnalysisPage() {
     setEmotion(null);
     setConfidence(null);
     setLive(null);
+    setActiveModel(null);
     setConfirming(false);
     setConfirmNotice("");
     setOutcome(null);
@@ -542,6 +562,8 @@ export function AdaptiveAnalysisPage() {
           {canChooseModel && <>
             <label htmlFor="adaptive-model">Modelo facial</label>
             <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
+              <option value="">Automático (HSEmotion; si no está disponible, FER+)</option>
+              <option value={LIVE_MODEL_ID}>HSEmotion · ONNX</option>
               <option value="ferplus_onnx">FER+ · ONNX</option>
               <option value="hardlyhumans_vit">HardlyHumans · ViT/PyTorch</option>
             </select>
@@ -558,8 +580,11 @@ export function AdaptiveAnalysisPage() {
         {phase !== "ready" && <>
           <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
+          {phase === "live" && activeModel && <p className="muted">Modelo facial: {emotionModelName(activeModel)}</p>}
           {phase === "live" && <LiveExpressionPanel live={live} />}
           {phase === "live" && <>
+            <Button variant="secondary" disabled={!live?.face_detected || live.calibration.state === "calibrating"} aria-describedby="calibrate-help" onClick={calibrate}>{live?.calibration.state === "calibrated" ? "Calibrar de nuevo" : "Calibrar"}</Button>
+            <p id="calibrate-help" className="muted">Opcional: mantén el rostro relajado 3 segundos para comparar cada expresión con tu base. La base no se guarda.</p>
             <Button variant="primary" type="submit" disabled={!live?.can_confirm || confirming} aria-describedby="confirm-help" onClick={confirmExpression}>{confirming ? "Registrando…" : "Registrar esta expresión"}</Button>
             <p id="confirm-help" className="muted">{confirmNotice || (live?.can_confirm ? "Puedes registrar la expresión que ves ahora. Se guarda solo la que registres." : live?.blocked_reason ?? "Esperando la primera lectura del modelo.")}</p>
           </>}

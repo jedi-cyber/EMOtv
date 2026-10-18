@@ -9,7 +9,7 @@ literalmente dominio público habría que seleccionar otro artefacto verificable
 | --- | --- | --- |
 | mo-thecreator/vit-Facial-Expression-Recognition | 7 clases, ViT, Safetensors; ficha sin licencia declarada | Descartado para incorporación hasta aclarar permisos de pesos |
 | EmotiEffLib enet_b2_8 | 8 clases y ONNX oficial; Apache-2.0 declarada para código | Compatible técnicamente; no integrado hasta aclarar alcance de licencia sobre pesos |
-| HSEmotion enet_b0_8 | Nombre incompleto: variantes best_afew, best_vgaf y va_mtl; ONNX disponible | Pendiente elegir artefacto exacto y confirmar permisos de pesos; no cargar por nombre ambiguo |
+| HSEmotion enet_b0_8_best_afew | 8 clases, ONNX oficial; código y repositorio de pesos con Apache-2.0 | Integrado (`hsemotion_enet_b0_8_best_afew`): lectura en vivo predeterminada si su admisión es válida; si no, FER+ |
 | HardlyHumans/Facial-expression-detection | 8 clases, ViT/Safetensors; ficha declara MIT para el modelo | Adaptador experimental y selector web; no predeterminado |
 
 Fuentes primarias:
@@ -18,6 +18,82 @@ Fuentes primarias:
 [EmotiEffLib](https://github.com/sb-ai-lab/EmotiEffLib),
 [ONNX oficiales](https://github.com/sb-ai-lab/EmotiEffLib/tree/main/models/affectnet_emotions/onnx),
 [HSEmotion](https://github.com/av-savchenko/hsemotion).
+
+## HSEmotion enet_b0_8_best_afew
+
+Revisión: 10 de octubre de 2026. Se eligió la variante `enet_b0_8_best_afew`,
+una de las cinco que admite `HSEmotionRecognizer`. No se instala
+`hsemotion-onnx`: `HSEmotionClassifier` reproduce su preprocesamiento con
+onnxruntime, que ya es dependencia. Todo lo siguiente se tomó del código
+oficial, no de supuestos:
+
+| Aspecto | Valor | Fuente |
+| --- | --- | --- |
+| Recorte | El rectángulo del rostro detectado, sin margen (`frame[y1:y2, x1:x2]`) | `tests/test_facial_analysis.py::recognize_faces` (EmotiEffLib) y `demo/recognize_emotions_video.py` (hsemotion-onnx) |
+| Color | RGB (el recorte se toma de la imagen convertida con `COLOR_BGR2RGB`) | mismos archivos |
+| Tamaño | `cv2.resize` a 224×224 (B0; B2 usa 260) | `HSEmotionRecognizer.__init__` y `preprocess` |
+| Normalización | `/255`, media `[0.485, 0.456, 0.406]`, desviación `[0.229, 0.224, 0.225]`, NCHW float32 | `HSEmotionRecognizer.preprocess` |
+| Entrada y salida | `input` (N×3×224×224) y `output` (N×8 logits); softmax para probabilidades | `predict_emotions`; verificado con onnxruntime 1.30 |
+| Orden de clases | Anger, Contempt, Disgust, Fear, Happiness, Neutral, Sadness, Surprise | `idx_to_class` para modelos de 8 clases |
+| Pesos | `sb-ai-lab/EmotiEffLib`, `models/affectnet_emotions/onnx/enet_b0_8_best_afew.onnx`, commit `af833487321c3efdcb1768a91a6c656a1986fdf6` (2022-11-09); 16 039 595 bytes; SHA-256 `7aa2ea31c1311f4f8aa9d3fdb085d418dd4e7a48c4b9ed41df8c044f91d0213f` | La URL que usa `get_model_path` (HSE-asavchenko/face-emotion-recognition) redirige a ese repositorio; el commit es el último que modificó el archivo |
+
+Las clases se traducen a las claves de EMOtv con el mismo nombre en minúsculas
+(`Happiness` → `happiness`, etc.); el orden de salida es el de HSEmotion, no
+el de FER+.
+
+**Recorte por modelo.** Cada clasificador declara `face_preprocessor_options`;
+ya no se comparte un valor entre modelos:
+
+| Modelo | Margen | Tamaño | Color | Fuente |
+| --- | --- | --- | --- | --- |
+| FER+ | 20 % (valor de EMOtv) | 64×64 | grises, sin normalizar | ONNX Model Zoo `emotion_ferplus` (entrada N×1×64×64; la ficha no fija margen) |
+| HSEmotion | 0 | 224×224 en el clasificador | RGB normalizado | tabla anterior |
+| HardlyHumans | 20 % (valor de EMOtv) | lo decide su procesador | RGB | ficha y `preprocessor_config.json` (no fijan margen) |
+
+YuNet no es MTCNN: el rectángulo de cada detector puede ser algo distinto, así
+que "sin margen" reproduce el criterio oficial, no un recorte idéntico.
+
+**Equivalencia comprobada.** Con los pesos descargados y la foto de demostración
+de hsemotion-onnx (`demo/20180720_174416.jpg`), YuNet encontró tres rostros. En
+los tres, `HSEmotionClassifier` y `HSEmotionRecognizer.predict_emotions(...,
+logits=False)` dieron la misma clase y una diferencia máxima de probabilidad de
+1.8×10⁻⁷. El paquete oficial se instaló solo en un contenedor temporal para la
+comparación; no es dependencia de EMOtv.
+
+**Licencias.** El código de hsemotion-onnx declara Apache-2.0 (`LICENSE` y
+README: "no limitation for both academic and commercial usage"). Los pesos se
+publican en el repositorio EmotiEffLib, cuyo `LICENSE` es Apache-2.0 y cuyo
+README declara esa licencia para el código; no hay una licencia separada para
+los pesos. Según su README, los modelos se entrenaron con AffectNet, que se
+distribuye con un acuerdo de uso propio: antes de cualquier uso distinto del
+académico de este proyecto, revisar esas condiciones. Apache-2.0 exige
+conservar el aviso de licencia si se redistribuyen los pesos; EMOtv no los
+versiona ni redistribuye: los descarga `scripts/download_models.py`.
+
+**Admisión.** Usa el mismo `ServerModelAdmission` que FER+, con su propio
+informe (`HSEMOTION_BENCHMARK_PATH`, por defecto
+`reports/benchmarks/hsemotion-baseline.json`). Sin informe vigente medido en
+el servidor queda `BLOCKED` y la lectura en vivo usa FER+. Para medirlo:
+
+```powershell
+python scripts/download_models.py
+python scripts/emotion/run_emotion_models_benchmark.py --model hsemotion_enet_b0_8_best_afew --output reports/benchmarks/hsemotion-baseline.json
+```
+
+En Docker, el servicio `models` lo mide con `--ensure-hsemotion-benchmark`; un
+fallo solo deja un aviso. En un contenedor Linux de prueba
+(`python:3.12-slim`, onnxruntime de `requirements.lock`) el p95 fue de unos
+34 ms frente a unos 21 ms de FER+, y ambos quedaron `SUPPORTED`. Es una
+medición de rendimiento en ese equipo, no de precisión.
+
+Fuentes:
+[hsemotion-onnx](https://github.com/av-savchenko/hsemotion-onnx)
+([facial_emotions.py](https://github.com/av-savchenko/hsemotion-onnx/blob/main/hsemotion_onnx/facial_emotions.py),
+[demo](https://github.com/av-savchenko/hsemotion-onnx/blob/main/demo/recognize_emotions_video.py)),
+[EmotiEffLib](https://github.com/sb-ai-lab/EmotiEffLib)
+([pesos ONNX](https://github.com/sb-ai-lab/EmotiEffLib/tree/af833487321c3efdcb1768a91a6c656a1986fdf6/models/affectnet_emotions/onnx),
+[recorte en pruebas](https://github.com/sb-ai-lab/EmotiEffLib/blob/main/tests/test_facial_analysis.py)),
+[FER+ en ONNX Model Zoo](https://github.com/onnx/models/blob/main/validated/vision/body_analysis/emotion_ferplus/README.md).
 
 ## Métricas: no son un ranking EMOtv
 

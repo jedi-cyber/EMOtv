@@ -26,6 +26,7 @@ from emotv.application.ports.recommendation_repository import RecommendationSour
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.application.live_expression import LiveExpressionTracker, LiveReading
+from emotv.application.neutral_calibration import NeutralCalibration
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.config import LiveExpressionSettings
 from emotv.domain import AccessAction, Activity, Role, SessionState, StabilizedEmotion
@@ -40,7 +41,12 @@ EmotionAnalyzerFactory = Callable[[str], EmotionAnalyzer]
 AdaptiveProcessorFactory = Callable[[Activity, EmotionAnalyzer, StabilizedEmotion], BrowserActivityService]
 MAX_FRAME_BYTES = 2_500_000
 DEFAULT_EMOTION_MODEL_ID = "ferplus_onnx"
-EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, "hardlyhumans_vit")
+# Modelo preferido para la lectura en vivo; si su admisión no es válida, FER+.
+LIVE_EMOTION_MODEL_ID = "hsemotion_enet_b0_8_best_afew"
+EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, LIVE_EMOTION_MODEL_ID, "hardlyhumans_vit")
+# Modelos que una cuenta que no es de administración puede pedir de forma explícita.
+NON_ADMIN_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, LIVE_EMOTION_MODEL_ID)
+ADMITTED_STATES = ("SUPPORTED", "WARNING")
 # Estados en los que la sesión sigue abierta en el WebSocket.
 OPEN_STATES = (SessionState.IN_PROGRESS, SessionState.RECOGNIZED)
 
@@ -96,7 +102,7 @@ def create_analysis_router(
 
     @router.get("/analysis/models")
     def available_models(user=Depends(create_current_user_dependency(authentication, users))):
-        # Elegir modelo es una tarea de administración; el estudiante usa siempre FER+.
+        # Elegir modelo es una tarea de administración; el servidor elige el del estudiante.
         if user.role is not Role.ADMIN:
             raise HTTPException(403, "Solo administración puede consultar y elegir modelos faciales")
         return [model_admission(model_id) if model_admission else
@@ -178,20 +184,32 @@ def create_analysis_router(
                     return
 
             include_landmarks = bool(credentials.get("include_landmarks", False))
-            model_id = credentials.get("emotion_model_id", DEFAULT_EMOTION_MODEL_ID)
-            if model_id not in EMOTION_MODEL_IDS:
+            requested_model = credentials.get("emotion_model_id") or None
+            if requested_model is not None and requested_model not in EMOTION_MODEL_IDS:
                 await _error(websocket, "Modelo facial no permitido", 4400)
                 return
-            if user.role is not Role.ADMIN and model_id != DEFAULT_EMOTION_MODEL_ID:
+            if user.role is not Role.ADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
                 await _error(websocket, "Solo administración puede elegir otro modelo facial", 4403)
                 return
-            if model_id != DEFAULT_EMOTION_MODEL_ID and model_processor_factory is None:
+            admission = None
+            if requested_model is not None:
+                model_id = requested_model
+            elif adaptive and model_admission is not None:
+                # Lectura en vivo sin modelo pedido: HSEmotion si su admisión es
+                # válida; si no, FER+ (que también debe estar admitido).
+                admission = await asyncio.to_thread(model_admission, LIVE_EMOTION_MODEL_ID)
+                model_id = LIVE_EMOTION_MODEL_ID
+                if admission.get("state") not in ADMITTED_STATES:
+                    model_id, admission = DEFAULT_EMOTION_MODEL_ID, None
+            else:
+                model_id = DEFAULT_EMOTION_MODEL_ID
+            if not adaptive and model_id != DEFAULT_EMOTION_MODEL_ID and model_processor_factory is None:
                 await _error(websocket, "El modelo seleccionado no está configurado en el servidor", 1011)
                 return
-            admission = None
-            if model_admission is not None:
+            if model_admission is not None and admission is None:
                 admission = await asyncio.to_thread(model_admission, model_id)
-                if admission.get("state") not in ("SUPPORTED", "WARNING"):
+            if admission is not None:
+                if admission.get("state") not in ADMITTED_STATES:
                     await websocket.send_json({"type": "error", "message": "Modelo bloqueado: " + "; ".join(admission.get("reasons", [])), "admission": admission})
                     await websocket.close(code=4409)
                     return
@@ -210,11 +228,15 @@ def create_analysis_router(
                 return
             model_version = EmotionModelCatalog().get(model_id).version
             sessions.record_emotion_model(session.id, model_id, model_version)
+            clock = live_clock or time.monotonic
             tracker = LiveExpressionTracker(
                 EmotionStabilizer(),
                 stable_seconds=live.stable_seconds,
                 min_confidence=live.min_confidence,
-                clock=live_clock or time.monotonic,
+                clock=clock,
+                # La base neutral vive solo en esta conexión; nunca se persiste.
+                calibration=NeutralCalibration(seconds=live.calibration_seconds,
+                                               min_increase=live.calibration_min_increase, clock=clock),
             )
             await websocket.send_json({
                 "type": "ready",
@@ -226,6 +248,8 @@ def create_analysis_router(
                 "admission": admission,
                 "live_stable_seconds": live.stable_seconds,
                 "live_min_confidence": live.min_confidence,
+                "calibration_seconds": live.calibration_seconds,
+                "calibration_min_increase": live.calibration_min_increase,
             })
 
             def require_authorized(*states: SessionState) -> None:
@@ -292,6 +316,13 @@ def create_analysis_router(
                             "exercise_result": closed.exercise_result,
                         })
                         break
+                    if command_type == "calibrate" and adaptive:
+                        if recognized is not None:
+                            await websocket.send_json({"type": "error", "message": "La expresión ya quedó registrada; no hace falta calibrar."})
+                            continue
+                        tracker.start_calibration()
+                        await websocket.send_json({"type": "calibration_started", "seconds": live.calibration_seconds})
+                        continue
                     if command_type == "confirm_expression" and adaptive:
                         if recognized is not None:
                             await websocket.send_json({"type": "confirm_rejected", "message": "Esta sesión ya registró una expresión. Inicia una nueva para registrar otra."})
@@ -517,7 +548,19 @@ def _live_message(reading: LiveReading, live: LiveExpressionSettings) -> dict[st
         "face_detected": reading.face_detected,
         "emotion": expression.emotion if expression else None,
         "emotion_confidence": expression.confidence if expression else None,
-        "top": [{"emotion": label, "probability": probability} for label, probability in reading.top],
+        # Las ocho clases, de mayor a menor; con calibración, también su base y su cambio.
+        "distribution": [
+            {"emotion": item.emotion, "probability": item.probability, "baseline": item.baseline, "change": item.change}
+            for item in reading.calibrated
+        ] if reading.calibrated else [
+            {"emotion": label, "probability": probability} for label, probability in reading.distribution
+        ],
+        "calibration": {
+            "state": reading.calibration_state,
+            "progress": round(reading.calibration_progress, 2),
+            "suggested": reading.suggested,
+            "notice": reading.calibration_notice,
+        },
         "stable_seconds": round(reading.stable_seconds, 2),
         "required_stable_seconds": live.stable_seconds,
         "can_confirm": reading.can_confirm,

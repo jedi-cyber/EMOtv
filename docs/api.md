@@ -97,8 +97,9 @@ no al servidor: no existen rutas de cámara del servidor.
 
 | Dirección | Mensaje | Contenido |
 | --- | --- | --- |
-| servidor → cliente | `ready` | `state: "live"`, `live_stable_seconds`, `live_min_confidence` |
-| servidor → cliente | `live` | uno por frame procesado: `face_detected`, `emotion` (clave del modelo, estabilizada), `emotion_confidence`, `top` (tres clases más probables si el modelo da la distribución), `stable_seconds`, `required_stable_seconds`, `can_confirm`, `blocked_reason` |
+| servidor → cliente | `ready` | `state: "live"`, `emotion_model_id` usado, `live_stable_seconds`, `live_min_confidence`, `calibration_seconds`, `calibration_min_increase` |
+| servidor → cliente | `live` | uno por frame procesado: `face_detected`, `emotion` (clave del modelo, estabilizada), `emotion_confidence`, `distribution` (todas las clases de mayor a menor; con calibración, también `baseline` y `change`), `calibration` (`state`: `none`/`calibrating`/`calibrated`, `progress`, `suggested`, `notice`), `stable_seconds`, `required_stable_seconds`, `can_confirm`, `blocked_reason` |
+| cliente → servidor | `calibrate` | opcional, antes de registrar; responde `calibration_started` con `seconds` |
 | cliente → servidor | `confirm_expression` | sin etiqueta; cualquier `emotion` enviada se ignora |
 | servidor → cliente | `confirm_rejected` | `message` con el motivo (sin rostro, sin expresión estable, confianza baja o poco tiempo estable) |
 | servidor → cliente | `recognized` | la expresión que el servidor **realmente** registró y `recognized_at`; después llega `recommendation` |
@@ -117,9 +118,18 @@ siguiente frame solo al recibir la respuesta, así que no hay mensajes extra.
 Con la expresión ya registrada, desconectarse o cancelar conserva la sesión
 (`completed` con `exercise_result: "cancelled"`); ver [Sesiones](sessions.md).
 
-`GET /analysis/models` es solo para administración. El estudiante analiza
-siempre con FER+; si envía un `emotion_model_id` distinto, el WebSocket lo
-rechaza con `4403`.
+La calibración neutral promedia la distribución durante `calibration_seconds`
+(3) con el rostro relajado. La base vive solo en memoria durante esa conexión:
+no se escribe en la base de datos. `suggested` es la clase con mayor aumento
+respecto a la base (diferencia de probabilidad), si alcanza
+`LIVE_CALIBRATION_MIN_INCREASE` (0.10 por defecto). La calibración no cambia lo
+que se registra ni el umbral de registro.
+
+`GET /analysis/models` es solo para administración. Sin `emotion_model_id`, la
+lectura en vivo usa HSEmotion (`hsemotion_enet_b0_8_best_afew`) si su admisión
+es válida y, si no, FER+. Una cuenta que no es de administración solo puede
+pedir de forma explícita FER+ o HSEmotion; cualquier otro modelo se rechaza
+con `4403`.
 
 `GET /` devuelve `{"service": "emotv-api", "status": "running"}`. `GET /health`
 comprueba base de datos y pesos (200 o 503) y lo usa Docker.

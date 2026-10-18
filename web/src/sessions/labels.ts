@@ -18,6 +18,7 @@ const activityOutcomeNames: Record<string, string> = {
 // Nombres legibles de los modelos; la clave técnica nunca se muestra.
 const emotionModelNames: Record<string, string> = {
   ferplus_onnx: "FER+",
+  hsemotion_enet_b0_8_best_afew: "HSEmotion",
   hardlyhumans_vit: "HardlyHumans (experimental)",
 };
 

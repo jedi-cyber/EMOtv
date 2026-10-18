@@ -11,6 +11,7 @@ from scripts.emotion import run_emotion_models_benchmark as script
 @pytest.mark.parametrize("model_id,shape", [
     ("ferplus_onnx", (64, 64)),
     ("hardlyhumans_vit", (224, 224, 3)),
+    ("hsemotion_enet_b0_8_best_afew", (224, 224, 3)),
 ])
 def test_native_inputs_are_deterministic(model_id, shape):
     faces, description = script.benchmark_faces(model_id)
@@ -28,7 +29,7 @@ def test_unintegrated_model_is_rejected():
         script.main(["--model", "enet_b2_8"])
 
 
-@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hardlyhumans_vit"])
+@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hsemotion_enet_b0_8_best_afew", "hardlyhumans_vit"])
 def test_report_uses_selected_model_and_backend(tmp_path, monkeypatch, model_id):
     weights = tmp_path / "weights"
     weights.write_bytes(b"weights")

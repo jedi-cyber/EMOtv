@@ -59,7 +59,12 @@ function camera(getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ s
 function liveReading(overrides: Record<string, unknown> = {}) {
   return {
     type: "live", state: "live", face_detected: true, emotion: "happiness", emotion_confidence: .8,
-    top: [{ emotion: "happiness", probability: .8 }, { emotion: "sadness", probability: .15 }, { emotion: "neutral", probability: .05 }],
+    distribution: [
+      { emotion: "happiness", probability: .8 }, { emotion: "sadness", probability: .1 }, { emotion: "neutral", probability: .04 },
+      { emotion: "surprise", probability: .02 }, { emotion: "anger", probability: .01 }, { emotion: "disgust", probability: .01 },
+      { emotion: "fear", probability: .01 }, { emotion: "contempt", probability: .01 },
+    ],
+    calibration: { state: "none", progress: 0, suggested: null, notice: null },
     stable_seconds: .4, required_stable_seconds: 1, can_confirm: false,
     blocked_reason: "Mantén la expresión un momento más.", ...overrides,
   };
@@ -209,7 +214,8 @@ describe("analizador emoción → recomendación → postura", () => {
     await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onopen?.());
-    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: "ferplus_onnx" }));
+    // El estudiante no elige modelo: el servidor usa HSEmotion si está admitido y, si no, FER+.
+    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
     act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Benchmark vencido" }) }));
     expect(await screen.findByText(/Modelo bloqueado: Benchmark vencido/)).toBeInTheDocument();
   });
@@ -221,7 +227,7 @@ describe("analizador emoción → recomendación → postura", () => {
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     const socket = Socket.instances[0];
     act(() => socket.onopen?.());
-    expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual(expect.objectContaining({ session_id: "session-1", emotion_model_id: "ferplus_onnx" }));
+    expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual(expect.objectContaining({ session_id: "session-1" }));
     expect(JSON.parse(socket.send.mock.calls[0][0])).not.toHaveProperty("activity_id");
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "ready", state: "live", message: "Cámara conectada" }) }));
     act(() => socket.onmessage?.({ data: JSON.stringify(liveReading({ can_confirm: true, blocked_reason: null, stable_seconds: 1.2 })) }));
@@ -271,15 +277,19 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByRole("button", { name: "Registrar esta expresión" })).toBeDisabled();
     expect(screen.getByText("Esperando la primera lectura del modelo.")).toBeInTheDocument();
 
-    act(() => socket.onmessage?.({ data: JSON.stringify(liveReading({ face_detected: false, emotion: null, emotion_confidence: null, top: [], blocked_reason: "No se detecta un rostro. Ubica tu cara en el centro de la cámara." })) }));
+    act(() => socket.onmessage?.({ data: JSON.stringify(liveReading({ face_detected: false, emotion: null, emotion_confidence: null, distribution: [], blocked_reason: "No se detecta un rostro. Ubica tu cara en el centro de la cámara." })) }));
     expect(screen.getByText(/Ubica tu rostro en el centro de la cámara/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar esta expresión" })).toBeDisabled();
 
     act(() => socket.onmessage?.({ data: JSON.stringify(liveReading()) }));
     expect(screen.getByText("Felicidad", { selector: ".live-expression-name" })).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Confianza de la expresión estimada" })).toHaveAttribute("aria-valuenow", "80");
-    expect(screen.getByRole("list", { name: "Expresiones más probables" }).children).toHaveLength(3);
-    expect(screen.getByText(/Tristeza · 15 %/)).toBeInTheDocument();
+    const listed = screen.getByRole("list", { name: "Expresiones estimadas" }).children;
+    expect(listed).toHaveLength(8);
+    expect(Array.from(listed, (item) => item.textContent?.split(" · ")[0])).toEqual(
+      ["Felicidad", "Tristeza", "Neutral", "Sorpresa", "Enojo", "Desagrado", "Miedo", "Desprecio"]);
+    expect(screen.getByText(/Tristeza · 10 %/)).toBeInTheDocument();
+    expect(screen.getByText("Lectura sin calibrar")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: "Estabilidad de la expresión" })).toHaveAttribute("aria-valuenow", "40");
     expect(screen.getByText("Estimación del modelo sobre la expresión visible; no indica lo que sientes.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Registrar esta expresión" })).toBeDisabled();
@@ -418,5 +428,63 @@ describe("actividad secuencial con repeticiones", () => {
       expect.stringContaining("Paso 1 de 3. Repetición 2 de 2. Eleva los brazos"),
     ]);
     vi.unstubAllGlobals();
+  });
+
+  it("calibra con el rostro relajado y muestra el cambio respecto a la base sin guardarla", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const socket = await openLive();
+    act(() => socket.onmessage?.({ data: JSON.stringify(liveReading()) }));
+    await userEvent.click(screen.getByRole("button", { name: "Calibrar" }));
+    expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toEqual({ type: "calibrate" });
+    act(() => socket.onmessage?.({ data: JSON.stringify({ type: "calibration_started", seconds: 3 }) }));
+    expect(screen.getByText("Calibrando…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Calibrar" })).toBeDisabled();
+
+    act(() => socket.onmessage?.({ data: JSON.stringify(liveReading({
+      emotion: "neutral", emotion_confidence: .6,
+      distribution: [
+        { emotion: "neutral", probability: .6, baseline: .85, change: -.25 },
+        { emotion: "happiness", probability: .3, baseline: .05, change: .25 },
+        { emotion: "sadness", probability: .1, baseline: .1, change: 0 },
+      ],
+      calibration: { state: "calibrated", progress: 1, suggested: "happiness", notice: null },
+    })) }));
+    expect(screen.getByText("Lectura calibrada")).toBeInTheDocument();
+    expect(screen.getByText("Felicidad", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByText(/Felicidad · 30 % \(\+25 pts\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Neutral · 60 % \(−25 pts\)/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Calibrar de nuevo" })).toBeEnabled();
+    expect(setItem).not.toHaveBeenCalled();
+    setItem.mockRestore();
+  });
+
+  it("informa si la calibración no vio el rostro el tiempo suficiente", async () => {
+    const socket = await openLive();
+    act(() => socket.onmessage?.({ data: JSON.stringify(liveReading({
+      calibration: { state: "none", progress: 0, suggested: null, notice: "No se vio tu rostro el tiempo suficiente para calibrar." },
+    })) }));
+    expect(screen.getByText("No se vio tu rostro el tiempo suficiente para calibrar.")).toBeInTheDocument();
+    expect(screen.getByText("Lectura sin calibrar")).toBeInTheDocument();
+  });
+
+  it("administración puede dejar la elección automática o forzar un modelo", async () => {
+    admissions.value = [
+      { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
+      { model_id: "hsemotion_enet_b0_8_best_afew", state: "BLOCKED", reasons: ["Falta un benchmark validado"] },
+    ];
+    camera();
+    page("admin");
+    // Automático con HSEmotion bloqueado: se usará FER+ y se puede iniciar.
+    expect(screen.getByLabelText("Modelo facial")).toHaveValue("");
+    expect(screen.getByText(/Modelo disponible/)).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Modelo facial"), "hsemotion_enet_b0_8_best_afew");
+    expect(screen.getByRole("alert")).toHaveTextContent("Modelo no disponible: Falta un benchmark validado");
+    await userEvent.selectOptions(screen.getByLabelText("Modelo facial"), "ferplus_onnx");
+    await startAnalysis();
+    await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    act(() => Socket.instances[0].onopen?.());
+    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: "ferplus_onnx" }));
+    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "ready", state: "live", emotion_model_id: "ferplus_onnx" }) }));
+    expect(screen.getByText("Modelo facial: FER+")).toBeInTheDocument();
   });
 });

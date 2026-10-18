@@ -14,7 +14,7 @@ import numpy as np
 import onnxruntime as ort
 import psutil
 
-from emotv.config import EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR
+from emotv.config import EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR, HSEMOTION_MODEL_PATH
 from emotv.domain import CroppedFace
 from emotv.infrastructure.vision.emotion_classifier import create_emotion_classifier
 from emotv.shared.performance.model_benchmark import benchmark_predict
@@ -22,6 +22,7 @@ from emotv.shared.performance.model_benchmark import benchmark_predict
 
 MODEL_WEIGHTS = {
     "ferplus_onnx": Path(EMOTION_MODEL_PATH),
+    "hsemotion_enet_b0_8_best_afew": Path(HSEMOTION_MODEL_PATH),
     "hardlyhumans_vit": HARDLYHUMANS_MODEL_DIR / "model.safetensors",
 }
 
@@ -38,7 +39,7 @@ def benchmark_faces(model_id: str) -> tuple[list[CroppedFace], str]:
 
 
 def runtime_metadata(classifier, model_id: str) -> dict:
-    if model_id == "ferplus_onnx":
+    if model_id != "hardlyhumans_vit":
         options = classifier.session.get_session_options()
         return dict(backend="onnxruntime", onnxruntime=ort.__version__,
                     providers=classifier.session.get_providers(),

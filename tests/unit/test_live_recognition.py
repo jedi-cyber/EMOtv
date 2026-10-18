@@ -142,7 +142,8 @@ def test_tracker_requires_face_stability_and_confidence():
     tracker.update(("happiness", .9))
     reading = tracker.update(("happiness", .9), {"happiness": .9, "neutral": .06, "sadness": .03, "fear": .01})
     assert reading.expression.emotion == "happiness"
-    assert [label for label, _ in reading.top] == ["happiness", "neutral", "sadness"]
+    # Todas las clases, no solo las tres primeras.
+    assert [label for label, _ in reading.distribution] == ["happiness", "neutral", "sadness", "fear"]
     assert reading.blocked_reason == HOLD_LONGER
     with pytest.raises(ValueError, match="momento"):
         tracker.confirm()

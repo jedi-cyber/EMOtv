@@ -129,8 +129,8 @@ def flow(request):
     app.include_router(create_analysis_router(sessions, catalog, auth, users, students, processor,
                                              model_processor_factory=model_processor,
                                              model_admission=lambda model_id: dict(model_id=model_id,
-                                                 state=getattr(request, "param", "SUPPORTED"),
-                                                 reasons=["RAM insuficiente"] if getattr(request, "param", "SUPPORTED") == "BLOCKED" else []),
+                                                 state=_admission_state(request, model_id),
+                                                 reasons=["RAM insuficiente"] if _admission_state(request, model_id) == "BLOCKED" else []),
                                              emotion_analyzer_factory=lambda model_id: AdaptiveAnalyzer(),
                                              adaptive_processor_factory=lambda activity, analyzer, emotion: _adaptive_processor(activity, emotion, processors),
                                              live_settings=LiveExpressionSettings(stable_seconds=1.0, min_confidence=0.5),
@@ -139,6 +139,12 @@ def flow(request):
     with TestClient(app) as client:
         yield client, auth, user, other, student, sessions, identity, processors, users
     engine.dispose()
+
+
+def _admission_state(request, model_id):
+    """El parámetro puede ser un estado para todos o un dict por modelo."""
+    param = getattr(request, "param", "SUPPORTED")
+    return param.get(model_id, "SUPPORTED") if isinstance(param, dict) else param
 
 
 def credentials(auth, user, session_id):
@@ -237,7 +243,7 @@ def test_live_phase_streams_readings_without_writing_to_database(flow):
     assert messages[0]["emotion"] is None and not messages[0]["can_confirm"]
     last = messages[-1]
     assert last["face_detected"] and last["emotion"] == "sadness"
-    assert [item["emotion"] for item in last["top"]] == ["sadness", "neutral", "happiness"]
+    assert [item["emotion"] for item in last["distribution"]] == ["sadness", "neutral", "happiness", "fear"]
     assert last["required_stable_seconds"] == 1.0
     assert not last["can_confirm"] and last["blocked_reason"]
     assert not processors
@@ -547,3 +553,78 @@ def test_revocation_during_analysis_prevents_completion(flow, reason):
         assert socket.receive_json()["type"] == "error"
     assert sessions.get_session(session.id).state is SessionState.CANCELLED
     assert processors[0].closed
+
+
+HSEMOTION = "hsemotion_enet_b0_8_best_afew"
+
+
+def _open_live_without_model(auth, user, session_id, socket):
+    socket.send_json({"type": "authenticate", "token": auth.create_access_token(user), "session_id": session_id})
+    ready = socket.receive_json()
+    assert ready["type"] == "ready" and ready["state"] == "live"
+    return ready
+
+
+def test_live_reading_defaults_to_hsemotion_when_admitted(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        ready = _open_live_without_model(auth, user, session_id, socket)
+        assert ready["emotion_model_id"] == HSEMOTION
+        assert ready["admission"]["model_id"] == HSEMOTION
+        # La lectura en vivo trae todas las clases del analizador, de mayor a menor.
+        live = _live_frames(socket, 1)[0]
+        assert [item["emotion"] for item in live["distribution"]] == ["sadness", "neutral", "happiness", "fear"]
+        assert live["calibration"]["state"] == "none"
+    stored = sessions.get_session(session_id)
+    assert (stored.emotion_model_id, stored.emotion_model_version) == (
+        HSEMOTION, EmotionModelCatalog().get(HSEMOTION).version)
+
+
+@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED"}], indirect=True)
+def test_live_reading_falls_back_to_ferplus_when_hsemotion_is_not_admitted(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        ready = _open_live_without_model(auth, user, session_id, socket)
+        assert ready["emotion_model_id"] == "ferplus_onnx"
+        assert ready["admission"]["model_id"] == "ferplus_onnx"
+    assert sessions.get_session(session_id).emotion_model_id == "ferplus_onnx"
+
+
+@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED", "ferplus_onnx": "BLOCKED"}], indirect=True)
+def test_live_reading_is_blocked_when_neither_model_is_admitted(flow):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    with client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({"type": "authenticate", "token": auth.create_access_token(user), "session_id": session_id})
+        error = socket.receive_json()
+        assert error["type"] == "error" and error["admission"]["model_id"] == "ferplus_onnx"
+    assert sessions.get_session(session_id).emotion_model_id is None
+
+
+def test_calibration_baseline_stays_in_memory(flow, monkeypatch):
+    client, auth, user, _, _, sessions, _, _, _ = flow
+    session_id = _student_session(client, auth, user)
+    writes = []
+    save = sessions.repository.save
+    monkeypatch.setattr(sessions.repository, "save", lambda session: writes.append(session) or save(session))
+    before = sessions.get_session(session_id)
+    with client.websocket_connect("/ws/activity") as socket:
+        _open_live_without_model(auth, user, session_id, socket)
+        writes.clear()  # el registro del modelo al abrir es anterior a la calibración
+        socket.send_json({"type": "calibrate"})
+        started = socket.receive_json()
+        assert started == {"type": "calibration_started", "seconds": 3.0}
+        for _ in range(5):
+            socket.send_bytes(JPEG)
+            assert socket.receive_json()["calibration"]["state"] == "calibrating"
+            CLOCK.now += 0.7
+        socket.send_bytes(JPEG)
+        live = socket.receive_json()
+        assert live["calibration"]["state"] == "calibrated"
+        assert live["calibration"]["suggested"] is None  # la misma distribución: sin aumento
+        assert {"baseline", "change"} <= set(live["distribution"][0])
+        assert writes == []  # la base nunca llega al repositorio
+    after = sessions.get_session(session_id)
+    assert (after.initial_emotion, after.emotion_confidence) == (before.initial_emotion, before.emotion_confidence)
