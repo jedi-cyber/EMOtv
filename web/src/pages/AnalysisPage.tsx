@@ -58,7 +58,7 @@ function ManualActivityAnalysisPage() {
   const [params] = useSearchParams();
   const { token, user } = useAuth();
   const { label: expressionLabel } = useExpressionCatalog();
-  // Solo administración elige modelo; el estudiante usa siempre FER+ (el servidor lo exige).
+  // Aquí solo administración elige modelo; sin elección el servidor usa el predeterminado.
   const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
   const activityId = params.get("activity") ?? "";
@@ -175,7 +175,7 @@ function ManualActivityAnalysisPage() {
     announcedStepRef.current = -1;
     let created: EmotionalSession | null = null;
     try {
-      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ activity_id: activityId }), token });
+      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ activity_id: activityId, session_type: "propia" }), token });
       if (lifecycle !== lifecycleRef.current) {
         await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
         return;
@@ -189,7 +189,7 @@ function ManualActivityAnalysisPage() {
       const socket = new WebSocket(apiWebSocketUrl("/ws/activity")); socket.binaryType = "arraybuffer"; socketRef.current = socket;
       socket.onopen = () => {
         setStatus({ type: "ready", state: "analyzing_emotion", message: "Cargando modelo facial en el servidor…", progress: 0 });
-        socket.send(JSON.stringify({ type: "authenticate", token, session_id: created?.id, activity_id: activityId, include_landmarks: includeLandmarks, emotion_model_id: emotionModelId }));
+        socket.send(JSON.stringify({ type: "authenticate", token, session_id: created?.id, activity_id: activityId, include_landmarks: includeLandmarks, ...(canChooseModel ? { emotion_model_id: emotionModelId } : {}) }));
       };
       socket.onmessage = (event) => {
         awaitingFrame.current = false;

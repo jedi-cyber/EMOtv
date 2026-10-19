@@ -49,7 +49,7 @@ beforeEach(() => {
 });
 
 describe("cámara y ciclo de actividad", () => {
-  it("el estudiante no ve el selector, no consulta modelos y usa FER+", async () => {
+  it("el estudiante no ve el selector, no consulta modelos y el servidor usa el predeterminado", async () => {
     admissions.value[0] = { model_id: "ferplus_onnx", state: "BLOCKED", reasons: ["RAM insuficiente"] };
     camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
     const view = page();
@@ -58,7 +58,7 @@ describe("cámara y ciclo de actividad", () => {
     await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onopen?.());
-    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: "ferplus_onnx" }));
+    expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
     view.unmount();
   });
   it("bloquea el inicio sin crear sesión ni solicitar cámara", async () => {

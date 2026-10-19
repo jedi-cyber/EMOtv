@@ -79,6 +79,10 @@ class SessionRecord(Base):
             "AND exercise_steps_completed <= exercise_steps_total)",
             name="ck_sessions_exercise_progress",
         ),
+        CheckConstraint(
+            "session_type IN ('propia', 'participante_adulto', 'participante_infantil')",
+            name="ck_sessions_session_type",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -109,6 +113,8 @@ class SessionRecord(Base):
     exercise_steps_completed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exercise_steps_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exercise_repetitions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    session_type: Mapped[str] = mapped_column(String(32), nullable=False, default="propia",
+                                              server_default="propia")
 
 
 class UserRecord(Base):
@@ -222,6 +228,32 @@ class ExpressionInfoRecord(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LocalModelSettingsRecord(Base):
+    """Configuración de los modelos locales de expresión: una sola fila (id = 1)."""
+
+    __tablename__ = "local_model_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_local_model_settings_single_row"),
+        CheckConstraint(
+            "default_model_id IN ('hsemotion_enet_b0_8_best_afew', 'ferplus_onnx')",
+            name="ck_local_model_settings_default_model",
+        ),
+        CheckConstraint(
+            "(fallback_model_id IS NULL AND fallback_at IS NULL) OR "
+            "(fallback_model_id IS NOT NULL AND fallback_at IS NOT NULL)",
+            name="ck_local_model_settings_fallback_fields",
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    default_model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    changed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fallback_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fallback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class EmotionActivityRecommendationRecord(Base):

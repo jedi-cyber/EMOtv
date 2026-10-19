@@ -11,6 +11,7 @@ from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.domain.emotional_activity_status import EmotionalActivityStatus
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import ActivityOutcome, SessionState
+from emotv.domain.session_type import SessionType
 
 
 Clock = Callable[[], datetime]
@@ -40,6 +41,7 @@ class SessionService:
         self,
         student_id: str | None = None,
         activity_id: str | None = None,
+        session_type: SessionType | str = SessionType.OWN,
     ) -> EmotionalSession:
         """Crea y guarda una sesión que todavía no ha comenzado."""
 
@@ -49,6 +51,7 @@ class SessionService:
             state=SessionState.CREATED,
             student_id=student_id,
             activity_id=activity_id,
+            session_type=session_type,
         )
         return self.repository.save(session)
 
@@ -57,6 +60,7 @@ class SessionService:
         session_id: str | None = None,
         student_id: str | None = None,
         activity_id: str | None = None,
+        session_type: SessionType | str = SessionType.OWN,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada."""
 
@@ -68,6 +72,7 @@ class SessionService:
                 state=SessionState.IN_PROGRESS,
                 student_id=student_id,
                 activity_id=activity_id,
+                session_type=session_type,
             )
         else:
             current = self._get_required(session_id)

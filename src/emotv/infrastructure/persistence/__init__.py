@@ -22,12 +22,18 @@ from emotv.infrastructure.persistence.postgres_recommendation_repository import 
     InMemoryRecommendationRepository,
     PostgresRecommendationRepository,
 )
+from emotv.infrastructure.persistence.postgres_local_model_settings_repository import (
+    InMemoryLocalModelSettingsRepository,
+    PostgresLocalModelSettingsRepository,
+)
 from emotv.infrastructure.persistence.postgres_expression_info_repository import (
     InMemoryExpressionInfoRepository,
     PostgresExpressionInfoRepository,
 )
 
 __all__ = [
+    "InMemoryLocalModelSettingsRepository",
+    "PostgresLocalModelSettingsRepository",
     "InMemoryAssignmentRepository",
     "InMemoryExpressionInfoRepository",
     "InMemoryRecommendationRepository",

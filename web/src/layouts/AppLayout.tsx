@@ -21,6 +21,7 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
   if (parts[0] === "students") return [home, { label: "Estudiantes", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del estudiante" }] : [])];
   if (parts[0] === "admin" && parts[1] === "activities") return [home, { label: "Administrar actividades" }];
+  if (parts[0] === "admin" && parts[1] === "models") return [home, { label: "Modelos" }];
   const labels: Record<string, string> = { users: "Usuarios", unauthorized: "Acceso denegado", "connection-error": "Error de conexión" };
   return [home, { label: labels[parts[0]] ?? "Página no encontrada" }];
 }

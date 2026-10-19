@@ -9,13 +9,23 @@ from pydantic import BaseModel, Field
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.application.ports.assignment_repository import AssignmentRepository
-from emotv.domain import AccessAction, EmotionalSession, Role, User
+from emotv.domain import AccessAction, EmotionalSession, Role, SessionType, User
 from emotv.interfaces.web.auth_router import create_current_user_dependency
+
+
+SessionTypeValue = Literal["propia", "participante_adulto", "participante_infantil"]
+# Una sesión con participante requiere registrar al participante y su
+# autorización firmada; hasta que ese registro exista no se pueden iniciar.
+PARTICIPANT_SESSIONS_UNAVAILABLE = (
+    "Las sesiones con participante requieren registrar al participante y su autorización firmada, "
+    "que todavía no están disponibles. Inicia una sesión propia."
+)
 
 
 class CreateSessionRequest(BaseModel):
     student_id: str | None = None
     activity_id: str | None = None
+    session_type: SessionTypeValue = SessionType.OWN.value
 
 
 class CompleteSessionRequest(BaseModel):
@@ -43,6 +53,7 @@ class SessionResponse(BaseModel):
     exercise_steps_completed: int | None = None
     exercise_steps_total: int | None = None
     exercise_repetitions: int | None = None
+    session_type: SessionTypeValue = SessionType.OWN.value
 
     @classmethod
     def from_domain(cls, session: EmotionalSession) -> "SessionResponse":
@@ -59,7 +70,8 @@ class SessionResponse(BaseModel):
                    recognized_at=session.recognized_at,
                    exercise_steps_completed=session.exercise_steps_completed,
                    exercise_steps_total=session.exercise_steps_total,
-                   exercise_repetitions=session.exercise_repetitions)
+                   exercise_repetitions=session.exercise_repetitions,
+                   session_type=SessionType(session.session_type).value)
 
 
 def create_session_router(
@@ -92,6 +104,8 @@ def create_session_router(
     @router.post("", response_model=SessionResponse, status_code=201)
     def start(request: CreateSessionRequest, user: User = Depends(current_user)) -> SessionResponse:
         service, student_repository = services()
+        if request.session_type != SessionType.OWN.value:
+            raise HTTPException(status_code=422, detail=PARTICIPANT_SESSIONS_UNAVAILABLE)
         resource_id, actor_id = target_student(user, request.student_id)
         try:
             if request.activity_id is not None and activities is not None:
@@ -103,6 +117,7 @@ def create_session_router(
             session = service.start_session(
                 student_id=resource_id,
                 activity_id=request.activity_id,
+                session_type=request.session_type,
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error.args[0])) from error

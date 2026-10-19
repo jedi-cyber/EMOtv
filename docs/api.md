@@ -41,6 +41,12 @@ Para estudiantes, el servidor fuerza el alcance al perfil propio y rechaza un
 `student_id` ajeno con `403`. Una sesión inexistente devuelve `404`. Iniciar una
 sesión asociada exige consentimiento activo.
 
+Cada sesión guarda su `session_type`: `propia` (quien inicia sesión se analiza a
+sí mismo, sin participante), `participante_adulto` o `participante_infantil`.
+`POST /sessions` acepta `session_type` (por defecto `propia`). Mientras no exista
+el registro de participantes y de su autorización firmada, los dos tipos con
+participante responden `422`.
+
 ## Actividades
 
 | Método | Ruta | Acceso |
@@ -134,11 +140,26 @@ respecto a la base (diferencia de probabilidad), si alcanza
 `LIVE_CALIBRATION_MIN_INCREASE` (0.10 por defecto). La calibración no cambia lo
 que se registra ni el umbral de registro.
 
-`GET /analysis/models` es solo para administración. Sin `emotion_model_id`, la
-lectura en vivo usa HSEmotion (`hsemotion_enet_b0_8_best_afew`) si su admisión
-es válida y, si no, FER+. Una cuenta que no es de administración solo puede
-pedir de forma explícita FER+ o HSEmotion; cualquier otro modelo se rechaza
-con `4403`.
+Sin `emotion_model_id`, la sesión usa el modelo local predeterminado que fija el
+superadministrador (HSEmotion, `hsemotion_enet_b0_8_best_afew`, mientras nadie
+lo cambie). Si el predeterminado no tiene admisión vigente, usa el otro modelo
+local y lo registra; si ninguno está admitido, el socket se cierra con el motivo.
+Quien conduce la sesión puede pedir FER+ o HSEmotion para esa sesión; un modelo
+pedido sin admisión se rechaza (`4409`) y cualquier otro modelo, con `4403`
+(salvo administración, que conserva el experimental). Cada sesión registra el
+modelo que usó.
+
+`GET /analysis/models` lista, para quien conduce la sesión, los modelos locales
+con `state` e `is_default`; administración recibe además la evaluación completa
+de admisión.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `GET` | `/admin/models` | Solo superadministrador (rol `admin` hasta P5): estado de HSEmotion y FER+ (pesos verificados, medición vigente, latencia p95), predeterminado, quién lo cambió y cuándo, último uso del respaldo |
+| `PUT` | `/admin/models/default` | Solo superadministrador: `{"model_id": ...}`; `409` si el modelo no tiene admisión vigente |
+
+El cambio rige desde la siguiente sesión, sin reiniciar el servidor. Cada
+clasificador se carga una vez por proceso y lo comparten las sesiones.
 
 `GET /` devuelve `{"service": "emotv-api", "status": "running"}`. `GET /health`
 comprueba base de datos y pesos (200 o 503) y lo usa Docker.

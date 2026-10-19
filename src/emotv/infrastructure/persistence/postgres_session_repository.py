@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
+from emotv.domain.session_type import SessionType
 from emotv.infrastructure.persistence.models import SessionRecord
 
 
@@ -75,6 +76,7 @@ class PostgresSessionRepository:
             exercise_steps_completed=session.exercise_steps_completed,
             exercise_steps_total=session.exercise_steps_total,
             exercise_repetitions=session.exercise_repetitions,
+            session_type=SessionType(session.session_type).value,
         )
 
     @staticmethod
@@ -97,6 +99,7 @@ class PostgresSessionRepository:
         record.exercise_steps_completed = session.exercise_steps_completed
         record.exercise_steps_total = session.exercise_steps_total
         record.exercise_repetitions = session.exercise_repetitions
+        record.session_type = SessionType(session.session_type).value
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -125,6 +128,7 @@ class PostgresSessionRepository:
             exercise_steps_completed=record.exercise_steps_completed,
             exercise_steps_total=record.exercise_steps_total,
             exercise_repetitions=record.exercise_repetitions,
+            session_type=SessionType(record.session_type or SessionType.OWN.value),
         )
 
     @staticmethod

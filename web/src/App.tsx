@@ -24,6 +24,7 @@ import { AssistantWidget } from "./components/AssistantWidget";
 import { AssistantProvider } from "./components/AssistantContext";
 import { ExpressionCatalogProvider } from "./expressions/ExpressionCatalog";
 import { AdminExpressionsPage } from "./pages/AdminExpressionsPage";
+import { AdminModelsPage } from "./pages/AdminModelsPage";
 
 export function App() {
   return (
@@ -45,6 +46,7 @@ export function App() {
           <Route path={paths.users} element={<RoleRoute allowed={["admin"]}><UsersPage /></RoleRoute>} />
           <Route path={paths.adminActivities} element={<RoleRoute allowed={["admin"]}><AdminActivitiesPage /></RoleRoute>} />
           <Route path={paths.adminExpressions} element={<RoleRoute allowed={["admin"]}><AdminExpressionsPage /></RoleRoute>} />
+          <Route path={paths.adminModels} element={<RoleRoute allowed={["admin"]}><AdminModelsPage /></RoleRoute>} />
           <Route path={paths.unauthorized} element={<UnauthorizedPage />} />
           <Route path={paths.connectionError} element={<ConnectionErrorPage />} />
           <Route path="*" element={<NotFoundPage />} />

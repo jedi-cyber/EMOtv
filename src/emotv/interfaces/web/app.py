@@ -29,6 +29,7 @@ from emotv.infrastructure.persistence import (
     PostgresExpressionInfoRepository,
     PostgresRecommendationRepository,
     PostgresChatRepository,
+    PostgresLocalModelSettingsRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -44,6 +45,8 @@ from emotv.interfaces.web.session_router import create_session_router
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.interfaces.web.model_admin_router import create_model_admin_router
+from emotv.application.local_model_service import LocalModelService
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
 from emotv.infrastructure.chat import N8nWebhookChatGateway
@@ -52,7 +55,7 @@ from emotv.application.emi_knowledge import EmiKnowledge
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
-from emotv.infrastructure.vision.emotion_classifier import create_emotion_classifier
+from emotv.infrastructure.vision.emotion_classifier import ClassifierCache, create_emotion_classifier
 from emotv.infrastructure.vision.emotion_classifier.model_admission import ServerModelAdmission
 
 # Inicializar FastAPI
@@ -68,6 +71,10 @@ chat_settings = get_chat_settings()
 # Cupos de sesiones y análisis simultáneos, y pool de hilos propio del análisis.
 server_load = get_server_load_settings()
 analysis_capacity = AnalysisCapacity(server_load)
+# Cada clasificador se carga una vez por proceso y lo comparten todas las sesiones;
+# cada análisis usa ONNX_THREADS_PER_SESSION hilos y los cupos limitan cuántos corren a la vez.
+classifiers = ClassifierCache(lambda model_id: create_emotion_classifier(
+    model_id, intra_op_threads=server_load.onnx_threads_per_session))
 chat_service: ChatService | None = None
 logger = logging.getLogger("emotv.api")
 
@@ -132,6 +139,10 @@ if DATABASE_URL and JWT_SECRET_KEY:
         activities=activity_catalog,
         assignments=assignment_repository,
     ))
+    # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
+    local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
+                                     model_admission.evaluate)
+    app.include_router(create_model_admin_router(local_models, authentication_service, user_repository))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -140,20 +151,18 @@ if DATABASE_URL and JWT_SECRET_KEY:
         student_repository,
         lambda activity: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
-                intra_op_threads=server_load.onnx_threads_per_session)),
+            EmotionFrameAnalyzer(classifier=classifiers.get("ferplus_onnx")),
             PoseService(),
         ),
         authorization=authorization_service,
         model_processor_factory=lambda activity, model_id: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
-                model_id, intra_op_threads=server_load.onnx_threads_per_session)),
+            EmotionFrameAnalyzer(classifier=classifiers.get(model_id)),
             PoseService(),
         ),
         model_admission=model_admission.evaluate,
         emotion_analyzer_factory=lambda model_id: EmotionFrameAnalyzer(
-            classifier=create_emotion_classifier(model_id, intra_op_threads=server_load.onnx_threads_per_session),
+            classifier=classifiers.get(model_id),
         ),
         adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
             activity, analyzer, PoseService(), initial_emotion=emotion,
@@ -162,6 +171,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         expression_info=expression_info_for,
         recommendations=recommendation_repository,
         capacity=analysis_capacity,
+        local_models=local_models,
     ))
     chat_gateway = None
     if chat_settings.webhook_key:
@@ -182,6 +192,7 @@ else:
     app.include_router(create_chat_router(None, None, None))
     app.include_router(create_expression_router(None, None, None))
     app.include_router(create_recommendation_router(None, None, None))
+    app.include_router(create_model_admin_router(None, None, None))
 
 
 @app.on_event("startup")

@@ -26,6 +26,7 @@ export interface AssignedStudent extends Student {
 
 export type SessionState = "created" | "in_progress" | "recognized" | "completed" | "cancelled";
 export type ActivityOutcome = "completed" | "skipped" | "cancelled";
+export type SessionType = "propia" | "participante_adulto" | "participante_infantil";
 
 export interface EmotionalSession {
   id: string;
@@ -44,4 +45,13 @@ export interface EmotionalSession {
   exercise_steps_completed?: number | null;
   exercise_steps_total?: number | null;
   exercise_repetitions?: number | null;
+  session_type?: SessionType;
+}
+
+/** Modelo local que puede probar quien conduce la sesión (GET /analysis/models). */
+export interface LocalModelOption {
+  model_id: string;
+  state: "SUPPORTED" | "WARNING" | "BLOCKED";
+  is_default: boolean;
+  reasons?: string[];
 }

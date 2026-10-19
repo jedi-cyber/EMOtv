@@ -68,7 +68,10 @@ class ServerModelAdmission:
         return self._hashes[key]
 
     def evaluate(self, model_id: str) -> dict:
-        result = dict(model_id=model_id, state="BLOCKED", reasons=[])
+        # checks: pesos que coinciden con el benchmark y medición vigente en este
+        # servidor, aparte de la carga actual (CPU y RAM) que decide el estado.
+        checks = dict(weights_verified=False, benchmark_current=False)
+        result = dict(model_id=model_id, state="BLOCKED", reasons=[], checks=checks)
         try:
             if model_id not in self.paths:
                 raise AdmissionUnavailable("Modelo no permitido")
@@ -86,6 +89,7 @@ class ServerModelAdmission:
             model = report["model"]
             if model["id"] != model_id or model["version"] != EmotionModelCatalog().get(model_id).version or model["sha256"] != self._digest(weights) or model["size_bytes"] != weights.stat().st_size:
                 raise ValueError("El benchmark no corresponde a los pesos instalados")
+            checks["weights_verified"] = True
             measured = datetime.fromisoformat(report["measured_at"])
             if measured.tzinfo is None:
                 raise ValueError("Benchmark sin zona horaria")
@@ -108,6 +112,7 @@ class ServerModelAdmission:
             memory = [float(r["ram_peak_mib"]) for r in runs]
             if any(not math.isfinite(v) or v <= 0 for v in latencies + memory):
                 raise ValueError("Benchmark con métricas inválidas")
+            checks["benchmark_current"] = True
             p95, peak = max(latencies), max(memory)
             # A fresh bounded CPU sample; avoid psutil's uninitialized zero reading.
             cpu = psutil.cpu_percent(interval=0.1)

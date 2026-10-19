@@ -18,6 +18,7 @@ export const paths = {
   users: "/users",
   adminActivities: "/admin/activities",
   adminExpressions: "/admin/expressions",
+  adminModels: "/admin/models",
   unauthorized: "/unauthorized",
   connectionError: "/connection-error",
 } as const;

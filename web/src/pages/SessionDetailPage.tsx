@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useAuth } from "../auth/useAuth";
 import { paths } from "../routes/paths";
 import { PageHeader } from "../components/PageHeader";
-import { activityOutcomeName, emotionModelName, sessionStateName } from "../sessions/labels";
+import { activityOutcomeName, emotionModelName, sessionStateName, sessionTypeName } from "../sessions/labels";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { Button, ButtonLink } from "../components/Button";
 
@@ -56,6 +56,7 @@ export function SessionDetailPage() {
     {message && <Callout variant="success">{message}</Callout>}{error && <Callout variant="error">{error}</Callout>}
     <dl className="detail-grid">
       <div><dt>Estado</dt><dd><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></dd></div>
+      <div><dt>Tipo de sesión</dt><dd>{sessionTypeName(session.session_type)}</dd></div>
       <div><dt>Inicio</dt><dd>{dateTime(session.started_at)}</dd></div>
       <div><dt>Finalización</dt><dd>{session.completed_at ? dateTime(session.completed_at) : "—"}</dd></div>
       {!isStudent && <div><dt>Estudiante</dt><dd>{session.student_id ? studentCode : "Sin asociación"}</dd></div>}
