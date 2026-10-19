@@ -30,7 +30,19 @@ import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
-type Admission = { model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[] };
+type Admission = {
+  model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[];
+  metrics?: { concurrent_frame_p95_ms?: Record<string, number> | null };
+};
+
+/** p95 del cuadro completo con 1, 2 y 4 sesiones simultáneas; solo informativo. */
+function concurrencyText(admission: Admission): string | null {
+  const values = admission.metrics?.concurrent_frame_p95_ms;
+  if (!values) return null;
+  const parts = Object.entries(values).sort(([a], [b]) => Number(a) - Number(b))
+    .map(([sessions, p95]) => `${sessions} ${sessions === "1" ? "sesión" : "sesiones"}: ${Math.round(p95)} ms`);
+  return `p95 del cuadro completo según el benchmark: ${parts.join(" · ")}`;
+}
 const LIVE_MODEL_ID = "hsemotion_enet_b0_8_best_afew";
 type Message = Partial<LiveReading> & {
   type: "ready" | "live" | "calibration_started" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
@@ -242,6 +254,10 @@ export function AdaptiveAnalysisPage() {
 
   function sendFrame() {
     const video = videoRef.current; const canvas = captureRef.current; const socket = socketRef.current;
+    // Un cuadro a la vez: el siguiente sale solo después de la respuesta al anterior
+    // (como máximo uno cada 250 ms), así la frecuencia baja sola si el servidor tarda.
+    // Con la pestaña oculta no se envía nada; si sigue oculta, el servidor cierra por inactividad.
+    if (document.hidden) return;
     if (!video || !canvas || !socket || socket.readyState !== WebSocket.OPEN || awaitingFrame.current || video.readyState < 2) return;
     canvas.width = 640; canvas.height = Math.round(640 * video.videoHeight / video.videoWidth) || 480;
     if (overlayRef.current && (overlayRef.current.width !== canvas.width || overlayRef.current.height !== canvas.height)) {
@@ -569,6 +585,7 @@ export function AdaptiveAnalysisPage() {
             </select>
             <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
             {admission && <Callout variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Callout>}
+            {admission && concurrencyText(admission) && <p className="muted">{concurrencyText(admission)}</p>}
           </>}
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>

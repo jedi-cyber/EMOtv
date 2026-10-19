@@ -108,6 +108,8 @@ valores reales.
 | `LOGIN_MAX_FAILURES_PER_ACCOUNT`, `LOGIN_MAX_FAILURES_PER_IP`, `LOGIN_ATTEMPT_WINDOW_MINUTES` | límite de intentos de inicio de sesión |
 | `LIVE_STABLE_SECONDS`, `LIVE_MIN_CONFIDENCE` | condiciones para registrar una expresión |
 | `LIVE_CALIBRATION_MIN_INCREASE` | aumento mínimo respecto a la base neutral (en memoria) para sugerir una expresión |
+| `MAX_CONCURRENT_ANALYSES`, `MAX_ACTIVE_SESSIONS`, `ANALYSIS_BUSY_WAIT_SECONDS`, `LIVE_IDLE_TIMEOUT_SECONDS`, `ONNX_THREADS_PER_SESSION` | protección de carga del análisis ([arquitectura](docs/architecture.md#protección-de-carga-del-análisis)) |
+| `API_CPUS`, `API_MEMORY_LIMIT` | límites de CPU y memoria del contenedor `api` (solo Docker) |
 | `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY`, `N8N_TIMEOUT_SECONDS` | workflow de Emi; sin clave, el chat responde 503 |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |

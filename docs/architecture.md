@@ -160,6 +160,44 @@ sesión. La inferencia ocurre en el servidor, así que su capacidad es la que
 determina la admisión. Véanse [condiciones actuales](emotion-model-candidates.md)
 y [trabajo pendiente](adaptive-emotion-models-plan.md).
 
+## Protección de carga del análisis
+
+La lectura en vivo y la actividad no pueden dejar sin recursos al resto del
+servidor. Nada de esto cambia el modelo ni el umbral de registro.
+
+- **Un cuadro a la vez por sesión.** El navegador envía el siguiente cuadro solo
+  después de recibir la respuesta al anterior, como máximo uno cada 250 ms
+  (4 por segundo). Si el servidor tarda más, la frecuencia baja sola. Con la
+  pestaña oculta no envía nada. En el servidor, una tarea lee el socket sin
+  esperar al análisis y **descarta** cualquier cuadro que llegue mientras otro
+  está pendiente o en análisis; las instrucciones (registrar, calibrar,
+  cancelar) sí se procesan en orden. Nunca se forma una cola de cuadros.
+- **Cupos** (`interfaces/web/analysis_capacity.py`, por proceso de la API):
+  `MAX_ACTIVE_SESSIONS` conexiones de análisis abiertas y
+  `MAX_CONCURRENT_ANALYSES` cuadros analizándose a la vez (por defecto, núcleos
+  − 1, mínimo 1). Sin cupo, la sesión espera `ANALYSIS_BUSY_WAIT_SECONDS`; si
+  sigue sin cupo, recibe "El servidor está ocupado; intenta de nuevo en un
+  momento", se cierra con el código 1013 y se libera.
+- **Pool propio.** La decodificación del JPEG y el análisis corren en un
+  `ThreadPoolExecutor` dedicado, fuera del bucle de eventos: el login, la API
+  y el chat siguen respondiendo aunque el análisis esté saturado.
+- **Hilos por sesión.** Cada conexión tiene su clasificador; onnxruntime usa
+  `ONNX_THREADS_PER_SESSION` hilos (1 por defecto) para que varias sesiones no
+  compitan por todos los núcleos. HardlyHumans (PyTorch) y YuNet (OpenCV) no
+  usan este límite.
+- **Inactividad.** Si no llegan cuadros durante `LIVE_IDLE_TIMEOUT_SECONDS`
+  (60) mientras se esperan, el servidor cierra con el código 4408 y libera la
+  sesión y su cupo. Mientras el estudiante revisa su resultado no se esperan
+  cuadros y no se aplica.
+- **Docker.** El servicio `api` tiene `cpus` (`API_CPUS`, 3) y `mem_limit`
+  (`API_MEMORY_LIMIT`, 2560 MiB) para dejar recursos a `db` y `web`; ver
+  [docker.md](docker.md#consumo-medido).
+- **Benchmark.** `run_emotion_models_benchmark.py` mide también el cuadro
+  completo con 1, 2 y 4 sesiones simultáneas. Administración ve ese p95 en el
+  selector de modelos del analizador. Es solo informativo: no cambia el modelo
+  ni bloquea nada. Si HSEmotion queda bloqueado por CPU o RAM, la admisión ya
+  hace que la lectura en vivo use FER+.
+
 ## Sesiones, identidad y autorización
 
 ```text

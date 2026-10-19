@@ -18,6 +18,7 @@ import onnxruntime as ort
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.config import HSEMOTION_MODEL_PATH
 from emotv.domain.cropped_face import CroppedFace
+from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import session_options
 
 
 HSEMOTION_MODEL_ID = "hsemotion_enet_b0_8_best_afew"
@@ -57,12 +58,13 @@ class HSEmotionClassifier:
     face_preprocessor_options = dict(padding_ratio=0.0, target_size=None, grayscale=False, normalize=False)
     labels = tuple(HSEMOTION_TO_EMOTV[name] for name in HSEMOTION_CLASSES)
 
-    def __init__(self, model_path: str | Path | None = None) -> None:
+    def __init__(self, model_path: str | Path | None = None, intra_op_threads: int | None = None) -> None:
         self.model_path = Path(model_path) if model_path is not None else HSEMOTION_MODEL_PATH
         if not self.model_path.is_file() or self.model_path.stat().st_size == 0:
             raise FileNotFoundError("Modelo HSEmotion no instalado. Ejecuta python scripts/download_models.py")
         self.model = EmotionModelCatalog().get(HSEMOTION_MODEL_ID)
-        self.session = ort.InferenceSession(str(self.model_path), providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(str(self.model_path), sess_options=session_options(intra_op_threads),
+                                            providers=["CPUExecutionProvider"])
         inputs, outputs = self.session.get_inputs(), self.session.get_outputs()
         if list(inputs[0].shape[1:]) != [3, IMAGE_SIZE, IMAGE_SIZE] or outputs[0].shape[-1] != len(HSEMOTION_CLASSES):
             raise RuntimeError("El archivo ONNX no corresponde a HSEmotion enet_b0_8")

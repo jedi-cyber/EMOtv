@@ -10,6 +10,22 @@ from emotv.application.emotion_model_catalog import EmotionModelCatalog, FERPLUS
 from emotv.domain.cropped_face import CroppedFace
 
 
+def session_options(intra_op_threads: int | None) -> ort.SessionOptions | None:
+    """Limita los hilos de una sesión de onnxruntime (None: valor por defecto de ONNX Runtime).
+
+    Cada conexión tiene su propio clasificador; con 1 hilo por sesión, varias
+    sesiones simultáneas no compiten por todos los núcleos.
+    """
+    if intra_op_threads is None:
+        return None
+    if isinstance(intra_op_threads, bool) or intra_op_threads < 1:
+        raise ValueError("intra_op_threads debe ser al menos 1")
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = intra_op_threads
+    options.inter_op_num_threads = 1
+    return options
+
+
 class FerPlusEmotionClassifier:
     """
     Clasificador de emociones basado en el modelo FER+ (ONNX).
@@ -31,12 +47,14 @@ class FerPlusEmotionClassifier:
         self,
         model_path: str | Path | None = None,
         input_size: tuple[int, int] | None = None,
+        intra_op_threads: int | None = None,
     ) -> None:
         if model_path is None:
             model_path = EMOTION_MODEL_PATH
         self.model_path = Path(model_path)
         self.model = EmotionModelCatalog().get("ferplus_onnx")
         self.input_size = input_size or self.model.input_size
+        self.intra_op_threads = intra_op_threads
 
         self._validate_model()
         self._load_model()
@@ -54,6 +72,7 @@ class FerPlusEmotionClassifier:
         # Usamos ONNX Runtime con CPU (por defecto)
         self.session = ort.InferenceSession(
             str(self.model_path),
+            sess_options=session_options(self.intra_op_threads),
             providers=["CPUExecutionProvider"],
         )
         # Obtener nombre de la entrada

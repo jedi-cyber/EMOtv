@@ -16,6 +16,25 @@ from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.config import BASE_DIR, EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR, HSEMOTION_MODEL_PATH
 
 
+def concurrent_frame_p95(report: dict) -> dict[str, float] | None:
+    """p95 del cuadro completo por número de sesiones simultáneas ({"1": ms, "2": ms, "4": ms}).
+
+    Es solo informativo para administración: un informe sin esta medición, o con
+    una medición mal formada, devuelve None y no cambia la admisión.
+    """
+    section = report.get("concurrent_frame")
+    if not isinstance(section, dict):
+        return None
+    values = {}
+    for sessions, result in section.items():
+        p95 = result.get("p95_ms") if isinstance(result, dict) else None
+        if (not str(sessions).isdigit() or isinstance(p95, bool) or not isinstance(p95, (int, float))
+                or not math.isfinite(p95) or p95 <= 0):
+            return None
+        values[str(sessions)] = float(p95)
+    return values or None
+
+
 class AdmissionUnavailable(ValueError):
     """Razón segura para mostrar al usuario, sin detalles internos."""
 
@@ -96,7 +115,8 @@ class ServerModelAdmission:
             result.update(evaluate_resources(p95_ms=p95, peak_ram_mib=peak,
                           available_ram_mib=available, cpu_percent=cpu, limits=self.limits))
             result["metrics"] = dict(p95_ms=p95, peak_ram_mib=peak,
-                                     available_ram_mib=available, cpu_percent=cpu)
+                                     available_ram_mib=available, cpu_percent=cpu,
+                                     concurrent_frame_p95_ms=concurrent_frame_p95(report))
         except AdmissionUnavailable as error:
             result["reasons"] = [str(error)]
         except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError, ImportError):

@@ -299,8 +299,37 @@ a Docker Desktop:
 | `db` | 44 MiB | 45 MiB |
 | `web` | 13 MiB | 14 MiB |
 
-Benchmark de FER+ en el contenedor: p95 de 18 a 25 ms por predicción. No se
-midió con varias sesiones simultáneas.
+Benchmark de FER+ en el contenedor: p95 de 18 a 25 ms por predicción.
+
+### Límites del contenedor `api`
+
+`docker-compose.yml` limita el servicio `api` con `cpus: ${API_CPUS:-3}` y
+`mem_limit: ${API_MEMORY_LIMIT:-2560m}`, para que el análisis no deje sin CPU
+ni memoria a `db` y `web`. Los valores iniciales están pensados para un equipo
+de 4 núcleos y 4 GB. Dentro del contenedor, `os.cpu_count` ve los núcleos del
+equipo y no `API_CPUS`, así que `MAX_CONCURRENT_ANALYSES` se fija en Compose
+(por defecto 2, es decir, `API_CPUS` − 1). Si se cambia `API_CPUS`, ajustar
+también `MAX_CONCURRENT_ANALYSES`. El resto de variables de carga
+(`MAX_ACTIVE_SESSIONS`, `ANALYSIS_BUSY_WAIT_SECONDS`,
+`LIVE_IDLE_TIMEOUT_SECONDS`, `ONNX_THREADS_PER_SESSION`) se explica en
+[arquitectura](architecture.md#protección-de-carga-del-análisis).
+
+### Cuadro completo con varias sesiones (estimación)
+
+19 de octubre de 2026, en un contenedor `emotv-api:local` sobre un **Intel
+Core i7-1255U**, limitado con `--cpus=4 --memory=4g` y con 1 hilo de
+onnxruntime por sesión. Es el p95 del cuadro completo (JPEG de 640×480,
+decodificación, YuNet, recorte y clasificación), con imágenes sintéticas:
+
+| Modelo    | 1 sesión | 2 sesiones | 4 sesiones |
+|-----------|----------|------------|------------|
+| HSEmotion | 54 ms    | 51 ms      | 284 ms     |
+| FER+      | 34 ms    | 57 ms      | 235 ms     |
+
+Con 4 sesiones a la vez y 4 CPU, el p95 supera los 250 ms entre cuadros. Por
+eso los límites por defecto son 2 análisis simultáneos: con el cupo lleno, los
+demás cuadros esperan o se descartan en lugar de saturar el equipo. Es una
+estimación en este equipo; en otro equipo hay que repetir la medición.
 
 ## Problemas comunes
 

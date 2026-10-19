@@ -487,4 +487,64 @@ describe("actividad secuencial con repeticiones", () => {
     act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "ready", state: "live", emotion_model_id: "ferplus_onnx" }) }));
     expect(screen.getByText("Modelo facial: FER+")).toBeInTheDocument();
   });
+
+  describe("envío de cuadros", () => {
+    /** Prepara un video "listo" y un canvas que entrega un JPEG; devuelve el temporizador de envío. */
+    async function liveWithFrames() {
+      vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(4);
+      vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(640);
+      vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(480);
+      vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback: BlobCallback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
+      camera();
+      page("student");
+      await startAnalysis();
+      await waitFor(() => expect(Socket.instances).toHaveLength(1));
+      const socket = Socket.instances[0];
+      act(() => socket.onopen?.());
+      // Se captura la función de envío sin programar un temporizador real: la prueba decide cada tic.
+      const interval = vi.spyOn(window, "setInterval").mockImplementation(() => 0 as unknown as ReturnType<typeof setInterval>);
+      act(() => socket.onmessage?.({ data: JSON.stringify({ type: "ready", state: "live", message: "Cámara conectada" }) }));
+      const [tick, every] = interval.mock.lastCall!;
+      interval.mockRestore();
+      const frames = () => socket.send.mock.calls.filter(([payload]) => payload instanceof Blob).length;
+      return { socket, tick: tick as () => void, every, frames };
+    }
+
+    it("espera el resultado del cuadro anterior antes de enviar el siguiente, como máximo 4 por segundo", async () => {
+      const { socket, tick, every, frames } = await liveWithFrames();
+      expect(every).toBe(250);
+      act(() => { tick(); tick(); tick(); });
+      expect(frames()).toBe(1);  // sin respuesta no sale otro cuadro
+      act(() => socket.onmessage?.({ data: JSON.stringify(liveReading()) }));
+      act(() => { tick(); tick(); });
+      expect(frames()).toBe(2);
+    });
+
+    it("no envía cuadros con la pestaña oculta", async () => {
+      const { tick, frames } = await liveWithFrames();
+      const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+      act(() => { tick(); tick(); });
+      expect(frames()).toBe(0);
+      hidden.mockReturnValue(false);
+      act(() => tick());
+      expect(frames()).toBe(1);
+      hidden.mockRestore();
+    });
+
+    it("muestra el mensaje del servidor cuando está ocupado o cierra por inactividad", async () => {
+      const { socket } = await liveWithFrames();
+      act(() => socket.onmessage?.({ data: JSON.stringify({ type: "error", message: "El servidor está ocupado; intenta de nuevo en un momento", code: 1013 }) }));
+      expect(await screen.findByText("El servidor está ocupado; intenta de nuevo en un momento")).toBeInTheDocument();
+    });
+  });
+
+  it("administración ve el p95 del cuadro completo con varias sesiones", () => {
+    admissions.value = [
+      { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
+      { model_id: "hsemotion_enet_b0_8_best_afew", state: "SUPPORTED", reasons: [],
+        metrics: { concurrent_frame_p95_ms: { "4": 310.4, "1": 95.2, "2": 160 } } },
+    ] as typeof admissions.value;
+    page("admin");
+    expect(screen.getByText("p95 del cuadro completo según el benchmark: 1 sesión: 95 ms · 2 sesiones: 160 ms · 4 sesiones: 310 ms")).toBeInTheDocument();
+  });
 });
