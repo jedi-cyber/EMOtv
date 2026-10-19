@@ -124,6 +124,53 @@ def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> Li
     return LiveExpressionSettings(*values)
 
 
+def _default_concurrent_analyses() -> int:
+    # Núcleos disponibles para este proceso menos uno (para la API, la base y
+    # el servidor web), con mínimo 1. En Docker conviene fijarlo: os.cpu_count
+    # ve los núcleos del equipo, no el límite "cpus" del contenedor.
+    try:
+        cores = len(os.sched_getaffinity(0))
+    except AttributeError:
+        cores = os.cpu_count() or 1
+    return max(1, cores - 1)
+
+
+@dataclass(frozen=True)
+class ServerLoadSettings:
+    """Protección del servidor frente a la carga de la lectura en vivo."""
+
+    max_concurrent_analyses: int = field(default_factory=_default_concurrent_analyses)
+    max_active_sessions: int = 4
+    # Tiempo que una sesión espera un cupo antes de recibir "servidor ocupado".
+    busy_wait_seconds: float = 5.0
+    # Sin cuadros durante este tiempo (cuando se esperan), el servidor cierra la sesión.
+    idle_timeout_seconds: float = 60.0
+    # Hilos de onnxruntime por sesión (intra_op), para que las sesiones no compitan.
+    onnx_threads_per_session: int = 1
+
+
+def get_server_load_settings(environ: Mapping[str, str] | None = None) -> ServerLoadSettings:
+    source = os.environ if environ is None else environ
+    defaults = ServerLoadSettings()
+    values: dict[str, float | int] = {}
+    for field_name, name, kind, minimum, maximum in (
+        ("max_concurrent_analyses", "MAX_CONCURRENT_ANALYSES", int, 1, 256),
+        ("max_active_sessions", "MAX_ACTIVE_SESSIONS", int, 1, 1024),
+        ("busy_wait_seconds", "ANALYSIS_BUSY_WAIT_SECONDS", float, 0, 60),
+        ("idle_timeout_seconds", "LIVE_IDLE_TIMEOUT_SECONDS", float, 5, 3600),
+        ("onnx_threads_per_session", "ONNX_THREADS_PER_SESSION", int, 1, 64),
+    ):
+        raw = source.get(name, "").strip()
+        try:
+            value = kind(raw) if raw else getattr(defaults, field_name)
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número {'entero' if kind is int else ''}".strip()) from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre {minimum:g} y {maximum:g}")
+        values[field_name] = value
+    return ServerLoadSettings(**values)
+
+
 def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
     source = os.environ if environ is None else environ
     defaults = LoginLimits()

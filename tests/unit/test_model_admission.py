@@ -98,3 +98,16 @@ def test_hsemotion_uses_the_same_admission_with_its_own_report(evaluator, tmp_pa
 def test_hsemotion_report_path_is_configurable():
     service = module.ServerModelAdmission({"HSEMOTION_BENCHMARK_PATH": "custom/hsemotion.json"})
     assert service.paths["hsemotion_enet_b0_8_best_afew"][1].as_posix() == "custom/hsemotion.json"
+
+
+def test_concurrent_frame_latency_is_shown_without_changing_admission(evaluator):
+    service, path, report = evaluator
+    assert service.evaluate("ferplus_onnx")["metrics"]["concurrent_frame_p95_ms"] is None
+    slow = {"1": {"p95_ms": 900}, "2": {"p95_ms": 1800}, "4": {"p95_ms": 3600}}
+    path.write_text(json.dumps({**report, "concurrent_frame": slow}), encoding="utf-8")
+    result = service.evaluate("ferplus_onnx")
+    # Aunque sea lento con varias sesiones, la medición solo se informa: no bloquea.
+    assert result["state"] == "SUPPORTED"
+    assert result["metrics"]["concurrent_frame_p95_ms"] == {"1": 900.0, "2": 1800.0, "4": 3600.0}
+    path.write_text(json.dumps({**report, "concurrent_frame": {"1": "x"}}), encoding="utf-8")
+    assert service.evaluate("ferplus_onnx")["state"] == "SUPPORTED"

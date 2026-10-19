@@ -17,7 +17,7 @@ from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_settings,
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
-                          get_live_expression_settings)
+                          get_live_expression_settings, get_server_load_settings)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -38,6 +38,7 @@ from emotv.interfaces.web.identity_router import create_identity_router
 from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
 from emotv.interfaces.web.security import configure_web_security, load_web_settings
 from emotv.interfaces.web.activity_router import create_activity_router
+from emotv.interfaces.web.analysis_capacity import AnalysisCapacity
 from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.interfaces.web.chat_router import create_chat_router
@@ -64,6 +65,9 @@ activity_catalog = ActivityCatalog()
 model_admission = ServerModelAdmission()
 consent_mode = get_consent_mode()
 chat_settings = get_chat_settings()
+# Cupos de sesiones y análisis simultáneos, y pool de hilos propio del análisis.
+server_load = get_server_load_settings()
+analysis_capacity = AnalysisCapacity(server_load)
 chat_service: ChatService | None = None
 logger = logging.getLogger("emotv.api")
 
@@ -136,18 +140,20 @@ if DATABASE_URL and JWT_SECRET_KEY:
         student_repository,
         lambda activity: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(),
+            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
+                intra_op_threads=server_load.onnx_threads_per_session)),
             PoseService(),
         ),
         authorization=authorization_service,
         model_processor_factory=lambda activity, model_id: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(classifier=create_emotion_classifier(model_id)),
+            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
+                model_id, intra_op_threads=server_load.onnx_threads_per_session)),
             PoseService(),
         ),
         model_admission=model_admission.evaluate,
         emotion_analyzer_factory=lambda model_id: EmotionFrameAnalyzer(
-            classifier=create_emotion_classifier(model_id),
+            classifier=create_emotion_classifier(model_id, intra_op_threads=server_load.onnx_threads_per_session),
         ),
         adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
             activity, analyzer, PoseService(), initial_emotion=emotion,
@@ -155,6 +161,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         live_settings=get_live_expression_settings(),
         expression_info=expression_info_for,
         recommendations=recommendation_repository,
+        capacity=analysis_capacity,
     ))
     chat_gateway = None
     if chat_settings.webhook_key:

@@ -1,7 +1,7 @@
 """Benchmark del contrato predict; no mide precisión ni captura de cámara."""
 from collections.abc import Callable
 import math
-from threading import Event, Thread
+from threading import Barrier, Event, Lock, Thread
 from time import perf_counter
 
 import numpy as np
@@ -63,3 +63,59 @@ def benchmark_predict(predict: Callable[[], object], *, warmup: int = 20,
         psutil.cpu_count() or 1, rss)
     result["target_reached"] = len(latencies) >= samples and elapsed >= min_seconds
     return result
+
+
+def benchmark_concurrent(steps: list[Callable[[], object]], *, warmup: int = 5,
+                         samples_per_session: int = 50, max_seconds: float = 60) -> dict:
+    """Latencia de un cuadro con varias sesiones simultáneas, una por hilo.
+
+    Cada elemento de steps es una sesión con su propio analizador, como en el
+    servidor. Todas empiezan a la vez y cada una procesa samples_per_session
+    cuadros seguidos (un cuadro a la vez por sesión). Se informa la latencia
+    de todos los cuadros juntos.
+    """
+    if not steps or warmup < 0 or samples_per_session < 1 or max_seconds <= 0:
+        raise ValueError("Parámetros de benchmark concurrente inválidos")
+    latencies: list[float] = []
+    durations: list[float] = []
+    errors: list[BaseException] = []
+    time_up = Event()  # se activa si una sesión supera max_seconds
+    start_together = Barrier(len(steps))
+    guard = Lock()
+
+    def run(step):
+        try:
+            for _ in range(warmup):
+                step()
+            start_together.wait()  # el calentamiento no cuenta
+            own = []
+            began = perf_counter()
+            for _ in range(samples_per_session):
+                before = perf_counter()
+                step()
+                own.append((perf_counter() - before) * 1000)
+                if time_up.is_set() or perf_counter() - began >= max_seconds:
+                    time_up.set()
+                    break
+            with guard:
+                latencies.extend(own)
+                durations.append(perf_counter() - began)
+        except BaseException as error:  # se relanza en el hilo principal
+            errors.append(error)
+            start_together.abort()
+
+    threads = [Thread(target=run, args=(step,), daemon=True) for step in steps]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise RuntimeError("Falló una sesión del benchmark concurrente") from errors[0]
+    if not latencies:
+        raise ValueError("Sin muestras")
+    elapsed = max(durations)
+    return dict(sessions=len(steps), samples=len(latencies),
+                p50_ms=float(np.percentile(latencies, 50)), p95_ms=float(np.percentile(latencies, 95)),
+                max_ms=max(latencies), elapsed_seconds=elapsed,
+                frames_per_second=len(latencies) / elapsed if elapsed > 0 else float("inf"),
+                target_reached=len(latencies) >= len(steps) * samples_per_session)

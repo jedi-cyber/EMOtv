@@ -109,6 +109,15 @@ no al servidor: no existen rutas de cámara del servidor.
 | cliente → servidor | `finish_without_activity` | cierra como `completed` con `exercise_result: "skipped"` |
 | cliente → servidor | `cancel` | responde `cancelled` con `recognition_kept` |
 
+El navegador envía un cuadro solo después de recibir la respuesta al anterior.
+El servidor descarta, sin responder, los cuadros que lleguen mientras analiza
+otro. Si no hay cupo de sesión o de análisis tras
+`ANALYSIS_BUSY_WAIT_SECONDS`, responde `error` con "El servidor está ocupado;
+intenta de nuevo en un momento" y `code: 1013`. Si no llegan cuadros durante
+`LIVE_IDLE_TIMEOUT_SECONDS` mientras se esperan, responde `error` con
+`code: 4408` y libera la sesión. Ver
+[protección de carga](architecture.md#protección-de-carga-del-análisis).
+
 La fase en vivo no escribe en la base de datos ni genera recomendación. El
 registro solo se acepta si hay rostro y la expresión lleva al menos
 `LIVE_STABLE_SECONDS` sin cambiar (1 por defecto) con confianza media de al

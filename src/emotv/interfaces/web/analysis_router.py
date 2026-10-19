@@ -30,6 +30,12 @@ from emotv.application.neutral_calibration import NeutralCalibration
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.config import LiveExpressionSettings
 from emotv.domain import AccessAction, Activity, Role, SessionState, StabilizedEmotion
+from emotv.interfaces.web.analysis_capacity import (
+    SERVER_BUSY_CLOSE_CODE,
+    SERVER_BUSY_MESSAGE,
+    AnalysisCapacity,
+    ServerBusy,
+)
 
 
 ProcessorFactory = Callable[[Activity], BrowserActivityService]
@@ -60,6 +66,9 @@ STAGE_MESSAGES = {
     "persistence": "No se pudo guardar el estado de la sesión. Intenta de nuevo en unos minutos.",
     "server": "Ocurrió un error inesperado en el análisis. Intenta de nuevo en unos minutos.",
 }
+IDLE_MESSAGE = "La sesión se cerró porque no llegaron imágenes de la cámara durante un tiempo. Puedes iniciar otra."
+# Código de cierre de inactividad (rango privado 4000-4999, como 4401 y 4403).
+IDLE_CLOSE_CODE = 4408
 RECOMMENDATION_UNAVAILABLE = (
     "No se pudo calcular la actividad recomendada. Tu expresión quedó registrada; "
     "puedes elegir una actividad de la lista o finalizar sin actividad."
@@ -90,9 +99,11 @@ def create_analysis_router(
     live_clock: Callable[[], float] | None = None,
     expression_info: Callable[[str], dict[str, object] | None] | None = None,
     recommendations: RecommendationSource | None = None,
+    capacity: AnalysisCapacity | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
+    load = capacity or AnalysisCapacity()
     policy = authorization or AuthorizationService()
     # Un recomendador por router y sin estado mutable: lee las asociaciones en
     # cada recomendación, así que sirve igual con varias conexiones y procesos.
@@ -117,6 +128,8 @@ def create_analysis_router(
         recognized: StabilizedEmotion | None = None
         active_session_id: str | None = None
         recorded_steps: int | None = None
+        holds_session_slot = False
+        reader: asyncio.Task | None = None
         try:
             if any(value is None for value in (
                 sessions, activities, authentication, users, students, processor_factory
@@ -165,6 +178,10 @@ def create_analysis_router(
                 await _error(websocket, "La sesión no está en progreso", 4409)
                 return
             active_session_id = session.id
+            # Cupo de sesión activa antes de cargar el modelo; sin cupo tras la
+            # espera, ServerBusy cierra con "servidor ocupado".
+            await load.acquire_session()
+            holds_session_slot = True
 
             activity_id = str(credentials.get("activity_id", "")).strip().lower()
             adaptive = not activity_id and session.activity_id is None
@@ -297,10 +314,47 @@ def create_analysis_router(
                     "progress": 0.0,
                 }
 
+            # Una tarea lee el socket sin esperar al análisis. Un cuadro que llega
+            # mientras hay otro pendiente o en análisis se descarta: nunca se
+            # forma una cola de cuadros. Las instrucciones de texto sí se encolan.
+            events: asyncio.Queue[dict] = asyncio.Queue()
+            frame_slot = {"busy": False, "dropped": 0}
+
+            async def read_socket() -> None:
+                try:
+                    while True:
+                        incoming = await websocket.receive()
+                        if incoming["type"] == "websocket.disconnect":
+                            break
+                        if incoming.get("bytes") is not None and not incoming.get("text"):
+                            if frame_slot["busy"]:
+                                frame_slot["dropped"] += 1
+                                continue
+                            frame_slot["busy"] = True
+                        await events.put(incoming)
+                except Exception:
+                    pass  # Socket cerrado: el bucle principal lo trata como desconexión.
+                await events.put({"type": "websocket.disconnect"})
+
+            reader = asyncio.create_task(read_socket())
+            last_was_frame = False
             while True:
-                event = await websocket.receive()
+                if last_was_frame:
+                    frame_slot["busy"] = False  # Cuadro anterior resuelto: se admite el siguiente.
+                # Solo se exige actividad mientras se esperan cuadros (lectura en
+                # vivo o actividad); al revisar el resultado no hay cuadros.
+                expecting_frames = processor is not None or (adaptive and recognized is None)
+                try:
+                    event = await asyncio.wait_for(
+                        events.get(), timeout=load.settings.idle_timeout_seconds if expecting_frames else None,
+                    )
+                except asyncio.TimeoutError:
+                    logger.info("Sesión %s liberada por inactividad", session.id)
+                    await _error(websocket, IDLE_MESSAGE, IDLE_CLOSE_CODE)
+                    break
                 if event["type"] == "websocket.disconnect":
                     break
+                last_was_frame = not event.get("text")
                 if event.get("text"):
                     try:
                         command = json.loads(event["text"])
@@ -420,7 +474,8 @@ def create_analysis_router(
                 if len(frame_bytes) > MAX_FRAME_BYTES:
                     await websocket.send_json({"type": "error", "message": "La imagen de la cámara es demasiado grande. Recarga la página."})
                     continue
-                frame = cv2.imdecode(np.frombuffer(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+                # Decodificación y análisis en el pool propio, dentro del cupo de simultáneos.
+                frame = await load.run(_decode_jpeg, frame_bytes)
                 if frame is None:
                     await websocket.send_json({"type": "error", "message": "No se pudo leer la imagen de la cámara. Vuelve a intentarlo."})
                     continue
@@ -432,7 +487,7 @@ def create_analysis_router(
                     assert analyzer is not None
                     # Fase en vivo: un mensaje por frame procesado y nada persistido.
                     try:
-                        prediction, distribution = await asyncio.to_thread(_analyze_detailed, analyzer, frame)
+                        prediction, distribution = await load.run(_analyze_detailed, analyzer, frame)
                     except (cv2.error, OSError, RuntimeError, ValueError) as error:
                         raise AnalysisStageError("recognition") from error
                     reading = tracker.update(prediction, distribution)
@@ -441,7 +496,7 @@ def create_analysis_router(
 
                 assert processor is not None
                 try:
-                    status = await asyncio.to_thread(processor.process_frame, frame)
+                    status = await load.run(processor.process_frame, frame)
                 except (cv2.error, OSError, RuntimeError, ValueError) as error:
                     raise AnalysisStageError("activity") from error
                 payload: dict[str, object] = {
@@ -480,6 +535,12 @@ def create_analysis_router(
                     break
         except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
+        except ServerBusy:
+            logger.warning("Servidor sin cupo de análisis para la sesión %s", active_session_id)
+            try:
+                await _error(websocket, SERVER_BUSY_MESSAGE, SERVER_BUSY_CLOSE_CODE)
+            except (WebSocketDisconnect, RuntimeError):
+                pass
         except AnalysisStageError as error:
             logger.error("Etapa %s fallida en la sesión %s", error.stage, active_session_id, exc_info=error.__cause__)
             await _report_stage(websocket, error.stage)
@@ -508,6 +569,10 @@ def create_analysis_router(
                     processor.close()  # Libera MediaPipe; es rápido y no debe depender de un await.
                 except Exception:
                     logger.exception("No se pudo cerrar el procesador de la sesión %s", active_session_id)
+            if holds_session_slot:
+                load.release_session()
+            if reader is not None:
+                reader.cancel()
             try:
                 await websocket.close()
             except Exception:
@@ -528,6 +593,11 @@ async def _error(websocket: WebSocket, message: str, code: int) -> None:
     # depender del evento de cierre, que puede llegar después del mensaje.
     await websocket.send_json({"type": "error", "message": message, "code": code})
     await websocket.close(code=code)
+
+
+def _decode_jpeg(frame_bytes: bytes) -> np.ndarray | None:
+    """Decodifica en memoria; la imagen se descarta al terminar el análisis."""
+    return cv2.imdecode(np.frombuffer(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
 def _analyze_detailed(
