@@ -266,6 +266,32 @@ chocar con un PostgreSQL instalado en Windows. Cámbialo con
 `POSTGRES_HOST_PORT`. Luego `python -m alembic upgrade head` y sigue el
 README.
 
+## Pruebas dentro de Docker
+
+Las pruebas pueden ejecutarse en contenedores Linux con el perfil `test`. Sirve
+cuando el anfitrión interfiere con los procesos de Windows; por ejemplo, la
+contención automática de Comodo/Xcitium, que virtualiza archivos y salida de
+`python` y `powershell`. Estos servicios no arrancan con `up`.
+
+```powershell
+# Backend: aplica las migraciones en una base desechable y ejecuta pytest
+docker compose --env-file .env.docker --profile test run --rm tests
+# Solo una parte de la suite
+docker compose --env-file .env.docker --profile test run --rm tests python -m pytest -q tests/unit
+# Frontend: npm ci, npx tsc -b y npx vitest run
+docker compose --env-file .env.docker --profile test run --rm web-tests
+# Al terminar, apagar solo la base de pruebas ("down" detendría todo el sistema)
+docker compose --env-file .env.docker --profile test rm -sf test-db
+```
+
+- `tests` usa la etapa `tests` de `docker/api.Dockerfile` (la imagen de la API
+  más pytest y git) y monta el repositorio en `/app`.
+- `test-db` es un PostgreSQL en memoria (`tmpfs`), sin puertos publicados y sin
+  datos reales; desaparece al detenerse. Nunca se usa la base `db`.
+- `web-tests` guarda `node_modules` en el volumen `emotv_web_test_node_modules`,
+  con binarios de Linux, separado del `web/node_modules` de Windows.
+- Las pruebas que requieren pesos se saltan si `models/weights/` no los tiene.
+
 ## Chatbot Emi con n8n
 
 Pon la clave real en `.env.docker` (`N8N_WEBHOOK_KEY=...`) y recrea la API:
