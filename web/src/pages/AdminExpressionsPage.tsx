@@ -75,7 +75,7 @@ export function AdminExpressionsPage() {
 
   return <section>
     <PageHeader title="Catálogo de expresiones"
-      description="Textos fijos que ve el estudiante tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
+      description="Textos fijos que ve el usuario tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
     {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0} emptyMessage="El catálogo de expresiones está vacío. Revisa que el servidor haya cargado los textos iniciales." onRetry={query.reload} />

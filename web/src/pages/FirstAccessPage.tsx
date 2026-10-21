@@ -30,7 +30,9 @@ export function FirstAccessPage() {
 
   return <main className="centered"><section className="card onboarding-card">
     <h1>Protege tu cuenta</h1>
-    <p>Esta cuenta tiene una contraseña provisional. Cámbiala antes de continuar.</p>
+    {user.password_reset
+      ? <Callout variant="warning">Tu contraseña fue restablecida por otra cuenta. Si no lo pediste, avisa al administrador. Cámbiala antes de continuar.</Callout>
+      : <p>Esta cuenta tiene una contraseña provisional. Cámbiala antes de continuar.</p>}
     {error && <Callout variant="error">{error}</Callout>}
     <form onSubmit={(event) => { void submit(event); }}>
       <label>Contraseña provisional<input type="password" autoComplete="current-password" value={current} onChange={(event) => setCurrent(event.target.value)} required /></label>

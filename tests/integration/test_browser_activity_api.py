@@ -388,16 +388,15 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
 
 def _admin(auth, users):
     return users.save(User("admin-flow", "admin-flow@example.com", auth.hash_password("admin-password-123"),
-                           Role.ADMIN, datetime.now(timezone.utc)))
+                           Role.SUPERADMIN, datetime.now(timezone.utc)))
 
 
-@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hardlyhumans_vit"])
-def test_admin_selected_model_reaches_processor(flow, model_id):
-    client, auth, _, _, student, sessions, _, processors, users = flow
-    admin = _admin(auth, users)
-    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hsemotion_enet_b0_8_best_afew"])
+def test_conductor_selected_local_model_reaches_processor(flow, model_id):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s", owner_user_id=user.id)
     with client.websocket_connect("/ws/activity") as socket:
-        socket.send_json({**credentials(auth, admin, session.id), "emotion_model_id": model_id})
+        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": model_id})
         ready = socket.receive_json()
         assert ready["type"] == "ready"
         assert ready["emotion_model_id"] == model_id

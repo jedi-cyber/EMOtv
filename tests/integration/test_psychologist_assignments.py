@@ -108,28 +108,30 @@ def test_psychologist_without_assignments_gets_empty_lists(world):
     assert world.client.get("/sessions", headers=a).json() == []
 
 
-def test_psychologist_cannot_start_cancel_complete_or_analyze(world):
+def test_docente_does_not_start_cancel_or_stream_into_a_group_session(world):
     a = world.headers(world.psy_a)
     result = dict(initial_emotion="neutral", emotion_confidence=.9, activity_id="arms_up_5s",
                   exercise_result="completed", exercise_duration_seconds=5)
 
+    # El docente conduce sesiones propias, pero no a nombre de un usuario de su grupo.
     assert world.client.post("/sessions", headers=a, json={"student_id": world.student_1.id}).status_code == 403
     assert world.client.post(f"/sessions/{world.session_1.id}/cancel", headers=a).status_code == 403
-    assert world.client.post(f"/sessions/{world.session_1.id}/complete", headers=a, json=result).status_code == 403
+    # Nadie fija el resultado a mano: el registro manual ya no existe.
+    assert world.client.post(f"/sessions/{world.session_1.id}/complete", headers=a, json=result).status_code == 404
     with world.client.websocket_connect("/ws/activity") as socket:
         socket.send_json({"type": "authenticate", "token": world.auth.create_access_token(world.psy_a),
                           "session_id": world.session_1.id, "activity_id": "arms_up_5s"})
         assert socket.receive_json()["code"] == 4403
 
 
-def test_admin_sees_everything(world):
+def test_admin_sees_accounts_but_never_sessions(world):
     admin = world.headers(world.admin)
-    every_session = {world.session_1.id, world.session_2.id, world.session_3.id}
 
-    assert ids(world.client.get("/sessions", headers=admin)) == every_session
+    assert world.client.get("/sessions", headers=admin).status_code == 403
+    assert world.client.get(f"/sessions/{world.session_2.id}", headers=admin).status_code == 403
+    # Solo los datos de cuenta, para armar los grupos.
     assert ids(world.client.get("/students", headers=admin)) == {
         world.student_1.id, world.student_2.id, world.student_3.id}
-    assert world.client.get(f"/sessions/{world.session_2.id}", headers=admin).status_code == 200
 
 
 def test_student_sees_only_own_sessions(world):
@@ -189,3 +191,16 @@ def test_assignment_repositories_behave_the_same(world, repository_kind):
     assert repository.unassign(psychologist, student) is True
     assert repository.unassign(psychologist, student) is False
     assert not repository.is_assigned(psychologist, student)
+
+
+def test_docente_streams_into_their_own_session(world):
+    # El docente conduce sesiones propias con su cámara; solo en las suyas.
+    own = world.sessions.start_session(activity_id="arms_up_5s", owner_user_id=world.psy_a.id)
+    with world.client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({"type": "authenticate", "token": world.auth.create_access_token(world.psy_a),
+                          "session_id": own.id, "activity_id": "arms_up_5s"})
+        assert socket.receive_json()["type"] == "ready"
+    with world.client.websocket_connect("/ws/activity") as socket:
+        socket.send_json({"type": "authenticate", "token": world.auth.create_access_token(world.psy_b),
+                          "session_id": own.id, "activity_id": "arms_up_5s"})
+        assert socket.receive_json()["code"] == 4403

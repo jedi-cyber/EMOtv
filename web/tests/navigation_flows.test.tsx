@@ -11,7 +11,7 @@ vi.mock("../src/api/useApiQuery", () => ({
     data: path === "/activities" ? [{ id: "arms_up_5s", name: "Brazos arriba", description: "Levanta los brazos", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }]
       : path?.startsWith("/activities/") ? { id: "arms_up_5s", name: "Brazos arriba", description: "Levanta los brazos", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }
         : path === "/students" ? [{ id: "student-1", user_id: "user-1", student_code: "E001" }]
-          : path === "/auth/users" ? [{ id: "user-1", email: "admin@example.com", role: "admin", is_active: true }]
+          : path === "/users" ? [{ id: "user-1", email: "docente@example.com", role: "psychologist", is_active: true }]
             : path === "/analysis/models" ? [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] }]
               : [],
     loading: false, error: "", connectionError: false, reload: vi.fn(),
@@ -32,22 +32,35 @@ describe("recorridos principales por rol", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Analizador" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Probar cámara" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Usuarios" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Cuentas y grupos" })).not.toBeInTheDocument();
   });
 
-  it("lleva a Psicología del inicio al estudiante y sus sesiones", async () => {
+  it("lleva al docente de su grupo a las sesiones de un usuario", async () => {
     renderAs("psychologist");
-    await userEvent.click(screen.getByRole("link", { name: "Ver estudiantes" }));
-    expect(screen.getByRole("heading", { level: 1, name: "Seguimiento de estudiantes" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Mi grupo" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Mi grupo" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: /E001/ }));
-    expect(screen.getByRole("heading", { level: 1, name: /^Sesiones (de E001|del estudiante)$/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Volver a estudiantes/ })).toHaveAttribute("href", "/students");
+    expect(screen.getByRole("heading", { level: 1, name: /^Sesiones (de E001|del usuario)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Volver a mi grupo/ })).toHaveAttribute("href", "/students");
   });
 
-  it("permite a Administración ir a usuarios y actividades administrables", async () => {
+  it("el docente también abre el analizador para sus sesiones propias", async () => {
+    renderAs("psychologist");
+    await userEvent.click(screen.getByRole("link", { name: "Analizador" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Analizador" })).toBeInTheDocument();
+  });
+
+  it("lleva al administrador a cuentas y grupos, sin acceso a sesiones", async () => {
     renderAs("admin");
-    await userEvent.click(screen.getByRole("link", { name: "Ver usuarios" }));
-    expect(screen.getByRole("heading", { level: 1, name: "Usuarios" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Gestionar cuentas" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Cuentas y grupos" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Grupo" })).toBeInTheDocument();
+    renderAs("admin", "/sessions");
+    expect(await screen.findByRole("heading", { name: "No tienes acceso a esta página" })).toBeInTheDocument();
+  });
+
+  it("lleva al superadministrador a las actividades administrables", async () => {
+    renderAs("superadmin");
     await userEvent.click(screen.getByRole("navigation", { name: "Navegación principal" }).querySelector('a[href="/admin/activities"]')!);
     expect(screen.getByRole("heading", { level: 1, name: "Administrar actividades" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Crear actividad" })).toBeInTheDocument();

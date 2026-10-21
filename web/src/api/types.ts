@@ -46,6 +46,8 @@ export interface EmotionalSession {
   exercise_steps_total?: number | null;
   exercise_repetitions?: number | null;
   session_type?: SessionType;
+  /** Cuenta que conduce la sesión; solo ella puede cancelarla. */
+  owner_user_id?: string | null;
 }
 
 /** Modelo local que puede probar quien conduce la sesión (GET /analysis/models). */
@@ -54,4 +56,38 @@ export interface LocalModelOption {
   state: "SUPPORTED" | "WARNING" | "BLOCKED";
   is_default: boolean;
   reasons?: string[];
+}
+
+export type ParticipantKind = "adult" | "child";
+
+/** Participante sin cuenta, nombre ni foto: solo un código. */
+export interface Participant {
+  id: string;
+  code: string;
+  kind: ParticipantKind;
+  created_at: string;
+  expires_at: string;
+  notes: string | null;
+  registered_by_me: boolean;
+  deletion_requested_at: string | null;
+}
+
+/** Acta de eliminación: sin datos personales. */
+export interface DeletionCertificate {
+  id: string;
+  participant_code: string;
+  deleted_at: string;
+  counts: Record<string, number>;
+  verified: boolean;
+}
+
+export interface AuditEntry {
+  id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  actor_role: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  result: "success" | "denied" | "failure";
 }

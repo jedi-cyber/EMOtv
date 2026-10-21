@@ -16,6 +16,9 @@ from emotv.application.ports.assignment_repository import AssignmentRepository
 from emotv.domain import Role, User
 from emotv.domain.psychologist_assignment import PsychologistAssignment
 from emotv.interfaces.web.auth_router import create_current_user_dependency, UserResponse
+from emotv.application.audit_service import AuditService
+from emotv.config import PrivacySettings
+from emotv.domain.audit import AuditAction, AuditResult
 
 
 class UserCreate(BaseModel):
@@ -81,23 +84,65 @@ class ConsentPolicyCreate(BaseModel):
     approved: bool = False
 
 
+MANAGEABLE_ROLES: dict[Role, frozenset[Role]] = {
+    # El superadministrador gestiona solo la cuenta de administrador.
+    Role.SUPERADMIN: frozenset({Role.ADMIN}),
+    # El administrador gestiona docentes y usuarios.
+    Role.ADMIN: frozenset({Role.PSYCHOLOGIST, Role.STUDENT}),
+}
+
+
 def create_identity_router(authentication: AuthenticationService | None,
                            users: UserRepository | None,
                            students: StudentRepository | None,
                            consents: ConsentRepository | None,
                            policy_service: ConsentPolicyService | None = None,
-                           assignments: AssignmentRepository | None = None) -> APIRouter:
+                           assignments: AssignmentRepository | None = None,
+                           audit: AuditService | None = None,
+                           privacy: PrivacySettings | None = None) -> APIRouter:
     router = APIRouter(tags=["identity"])
     current_user = create_current_user_dependency(authentication, users)
+    limits = privacy or PrivacySettings()
 
     def configured() -> IdentityRegistrationService:
         if authentication is None or users is None or students is None or consents is None:
             raise HTTPException(503, "Identidades no configuradas")
         return IdentityRegistrationService(users, students, consents, authentication)
 
+    def record(actor: User, action: AuditAction, resource_type: str, resource_id: str | None,
+               result: AuditResult = AuditResult.SUCCESS) -> None:
+        if audit is not None:
+            audit.record(actor, action, resource_type, resource_id, result)
+
+    def manageable(user: User) -> frozenset[Role]:
+        roles = MANAGEABLE_ROLES.get(user.role, frozenset())
+        if not roles:
+            raise HTTPException(403, "Tu cuenta no gestiona otras cuentas")
+        return roles
+
+    def require_superadmin(user: User) -> None:
+        if user.role is not Role.SUPERADMIN:
+            raise HTTPException(403, "Se requiere el superadministrador")
+
     def require_admin(user: User) -> None:
         if user.role is not Role.ADMIN:
-            raise HTTPException(403, "Se requiere administración")
+            raise HTTPException(403, "Se requiere el administrador")
+
+    def managed_target(user: User, user_id: str) -> User:
+        roles = manageable(user)
+        item = configured().users.get_by_id(user_id)
+        if item is None or item.role not in roles:
+            # Sin revelar si existe una cuenta que no le corresponde gestionar.
+            raise HTTPException(404, "Cuenta no encontrada")
+        return item
+
+    def active_admins(service: IdentityRegistrationService) -> int:
+        return sum(1 for item in service.users.list_all() if item.role is Role.ADMIN and item.is_active)
+
+    def require_admin_slot(service: IdentityRegistrationService) -> None:
+        if active_admins(service) >= limits.max_admin_accounts:
+            raise HTTPException(409, "Ya existe el máximo de cuentas de administrador activas "
+                                     f"({limits.max_admin_accounts}). Desactiva la actual antes de crear otra.")
 
     def is_assigned(psychologist_user_id: str, student_id: str) -> bool:
         return assignments is not None and assignments.is_assigned(psychologist_user_id, student_id)
@@ -106,89 +151,95 @@ def create_identity_router(authentication: AuthenticationService | None,
         service = configured()
         student = service.students.get_by_id(student_id)
         if student is None:
-            raise HTTPException(404, "Estudiante no encontrado")
+            raise HTTPException(404, "Usuario no encontrado")
+        if user.role in (Role.ADMIN, Role.SUPERADMIN):
+            raise HTTPException(403, "Esta información la consultan el usuario y su docente")
         if user.role is Role.STUDENT and student.user_id != user.id:
-            raise HTTPException(403, "No tienes acceso a este estudiante")
+            raise HTTPException(403, "No tienes acceso a este usuario")
         if user.role is Role.PSYCHOLOGIST and not is_assigned(user.id, student.id):
-            raise HTTPException(403, "No tienes asignado a este estudiante")
+            raise HTTPException(403, "Este usuario no pertenece a tu grupo")
         if write and user.role is Role.PSYCHOLOGIST:
-            raise HTTPException(403, "El consentimiento debe registrarlo el estudiante o administración")
+            raise HTTPException(403, "El consentimiento lo registra el usuario desde su cuenta")
         return student
 
     @router.get("/users", response_model=list[UserResponse])
     def list_users(user: User = Depends(current_user)):
-        require_admin(user)
-        return [UserResponse.from_domain(item) for item in configured().users.list_all()]
+        roles = manageable(user)
+        return [UserResponse.from_domain(item) for item in configured().users.list_all() if item.role in roles]
 
     @router.get("/users/{user_id}", response_model=UserResponse)
     def get_user(user_id: str, user: User = Depends(current_user)):
-        require_admin(user)
-        item = configured().users.get_by_id(user_id)
-        if item is None:
-            raise HTTPException(404, "Usuario no encontrado")
-        return UserResponse.from_domain(item)
+        return UserResponse.from_domain(managed_target(user, user_id))
 
     @router.post("/users", response_model=CreatedUserResponse, status_code=201)
     def create_user(request: UserCreate, user: User = Depends(current_user)):
-        require_admin(user)
+        if request.role not in manageable(user):
+            raise HTTPException(403, "Tu cuenta no puede crear cuentas con ese papel")
         service = configured()
+        if request.role is Role.ADMIN:
+            require_admin_slot(service)
         temporary_password = secrets.token_urlsafe(24)
         try:
             if request.role is Role.STUDENT:
                 if not request.student_code or not request.student_code.strip():
-                    raise HTTPException(422, "student_code es obligatorio para estudiantes")
+                    raise HTTPException(422, "El código de usuario es obligatorio")
                 item, _ = service.register_student(request.email, temporary_password, request.student_code,
                                                    must_change_password=True)
             else:
                 if request.student_code is not None:
-                    raise HTTPException(422, "student_code solo corresponde a estudiantes")
+                    raise HTTPException(422, "El código solo corresponde a cuentas de usuario")
                 item = service.register_user(request.email, temporary_password, request.role,
                                              must_change_password=True)
         except IntegrityError as error:
             raise HTTPException(409, "Correo o código ya registrado") from error
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
+        record(user, AuditAction.ACCOUNT_CREATE, "user", item.id)
+        # La contraseña temporal se muestra una sola vez y nunca se guarda en claro.
         return CreatedUserResponse(**UserResponse.from_domain(item).model_dump(),
                                    temporary_password=temporary_password)
 
     @router.patch("/users/{user_id}", response_model=UserResponse)
     def update_user(user_id: str, request: UserUpdate, user: User = Depends(current_user)):
-        require_admin(user)
+        item = managed_target(user, user_id)
         service = configured()
-        item = service.users.get_by_id(user_id)
-        if item is None:
-            raise HTTPException(404, "Usuario no encontrado")
         changes = request.model_dump(exclude_none=True)
-        role = changes.get("role", item.role)
-        if role is not item.role and (role is Role.STUDENT or item.role is Role.STUDENT):
-            raise HTTPException(409, "No se puede convertir un perfil estudiantil mediante cambio de rol")
-        if item.id == user.id and (changes.get("is_active") is False or role is not Role.ADMIN):
-            raise HTTPException(409, "No puedes desactivar tu cuenta ni retirar tu propio rol administrativo")
+        if changes.get("role", item.role) is not item.role:
+            raise HTTPException(409, "El papel de una cuenta no se cambia; crea una cuenta nueva")
+        changes.pop("role", None)
+        deactivating = changes.get("is_active") is False and item.is_active
+        reactivating = changes.get("is_active") is True and not item.is_active
+        if reactivating and item.role is Role.ADMIN:
+            require_admin_slot(service)
         try:
             updated = replace(item, **changes)
             existing = service.users.get_by_email(updated.email)
             if existing is not None and existing.id != item.id:
                 raise HTTPException(409, "Correo ya registrado")
+            if deactivating:
+                # Desactivar invalida los tokens vigentes.
+                updated = replace(updated, token_version=item.token_version + 1)
             service.users.save(updated)
         except IntegrityError as error:
             raise HTTPException(409, "Correo ya registrado") from error
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
+        if deactivating:
+            record(user, AuditAction.ACCOUNT_DEACTIVATE, "user", item.id)
+        elif reactivating:
+            record(user, AuditAction.ACCOUNT_REACTIVATE, "user", item.id)
         return UserResponse.from_domain(updated)
 
     @router.post("/users/{user_id}/reset-password", response_model=CreatedUserResponse)
     def reset_password(user_id: str, user: User = Depends(current_user)):
-        require_admin(user)
-        if user_id == user.id:
-            raise HTTPException(409, "Cambia tu propia contraseña desde tu cuenta")
+        target = managed_target(user, user_id)
         service = configured()
-        target = service.users.get_by_id(user_id)
-        if target is None:
-            raise HTTPException(404, "Usuario no encontrado")
         temporary_password = secrets.token_urlsafe(24)
         updated = replace(target, password_hash=service.password_hasher.hash_password(temporary_password),
-                          must_change_password=True, token_version=target.token_version + 1)
+                          must_change_password=True, token_version=target.token_version + 1,
+                          password_reset_at=datetime.now(timezone.utc))
         service.users.save(updated)
+        record(user, AuditAction.PASSWORD_RESET, "user", target.id)
         return CreatedUserResponse(**UserResponse.from_domain(updated).model_dump(),
                                    temporary_password=temporary_password)
 
@@ -205,20 +256,23 @@ def create_identity_router(authentication: AuthenticationService | None,
         elif user.role is Role.PSYCHOLOGIST:
             assigned = assignments.list_by_psychologist(user.id) if assignments is not None else ()
             items = tuple(item for item in (service.students.get_by_id(a.student_id) for a in assigned) if item)
-        else:
+        elif user.role is Role.ADMIN:
+            # Solo datos de cuenta para armar los grupos; nunca sesiones ni resultados.
             items = service.students.list_all()
+        else:
+            raise HTTPException(403, "El superadministrador no gestiona usuarios")
         return [StudentResponse(id=item.id, user_id=item.user_id, student_code=item.student_code) for item in items]
 
     def assignment_services(user: User, psychologist_user_id: str) -> tuple[AssignmentRepository, User]:
         require_admin(user)
         service = configured()
         if assignments is None:
-            raise HTTPException(503, "Asignaciones no configuradas")
+            raise HTTPException(503, "Grupos no configurados")
         psychologist = service.users.get_by_id(psychologist_user_id)
         if psychologist is None:
-            raise HTTPException(404, "Usuario no encontrado")
+            raise HTTPException(404, "Cuenta no encontrada")
         if psychologist.role is not Role.PSYCHOLOGIST:
-            raise HTTPException(422, "Solo se asignan estudiantes a cuentas de psicología")
+            raise HTTPException(422, "Los usuarios solo se asignan a cuentas de docente")
         return assignments, psychologist
 
     def assigned_response(assignment: PsychologistAssignment) -> AssignedStudentResponse | None:
@@ -236,18 +290,23 @@ def create_identity_router(authentication: AuthenticationService | None,
 
     @router.put("/users/{user_id}/assigned-students/{student_id}", response_model=AssignedStudentResponse)
     def assign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
+        """Agrega el usuario al grupo del docente; si tenía otro docente, lo mueve."""
         repository, psychologist = assignment_services(user, user_id)
         if configured().students.get_by_id(student_id) is None:
-            raise HTTPException(404, "Estudiante no encontrado")
+            raise HTTPException(404, "Usuario no encontrado")
+        previous = repository.get_by_student(student_id)
         assignment = repository.assign(PsychologistAssignment(
             psychologist.id, student_id, datetime.now(timezone.utc), assigned_by_user_id=user.id))
+        if previous is None or previous.psychologist_user_id != psychologist.id:
+            record(user, AuditAction.GROUP_CHANGE, "student", student_id)
         return assigned_response(assignment)
 
     @router.delete("/users/{user_id}/assigned-students/{student_id}", status_code=204)
     def unassign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
         repository, psychologist = assignment_services(user, user_id)
         if not repository.unassign(psychologist.id, student_id):
-            raise HTTPException(404, "El estudiante no estaba asignado a esta cuenta")
+            raise HTTPException(404, "El usuario no pertenecía al grupo de este docente")
+        record(user, AuditAction.GROUP_CHANGE, "student", student_id)
         return Response(status_code=204)
 
     @router.get("/students/{student_id}", response_model=StudentResponse)
@@ -284,7 +343,7 @@ def create_identity_router(authentication: AuthenticationService | None,
 
     @router.get("/consent-policies", response_model=list[ConsentPolicyResponse])
     def list_policies(user: User = Depends(current_user)):
-        require_admin(user)
+        require_superadmin(user)
         if policy_service is None:
             raise HTTPException(503, "Catálogo de políticas no configurado")
         return [ConsentPolicyResponse(id=item.id, code=item.code, version=item.version,
@@ -295,7 +354,7 @@ def create_identity_router(authentication: AuthenticationService | None,
 
     @router.post("/consent-policies", response_model=ConsentPolicyResponse, status_code=201)
     def create_policy(request: ConsentPolicyCreate, user: User = Depends(current_user)):
-        require_admin(user)
+        require_superadmin(user)
         if policy_service is None:
             raise HTTPException(503, "Catálogo de políticas no configurado")
         if request.effective_at.tzinfo is None:
@@ -317,7 +376,7 @@ def create_identity_router(authentication: AuthenticationService | None,
 
     @router.post("/consent-policies/{policy_id}/activate", response_model=ConsentPolicyResponse)
     def activate_policy(policy_id: str, user: User = Depends(current_user)):
-        require_admin(user)
+        require_superadmin(user)
         if policy_service is None:
             raise HTTPException(503, "Catálogo de políticas no configurado")
         try:
@@ -342,7 +401,7 @@ def create_identity_router(authentication: AuthenticationService | None,
     @router.post("/students/{student_id}/consents", response_model=ConsentResponse, status_code=201)
     def grant_consent(student_id: str, request: ConsentRequest, user: User = Depends(current_user)):
         if user.role is not Role.STUDENT:
-            raise HTTPException(403, "La aceptación debe realizarla el estudiante desde su cuenta")
+            raise HTTPException(403, "La aceptación la realiza el usuario desde su cuenta")
         student_access(student_id, user, write=True)
         policy = active_policy()
         if not policy.available:

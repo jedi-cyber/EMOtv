@@ -32,8 +32,8 @@ def create_recommendation_router(
     current_user = create_current_user_dependency(authentication, users)
 
     def require_admin(user: User) -> RecommendationConfigService:
-        if user.role is not Role.ADMIN:
-            raise HTTPException(403, "Solo administración puede gestionar las recomendaciones")
+        if user.role is not Role.SUPERADMIN:
+            raise HTTPException(403, "Solo el superadministrador puede gestionar las recomendaciones")
         if config is None:
             raise HTTPException(503, "Recomendaciones no configuradas")
         return config

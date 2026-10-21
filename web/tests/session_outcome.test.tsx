@@ -54,7 +54,7 @@ describe("resultado de la actividad", () => {
 
   it("el detalle no muestra identificadores internos ni claves del modelo", () => {
     renderAt("/sessions/s-done", <SessionDetailPage />, "/sessions/:sessionId", "psychologist");
-    expect(screen.getByText("Estudiante").nextElementSibling).toHaveTextContent("PRUEBA-03");
+    expect(screen.getByText("Conducida por").nextElementSibling).toHaveTextContent("PRUEBA-03");
     expect(screen.getByText("Actividad").nextElementSibling).toHaveTextContent("Brazos arriba breve");
     expect(screen.getByText("Modelo facial").nextElementSibling).toHaveTextContent("FER+ · versión 1.0");
     // Las sesiones anteriores al tipo de sesión se muestran como propias.
@@ -65,7 +65,7 @@ describe("resultado de la actividad", () => {
   it("al estudiante no le muestra el modelo ni su propio identificador", () => {
     renderAt("/sessions/s-done", <SessionDetailPage />, "/sessions/:sessionId");
     expect(screen.queryByText("Modelo facial")).not.toBeInTheDocument();
-    expect(screen.queryByText("Estudiante")).not.toBeInTheDocument();
+    expect(screen.queryByText("Conducida por")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Nuevo análisis" })).toHaveAttribute("href", "/analysis");
   });
 });

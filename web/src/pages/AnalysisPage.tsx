@@ -58,8 +58,8 @@ function ManualActivityAnalysisPage() {
   const [params] = useSearchParams();
   const { token, user } = useAuth();
   const { label: expressionLabel } = useExpressionCatalog();
-  // Aquí solo administración elige modelo; sin elección el servidor usa el predeterminado.
-  const canChooseModel = user?.role === "admin";
+  // Aquí solo el superadministrador elige modelo; sin elección el servidor usa el predeterminado.
+  const canChooseModel = user?.role === "superadmin";
   const { setActiveSession } = useActiveSession();
   const activityId = params.get("activity") ?? "";
   const query = useApiQuery<Activity>(activityId ? `/activities/${encodeURIComponent(activityId)}` : null);

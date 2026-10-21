@@ -171,6 +171,51 @@ def get_server_load_settings(environ: Mapping[str, str] | None = None) -> Server
     return ServerLoadSettings(**values)
 
 
+@dataclass(frozen=True)
+class PrivacySettings:
+    """Cuentas de administración, retención de datos y avisos de vencimiento."""
+
+    # Cuentas de administrador activas a la vez (por defecto, una persona).
+    max_admin_accounts: int = 1
+    # Meses que se conserva la auditoría de accesos.
+    audit_retention_months: int = 24
+    # Meses que se conservan los participantes y todos sus registros.
+    participant_retention_months: int = 12
+    # Días antes del vencimiento en que el docente ve al participante en la lista.
+    expiry_notice_days: int = 30
+
+
+def get_privacy_settings(environ: Mapping[str, str] | None = None) -> PrivacySettings:
+    source = os.environ if environ is None else environ
+    defaults = PrivacySettings()
+    values: dict[str, int] = {}
+    for field_name, name, minimum, maximum in (
+        ("max_admin_accounts", "MAX_ADMIN_ACCOUNTS", 1, 10),
+        ("audit_retention_months", "AUDIT_RETENTION_MONTHS", 1, 120),
+        ("participant_retention_months", "PARTICIPANT_RETENTION_MONTHS", 1, 120),
+    ):
+        raw = source.get(name, "").strip()
+        try:
+            value = int(raw) if raw else getattr(defaults, field_name)
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número entero") from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre {minimum} y {maximum}")
+        values[field_name] = value
+    return PrivacySettings(**values)
+
+
+def get_sensitive_data_keys(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """Claves Fernet de SENSITIVE_DATA_KEY, separadas por comas.
+
+    La primera cifra; todas descifran (rotación). Vacía: sin cifrado disponible
+    y el módulo de participantes no se activa. Nunca se escribe en logs.
+    """
+
+    source = os.environ if environ is None else environ
+    return tuple(key.strip() for key in source.get("SENSITIVE_DATA_KEY", "").split(",") if key.strip())
+
+
 def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
     source = os.environ if environ is None else environ
     defaults = LoginLimits()

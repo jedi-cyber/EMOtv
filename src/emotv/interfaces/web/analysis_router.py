@@ -36,7 +36,7 @@ from emotv.application.local_model_service import (
 from emotv.application.neutral_calibration import NeutralCalibration
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.config import LiveExpressionSettings
-from emotv.domain import AccessAction, Activity, Role, SessionState, StabilizedEmotion
+from emotv.domain import Activity, Role, SessionState, StabilizedEmotion
 from emotv.interfaces.web.analysis_capacity import (
     SERVER_BUSY_CLOSE_CODE,
     SERVER_BUSY_MESSAGE,
@@ -121,7 +121,7 @@ def create_analysis_router(
     @router.get("/analysis/models")
     def available_models(user=Depends(create_current_user_dependency(authentication, users))):
         default = models.settings().default_model_id
-        if user.role is not Role.ADMIN:
+        if user.role is not Role.SUPERADMIN:
             # Quien conduce la sesión ve los modelos locales, su disponibilidad y
             # cuál es el predeterminado; los detalles operativos quedan en administración.
             return [dict(model_id=model_id, state=_state(admission), is_default=is_default)
@@ -164,25 +164,19 @@ def create_analysis_router(
                     or claims.get("tv") != user.token_version):
                 await _error(websocket, "Usuario no autorizado", 4401)
                 return
-            if user.role is Role.PSYCHOLOGIST:
-                # Consultar sesiones asignadas no autoriza a enviar frames de
-                # otra cámara a la sesión de un estudiante.
-                await _error(websocket, "El análisis lo realiza el estudiante desde su cuenta", 4403)
-                return
 
             session = sessions.get_session(str(credentials.get("session_id", "")))
             if session is None:
                 await _error(websocket, "Sesión no encontrada", 4404)
                 return
             actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
-            try:
-                policy.require(
-                    user,
-                    AccessAction.VIEW_SESSION,
-                    resource_student_id=session.student_id,
-                    actor_student_id=actor.id if actor else None,
-                )
-            except PermissionError:
+            # Solo quien conduce la sesión envía su cámara: que un docente pueda
+            # consultar las sesiones de su grupo no le permite enviar cuadros a
+            # la sesión de otra cuenta. Usuario y docente conducen las suyas.
+            conducts = session.owner_user_id == user.id or (
+                session.owner_user_id is None and actor is not None and session.student_id == actor.id)
+            if not conducts or not policy.can_access_session(user, session,
+                                                             actor_student_id=actor.id if actor else None):
                 await _error(websocket, "No tienes acceso a esta sesión", 4403)
                 return
             if session.state is not SessionState.IN_PROGRESS:
@@ -216,7 +210,7 @@ def create_analysis_router(
             if requested_model is not None and requested_model not in EMOTION_MODEL_IDS:
                 await _error(websocket, "Modelo facial no permitido", 4400)
                 return
-            if user.role is not Role.ADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
+            if user.role is not Role.SUPERADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
                 await _error(websocket, "Solo administración puede elegir el modelo experimental", 4403)
                 return
             if not adaptive and model_processor_factory is None:

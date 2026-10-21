@@ -75,6 +75,12 @@ services:
       ALLOWED_ADMIN_RESET_HOSTS: ${ALLOWED_ADMIN_RESET_HOSTS:-db}
       # Plazo de las cuentas de voluntarios (scripts/testdata/delete_test_data.py --expired).
       TEST_DATA_RETENTION_DAYS: ${TEST_DATA_RETENTION_DAYS:-30}
+      # Privacidad: cifrado de campos sensibles, cuentas de administrador y retención.
+      # BACKUP_KEY no se pasa a la API: la usan solo los scripts de respaldo.
+      SENSITIVE_DATA_KEY: ${SENSITIVE_DATA_KEY:-}
+      MAX_ADMIN_ACCOUNTS: ${MAX_ADMIN_ACCOUNTS:-1}
+      PARTICIPANT_RETENTION_MONTHS: ${PARTICIPANT_RETENTION_MONTHS:-12}
+      AUDIT_RETENTION_MONTHS: ${AUDIT_RETENTION_MONTHS:-24}
       # Emi (workflow de n8n Cloud). Sin N8N_WEBHOOK_KEY el chat responde 503.
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://emotv.app.n8n.cloud/webhook/emi-chat}
       N8N_WEBHOOK_KEY: ${N8N_WEBHOOK_KEY:-}

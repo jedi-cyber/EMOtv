@@ -28,7 +28,7 @@ function camera(getUserMedia = vi.fn()) {
   vi.stubGlobal("navigator", Object.create(navigator, { mediaDevices: { value: { getUserMedia }, configurable: true } }));
   return getUserMedia;
 }
-function page(withNavigation = false, role: "student" | "admin" = "student") {
+function page(withNavigation = false, role: "student" | "superadmin" = "student") {
   const router = createMemoryRouter([
     { path: "/analysis", element: <>{withNavigation && <Link to="/dashboard">Ir al inicio</Link>}<AnalysisPage /></> },
     { path: "/dashboard", element: <p>Página de inicio</p> },
@@ -63,19 +63,19 @@ describe("cámara y ciclo de actividad", () => {
   });
   it("bloquea el inicio sin crear sesión ni solicitar cámara", async () => {
     admissions.value[0] = { model_id: "ferplus_onnx", state: "BLOCKED", reasons: ["RAM insuficiente"] };
-    const getMedia = camera(); page(false, "admin");
+    const getMedia = camera(); page(false, "superadmin");
     expect(screen.getByText(/RAM insuficiente/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Permitir cámara e iniciar" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
     expect(apiRequest).not.toHaveBeenCalled(); expect(getMedia).not.toHaveBeenCalled();
   });
   it("muestra advertencias para HardlyHumans", async () => {
-    page(false, "admin"); await userEvent.selectOptions(screen.getByRole("combobox"), "hardlyhumans_vit");
+    page(false, "superadmin"); await userEvent.selectOptions(screen.getByRole("combobox"), "hardlyhumans_vit");
     expect(screen.getByText(/Modelo con advertencias: Latencia elevada/)).toBeInTheDocument();
   });
   it.each(["ferplus_onnx", "hardlyhumans_vit"])("administración envía el modelo %s al WebSocket", async (modelId) => {
     camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
-    const view = page(false, "admin");
+    const view = page(false, "superadmin");
     const selector = screen.getByRole("combobox", { name: "Modelo de reconocimiento facial" });
     expect(selector).toHaveValue("ferplus_onnx");
     await userEvent.selectOptions(selector, modelId);

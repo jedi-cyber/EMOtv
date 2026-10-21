@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from emotv.application import AuthenticationService, AuthorizationService
 from emotv.application.login_throttle import LoginThrottle
 from emotv.application.ports import UserRepository
-from emotv.domain import AccessAction, User
+from emotv.domain import AccessAction, Role, User
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -26,11 +26,14 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     must_change_password: bool = False
+    # Otra cuenta restableció la contraseña: se avisa en el siguiente ingreso.
+    password_reset: bool = False
 
     @classmethod
     def from_domain(cls, user: User) -> "UserResponse":
         return cls(id=user.id, email=user.email, role=user.role.value,
-                   is_active=user.is_active, must_change_password=user.must_change_password)
+                   is_active=user.is_active, must_change_password=user.must_change_password,
+                   password_reset=user.password_reset_at is not None)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -126,8 +129,10 @@ def create_auth_router(
             raise HTTPException(400, "Contraseña actual incorrecta")
         try:
             auth.validate_new_password(user, request.new_password)
+            # La persona ya vio el aviso de restablecimiento al cambiarla.
             updated = replace(user, password_hash=auth.hash_password(request.new_password),
-                              must_change_password=False, token_version=user.token_version + 1)
+                              must_change_password=False, token_version=user.token_version + 1,
+                              password_reset_at=None)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         repository.save(updated)
@@ -140,6 +145,8 @@ def create_auth_router(
             policy.require(user, AccessAction.MANAGE_USERS)
         except PermissionError as error:
             raise HTTPException(status_code=403, detail=str(error)) from error
-        return [UserResponse.from_domain(item) for item in repository.list_all()]
+        # Cada papel de gestión ve solo las cuentas que gestiona.
+        visible = {Role.SUPERADMIN: {Role.ADMIN}, Role.ADMIN: {Role.PSYCHOLOGIST, Role.STUDENT}}.get(user.role, set())
+        return [UserResponse.from_domain(item) for item in repository.list_all() if item.role in visible]
 
     return router

@@ -10,7 +10,9 @@ Tablas con datos vinculados a un usuario o estudiante:
 
 - users, students (código PRUEBA-NN), consents;
 - sessions (sessions.student_id es SET NULL: se borran aquí para que no queden
-  sesiones anónimas huérfanas);
+  sesiones anónimas huérfanas), también las que la cuenta condujo y las de sus
+  participantes;
+- participants registrados por la cuenta y commitment_acceptances;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
@@ -37,9 +39,11 @@ from emotv.application.login_throttle import hash_email
 from emotv.infrastructure.persistence.models import (
     ChatConversationRecord,
     ChatMessageRecord,
+    CommitmentAcceptanceRecord,
     ConsentRecordModel,
     ExpressionInfoRecord,
     LoginAttemptRecord,
+    ParticipantRecord,
     PsychologistAssignmentRecord,
     SessionRecord,
     StudentRecord,
@@ -57,8 +61,8 @@ REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
 # Orden de borrado: primero las filas que dependen de otras.
-TABLES = ("chat_messages", "chat_conversations", "sessions", "psychologist_assignments", "consents",
-          "login_attempts", "students", "users")
+TABLES = ("chat_messages", "chat_conversations", "sessions", "participants", "commitment_acceptances",
+          "psychologist_assignments", "consents", "login_attempts", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
 
 BACKUP_WARNING = (
@@ -289,6 +293,8 @@ _MODELS = {
     "chat_messages": ChatMessageRecord,
     "chat_conversations": ChatConversationRecord,
     "sessions": SessionRecord,
+    "participants": ParticipantRecord,
+    "commitment_acceptances": CommitmentAcceptanceRecord,
     "psychologist_assignments": PsychologistAssignmentRecord,
     "consents": ConsentRecordModel,
     "login_attempts": LoginAttemptRecord,
@@ -300,10 +306,15 @@ _MODELS = {
 def _conditions(account: VolunteerAccount) -> dict[str, object]:
     student = account.student_id
     conversations = select(ChatConversationRecord.id).where(ChatConversationRecord.user_id == account.user_id)
+    participants = select(ParticipantRecord.id).where(ParticipantRecord.registered_by_user_id == account.user_id)
     return {
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
         "chat_conversations": ChatConversationRecord.user_id == account.user_id,
-        "sessions": SessionRecord.student_id == student if student else false(),
+        "sessions": or_(SessionRecord.student_id == student if student else false(),
+                        SessionRecord.owner_user_id == account.user_id,
+                        SessionRecord.participant_id.in_(participants)),
+        "participants": ParticipantRecord.registered_by_user_id == account.user_id,
+        "commitment_acceptances": CommitmentAcceptanceRecord.user_id == account.user_id,
         "psychologist_assignments": or_(
             PsychologistAssignmentRecord.student_id == student if student else false(),
             PsychologistAssignmentRecord.psychologist_user_id == account.user_id),

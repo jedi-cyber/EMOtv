@@ -63,7 +63,7 @@ class IdentityRegistrationService:
     ) -> tuple[User, Student]:
         normalized_code = student_code.strip()
         if self.students.get_by_code(normalized_code) is not None:
-            raise ValueError("el código de estudiante ya está registrado")
+            raise ValueError("el código de usuario ya está registrado")
         user = self.register_user(email, password, Role.STUDENT,
                                   must_change_password=must_change_password)
         student = Student(
@@ -83,7 +83,7 @@ class IdentityRegistrationService:
             raise KeyError(f"Estudiante no encontrado: {student_id}")
         current = self.consents.get_active_by_student(student.id)
         if current is not None and current.policy_version == policy_version.strip():
-            raise RuntimeError("el estudiante ya tiene un consentimiento activo para esta versión")
+            raise RuntimeError("el usuario ya tiene un consentimiento activo para esta versión")
         now = self.clock()
         if current is not None:
             self.consents.save(replace(current, revoked_at=max(now, current.granted_at)))
@@ -98,7 +98,7 @@ class IdentityRegistrationService:
     def revoke_consent(self, student_id: str) -> ConsentRecord:
         consent = self.consents.get_active_by_student(student_id)
         if consent is None:
-            raise RuntimeError("el estudiante no tiene consentimiento activo")
+            raise RuntimeError("el usuario no tiene consentimiento activo")
         return self.consents.save(replace(consent, revoked_at=self.clock()))
 
     def _id(self, prefix: str) -> str:

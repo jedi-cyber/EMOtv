@@ -28,6 +28,9 @@ class FakeSessionRepository:
             if session.student_id == student_id
         )
 
+    def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
+        return tuple(session for session in self.sessions.values() if session.owner_user_id == owner_user_id)
+
 
 class SessionRepositoryContractTests(unittest.TestCase):
     def test_structural_implementation_satisfies_contract(self) -> None:

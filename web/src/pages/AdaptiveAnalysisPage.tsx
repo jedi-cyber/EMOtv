@@ -179,7 +179,7 @@ export function AdaptiveAnalysisPage() {
       detail: consentReady ? "Aceptaste la política vigente."
         : consentStatus.state === "outdated" ? "La política cambió; acepta la nueva versión."
           : consentStatus.state === "missing" ? "Acepta la política de análisis facial."
-            : consentStatus.state === "loading" ? "Comprobando…" : "No se puede solicitar el consentimiento ahora. Consulta con administración.",
+            : consentStatus.state === "loading" ? "Comprobando…" : "No se puede solicitar el consentimiento ahora. Consulta con el superadministrador.",
       action: consentStatus.state === "missing" || consentStatus.state === "outdated"
         ? <ButtonLink variant="secondary" size="sm" to={paths.consent}>Revisar consentimiento</ButtonLink>
         : consentStatus.state === "error" ? <Button variant="secondary" size="sm" onClick={() => { void consentStatus.reload(); }}>Comprobar de nuevo</Button> : undefined },
@@ -289,12 +289,14 @@ export function AdaptiveAnalysisPage() {
 
   async function requireConsent(): Promise<void> {
     if (!token) throw new Error("Inicia sesión nuevamente para continuar.");
+    // El docente conduce sesiones propias sin perfil de usuario; el servidor no le exige este consentimiento.
+    if (user?.role === "psychologist") return;
     const policy = await apiRequest<{ id?: string | null; version: string | null; mode?: string; available: boolean }>("/consent-policy", { token });
     if (policy.mode === "development") return;
-    if (!policy.available) throw new Error("No hay una política de consentimiento activa. Consulta con administración.");
+    if (!policy.available) throw new Error("No hay una política de consentimiento activa. Consulta con el superadministrador.");
     const students = await apiRequest<Student[]>("/students", { token });
     const student = students[0];
-    if (!student) throw new Error("Tu cuenta no tiene un perfil de estudiante asociado.");
+    if (!student) throw new Error("Tu cuenta de usuario no tiene un perfil asociado. Consulta con el administrador.");
     const consent = await apiRequest<{ policy_version: string } | null>(`/students/${encodeURIComponent(student.id)}/consents/active`, { token });
     if (!consent || consent.policy_version !== (policy.id ?? policy.version))
       throw new Error("Debes aceptar la versión vigente del consentimiento antes de iniciar el análisis.");
@@ -620,7 +622,7 @@ export function AdaptiveAnalysisPage() {
                 {availableActivities.filter((item) => !recommendation || item.id !== recommendation.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
               <Button variant="primary" type="submit" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</Button>
-            </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
+            </> : !recommendation && <p>No hay actividades configuradas. Contacta con el superadministrador.</p>}
             {(recommendation || availableActivities.length > 0) && <Callout variant="info" role="note">
               <strong>Antes de la actividad:</strong> aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, y deja espacio para mover los brazos.
             </Callout>}

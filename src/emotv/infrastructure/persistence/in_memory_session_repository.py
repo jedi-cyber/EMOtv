@@ -37,6 +37,10 @@ class InMemorySessionRepository:
                 if session.student_id == normalized_id
             )
 
+    def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
+        with self._lock:
+            return tuple(session for session in self._sessions.values() if session.owner_user_id == owner_user_id)
+
     @staticmethod
     def _normalize_id(session_id: str) -> str:
         if not isinstance(session_id, str):

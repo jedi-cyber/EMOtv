@@ -24,7 +24,7 @@ def users(tmp_path, monkeypatch):
     repository = PostgresUserRepository(sessionmaker(engine, expire_on_commit=False))
     now = datetime.now(timezone.utc)
     hasher = PasswordHash.recommended()
-    repository.save(User("admin-1", "admin@ejemplo.local", hasher.hash("old-local-value-123"), Role.ADMIN, now,
+    repository.save(User("admin-1", "admin@ejemplo.local", hasher.hash("old-local-value-123"), Role.SUPERADMIN, now,
                          token_version=3))
     repository.save(User("student-1", "student@ejemplo.local", hasher.hash("old-local-value-456"), Role.STUDENT, now))
     yield repository

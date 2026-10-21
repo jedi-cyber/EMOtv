@@ -1,4 +1,4 @@
-"""Restablece la contraseña de una cuenta de administración de EMOtv.
+"""Restablece la contraseña del superadministrador (soporte técnico) de EMOtv.
 
 Uso:
     python scripts/security/reset_admin_password.py --email admin@ejemplo.local
@@ -11,6 +11,9 @@ vez en esta terminal. No acepta la contraseña por argumento.
 
 Solo funciona si DATABASE_URL apunta a localhost o a un host listado en
 ALLOWED_ADMIN_RESET_HOSTS (separados por comas; en Docker vale "db").
+
+La contraseña del administrador la restablece el superadministrador desde la
+aplicación (queda en la auditoría y avisa a la persona en su siguiente ingreso).
 """
 
 from __future__ import annotations
@@ -61,7 +64,7 @@ def generate_password() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--email", required=True, help="Correo de la cuenta de administración")
+    parser.add_argument("--email", required=True, help="Correo de la cuenta de superadministrador")
     args = parser.parse_args(argv)
 
     database_url = get_database_url()
@@ -74,8 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("Falta la tabla users; aplica las migraciones (alembic upgrade head)")
         users = PostgresUserRepository(create_session_factory(engine))
         user = users.get_by_email(args.email.strip().lower())
-        if user is None or user.role is not Role.ADMIN:
-            parser.error("No existe una cuenta de administración con ese correo")
+        if user is None or user.role is not Role.SUPERADMIN:
+            parser.error("No existe una cuenta de superadministrador con ese correo")
         authentication = AuthenticationService(users, get_jwt_secret_key())
         password = generate_password()
         users.save(replace(
@@ -87,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         engine.dispose()
 
-    print("Contraseña de administración restablecida. Las sesiones abiertas quedaron cerradas.")
+    print("Contraseña de superadministrador restablecida. Las sesiones abiertas quedaron cerradas.")
     print(f"Correo: {user.email}")
     print(f"Contraseña temporal: {password}")
     print("Guárdala ahora: no se volverá a mostrar. Se pedirá cambiarla en el primer acceso.")

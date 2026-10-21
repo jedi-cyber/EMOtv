@@ -26,19 +26,45 @@ Authorization: Bearer <access_token>
 `GET /auth/me` devuelve la identidad actual. `GET /auth/users` requiere permiso
 administrativo.
 
+## Papeles, participantes, compromiso y auditoría
+
+Papeles: `superadmin` (Superadministrador), `admin` (Administrador),
+`psychologist` (Docente) y `student` (Usuario). El administrador y el
+superadministrador nunca acceden a participantes, sesiones ni resultados. Ver
+[privacidad](privacy/README.md).
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `GET`, `POST` | `/users` | Superadministrador: cuenta de administrador (máximo `MAX_ADMIN_ACCOUNTS`). Administrador: docentes y usuarios |
+| `PATCH`, `DELETE` | `/users/{id}` | Igual que arriba; el papel no se cambia |
+| `POST` | `/users/{id}/reset-password` | Igual que arriba; contraseña temporal visible una vez, aviso en el siguiente ingreso y auditoría |
+| `PUT`, `DELETE` | `/users/{docente}/assigned-students/{student_id}` | Administrador; asignar a otro docente mueve al usuario |
+| `GET` | `/commitment`, `/commitment/child-notice` | Texto versionado y si la cuenta debe aceptarlo |
+| `POST` | `/commitment/accept`, `/commitment/child-notice/accept` | Usuarios y docentes, con la versión vigente |
+| `GET`, `POST` | `/participants` | Usuarios y docentes (el docente ve también los de su grupo); `428` sin compromiso o, para el primer niño, sin el aviso |
+| `GET` | `/participants/{id}` | `can_access_participant` |
+| `GET` | `/participants/expiring` | Docente: vencen en los próximos 30 días |
+| `POST` | `/participants/{id}/deletion-request` | Quien registró al participante |
+| `POST` | `/participants/{id}/delete` | Docente con acceso; devuelve el acta |
+| `GET` | `/participant-deletions`, `/participant-deletions/{id}` | Quien solicitó o ejecutó |
+| `POST` | `/participant-deletions/{id}/print` | Registra la impresión del acta |
+| `GET` | `/audit` | Administrador y superadministrador, con filtros; no hay operaciones de escritura |
+
+Sin `SENSITIVE_DATA_KEY`, las rutas de participantes responden `503`.
+
 ## Sesiones
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `POST` | `/sessions` | Estudiante propio o administración |
-| `POST` | `/sessions/{id}/cancel` | Propietario o administración |
-| `POST` | `/sessions/{id}/complete` | Solo administración; resultado manual controlado |
-| `GET` | `/sessions/{id}` | Propietario, psicología asignada o administración |
-| `GET` | `/sessions` | Propias (estudiante), de estudiantes asignados (psicología) o todas (administración) |
-| `GET` | `/sessions?student_id={id}` | Sesiones del estudiante indicado |
+| `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias); exige el compromiso aceptado (`428`) |
+| `POST` | `/sessions/{id}/cancel` | Solo quien conduce la sesión |
+| `GET` | `/sessions/{id}` | Quien la conduce o el docente de su grupo |
+| `GET` | `/sessions` | Propias (usuario) o las propias y las de su grupo (docente) |
+| `GET` | `/sessions?student_id={id}` | Sesiones de un usuario del grupo del docente |
 
-Para estudiantes, el servidor fuerza el alcance al perfil propio y rechaza un
-`student_id` ajeno con `403`. Una sesión inexistente devuelve `404`. Iniciar una
+Para un usuario, el servidor fuerza el alcance al perfil propio y rechaza un
+`student_id` ajeno con `403`. El registro manual del resultado
+(`/sessions/{id}/complete`) ya no existe. Una sesión inexistente devuelve `404`. Iniciar una
 sesión asociada exige consentimiento activo.
 
 Cada sesión guarda su `session_type`: `propia` (quien inicia sesión se analiza a
@@ -95,7 +121,7 @@ Las rutas `/users`, `/students` y `/students/{id}/consents` están descritas en
 
 `/ws/activity` recibe primero autenticación y referencias de sesión/actividad,
 después JPEG binarios. Devuelve progreso, estado, emoción y landmarks opcionales.
-El servidor valida la finalización estudiantil; no acepta que un estudiante
+El servidor valida la finalización de la actividad; no acepta que el usuario
 declare un resultado completado mediante REST. La cámara pertenece al navegador,
 no al servidor: no existen rutas de cámara del servidor.
 
@@ -146,11 +172,11 @@ lo cambie). Si el predeterminado no tiene admisión vigente, usa el otro modelo
 local y lo registra; si ninguno está admitido, el socket se cierra con el motivo.
 Quien conduce la sesión puede pedir FER+ o HSEmotion para esa sesión; un modelo
 pedido sin admisión se rechaza (`4409`) y cualquier otro modelo, con `4403`
-(salvo administración, que conserva el experimental). Cada sesión registra el
+(salvo el superadministrador, que conserva el experimental). Cada sesión registra el
 modelo que usó.
 
 `GET /analysis/models` lista, para quien conduce la sesión, los modelos locales
-con `state` e `is_default`; administración recibe además la evaluación completa
+con `state` e `is_default`; el superadministrador recibe además la evaluación completa
 de admisión.
 
 | Método | Ruta | Acceso |

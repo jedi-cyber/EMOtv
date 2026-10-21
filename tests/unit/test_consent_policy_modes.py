@@ -71,7 +71,7 @@ def test_student_accepts_new_active_version_and_old_one_becomes_history():
                                 PostgresStudentRepository(factory), PostgresConsentRepository(factory))
     auth = AuthenticationService(users, "consent-flow-test-secret-at-least-32-characters")
     now = datetime.now(timezone.utc)
-    admin = users.save(User("admin", "admin@example.org", auth.hash_password("admin-secret-123"), Role.ADMIN, now))
+    admin = users.save(User("admin", "admin@example.org", auth.hash_password("admin-secret-123"), Role.SUPERADMIN, now))
     student = users.save(User("student", "student@example.org", auth.hash_password("student-secret-123"), Role.STUDENT, now))
     students.save(Student("student-profile", student.id, "STU-1"))
     service = ConsentPolicyService(policies, "demo")

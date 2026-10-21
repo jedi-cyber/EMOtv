@@ -6,10 +6,15 @@ from emotv.domain.psychologist_assignment import PsychologistAssignment
 
 
 class AssignmentRepository(Protocol):
-    """Estudiantes que cada psicólogo está autorizado a consultar."""
+    """Grupo de cada docente: un usuario pertenece a un solo docente."""
 
     def assign(self, assignment: PsychologistAssignment) -> PsychologistAssignment:
-        """Crea la asignación; si ya existe, devuelve la existente sin cambiarla."""
+        """Asigna el usuario al docente; si ya pertenecía a otro, lo mueve.
+        Si la asignación ya existe, la devuelve sin cambiarla."""
+        ...
+
+    def get_by_student(self, student_id: str) -> PsychologistAssignment | None:
+        """Asignación vigente del usuario, o None si no tiene docente."""
         ...
 
     def unassign(self, psychologist_user_id: str, student_id: str) -> bool:

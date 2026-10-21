@@ -91,8 +91,8 @@ def create_expression_router(
     def update_expression(
         expression_key: str, request: ExpressionInfoUpdateRequest, user: User = Depends(current_user),
     ) -> ExpressionInfoResponse:
-        if user.role is not Role.ADMIN:
-            raise HTTPException(403, "Solo administración puede editar el catálogo de expresiones")
+        if user.role is not Role.SUPERADMIN:
+            raise HTTPException(403, "Solo el superadministrador puede editar el catálogo de expresiones")
         data = request.model_dump()
         try:
             updated = require_catalog().update(

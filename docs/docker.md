@@ -212,22 +212,24 @@ docker compose --env-file .env.docker up -d    # vuelve a iniciar
 
 ## 10. Respaldar y restaurar la base de datos
 
-Requieren Python en el host (solo la biblioteca estándar) y los servicios en
-ejecución. No hace falta PostgreSQL instalado.
+Requieren Python en el host con `cryptography` (incluida en
+`pip install -e .`) y los servicios en ejecución. No hace falta PostgreSQL
+instalado. Define antes `BACKUP_KEY` en `.env.docker`: una clave Fernet distinta
+de `SENSITIVE_DATA_KEY` (ver [privacidad](privacy/README.md#respaldos)).
 
 ```powershell
 python scripts/docker/backup_db.py
-# -> backups/emotv-AAAAMMDD-HHMMSS.dump
+# -> backups/emotv-AAAAMMDD-HHMMSS.dump.enc (cifrado con BACKUP_KEY)
 
-python scripts/docker/restore_db.py backups/emotv-20261005-164449.dump
+python scripts/docker/restore_db.py backups/emotv-20261005-164449.dump.enc
 ```
 
 La restauración **reemplaza toda la base actual**: pide escribir `RESTAURAR`,
 detiene la API mientras restaura y la vuelve a iniciar. La carpeta `backups/`
 no se sube al repositorio. Guarda los respaldos en un lugar seguro: contienen
-datos personales. Un respaldo hecho antes de eliminar los datos de un
-voluntario todavía los contiene: elimina o regenera los respaldos con más de
-30 días.
+datos personales. Un respaldo conserva los datos que la aplicación ya eliminó:
+elimina los respaldos con más antigüedad que `PARTICIPANT_RETENTION_MONTHS`
+(12 meses por defecto) y, si contienen datos de voluntarios, a los 30 días.
 
 ## 11. Borrar todo, incluidos los datos
 

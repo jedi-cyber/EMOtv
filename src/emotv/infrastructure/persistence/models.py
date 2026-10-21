@@ -115,12 +115,17 @@ class SessionRecord(Base):
     exercise_repetitions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     session_type: Mapped[str] = mapped_column(String(32), nullable=False, default="propia",
                                               server_default="propia")
+    # Cuenta que conduce la sesión y participante analizado (nulo en una sesión propia).
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
 
 
 class UserRecord(Base):
     __tablename__ = "users"
     __table_args__ = (CheckConstraint(
-        "role IN ('student','psychologist','admin')", name="ck_users_role_valid"
+        "role IN ('student','psychologist','admin','superadmin')", name="ck_users_role_valid"
     ),)
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
@@ -132,12 +137,18 @@ class UserRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # Cuenta de voluntario (PRUEBA-NN): la única que borra scripts/testdata/delete_test_data.py.
     is_test_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Último restablecimiento hecho por otra cuenta: muestra un aviso al siguiente ingreso.
+    password_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PsychologistAssignmentRecord(Base):
-    """Estudiante que un psicólogo está autorizado a consultar."""
+    """Usuario (perfil students) que pertenece al grupo de un docente.
+
+    Un usuario tiene un solo docente (uq_psychologist_assignments_student_id).
+    """
 
     __tablename__ = "psychologist_assignments"
+    __table_args__ = (UniqueConstraint("student_id", name="uq_psychologist_assignments_student_id"),)
     psychologist_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
     student_id: Mapped[str] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), primary_key=True)
@@ -228,6 +239,83 @@ class ExpressionInfoRecord(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ParticipantRecord(Base):
+    """Participante sin cuenta, nombre, DNI ni foto: solo un código aleatorio.
+
+    notes_encrypted guarda las notas libres cifradas con SENSITIVE_DATA_KEY.
+    """
+
+    __tablename__ = "participants"
+    __table_args__ = (
+        CheckConstraint("kind IN ('adult', 'child')", name="ck_participants_kind"),
+        CheckConstraint(
+            "(deletion_requested_at IS NULL AND deletion_requested_by_user_id IS NULL) OR "
+            "(deletion_requested_at IS NOT NULL AND deletion_requested_by_user_id IS NOT NULL)",
+            name="ck_participants_deletion_request",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    registered_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    notes_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deletion_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CommitmentAcceptanceRecord(Base):
+    """Aceptación del compromiso de confidencialidad (kind=commitment) o del
+    aviso reforzado sobre datos de menores (kind=child_notice), con su versión."""
+
+    __tablename__ = "commitment_acceptances"
+    __table_args__ = (
+        CheckConstraint("kind IN ('commitment', 'child_notice')", name="ck_commitment_acceptances_kind"),
+        UniqueConstraint("user_id", "kind", "version", name="uq_commitment_acceptances_user_kind_version"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AccessAuditRecord(Base):
+    """Auditoría de accesos: sin contenido ni imágenes. La API no la edita ni la borra."""
+
+    __tablename__ = "access_audit"
+    __table_args__ = (
+        CheckConstraint("result IN ('success', 'denied', 'failure')", name="ck_access_audit_result"),
+        Index("ix_access_audit_resource", "resource_type", "resource_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    # Sin clave foránea: la auditoría se conserva aunque la cuenta se elimine.
+    actor_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    actor_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class ParticipantDeletionRecord(Base):
+    """Acta de eliminación a pedido: código, fecha, cantidades y verificación.
+
+    Sin datos personales. counts es {"participants": n, "sessions": n, ...}.
+    """
+
+    __tablename__ = "participant_deletion_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    participant_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    executed_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    counts: Mapped[dict] = mapped_column(JSON, nullable=False)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 class LocalModelSettingsRecord(Base):

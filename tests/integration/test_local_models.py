@@ -74,7 +74,7 @@ def env():
     identity.grant_consent(student.id, "test-v1")
     identity.grant_consent(other.id, "test-v1")
     admin = users.save(User("admin-models", "superadmin@example.com", auth.hash_password("admin-password-123"),
-                            Role.ADMIN, datetime.now(timezone.utc)))
+                            Role.SUPERADMIN, datetime.now(timezone.utc)))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
     states = {HSEMOTION_MODEL_ID: "SUPPORTED", FERPLUS_MODEL_ID: "SUPPORTED", "hardlyhumans_vit": "BLOCKED"}
 

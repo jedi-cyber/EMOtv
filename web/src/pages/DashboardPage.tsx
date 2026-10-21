@@ -1,6 +1,7 @@
 import type { EmotionalSession } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
+import type { UserRole } from "../auth/types";
 import { ButtonLink } from "../components/Button";
 import { NextStepCard } from "../components/NextStepCard";
 import { PageHeader } from "../components/PageHeader";
@@ -11,10 +12,11 @@ import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { paths } from "../routes/paths";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
 
-const descriptions = {
-  student: "Selecciona una actividad corporal o revisa tus sesiones.",
-  psychologist: "Consulta el seguimiento de estudiantes y sus sesiones autorizadas.",
-  admin: "Administra usuarios, actividades y el funcionamiento general de EMOtv.",
+const descriptions: Record<UserRole, string> = {
+  student: "Registra a tus participantes, conduce sesiones y revisa tus resultados.",
+  psychologist: "Revisa los resultados de tu grupo y conduce tus propias sesiones.",
+  admin: "Gestiona las cuentas de docentes y usuarios, los grupos y la auditoría.",
+  superadmin: "Soporte técnico: modelos, configuración, cuenta de administrador y auditoría.",
 };
 
 function formatDate(value: string) {
@@ -27,13 +29,17 @@ export function DashboardPage() {
   return <section>
     <PageHeader title="Hola" description={user ? descriptions[user.role] : ""} />
     {user?.role === "student" && <StudentNextStep />}
-    {user?.role === "psychologist" && <NextStepCard title="Seguimiento de estudiantes"
-      action={<ButtonLink variant="primary" to={paths.students}>Ver estudiantes</ButtonLink>}>
-      <p>Accede al seguimiento con los permisos correspondientes.</p>
+    {user?.role === "psychologist" && <NextStepCard title="Tu grupo"
+      action={<ButtonLink variant="primary" to={paths.participants}>Ver participantes</ButtonLink>}>
+      <p>Revisa los participantes y resultados de los usuarios de tu grupo, y los de tus propias sesiones.</p>
     </NextStepCard>}
-    {user?.role === "admin" && <NextStepCard title="Usuarios"
-      action={<ButtonLink variant="primary" to={paths.users}>Ver usuarios</ButtonLink>}>
-      <p>Supervisa las cuentas y sus roles de acceso.</p>
+    {user?.role === "admin" && <NextStepCard title="Cuentas y grupos"
+      action={<ButtonLink variant="primary" to={paths.users}>Gestionar cuentas</ButtonLink>}>
+      <p>Crea cuentas de docentes y usuarios, y asigna cada usuario a un docente.</p>
+    </NextStepCard>}
+    {user?.role === "superadmin" && <NextStepCard title="Modelos"
+      action={<ButtonLink variant="primary" to={paths.adminModels}>Ver modelos</ButtonLink>}>
+      <p>Revisa el estado de los modelos locales y la configuración técnica.</p>
     </NextStepCard>}
   </section>;
 }

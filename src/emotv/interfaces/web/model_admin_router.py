@@ -1,6 +1,6 @@
 """Página "Modelos": estado de los modelos locales y elección del predeterminado.
 
-Solo el superadministrador (hoy, el rol admin) consulta y cambia esta
+Solo el superadministrador (soporte técnico) consulta y cambia esta
 configuración. Los textos describen disponibilidad, nunca precisión.
 """
 from __future__ import annotations
@@ -63,8 +63,7 @@ def create_model_admin_router(
     catalog = EmotionModelCatalog()
 
     def require_superadmin(user: User) -> LocalModelService:
-        # El rol admin actual es el superadministrador hasta que P5 renombre los roles.
-        if user.role is not Role.ADMIN:
+        if user.role is not Role.SUPERADMIN:
             raise HTTPException(403, "Solo el superadministrador puede gestionar los modelos")
         if local_models is None:
             raise HTTPException(503, "Gestión de modelos no configurada")

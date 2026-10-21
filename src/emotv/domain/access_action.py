@@ -11,3 +11,9 @@ class AccessAction(str, Enum):
     VIEW_SESSION = "view_session"
     LIST_STUDENT_SESSIONS = "list_student_sessions"
     MANAGE_CONSENT = "manage_consent"
+    # Modelos, catálogos, políticas y demás configuración técnica.
+    MANAGE_TECHNICAL = "manage_technical"
+    # Crear, desactivar y restablecer la cuenta de administrador.
+    MANAGE_ADMIN_ACCOUNT = "manage_admin_account"
+    VIEW_AUDIT = "view_audit"
+    REGISTER_PARTICIPANT = "register_participant"

@@ -98,7 +98,7 @@ def test_cache_expires_and_survives_database_errors():
 def _admin():
     users = FakeUserRepository()
     auth = AuthenticationService(users, "emi-knowledge-test-secret-at-least-32-chars")
-    admin = users.save(User("admin", "admin@example.com", "hash", Role.ADMIN, datetime.now(timezone.utc)))
+    admin = users.save(User("admin", "admin@example.com", "hash", Role.SUPERADMIN, datetime.now(timezone.utc)))
     return users, auth, {"Authorization": f"Bearer {auth.create_access_token(admin)}"}
 
 

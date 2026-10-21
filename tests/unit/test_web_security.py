@@ -66,3 +66,11 @@ def test_explicit_production_settings():
     settings = load_web_settings({"ENVIRONMENT": "production", "CORS_ORIGINS": "https://app.example.com", "TRUSTED_HOSTS": "api.example.com", "DATABASE_URL": "postgresql://test", "JWT_SECRET_KEY": "a-random-test-secret-of-at-least-32-characters"})
     assert settings.production
     assert settings.origins == ("https://app.example.com",)
+
+
+def test_hsts_is_sent_when_served_over_https():
+    with TestClient(security_app(), base_url="https://localhost") as client:
+        assert client.get("/data").headers["strict-transport-security"] == "max-age=31536000"
+        assert client.get("/data").headers["referrer-policy"] == "no-referrer"
+    with TestClient(security_app()) as client:
+        assert "strict-transport-security" not in client.get("/data").headers

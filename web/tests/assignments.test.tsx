@@ -33,33 +33,29 @@ beforeEach(() => {
   };
 });
 
-describe("asignación de estudiantes a psicología", () => {
+describe("grupos de docentes", () => {
   it("muestra los asignados y ofrece solo los no asignados", () => {
     withUser("admin", <AssignmentsPanel psychologist={psychologist} onClose={vi.fn()} />);
     expect(screen.getByText("PRUEBA-01")).toBeInTheDocument();
     const options = screen.getAllByRole("option").map((option) => option.textContent);
-    expect(options).toEqual(["Selecciona un estudiante", "PRUEBA-02"]);
+    expect(options).toEqual(["Selecciona un usuario", "PRUEBA-02"]);
   });
 
-  it("asigna y quita estudiantes con la API de administración", async () => {
+  it("agrega y quita usuarios del grupo con la API del administrador", async () => {
     withUser("admin", <AssignmentsPanel psychologist={psychologist} onClose={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Asignar" })).toBeDisabled();
+    expect(screen.getByText(/pasará a este grupo/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agregar al grupo" })).toBeDisabled();
     await userEvent.selectOptions(screen.getByRole("combobox"), "st-2");
-    await userEvent.click(screen.getByRole("button", { name: "Asignar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Agregar al grupo" }));
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-2", expect.objectContaining({ method: "PUT" }));
     await userEvent.click(screen.getByRole("button", { name: "Quitar PRUEBA-01" }));
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-1", expect.objectContaining({ method: "DELETE" }));
   });
 
-  it("explica al psicólogo sin asignaciones por qué no ve estudiantes", () => {
+  it("explica al docente sin grupo por qué no ve usuarios", () => {
     data.value["/students"] = [];
     withUser("psychologist", <StudentsPage />);
-    expect(screen.getByText(/Aún no tienes estudiantes asignados/)).toBeInTheDocument();
-  });
-
-  it("mantiene el mensaje general para administración", () => {
-    data.value["/students"] = [];
-    withUser("admin", <StudentsPage />);
-    expect(screen.getByText("Todavía no hay estudiantes registrados.")).toBeInTheDocument();
+    expect(screen.getByText(/Aún no tienes usuarios en tu grupo/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/estudiante/i);
   });
 });

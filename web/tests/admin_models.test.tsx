@@ -42,8 +42,9 @@ beforeEach(() => {
 });
 
 describe("página Modelos", () => {
-  it("solo administración la tiene en su navegación", () => {
-    expect(navigationByRole.admin.some((item) => item.to === "/admin/models")).toBe(true);
+  it("solo el superadministrador la tiene en su navegación", () => {
+    expect(navigationByRole.superadmin.some((item) => item.to === "/admin/models")).toBe(true);
+    expect(navigationByRole.admin.some((item) => item.to === "/admin/models")).toBe(false);
     expect(navigationByRole.student.some((item) => item.to === "/admin/models")).toBe(false);
     expect(navigationByRole.psychologist.some((item) => item.to === "/admin/models")).toBe(false);
   });

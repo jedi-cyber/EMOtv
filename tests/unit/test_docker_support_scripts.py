@@ -100,7 +100,7 @@ def test_create_admin_stores_only_hash_and_forces_password_change(admin_database
     password = next(line.split(": ", 1)[1] for line in output.splitlines() if line.startswith("Contraseña temporal"))
 
     user = admin_database.get_by_email("admin@ejemplo.local")
-    assert user is not None and user.must_change_password and user.role.value == "admin"
+    assert user is not None and user.must_change_password and user.role.value == "superadmin"
     assert password not in user.password_hash
     assert user.password_hash.startswith("$argon2")
 

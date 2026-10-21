@@ -57,6 +57,16 @@ class PostgresSessionRepository:
             records = database_session.scalars(statement).all()
             return tuple(self._to_domain(record) for record in records)
 
+    def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
+        statement = (
+            select(SessionRecord)
+            .where(SessionRecord.owner_user_id == owner_user_id)
+            .order_by(SessionRecord.started_at, SessionRecord.id)
+        )
+        with self._session_factory() as database_session:
+            records = database_session.scalars(statement).all()
+            return tuple(self._to_domain(record) for record in records)
+
     @staticmethod
     def _to_record(session: EmotionalSession) -> SessionRecord:
         return SessionRecord(
@@ -77,6 +87,8 @@ class PostgresSessionRepository:
             exercise_steps_total=session.exercise_steps_total,
             exercise_repetitions=session.exercise_repetitions,
             session_type=SessionType(session.session_type).value,
+            owner_user_id=session.owner_user_id,
+            participant_id=session.participant_id,
         )
 
     @staticmethod
@@ -100,6 +112,8 @@ class PostgresSessionRepository:
         record.exercise_steps_total = session.exercise_steps_total
         record.exercise_repetitions = session.exercise_repetitions
         record.session_type = SessionType(session.session_type).value
+        record.owner_user_id = session.owner_user_id
+        record.participant_id = session.participant_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -129,6 +143,8 @@ class PostgresSessionRepository:
             exercise_steps_total=record.exercise_steps_total,
             exercise_repetitions=record.exercise_repetitions,
             session_type=SessionType(record.session_type or SessionType.OWN.value),
+            owner_user_id=record.owner_user_id,
+            participant_id=record.participant_id,
         )
 
     @staticmethod

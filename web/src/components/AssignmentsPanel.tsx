@@ -13,7 +13,8 @@ interface Props {
   onClose(): void;
 }
 
-/** Administración elige qué estudiantes puede consultar una cuenta de psicología. */
+/** El administrador arma el grupo de un docente. Un usuario tiene un solo docente:
+ * agregarlo aquí lo mueve si estaba en otro grupo, y el cambio queda en la auditoría. */
 export function AssignmentsPanel({ psychologist, onClose }: Props) {
   const { token } = useAuth();
   const base = `/users/${encodeURIComponent(psychologist.id)}/assigned-students`;
@@ -33,16 +34,16 @@ export function AssignmentsPanel({ psychologist, onClose }: Props) {
       if (method === "PUT") setSelected("");
       await assignedQuery.reload();
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "No se pudo actualizar la asignación.");
+      setError(reason instanceof ApiError ? reason.message : "No se pudo actualizar el grupo.");
     } finally { setBusy(false); }
   }
 
-  return <section className="card onboarding-card" aria-label={`Estudiantes asignados a ${psychologist.email}`}>
-    <h2>Estudiantes asignados a {psychologist.email}</h2>
-    <p>Esta cuenta solo podrá consultar las sesiones y consentimientos de los estudiantes asignados.</p>
+  return <section className="card onboarding-card" aria-label={`Grupo de ${psychologist.email}`}>
+    <h2>Grupo de {psychologist.email}</h2>
+    <p>El docente verá los participantes y resultados de los usuarios de su grupo. Si eliges un usuario que ya tiene otro docente, pasará a este grupo.</p>
     {error && <Callout variant="error">{error}</Callout>}
     <PageState {...assignedQuery} empty={!assignedQuery.loading && !assignedQuery.error && assigned.length === 0}
-      emptyMessage="Todavía no tiene estudiantes asignados." onRetry={assignedQuery.reload} />
+      emptyMessage="Todavía no tiene usuarios en su grupo." onRetry={assignedQuery.reload} />
     {assigned.length > 0 && <ul className="card-list">{assigned.map((item) =>
       <li className="card row-card" key={item.id}>
         <strong>{item.student_code}</strong>
@@ -50,11 +51,11 @@ export function AssignmentsPanel({ psychologist, onClose }: Props) {
           onClick={() => { void change("DELETE", item.id); }}>Quitar {item.student_code}</Button>
       </li>)}</ul>}
     <form className="inline-actions" onSubmit={(event) => { event.preventDefault(); if (selected) void change("PUT", selected); }}>
-      <label>Asignar estudiante<select value={selected} onChange={(event) => setSelected(event.target.value)}>
-        <option value="">Selecciona un estudiante</option>
+      <label>Agregar usuario<select value={selected} onChange={(event) => setSelected(event.target.value)}>
+        <option value="">Selecciona un usuario</option>
         {available.map((item) => <option key={item.id} value={item.id}>{item.student_code}</option>)}
       </select></label>
-      <Button variant="primary" type="submit" disabled={busy || !selected}>Asignar</Button>
+      <Button variant="primary" type="submit" disabled={busy || !selected}>Agregar al grupo</Button>
       <Button variant="secondary" type="button" onClick={onClose}>Cerrar</Button>
     </form>
   </section>;

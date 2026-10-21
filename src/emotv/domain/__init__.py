@@ -17,7 +17,9 @@ from emotv.domain.session_state import ActivityOutcome, SessionState
 from emotv.domain.session_type import SessionType
 from emotv.domain.local_model_settings import LocalModelSettings
 from emotv.domain.consent import ConsentRecord
-from emotv.domain.role import Role
+from emotv.domain.role import CONDUCTOR_ROLES, MANAGEMENT_ROLES, Role
+from emotv.domain.participant import Participant, ParticipantKind
+from emotv.domain.audit import AuditAction, AuditEntry, AuditResult
 from emotv.domain.user import Student, User
 from emotv.domain.stabilized_emotion import StabilizedEmotion
 
@@ -43,6 +45,13 @@ __all__ = [
     "ActivityOutcome",
     "ConsentRecord",
     "Role",
+    "CONDUCTOR_ROLES",
+    "MANAGEMENT_ROLES",
+    "Participant",
+    "ParticipantKind",
+    "AuditAction",
+    "AuditEntry",
+    "AuditResult",
     "Student",
     "User",
     "StabilizedEmotion",
