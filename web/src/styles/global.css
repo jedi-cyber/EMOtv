@@ -195,6 +195,10 @@ kbd { margin-left: var(--space-xs); padding: 0 4px; border: 1px solid var(--colo
 .trend-line { fill: none; stroke: var(--color-ink); stroke-width: 2; }
 .timeline-events { display: grid; gap: var(--space-xxs); margin: var(--space-sm) 0 0; padding-left: var(--space-lg); }
 .timeline-time { display: inline-block; min-width: 3.5em; color: var(--color-slate); font-variant-numeric: tabular-nums; }
+.report-body { display: grid; gap: var(--space-lg); }
+.report-section { display: grid; gap: var(--space-sm); padding-top: var(--space-md); border-top: 1px solid var(--color-hairline); }
+.report-narrative { white-space: pre-wrap; }
+.report-comments { display: grid; gap: var(--space-sm); }
 .row-card-link { margin-left: calc(-1 * var(--space-sm)); }
 .metadata { display: flex; flex-wrap: wrap; gap: var(--space-lg); width: 100%; margin: var(--space-xs) 0; }
 .metadata div { display: grid; gap: 2px; }

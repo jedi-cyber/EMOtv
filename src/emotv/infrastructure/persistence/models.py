@@ -553,6 +553,69 @@ class VerbalResponseRecord(Base):
     recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class SessionReportRecord(Base):
+    """Versión del reporte de una sesión; el texto va cifrado."""
+
+    __tablename__ = "session_reports"
+    __table_args__ = (
+        UniqueConstraint("family_id", "version", name="uq_session_reports_family_version"),
+        CheckConstraint("status IN ('draft', 'submitted', 'changes_requested', 'approved')",
+                        name="ck_session_reports_status"),
+        CheckConstraint("(status = 'approved') = (approved_at IS NOT NULL)", name="ck_session_reports_approval"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    narrative_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportCommentRecord(Base):
+    """Comentario del docente sobre una sección del reporte; cifrado."""
+
+    __tablename__ = "report_comments"
+    __table_args__ = (
+        CheckConstraint("section IN ('timeline', 'metrics', 'questionnaires', 'narrative', 'general')",
+                        name="ck_report_comments_section"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_id: Mapped[str] = mapped_column(
+        ForeignKey("session_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    section: Mapped[str] = mapped_column(String(24), nullable=False)
+    text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    author_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReportEventRecord(Base):
+    """Historial del reporte, sin contenido."""
+
+    __tablename__ = "report_events"
+    __table_args__ = (
+        CheckConstraint("action IN ('created', 'edited', 'submitted', 'commented', 'returned', 'approved', "
+                        "'closed', 'new_version', 'printed')", name="ck_report_events_action"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_id: Mapped[str] = mapped_column(
+        ForeignKey("session_reports.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class CommitmentAcceptanceRecord(Base):
     """Aceptación del compromiso de confidencialidad (kind=commitment) o del
     aviso reforzado sobre datos de menores (kind=child_notice), con su versión."""

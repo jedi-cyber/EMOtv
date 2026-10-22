@@ -312,3 +312,32 @@ export interface ParticipantTrends {
   protocols: { protocol_family_id: string; protocol_name: string; comparable: boolean; message: string;
     sessions: { session_id: string; started_at: string; protocol_version: number; matched: number; counted: number; sentence: string }[] }[];
 }
+
+export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
+export type ReportSection = "timeline" | "metrics" | "questionnaires" | "narrative" | "general";
+
+/** Reporte de una sesión con participante: redacta quien la condujo, revisa su docente. */
+export interface SessionReport {
+  id: string;
+  version: number;
+  status: ReportStatus;
+  current: boolean;
+  narrative: string;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  session: { id: string; started_at: string; session_type: SessionType; emotion_model_id: string | null; emotion_model_version: string | null };
+  participant_code: string;
+  estimates_notice: string;
+  abstract_notice: string | null;
+  timeline: SessionTimeline;
+  metrics: SessionMetrics;
+  authored_by_me?: boolean;
+  requires_review?: boolean;
+  can_edit?: boolean;
+  can_review?: boolean;
+  can_new_version?: boolean;
+  comments?: { id: string; section: ReportSection; text: string; created_at: string }[];
+  history?: { action: string; occurred_at: string; version: number | null; by: "author" | "docente" }[];
+  versions?: { id: string; version: number; status: ReportStatus }[];
+}

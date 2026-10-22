@@ -10,7 +10,13 @@ import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
 
 /** Nombres de los tipos de registro; la clave técnica nunca se muestra. */
-const recordNames: Record<string, string> = { participants: "Participante", sessions: "Sesiones" };
+const recordNames: Record<string, string> = {
+  participants: "Participante", sessions: "Sesiones", authorizations: "Autorizaciones registradas",
+  questionnaire_responses: "Respuestas de cuestionarios", expression_captures: "Capturas de expresión estimada",
+  session_markers: "Marcadores", verbal_responses: "Lo que dijo ver en imágenes abstractas",
+  guided_runs: "Sesiones guiadas", session_reports: "Reportes", report_comments: "Comentarios de reportes",
+  report_events: "Historial de reportes",
+};
 const when = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
 
 /** Acta imprimible: código, fecha, registros por tipo y verificación. Sin datos personales. */

@@ -23,7 +23,10 @@ from emotv.infrastructure.persistence.models import (
     ParticipantDeletionRecord,
     ParticipantRecord,
     QuestionnaireResponseRecord,
+    ReportCommentRecord,
+    ReportEventRecord,
     SessionMarkerRecord,
+    SessionReportRecord,
     SessionRecord,
     VerbalResponseRecord,
 )
@@ -39,6 +42,9 @@ PARTICIPANT_LINKED_RECORDS = (
     ("session_markers", SessionMarkerRecord, SessionMarkerRecord.participant_id),
     ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.participant_id),
     ("guided_runs", GuidedRunRecord, GuidedRunRecord.participant_id),
+    ("report_comments", ReportCommentRecord, ReportCommentRecord.participant_id),
+    ("report_events", ReportEventRecord, ReportEventRecord.participant_id),
+    ("session_reports", SessionReportRecord, SessionReportRecord.participant_id),
     ("sessions", SessionRecord, SessionRecord.participant_id),
 )
 

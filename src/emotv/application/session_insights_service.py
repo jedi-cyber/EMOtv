@@ -85,14 +85,20 @@ class SessionInsightsService:
                                 self.guided.list_verbal(session.id), skipped)
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
-        session = self._allowed_session(user, session_id, METRICS)
-        return {"session_id": session.id, **self._session_metrics(session)}
+        return self.session_metrics(self._allowed_session(user, session_id, METRICS))
 
     # --- Línea de tiempo -----------------------------------------------------------------
 
     def timeline(self, user: User, session_id: str) -> dict[str, Any]:
         """Un solo eje de tiempo, en segundos desde el inicio de la sesión."""
-        session = self._allowed_session(user, session_id, TIMELINE)
+        return self.session_timeline(self._allowed_session(user, session_id, TIMELINE))
+
+    def session_metrics(self, session: EmotionalSession) -> dict[str, Any]:
+        """Sin control de acceso ni auditoría: lo usa quien ya los aplicó (el reporte)."""
+        return {"session_id": session.id, **self._session_metrics(session)}
+
+    def session_timeline(self, session: EmotionalSession) -> dict[str, Any]:
+        """Sin control de acceso ni auditoría: lo usa quien ya los aplicó (el reporte)."""
         start = session.started_at
 
         def at(moment: datetime | str | None) -> float | None:

@@ -84,6 +84,8 @@ export function SessionDetailPage() {
     <p className="muted">La expresión registrada es una estimación del modelo sobre el rostro visible; no indica lo que sentías.</p>
     {guided && <section className="card">
       <h2>Sesión guiada</h2>
+      {session.participant_id && ["completed", "cancelled"].includes(session.state) &&
+        <ButtonLink variant="secondary" to={paths.sessionReport(session.id)}>Reporte de la sesión</ButtonLink>}
       {guided.abstract_notice && !metricsQuery.data && <Callout variant="info" role="note">{guided.abstract_notice}</Callout>}
       {conductedByMe && !["finished", "stopped"].includes(guided.phase) &&
         <ButtonLink variant="secondary" to={paths.guidedSession(session.id)}>Continuar la sesión guiada</ButtonLink>}

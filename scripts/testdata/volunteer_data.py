@@ -18,6 +18,7 @@ Tablas con datos vinculados a un usuario o estudiante:
 - questionnaires de la cuenta y questionnaire_responses de sus sesiones;
 - de sus sesiones guiadas: guided_runs, expression_captures, session_markers y
   verbal_responses;
+- de sus sesiones: session_reports con sus report_comments y report_events;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
@@ -57,7 +58,10 @@ from emotv.infrastructure.persistence.models import (
     PsychologistAssignmentRecord,
     QuestionnaireRecord,
     QuestionnaireResponseRecord,
+    ReportCommentRecord,
+    ReportEventRecord,
     SessionMarkerRecord,
+    SessionReportRecord,
     SessionRecord,
     StudentRecord,
     UserRecord,
@@ -75,7 +79,8 @@ REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
 # Orden de borrado: primero las filas que dependen de otras.
-TABLES = ("chat_messages", "chat_conversations", "questionnaire_responses", "expression_captures",
+TABLES = ("chat_messages", "chat_conversations", "report_comments", "report_events", "session_reports",
+          "questionnaire_responses", "expression_captures",
           "session_markers", "verbal_responses", "guided_runs", "sessions",
           "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
           "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
@@ -308,6 +313,9 @@ _NO_SYNC = {"synchronize_session": False}
 _MODELS = {
     "chat_messages": ChatMessageRecord,
     "chat_conversations": ChatConversationRecord,
+    "report_comments": ReportCommentRecord,
+    "report_events": ReportEventRecord,
+    "session_reports": SessionReportRecord,
     "questionnaire_responses": QuestionnaireResponseRecord,
     "expression_captures": ExpressionCaptureRecord,
     "session_markers": SessionMarkerRecord,
@@ -336,9 +344,13 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
     sessions = or_(SessionRecord.student_id == student if student else false(),
                    SessionRecord.owner_user_id == account.user_id,
                    SessionRecord.participant_id.in_(participants))
+    reports = select(SessionReportRecord.id).where(SessionReportRecord.session_id.in_(select(SessionRecord.id).where(sessions)))
     return {
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
         "chat_conversations": ChatConversationRecord.user_id == account.user_id,
+        "report_comments": ReportCommentRecord.report_id.in_(reports),
+        "report_events": ReportEventRecord.report_id.in_(reports),
+        "session_reports": SessionReportRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "questionnaire_responses": QuestionnaireResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "expression_captures": ExpressionCaptureRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "session_markers": SessionMarkerRecord.session_id.in_(select(SessionRecord.id).where(sessions)),

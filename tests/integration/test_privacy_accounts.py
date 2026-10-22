@@ -49,6 +49,9 @@ from emotv.infrastructure.persistence.postgres_guided_repositories import Postgr
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.report_service import ReportService
+from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
+from emotv.interfaces.web.report_router import create_report_router
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresAuthorizationRepository,
@@ -180,6 +183,9 @@ def env():
                                        if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
         audit=audit)
     app.include_router(create_insights_router(insights, auth, users))
+    e.reports = ReportService(PostgresReportRepository(factory, FieldCipher([KEY])), sessions,
+                              participant_repository.get_by_id, authorization, docente_of, insights, audit, clock)
+    app.include_router(create_report_router(e.reports, auth, users))
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
@@ -462,7 +468,8 @@ def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(en
     certificate = response.json()
     assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
     assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "expression_captures": 0, "session_markers": 0,
-                                    "verbal_responses": 0, "guided_runs": 0, "sessions": 1, "participants": 1}
+                                    "verbal_responses": 0, "guided_runs": 0, "report_comments": 0, "report_events": 0,
+                                    "session_reports": 0, "sessions": 1, "participants": 1}
     with env.factory() as db:
         assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
         assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0

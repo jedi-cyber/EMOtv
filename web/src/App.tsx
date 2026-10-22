@@ -33,6 +33,8 @@ import { GuidedConductorPage } from "./pages/GuidedConductorPage";
 import { GuidedSetupPage } from "./pages/GuidedSetupPage";
 import { ParticipantViewPage } from "./pages/ParticipantViewPage";
 import { ParticipantTrendsPage } from "./pages/ParticipantTrendsPage";
+import { ReportPrintPage } from "./pages/ReportPrintPage";
+import { SessionReportPage } from "./pages/SessionReportPage";
 import { SessionQuestionnairePage } from "./pages/SessionQuestionnairePage";
 import { StimuliPage } from "./pages/StimuliPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
@@ -53,6 +55,8 @@ export function App() {
           {/* El docente también conduce sesiones propias. */}
           <Route path={paths.analysis} element={<RoleRoute allowed={["student", "psychologist"]}><AnalysisPage /></RoleRoute>} />
           <Route path={paths.participants} element={<RoleRoute allowed={["student", "psychologist"]}><ParticipantsPage /></RoleRoute>} />
+          <Route path={paths.sessionReportPattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionReportPage /></RoleRoute>} />
+          <Route path={paths.reportPrintPattern} element={<RoleRoute allowed={["student", "psychologist"]}><ReportPrintPage /></RoleRoute>} />
           <Route path={paths.participantTrendsPattern} element={<RoleRoute allowed={["student", "psychologist"]}><ParticipantTrendsPage /></RoleRoute>} />
           <Route path={paths.guided} element={<RoleRoute allowed={["student", "psychologist"]}><GuidedSetupPage /></RoleRoute>} />
           <Route path={paths.guidedSessionPattern} element={<RoleRoute allowed={["student", "psychologist"]}><GuidedConductorPage /></RoleRoute>} />

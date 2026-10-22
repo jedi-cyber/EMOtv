@@ -170,6 +170,32 @@ auditoría (`session_timeline`, `session_metrics`, `participant_trends`).
 Los textos describen: "En 3 de 5 estímulos la expresión estimada coincidió con
 la esperada". Nunca valoran a la persona.
 
+## Reporte de sesión
+
+Lo redacta quien condujo una sesión con participante, cuando terminó, y lo revisa
+su docente asignado. Estados: `draft` (borrador), `submitted` (enviado a
+revisión), `changes_requested` (con observaciones) y `approved`. Si quien condujo
+es un docente, cerrar el reporte lo deja aprobado sin revisión. Un reporte
+aprobado no se edita: `new-version` crea la siguiente, en borrador, que vuelve a
+revisión. El texto y los comentarios se guardan cifrados; el historial solo dice
+quién hizo qué y cuándo. Todo acceso pasa por `can_access_participant` y queda
+en la auditoría.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `POST`, `GET` | `/sessions/{id}/report` | Crea (solo quien condujo, con la sesión terminada) o devuelve la versión vigente |
+| `GET`, `PUT` | `/reports/{id}` | `PUT` (`narrative`) solo quien la redactó, en borrador o con observaciones; aprobado, `409` |
+| `POST` | `/reports/{id}/submit` | Envía a revisión, o cierra y aprueba si quien redacta es docente |
+| `POST` | `/reports/{id}/comments` | Docente asignado: `section` (`timeline`, `metrics`, `questionnaires`, `narrative`, `general`) y `text` |
+| `POST` | `/reports/{id}/approve`, `/reports/{id}/return` | Docente asignado, con el reporte enviado a revisión |
+| `POST` | `/reports/{id}/new-version` | Quien lo redactó, sobre la versión aprobada vigente |
+| `POST` | `/reports/{id}/print` | Solo aprobado: registra la impresión en la auditoría y devuelve el contenido imprimible. El navegador imprime; el servidor no genera archivos |
+
+El reporte incluye la línea de tiempo, las métricas, las respuestas de los
+cuestionarios, el código del participante (nunca su nombre), el modelo usado, el
+aviso de que las expresiones son estimaciones de apoyo y no una evaluación y, si
+hubo imágenes abstractas, su aviso fijo.
+
 ## Actividades
 
 | Método | Ruta | Acceso |

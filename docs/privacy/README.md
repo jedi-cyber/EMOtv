@@ -142,6 +142,21 @@ Cada registro y cada retiro quedan en la auditoría.
   Las imágenes abstractas no tienen métricas de coincidencia y llevan el aviso
   fijo. El carril del ritmo cardíaco queda vacío hasta que exista el sensor.
 
+## Reporte de sesión
+
+- Lo redacta quien condujo la sesión y lo revisa su docente asignado, que
+  comenta por secciones y aprueba o devuelve el reporte. El texto y los
+  comentarios se guardan cifrados; el historial no guarda contenido.
+- Indica siempre que las expresiones son estimaciones de apoyo y no una
+  evaluación, y qué modelo se usó. Muestra el código del participante, nunca su
+  nombre.
+- Solo el reporte aprobado se imprime, desde el navegador, sin generar archivos
+  en el servidor; cada impresión queda en la auditoría. Si el participante
+  adulto o el tutor de un niño pide una copia, el docente la imprime y se la
+  entrega: no hay portal para participantes ni envío por correo.
+- La eliminación y la retención del participante incluyen sus reportes,
+  comentarios e historial.
+
 ## Imágenes
 
 Ningún endpoint, pantalla ni exportación devuelve imágenes de participantes:

@@ -34,7 +34,12 @@ interface Event { time: number; text: string }
  * color: ninguna expresión tiene color propio. Las capturas marcadas por
  * calidad se dibujan huecas. Debajo, la misma información como lista.
  */
-export function SessionTimeline({ timeline, expressionLabel }: { timeline: Timeline; expressionLabel: (key: string | null) => string }) {
+export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false }: {
+  timeline: Timeline;
+  expressionLabel: (key: string | null) => string;
+  /** Al imprimir, la lista de eventos va abierta. */
+  eventsOpen?: boolean;
+}) {
   const duration = Math.max(timeline.duration_seconds, 1);
   const x = (time: number | null) => LABEL + (Math.min(Math.max(time ?? 0, 0), duration) / duration) * PLOT;
   const y = (index: number) => 24 + index * LANE + LANE / 2;
@@ -89,7 +94,7 @@ export function SessionTimeline({ timeline, expressionLabel }: { timeline: Timel
       </g>)}
     </svg>
     <figcaption className="muted">Cuadros rellenos: capturas de buena calidad; huecos: marcadas por calidad. Las expresiones son estimaciones del modelo.</figcaption>
-    <details>
+    <details open={eventsOpen}>
       <summary>Eventos en orden</summary>
       <ol className="timeline-events">{events.map((event, index) => <li key={index}><span className="timeline-time">{seconds(event.time)}</span> {event.text}</li>)}</ol>
     </details>

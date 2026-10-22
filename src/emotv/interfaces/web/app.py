@@ -81,6 +81,9 @@ from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, dec
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.report_service import ReportService
+from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
+from emotv.interfaces.web.report_router import create_report_router
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
@@ -289,6 +292,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
             questionnaires=questionnaire_service.repository.get, authorization=authorization_service,
             actor_student_id=actor_student_id, audit=audit_service)
     app.include_router(create_insights_router(insights_service, authentication_service, user_repository))
+    report_service = None
+    if insights_service is not None:
+        report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
+                                       participant_repository.get_by_id, authorization_service, docente_of,
+                                       insights_service, audit_service)
+    app.include_router(create_report_router(report_service, authentication_service, user_repository))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -346,6 +355,7 @@ else:
     app.include_router(create_questionnaire_router(None, None, None))
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
+    app.include_router(create_report_router(None, None, None))
 
 
 def run_retention() -> None:
