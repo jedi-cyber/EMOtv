@@ -70,7 +70,7 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
   return <section className="card recommendations-editor" aria-labelledby="recommendations-title">
     <h2 id="recommendations-title">Actividades recomendadas por expresión</h2>
     <p className="muted">El orden es la prioridad. Solo se pueden recomendar actividades con al menos {MIN_RECOMMENDED_STEPS} posturas.
-      Si una expresión queda sin actividades, el estudiante elige de la lista completa. Estas asociaciones no son una recomendación clínica y deben revisarlas profesionales de Psicología.</p>
+      Si una expresión queda sin actividades, el usuario elige de la lista completa. Estas asociaciones no son una recomendación clínica y deben revisarlas profesionales de Psicología.</p>
     {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
     <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Actividades (en orden)</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>

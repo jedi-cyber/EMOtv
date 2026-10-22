@@ -8,7 +8,7 @@ import { apiRequest } from "../src/api/http";
 import { AssistantProvider } from "../src/components/AssistantContext";
 import { AssistantWidget } from "../src/components/AssistantWidget";
 
-const { admissions } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] }] } }));
+const { admissions } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[], is_default: true as boolean }] } }));
 vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
@@ -89,7 +89,7 @@ async function openLive(withAssistant = false) {
 }
 
 beforeEach(() => {
-  admissions.value = [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] }];
+  admissions.value = [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [], is_default: true }];
   Socket.instances = [];
   vi.stubGlobal("WebSocket", Socket);
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
@@ -200,21 +200,26 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(apiRequest).not.toHaveBeenCalledWith("/sessions", expect.anything());
   });
 
-  it("impide a administración iniciar con un modelo bloqueado e indica el motivo", async () => {
-    admissions.value = [{ model_id: "ferplus_onnx", state: "BLOCKED", reasons: ["Benchmark vencido"] }];
-    page("admin");
-    expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Modelo no disponible: Benchmark vencido");
+  it("un modelo sin admisión vigente aparece como no disponible y no se puede elegir", () => {
+    admissions.value = [
+      { model_id: "hsemotion_enet_b0_8_best_afew", state: "SUPPORTED", reasons: [], is_default: true },
+      { model_id: "ferplus_onnx", state: "BLOCKED", reasons: [], is_default: false },
+    ];
+    page();
+    expect(screen.getByRole("option", { name: "Predeterminado (HSEmotion)" })).toBeEnabled();
+    expect(screen.getByRole("option", { name: "FER+ (no disponible)" })).toBeDisabled();
   });
 
-  it("el estudiante no ve el selector de modelo y recibe el motivo del bloqueo desde el servidor", async () => {
+  it("sin otro modelo disponible no hay selector y el servidor usa el predeterminado", async () => {
     camera();
     page();
     expect(screen.queryByLabelText("Modelo facial")).not.toBeInTheDocument();
     await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
+    // La sesión se guarda como propia: quien inicia sesión se analiza a sí mismo.
+    expect(apiRequest).toHaveBeenCalledWith("/sessions", expect.objectContaining({ body: JSON.stringify({ session_type: "propia" }) }));
     act(() => Socket.instances[0].onopen?.());
-    // El estudiante no elige modelo: el servidor usa HSEmotion si está admitido y, si no, FER+.
+    // Sin elección, el servidor usa el predeterminado (o su respaldo) e informa si está bloqueado.
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
     act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Benchmark vencido" }) }));
     expect(await screen.findByText(/Modelo bloqueado: Benchmark vencido/)).toBeInTheDocument();
@@ -467,18 +472,17 @@ describe("actividad secuencial con repeticiones", () => {
     expect(screen.getByText("Lectura sin calibrar")).toBeInTheDocument();
   });
 
-  it("administración puede dejar la elección automática o forzar un modelo", async () => {
+  it("quien conduce la sesión puede probar otro modelo local solo para esa sesión", async () => {
     admissions.value = [
-      { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
-      { model_id: "hsemotion_enet_b0_8_best_afew", state: "BLOCKED", reasons: ["Falta un benchmark validado"] },
+      { model_id: "hsemotion_enet_b0_8_best_afew", state: "SUPPORTED", reasons: [], is_default: true },
+      { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [], is_default: false },
     ];
     camera();
-    page("admin");
-    // Automático con HSEmotion bloqueado: se usará FER+ y se puede iniciar.
+    const view = page();
     expect(screen.getByLabelText("Modelo facial")).toHaveValue("");
-    expect(screen.getByText(/Modelo disponible/)).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Modelo facial"), "hsemotion_enet_b0_8_best_afew");
-    expect(screen.getByRole("alert")).toHaveTextContent("Modelo no disponible: Falta un benchmark validado");
+    expect(screen.getByText("Puedes probar otro modelo local. La elección vale solo para esta sesión.")).toBeInTheDocument();
+    // Ningún texto compara la precisión de los modelos.
+    expect(view.container.textContent).not.toMatch(/precis|exact|mejor/i);
     await userEvent.selectOptions(screen.getByLabelText("Modelo facial"), "ferplus_onnx");
     await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
@@ -538,13 +542,4 @@ describe("actividad secuencial con repeticiones", () => {
     });
   });
 
-  it("administración ve el p95 del cuadro completo con varias sesiones", () => {
-    admissions.value = [
-      { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
-      { model_id: "hsemotion_enet_b0_8_best_afew", state: "SUPPORTED", reasons: [],
-        metrics: { concurrent_frame_p95_ms: { "4": 310.4, "1": 95.2, "2": 160 } } },
-    ] as typeof admissions.value;
-    page("admin");
-    expect(screen.getByText("p95 del cuadro completo según el benchmark: 1 sesión: 95 ms · 2 sesiones: 160 ms · 4 sesiones: 310 ms")).toBeInTheDocument();
-  });
 });

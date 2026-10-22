@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from pathlib import Path
+from threading import Lock
 
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.application.ports.emotion_classifier import EmotionClassifier
@@ -28,3 +30,25 @@ def create_emotion_classifier(
         raise ValueError(f"No hay adaptador implementado para el modelo: {model.id}")
     return FerPlusEmotionClassifier(model_path=model_path, input_size=model.input_size,
                                     intra_op_threads=intra_op_threads)
+
+
+class ClassifierCache:
+    """Carga cada clasificador una sola vez por proceso y lo reutiliza.
+
+    Los clasificadores no guardan estado entre cuadros (la sesión ONNX admite
+    llamadas concurrentes), así que varias sesiones comparten la misma instancia.
+    Un fallo de carga no se guarda: la siguiente sesión vuelve a intentarlo.
+    """
+
+    def __init__(self, factory: Callable[[str], EmotionClassifier] = create_emotion_classifier) -> None:
+        self._factory = factory
+        self._classifiers: dict[str, EmotionClassifier] = {}
+        self._lock = Lock()
+
+    def get(self, model_id: str) -> EmotionClassifier:
+        with self._lock:
+            classifier = self._classifiers.get(model_id)
+            if classifier is None:
+                classifier = self._factory(model_id)
+                self._classifiers[model_id] = classifier
+            return classifier

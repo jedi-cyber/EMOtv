@@ -14,11 +14,15 @@ class PostgresAssignmentRepository:
         self._factory = factory
 
     def assign(self, assignment: PsychologistAssignment) -> PsychologistAssignment:
+        """Asigna el usuario al docente; si tenía otro docente, lo mueve."""
         with self._factory.begin() as db:
             row = db.get(PsychologistAssignmentRecord,
                          (assignment.psychologist_user_id, assignment.student_id))
             if row is not None:
                 return self._domain(row)
+            db.execute(delete(PsychologistAssignmentRecord).where(
+                PsychologistAssignmentRecord.student_id == assignment.student_id))
+            db.flush()
             db.add(PsychologistAssignmentRecord(
                 psychologist_user_id=assignment.psychologist_user_id, student_id=assignment.student_id,
                 assigned_at=assignment.assigned_at, assigned_by_user_id=assignment.assigned_by_user_id))
@@ -34,6 +38,12 @@ class PostgresAssignmentRepository:
     def is_assigned(self, psychologist_user_id: str, student_id: str) -> bool:
         with self._factory() as db:
             return db.get(PsychologistAssignmentRecord, (psychologist_user_id, student_id)) is not None
+
+    def get_by_student(self, student_id: str) -> PsychologistAssignment | None:
+        with self._factory() as db:
+            row = db.scalar(select(PsychologistAssignmentRecord)
+                            .where(PsychologistAssignmentRecord.student_id == student_id))
+            return None if row is None else self._domain(row)
 
     def list_by_psychologist(self, psychologist_user_id: str) -> tuple[PsychologistAssignment, ...]:
         with self._factory() as db:

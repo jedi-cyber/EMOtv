@@ -79,7 +79,7 @@ def env():
     student_user, student = identity.register_student("rec@example.com", "rec-password-1234", "code-rec")
     identity.grant_consent(student.id, "test-v1")
     admin = users.save(User("admin-rec", "admin-rec@example.com", auth.hash_password("admin-password-123"),
-                            Role.ADMIN, datetime.now(timezone.utc)))
+                            Role.SUPERADMIN, datetime.now(timezone.utc)))
     psychologist = users.save(User("psy-rec", "psy-rec@example.com", auth.hash_password("psy-password-1234"),
                                    Role.PSYCHOLOGIST, datetime.now(timezone.utc)))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)

@@ -51,7 +51,9 @@ def evaluator(tmp_path, monkeypatch):
 
 def test_valid_report_and_live_resources(evaluator):
     service, _, _ = evaluator
-    assert service.evaluate("ferplus_onnx")["state"] == "SUPPORTED"
+    result = service.evaluate("ferplus_onnx")
+    assert result["state"] == "SUPPORTED"
+    assert result["checks"] == {"weights_verified": True, "benchmark_current": True}
     assert service.evaluate("not-allowed")["state"] == "BLOCKED"
 
 
@@ -69,7 +71,19 @@ def test_untrusted_reports_fail_closed(evaluator, reason):
         if reason == "samples": report["results"][0]["samples"] = 3
         if reason == "nan": report["results"][0]["ram_peak_mib"] = float("nan")
         path.write_text(json.dumps(report), encoding="utf-8")
-    assert service.evaluate("ferplus_onnx")["state"] == "BLOCKED"
+    result = service.evaluate("ferplus_onnx")
+    assert result["state"] == "BLOCKED"
+    # Los pesos solo cuentan como verificados si coinciden con un benchmark legible.
+    assert result["checks"]["weights_verified"] is (reason not in ("missing", "invalid", "hash"))
+    assert result["checks"]["benchmark_current"] is False
+
+
+def test_server_load_blocks_without_invalidating_the_checks(evaluator, monkeypatch):
+    service, _, _ = evaluator
+    monkeypatch.setattr(module.psutil, "cpu_percent", lambda interval: 99)
+    result = service.evaluate("ferplus_onnx")
+    assert result["state"] == "BLOCKED"
+    assert result["checks"] == {"weights_verified": True, "benchmark_current": True}
 
 
 def test_dynamic_cpu_block_and_recovery(evaluator, monkeypatch):

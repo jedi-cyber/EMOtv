@@ -15,22 +15,33 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   student: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.participants, label: "Participantes", icon: "students" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
   ],
+  // El docente conduce sesiones propias y revisa las de su grupo.
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
-    { to: paths.students, label: "Estudiantes", icon: "students" },
+    { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.participants, label: "Participantes", icon: "students" },
+    { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
   ],
+  // Cuentas, grupos y auditoría; nunca participantes ni resultados.
   admin: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
-    { to: paths.users, label: "Usuarios", icon: "users" },
-    { to: paths.students, label: "Estudiantes", icon: "students" },
+    { to: paths.users, label: "Cuentas y grupos", icon: "users" },
+    { to: paths.audit, label: "Auditoría", icon: "shield" },
+  ],
+  // Soporte técnico: modelos, catálogos, la cuenta de administrador y auditoría.
+  superadmin: [
+    { to: paths.dashboard, label: "Inicio", icon: "home" },
+    { to: paths.adminModels, label: "Modelos", icon: "manage" },
     { to: paths.adminActivities, label: "Administrar actividades", icon: "manage" },
     { to: paths.adminExpressions, label: "Catálogo de expresiones", icon: "manage" },
-    { to: paths.sessions, label: "Sesiones", icon: "sessions" },
+    { to: paths.users, label: "Cuenta de administrador", icon: "users" },
+    { to: paths.audit, label: "Auditoría", icon: "shield" },
   ],
 };

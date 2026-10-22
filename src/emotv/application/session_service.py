@@ -11,6 +11,7 @@ from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.domain.emotional_activity_status import EmotionalActivityStatus
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import ActivityOutcome, SessionState
+from emotv.domain.session_type import SessionType
 
 
 Clock = Callable[[], datetime]
@@ -40,6 +41,8 @@ class SessionService:
         self,
         student_id: str | None = None,
         activity_id: str | None = None,
+        session_type: SessionType | str = SessionType.OWN,
+        owner_user_id: str | None = None,
     ) -> EmotionalSession:
         """Crea y guarda una sesión que todavía no ha comenzado."""
 
@@ -49,6 +52,8 @@ class SessionService:
             state=SessionState.CREATED,
             student_id=student_id,
             activity_id=activity_id,
+            session_type=session_type,
+            owner_user_id=owner_user_id,
         )
         return self.repository.save(session)
 
@@ -57,6 +62,8 @@ class SessionService:
         session_id: str | None = None,
         student_id: str | None = None,
         activity_id: str | None = None,
+        session_type: SessionType | str = SessionType.OWN,
+        owner_user_id: str | None = None,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada."""
 
@@ -68,6 +75,8 @@ class SessionService:
                 state=SessionState.IN_PROGRESS,
                 student_id=student_id,
                 activity_id=activity_id,
+                session_type=session_type,
+                owner_user_id=owner_user_id,
             )
         else:
             current = self._get_required(session_id)
@@ -110,7 +119,7 @@ class SessionService:
         consent = self.consent_repository.get_active_by_student(normalized_id)
         if consent is None:
             raise PermissionError(
-                "el estudiante no tiene un consentimiento activo"
+                "el usuario no tiene un consentimiento activo"
             )
         if self.required_policy_version is not None and consent.policy_version != self.required_policy_version:
             raise PermissionError("el consentimiento no corresponde a la política vigente")
@@ -319,6 +328,9 @@ class SessionService:
         """Consulta exclusivamente las sesiones asociadas a un estudiante."""
 
         return self.repository.list_by_student(student_id)
+
+    def list_sessions_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
+        return self.repository.list_by_owner(owner_user_id)
 
     def _get_required(self, session_id: str) -> EmotionalSession:
         normalized_id = session_id.strip()

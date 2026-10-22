@@ -11,7 +11,16 @@ class InMemoryAssignmentRepository:
 
     def assign(self, assignment: PsychologistAssignment) -> PsychologistAssignment:
         key = (assignment.psychologist_user_id, assignment.student_id)
-        return self._items.setdefault(key, assignment)
+        if key in self._items:
+            return self._items[key]
+        # Un usuario tiene un solo docente: asignarlo a otro lo mueve.
+        for other in [item for item in self._items if item[1] == assignment.student_id]:
+            del self._items[other]
+        self._items[key] = assignment
+        return assignment
+
+    def get_by_student(self, student_id: str) -> PsychologistAssignment | None:
+        return next((item for (_, student), item in self._items.items() if student == student_id), None)
 
     def unassign(self, psychologist_user_id: str, student_id: str) -> bool:
         return self._items.pop((psychologist_user_id, student_id), None) is not None

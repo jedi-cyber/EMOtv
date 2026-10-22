@@ -36,7 +36,7 @@ class ActivityRouterTests(unittest.TestCase):
             self.users, "unit-test-jwt-secret-with-at-least-32-characters"
         )
         now = datetime(2026, 9, 8, tzinfo=timezone.utc)
-        self.admin = User("admin", "admin@example.com", "hash", Role.ADMIN, now)
+        self.admin = User("admin", "admin@example.com", "hash", Role.SUPERADMIN, now)
         self.student = User(
             "student", "student@example.com", "hash", Role.STUDENT, now
         )

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from emotv.domain.session_state import ActivityOutcome, SessionState
+from emotv.domain.session_type import SessionType
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,11 @@ class EmotionalSession:
     exercise_steps_completed: int | None = None
     exercise_steps_total: int | None = None
     exercise_repetitions: int | None = None
+    session_type: SessionType | str = SessionType.OWN
+    # Cuenta que conduce la sesión (usuario o docente) y participante analizado,
+    # si lo hay. Una sesión propia no tiene participante.
+    owner_user_id: str | None = None
+    participant_id: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -46,6 +52,7 @@ class EmotionalSession:
         state = SessionState(self.state) if isinstance(self.state, str) else self.state
         if not isinstance(state, SessionState):
             raise TypeError("state debe ser un SessionState válido")
+        session_type = SessionType(self.session_type)
 
         if self.completed_at is not None:
             if not isinstance(self.completed_at, datetime):
@@ -132,6 +139,15 @@ class EmotionalSession:
 
         object.__setattr__(self, "id", session_id)
         object.__setattr__(self, "state", state)
+        object.__setattr__(self, "session_type", session_type)
+        for name in ("owner_user_id", "participant_id"):
+            value = getattr(self, name)
+            if value is not None:
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"{name} no puede estar vacío")
+                object.__setattr__(self, name, value.strip())
+        if session_type is SessionType.OWN and self.participant_id is not None:
+            raise ValueError("una sesión propia no tiene participante")
         object.__setattr__(self, "initial_emotion", emotion)
         object.__setattr__(self, "activity_id", activity_id)
         object.__setattr__(self, "exercise_result", exercise_result)

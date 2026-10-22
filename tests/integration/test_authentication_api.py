@@ -151,7 +151,9 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
 
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
-        self.assertIn(self.admin.id, {item["id"] for item in allowed.json()})
+        # El administrador ve las cuentas que gestiona: docentes y usuarios.
+        self.assertIn(self.student.id, {item["id"] for item in allowed.json()})
+        self.assertNotIn(self.admin.id, {item["id"] for item in allowed.json()})
 
     def test_wrong_password_and_invalid_token_are_rejected(self) -> None:
         login = self.client.post(
@@ -215,16 +217,13 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
         token = self._login(self.student.email, self.student_password)
         admin_token = self._login(self.admin.email, self.admin_password)
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
-        created = self.client.post(
-            "/sessions",
-            json={"student_id": None},
-            headers=admin_headers,
-        )
-        self.assertEqual(created.status_code, 201, created.text)
+        # El administrador no conduce ni consulta sesiones.
+        self.assertEqual(self.client.post("/sessions", json={}, headers=admin_headers).status_code, 403)
+        other = self.sessions.start_session(owner_user_id=self.admin.id)
         student_headers = {"Authorization": f"Bearer {token}"}
 
         detail = self.client.get(
-            f"/sessions/{created.json()['id']}", headers=student_headers
+            f"/sessions/{other.id}", headers=student_headers
         )
         listing = self.client.get(
             "/sessions?student_id=another-student", headers=student_headers

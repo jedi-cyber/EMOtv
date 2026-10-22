@@ -1,4 +1,4 @@
-"""Crea la primera cuenta de administración de EMOtv.
+"""Crea la cuenta de superadministrador (soporte técnico) de EMOtv.
 
 Uso:
     python scripts/security/create_admin.py --email admin@ejemplo.local
@@ -8,7 +8,10 @@ La contraseña se genera al ejecutar, se guarda solo su hash argon2 y se muestra
 una única vez en esta terminal. La cuenta queda con must_change_password=True,
 así que el primer inicio de sesión obliga a cambiarla. No acepta la contraseña
 por argumento para que no quede en el historial del shell. Si ya existe un
-administrador activo se niega a crear otro salvo con --force.
+superadministrador activo se niega a crear otro salvo con --force.
+
+La cuenta de administrador (cargo superior de la Facultad) no se crea aquí:
+la crea el superadministrador desde la aplicación.
 """
 
 from __future__ import annotations
@@ -41,14 +44,14 @@ def generate_password() -> str:
 
 
 def has_active_admin(users: PostgresUserRepository) -> bool:
-    return any(user.role is Role.ADMIN and user.is_active for user in users.list_all())
+    return any(user.role is Role.SUPERADMIN and user.is_active for user in users.list_all())
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--email", required=True, help="Correo de la cuenta de administración")
+    parser.add_argument("--email", required=True, help="Correo de la cuenta de superadministrador")
     parser.add_argument("--force", action="store_true",
-                        help="Crear otra cuenta aunque ya exista un administrador activo")
+                        help="Crear otra cuenta aunque ya exista un superadministrador activo")
     args = parser.parse_args(argv)
 
     engine = create_database_engine(get_database_url())
@@ -58,20 +61,20 @@ def main(argv: list[str] | None = None) -> int:
         factory = create_session_factory(engine)
         users = PostgresUserRepository(factory)
         if has_active_admin(users) and not args.force:
-            parser.error("Ya existe un administrador activo; usa --force solo si necesitas otro")
+            parser.error("Ya existe un superadministrador activo; usa --force solo si necesitas otro")
         authentication = AuthenticationService(users, get_jwt_secret_key())
         registration = IdentityRegistrationService(
             users, PostgresStudentRepository(factory), PostgresConsentRepository(factory), authentication,
         )
         password = generate_password()
         try:
-            user = registration.register_user(args.email, password, Role.ADMIN, must_change_password=True)
+            user = registration.register_user(args.email, password, Role.SUPERADMIN, must_change_password=True)
         except ValueError as error:
             parser.error(str(error))
     finally:
         engine.dispose()
 
-    print("Cuenta de administración creada.")
+    print("Cuenta de superadministrador creada.")
     print(f"Correo: {user.email}")
     print(f"Contraseña temporal: {password}")
     print("Guárdala ahora: no se volverá a mostrar. Se pedirá cambiarla en el primer acceso.")

@@ -69,8 +69,11 @@ class SecurityBoundaryMiddleware:
                     b"permissions-policy": b"camera=(self), microphone=(), geolocation=()",
                     b"cache-control": b"no-store",
                 }
-                if self.settings.production:
+                # HSTS siempre que la respuesta se sirve por HTTPS (directo o tras
+                # el proxy, que uvicorn resuelve con --proxy-headers) y en producción.
+                if self.settings.production or scope.get("scheme") == "https":
                     additions[b"strict-transport-security"] = b"max-age=31536000"
+                if self.settings.production:
                     additions[b"content-security-policy"] = b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
                 headers.extend((name, value) for name, value in additions.items() if name not in names)
                 message = {**message, "headers": headers}

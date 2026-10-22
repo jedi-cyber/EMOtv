@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useAuth } from "../auth/useAuth";
 import { paths } from "../routes/paths";
 import { PageHeader } from "../components/PageHeader";
-import { activityOutcomeName, emotionModelName, sessionStateName } from "../sessions/labels";
+import { activityOutcomeName, emotionModelName, sessionStateName, sessionTypeName } from "../sessions/labels";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { Button, ButtonLink } from "../components/Button";
 
@@ -29,8 +29,9 @@ export function SessionDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  // Psicología solo consulta: cancelar interrumpiría el análisis de un estudiante.
-  const canCancel = user?.role !== "psychologist" && (session?.state === "created" || session?.state === "in_progress" || session?.state === "recognized");
+  // Solo quien conduce la sesión la cancela: el docente no interrumpe el análisis de otra cuenta.
+  const conductedByMe = session?.owner_user_id ? session.owner_user_id === user?.id : isStudent;
+  const canCancel = conductedByMe && (session?.state === "created" || session?.state === "in_progress" || session?.state === "recognized");
   // Con expresión registrada, cancelar conserva el registro y solo cancela la actividad.
   const recognitionKept = Boolean(session?.recognized_at);
   const activities = Array.isArray(activitiesQuery.data) ? activitiesQuery.data : [];
@@ -56,9 +57,10 @@ export function SessionDetailPage() {
     {message && <Callout variant="success">{message}</Callout>}{error && <Callout variant="error">{error}</Callout>}
     <dl className="detail-grid">
       <div><dt>Estado</dt><dd><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></dd></div>
+      <div><dt>Tipo de sesión</dt><dd>{sessionTypeName(session.session_type)}</dd></div>
       <div><dt>Inicio</dt><dd>{dateTime(session.started_at)}</dd></div>
       <div><dt>Finalización</dt><dd>{session.completed_at ? dateTime(session.completed_at) : "—"}</dd></div>
-      {!isStudent && <div><dt>Estudiante</dt><dd>{session.student_id ? studentCode : "Sin asociación"}</dd></div>}
+      {!isStudent && <div><dt>Conducida por</dt><dd>{session.student_id ? studentCode : "Tú"}</dd></div>}
       <div><dt>Actividad</dt><dd>{activityName}</dd></div>
       {!isStudent && <div><dt>Modelo facial</dt><dd>{emotionModelName(session.emotion_model_id)}{session.emotion_model_version ? ` · versión ${session.emotion_model_version}` : ""}</dd></div>}
       <div><dt>Expresión registrada</dt><dd>{expressionLabel(session.initial_emotion)}</dd></div>

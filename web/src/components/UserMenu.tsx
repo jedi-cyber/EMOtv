@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import type { CurrentUser } from "../auth/types";
+import { roleNames } from "../auth/roles";
 import { Button } from "./Button";
-
-const roleNames = { student: "Estudiante", psychologist: "Psicología", admin: "Administración" };
 
 interface UserMenuProps {
   user: CurrentUser;

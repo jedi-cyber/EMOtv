@@ -16,6 +16,9 @@ class User:
     is_active: bool = True
     must_change_password: bool = False
     token_version: int = 0
+    # Fecha del último restablecimiento hecho por otra cuenta; mientras exista,
+    # la persona ve el aviso en su siguiente inicio de sesión.
+    password_reset_at: datetime | None = None
 
     def __post_init__(self) -> None:
         user_id, email = self.id.strip(), self.email.strip().lower()
@@ -26,6 +29,8 @@ class User:
         role = Role(self.role)
         if self.created_at.tzinfo is None:
             raise ValueError("created_at debe incluir zona horaria")
+        if self.password_reset_at is not None and self.password_reset_at.tzinfo is None:
+            raise ValueError("password_reset_at debe incluir zona horaria")
         object.__setattr__(self, "id", user_id)
         object.__setattr__(self, "email", email)
         object.__setattr__(self, "role", role)

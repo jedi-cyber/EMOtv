@@ -40,7 +40,7 @@ export function ActivitiesPage() {
     <PageHeader title="Actividades" description="Consulta las posturas disponibles. Para recibir una sugerencia, inicia primero el análisis facial."
       actions={canStart ? <ButtonLink variant="secondary" to={paths.analysis}>Ir al analizador</ButtonLink> : undefined} />
     <PageState {...query} empty={!query.loading && !query.error && activities.length === 0}
-      emptyMessage="Todavía no hay actividades disponibles. Administración debe crearlas antes de que puedas practicarlas." onRetry={query.reload} />
+      emptyMessage="Todavía no hay actividades disponibles. El superadministrador debe crearlas antes de que puedas practicarlas." onRetry={query.reload} />
     {activities.length > 0 && <div className="card-grid">
       {activities.map((activity) => {
         const steps = activitySteps(activity);

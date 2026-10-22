@@ -78,7 +78,7 @@ export function ConsentPage() {
     {notice && <Callout variant="success">{notice}</Callout>}
     {state === "loading" && <PageState loading error="" onRetry={() => undefined} />}
     {state === "error" && <PageState loading={false} error={consent.error} onRetry={consent.reload} />}
-    {state === "no_student" && <Callout variant="warning">No hay un perfil estudiantil asociado a tu cuenta. Contacta con administración.</Callout>}
+    {state === "no_student" && <Callout variant="warning">Tu cuenta no tiene un perfil de usuario asociado. Contacta con el administrador.</Callout>}
     {state === "not_required" && <Callout variant="info">
       <p>Modo técnico de desarrollo: el consentimiento no bloquea el analizador. No uses este modo con personas reales.</p>
       <div className="inline-actions"><ButtonLink variant="secondary" to={paths.analysis}>Ir al analizador</ButtonLink></div>

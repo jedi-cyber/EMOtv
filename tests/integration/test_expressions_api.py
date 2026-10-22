@@ -88,8 +88,8 @@ def test_any_authenticated_role_reads_catalog_in_model_order(api, role):
     assert client.get("/expressions/joy", headers=headers[role]).status_code == 404
 
 
-@pytest.mark.parametrize("role", [Role.STUDENT, Role.PSYCHOLOGIST])
-def test_only_admin_edits(api, role):
+@pytest.mark.parametrize("role", [Role.STUDENT, Role.PSYCHOLOGIST, Role.ADMIN])
+def test_only_superadmin_edits(api, role):
     client, headers, _, repository = api
     before = repository.get("sadness")
     assert client.put("/expressions/sadness", headers=headers[role], json=edit_body()).status_code == 403
@@ -98,17 +98,17 @@ def test_only_admin_edits(api, role):
 
 def test_admin_marks_reviewed_recording_who_and_when_then_back_to_draft(api):
     client, headers, accounts, repository = api
-    response = client.put("/expressions/sadness", headers=headers[Role.ADMIN], json=edit_body())
+    response = client.put("/expressions/sadness", headers=headers[Role.SUPERADMIN], json=edit_body())
     assert response.status_code == 200
     reviewed = response.json()
     assert reviewed["review_status"] == "reviewed"
-    assert reviewed["reviewed_by_user_id"] == accounts[Role.ADMIN].id
+    assert reviewed["reviewed_by_user_id"] == accounts[Role.SUPERADMIN].id
     assert reviewed["reviewed_at"] is not None
     assert repository.get("sadness").what_it_is.endswith("Texto revisado por Psicología.")
-    draft = client.put("/expressions/sadness", headers=headers[Role.ADMIN],
+    draft = client.put("/expressions/sadness", headers=headers[Role.SUPERADMIN],
                        json=edit_body(review_status="draft")).json()
     assert (draft["review_status"], draft["reviewed_by_user_id"], draft["reviewed_at"]) == ("draft", None, None)
-    assert client.put("/expressions/joy", headers=headers[Role.ADMIN], json=edit_body()).status_code == 404
+    assert client.put("/expressions/joy", headers=headers[Role.SUPERADMIN], json=edit_body()).status_code == 404
 
 
 @pytest.mark.parametrize("overrides", [
@@ -118,7 +118,7 @@ def test_admin_marks_reviewed_recording_who_and_when_then_back_to_draft(api):
 def test_admin_edit_is_validated(api, overrides):
     client, headers, _, repository = api
     before = repository.get("sadness")
-    assert client.put("/expressions/sadness", headers=headers[Role.ADMIN], json=edit_body(**overrides)).status_code == 422
+    assert client.put("/expressions/sadness", headers=headers[Role.SUPERADMIN], json=edit_body(**overrides)).status_code == 422
     assert repository.get("sadness") == before
 
 

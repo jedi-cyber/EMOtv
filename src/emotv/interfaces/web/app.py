@@ -3,6 +3,8 @@ por /ws/activity y nunca abre un dispositivo de captura propio."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 
 from fastapi import FastAPI
@@ -17,7 +19,8 @@ from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_settings,
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
-                          get_live_expression_settings, get_server_load_settings)
+                          get_live_expression_settings, get_server_load_settings,
+                          get_privacy_settings, get_sensitive_data_keys)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -29,6 +32,10 @@ from emotv.infrastructure.persistence import (
     PostgresExpressionInfoRepository,
     PostgresRecommendationRepository,
     PostgresChatRepository,
+    PostgresLocalModelSettingsRepository,
+    PostgresAuditRepository,
+    PostgresCommitmentRepository,
+    PostgresParticipantRepository,
     create_database_engine,
     create_session_factory,
 )
@@ -44,6 +51,14 @@ from emotv.interfaces.web.session_router import create_session_router
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.interfaces.web.model_admin_router import create_model_admin_router
+from emotv.application.local_model_service import LocalModelService
+from emotv.application.audit_service import AuditService
+from emotv.application.commitment_service import CommitmentService
+from emotv.application.participant_service import ParticipantService
+from emotv.interfaces.web.privacy_router import create_privacy_router
+from emotv.interfaces.web.participant_router import create_participant_router
+from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
 from emotv.infrastructure.chat import N8nWebhookChatGateway
@@ -52,7 +67,7 @@ from emotv.application.emi_knowledge import EmiKnowledge
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
     EmotionFrameAnalyzer,
 )
-from emotv.infrastructure.vision.emotion_classifier import create_emotion_classifier
+from emotv.infrastructure.vision.emotion_classifier import ClassifierCache, create_emotion_classifier
 from emotv.infrastructure.vision.emotion_classifier.model_admission import ServerModelAdmission
 
 # Inicializar FastAPI
@@ -68,8 +83,30 @@ chat_settings = get_chat_settings()
 # Cupos de sesiones y análisis simultáneos, y pool de hilos propio del análisis.
 server_load = get_server_load_settings()
 analysis_capacity = AnalysisCapacity(server_load)
+# Cada clasificador se carga una vez por proceso y lo comparten todas las sesiones;
+# cada análisis usa ONNX_THREADS_PER_SESSION hilos y los cupos limitan cuántos corren a la vez.
+classifiers = ClassifierCache(lambda model_id: create_emotion_classifier(
+    model_id, intra_op_threads=server_load.onnx_threads_per_session))
 chat_service: ChatService | None = None
+privacy_settings = get_privacy_settings()
+audit_service: AuditService | None = None
+participant_service: ParticipantService | None = None
+RETENTION_INTERVAL_SECONDS = 24 * 60 * 60
+retention_task: asyncio.Task | None = None
 logger = logging.getLogger("emotv.api")
+
+
+def _field_cipher():
+    """Cifrado de campos sensibles; sin clave válida, el módulo de participantes no se activa."""
+    try:
+        cipher = create_field_cipher(get_sensitive_data_keys())
+    except FieldEncryptionError as error:
+        logger.error("Módulo de sesiones con participantes desactivado: %s", error)
+        return None
+    if cipher is None:
+        log = logger.error if web_settings.production else logger.warning
+        log("Módulo de sesiones con participantes desactivado: SENSITIVE_DATA_KEY no está configurada")
+    return cipher
 
 if DATABASE_URL and JWT_SECRET_KEY:
     database_engine = create_database_engine(DATABASE_URL)
@@ -102,11 +139,39 @@ if DATABASE_URL and JWT_SECRET_KEY:
         except SQLAlchemyError:
             return None  # La pantalla de resultado usa su texto de respaldo.
 
-    # Psicología accede solo a estudiantes asignados; la misma política en todos los routers.
-    authorization_service = AuthorizationService(assignment_repository.is_assigned)
+    audit_service = AuditService(PostgresAuditRepository(database_sessions))
+    commitment_service = CommitmentService(PostgresCommitmentRepository(database_sessions), audit_service)
+
+    def docente_of(user_id: str) -> str | None:
+        """Docente vigente del usuario: el acceso sigue la asignación actual."""
+        student = student_repository.get_by_user_id(user_id)
+        assignment = assignment_repository.get_by_student(student.id) if student else None
+        return assignment.psychologist_user_id if assignment else None
+
+    def group_user_ids(docente_user_id: str) -> tuple[str, ...]:
+        found = (student_repository.get_by_id(item.student_id)
+                 for item in assignment_repository.list_by_psychologist(docente_user_id))
+        return tuple(student.user_id for student in found if student is not None)
+
+    field_cipher = _field_cipher()
+    participant_repository = (PostgresParticipantRepository(database_sessions, field_cipher)
+                              if field_cipher is not None else None)
+    # Una sola regla de acceso a participantes y sesiones en todos los routers.
+    authorization_service = AuthorizationService(
+        assignment_repository.is_assigned, docente_of,
+        participant_repository.get_by_id if participant_repository is not None else None)
+    if participant_repository is not None:
+        participant_service = ParticipantService(
+            participant_repository, authorization_service, commitment_service, audit_service, group_user_ids,
+            retention_months=privacy_settings.participant_retention_months,
+            notice_days=privacy_settings.expiry_notice_days)
+    app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
+                                             user_repository))
+    app.include_router(create_participant_router(participant_service, authentication_service, user_repository))
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
                                               consent_repository, consent_policy_service,
-                                              assignments=assignment_repository))
+                                              assignments=assignment_repository, audit=audit_service,
+                                              privacy=privacy_settings))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
@@ -131,7 +196,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
         authorization=authorization_service,
         activities=activity_catalog,
         assignments=assignment_repository,
+        commitments=commitment_service,
     ))
+    # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
+    local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
+                                     model_admission.evaluate)
+    app.include_router(create_model_admin_router(local_models, authentication_service, user_repository))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -140,20 +210,18 @@ if DATABASE_URL and JWT_SECRET_KEY:
         student_repository,
         lambda activity: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
-                intra_op_threads=server_load.onnx_threads_per_session)),
+            EmotionFrameAnalyzer(classifier=classifiers.get("ferplus_onnx")),
             PoseService(),
         ),
         authorization=authorization_service,
         model_processor_factory=lambda activity, model_id: BrowserActivityService(
             activity,
-            EmotionFrameAnalyzer(classifier=create_emotion_classifier(
-                model_id, intra_op_threads=server_load.onnx_threads_per_session)),
+            EmotionFrameAnalyzer(classifier=classifiers.get(model_id)),
             PoseService(),
         ),
         model_admission=model_admission.evaluate,
         emotion_analyzer_factory=lambda model_id: EmotionFrameAnalyzer(
-            classifier=create_emotion_classifier(model_id, intra_op_threads=server_load.onnx_threads_per_session),
+            classifier=classifiers.get(model_id),
         ),
         adaptive_processor_factory=lambda activity, analyzer, emotion: BrowserActivityService(
             activity, analyzer, PoseService(), initial_emotion=emotion,
@@ -162,6 +230,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         expression_info=expression_info_for,
         recommendations=recommendation_repository,
         capacity=analysis_capacity,
+        local_models=local_models,
     ))
     chat_gateway = None
     if chat_settings.webhook_key:
@@ -182,6 +251,30 @@ else:
     app.include_router(create_chat_router(None, None, None))
     app.include_router(create_expression_router(None, None, None))
     app.include_router(create_recommendation_router(None, None, None))
+    app.include_router(create_model_admin_router(None, None, None))
+    app.include_router(create_privacy_router(None, None, None, None))
+    app.include_router(create_participant_router(None, None, None))
+
+
+def run_retention() -> None:
+    """Elimina participantes vencidos (PARTICIPANT_RETENTION_MONTHS) y auditoría
+    antigua (AUDIT_RETENTION_MONTHS). La auditoría registra solo la cantidad."""
+    if participant_service is not None:
+        try:
+            participant_service.purge_expired()
+        except SQLAlchemyError:
+            logger.exception("No se pudo aplicar la retención de participantes")
+    if audit_service is not None:
+        try:
+            audit_service.purge_expired(privacy_settings.audit_retention_months)
+        except SQLAlchemyError:
+            logger.exception("No se pudo aplicar la retención de la auditoría")
+
+
+async def _retention_loop() -> None:
+    while True:
+        await asyncio.sleep(RETENTION_INTERVAL_SECONDS)
+        await asyncio.to_thread(run_retention)
 
 
 @app.on_event("startup")
@@ -193,6 +286,19 @@ async def startup_event():
             chat_service.purge_expired()  # Retención del historial de Emi.
         except SQLAlchemyError:
             logger.exception("No se pudo aplicar la retención del historial de Emi")
+    global retention_task
+    if participant_service is not None or audit_service is not None:
+        # Al arrancar y luego una vez al día.
+        await asyncio.to_thread(run_retention)
+        retention_task = asyncio.create_task(_retention_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if retention_task is not None:
+        retention_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await retention_task
 
 
 @app.get("/")

@@ -40,20 +40,29 @@ describe("rutas y navegación por rol", () => {
     });
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md); Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/activities", "/sessions", "/consent"]);
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/participants", "/activities", "/sessions", "/consent"]);
     expect(navigationByRole.student.filter((item) => item.placement === "footer").map((item) => item.to)).toEqual(["/consent"]);
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
-    expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(true);
+    // El docente conduce sesiones propias; la gestión nunca ve participantes ni sesiones.
+    expect(navigationByRole.psychologist.some((item) => item.to === "/analysis")).toBe(true);
+    expect(navigationByRole.superadmin.some((item) => item.to === "/admin/activities")).toBe(true);
+    expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(false);
+    for (const role of ["admin", "superadmin"] as const) {
+      expect(navigationByRole[role].map((item) => item.to)).toEqual(expect.arrayContaining(["/users", "/audit"]));
+      expect(navigationByRole[role].some((item) => ["/sessions", "/participants", "/analysis", "/students"].includes(item.to))).toBe(false);
+    }
     expect(Object.values(navigationByRole).every((items) => items.every((item) => item.to !== "/chat"))).toBe(true);
   });
   it("redirige al login sin autenticación", () => { renderRole(null, ["admin"]); expect(screen.getByText("Login público")).toBeInTheDocument(); });
   it("espera la consulta de identidad", () => { renderRole(null, ["admin"], true); expect(screen.getByRole("status")).toHaveTextContent("Verificando sesión"); });
   it.each(["student", "psychologist"] as UserRole[])("impide administración a %s", (role) => { renderRole(role, ["admin"]); expect(screen.getByText("Acceso denegado")).toBeInTheDocument(); });
-  it.each(["student", "psychologist", "admin"] as UserRole[])("muestra navegación adecuada para %s", (role) => {
+  it.each(["student", "psychologist", "admin", "superadmin"] as UserRole[])("muestra navegación adecuada para %s", (role) => {
     renderRole(role, [role]);
     expect(screen.getByRole("link", { name: "Saltar al contenido" })).toHaveAttribute("href", "#main-content");
-    expect(screen.queryByRole("link", { name: "Usuarios" }) !== null).toBe(role === "admin");
-    expect(screen.queryByRole("link", { name: "Estudiantes" }) !== null).toBe(role !== "student");
+    expect(screen.queryByRole("link", { name: "Cuentas y grupos" }) !== null).toBe(role === "admin");
+    expect(screen.queryByRole("link", { name: "Cuenta de administrador" }) !== null).toBe(role === "superadmin");
+    expect(screen.queryByRole("link", { name: "Mi grupo" }) !== null).toBe(role === "psychologist");
+    expect(screen.queryByRole("link", { name: "Participantes" }) !== null).toBe(role === "student" || role === "psychologist");
     expect(screen.queryByRole("link", { name: "Mis sesiones" }) !== null).toBe(role === "student");
     expect(screen.getByText("u@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menú de usuario" })).toHaveAttribute("aria-expanded", "false");
@@ -62,13 +71,18 @@ describe("rutas y navegación por rol", () => {
     expect(homeLink).toHaveTextContent("Inicio");
     expect(homeLink?.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     const roleBadge = screen.getByRole("button", { name: "Menú de usuario" }).querySelector(".user-role-badge");
-    expect(roleBadge).toHaveTextContent(role === "student" ? "Estudiante" : role === "psychologist" ? "Psicología" : "Administración");
+    expect(roleBadge).toHaveTextContent({ student: "Usuario", psychologist: "Docente", admin: "Administrador", superadmin: "Superadministrador" }[role]);
     expect(screen.queryByRole("button", { name: "Cerrar sesión" })).not.toBeInTheDocument();
   });
-  it("no muestra funciones fuera del rol y ofrece alumnos a administración", () => {
+  it("no muestra funciones fuera del rol", () => {
     renderRole("student", ["student"]);
-    expect(screen.queryByRole("link", { name: "Usuarios" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Estudiantes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Cuentas y grupos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Mi grupo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Auditoría" })).not.toBeInTheDocument();
+  });
+  it("ningún texto de navegación dice que el usuario deba ser estudiante", () => {
+    const labels = Object.values(navigationByRole).flat().map((item) => item.label).join(" ");
+    expect(labels).not.toMatch(/estudiante/i);
   });
   it("muestra breadcrumbs jerárquicos sin identificadores privados", () => {
     expect(breadcrumbs("/sessions/secret-id", "student")).toEqual([
@@ -76,7 +90,7 @@ describe("rutas y navegación por rol", () => {
       { label: "Mis sesiones", to: "/sessions" },
       { label: "Detalle de sesión" },
     ]);
-    expect(breadcrumbs("/students/123/sessions", "psychologist").at(-1)?.label).toBe("Sesiones del estudiante");
+    expect(breadcrumbs("/students/123/sessions", "psychologist").at(-1)?.label).toBe("Sesiones del usuario");
   });
   it("marca el módulo activo y ofrece regreso contextual en el detalle", () => {
     render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "token", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}>
@@ -96,7 +110,7 @@ describe("rutas y navegación por rol", () => {
     expect(open).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(open);
     expect(screen.getByRole("button", { name: "Cerrar menú" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: "Estudiantes" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Auditoría" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cerrar panel de navegación" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: "Abrir menú" })).toHaveFocus();

@@ -212,22 +212,24 @@ docker compose --env-file .env.docker up -d    # vuelve a iniciar
 
 ## 10. Respaldar y restaurar la base de datos
 
-Requieren Python en el host (solo la biblioteca estándar) y los servicios en
-ejecución. No hace falta PostgreSQL instalado.
+Requieren Python en el host con `cryptography` (incluida en
+`pip install -e .`) y los servicios en ejecución. No hace falta PostgreSQL
+instalado. Define antes `BACKUP_KEY` en `.env.docker`: una clave Fernet distinta
+de `SENSITIVE_DATA_KEY` (ver [privacidad](privacy/README.md#respaldos)).
 
 ```powershell
 python scripts/docker/backup_db.py
-# -> backups/emotv-AAAAMMDD-HHMMSS.dump
+# -> backups/emotv-AAAAMMDD-HHMMSS.dump.enc (cifrado con BACKUP_KEY)
 
-python scripts/docker/restore_db.py backups/emotv-20261005-164449.dump
+python scripts/docker/restore_db.py backups/emotv-20261005-164449.dump.enc
 ```
 
 La restauración **reemplaza toda la base actual**: pide escribir `RESTAURAR`,
 detiene la API mientras restaura y la vuelve a iniciar. La carpeta `backups/`
 no se sube al repositorio. Guarda los respaldos en un lugar seguro: contienen
-datos personales. Un respaldo hecho antes de eliminar los datos de un
-voluntario todavía los contiene: elimina o regenera los respaldos con más de
-30 días.
+datos personales. Un respaldo conserva los datos que la aplicación ya eliminó:
+elimina los respaldos con más antigüedad que `PARTICIPANT_RETENTION_MONTHS`
+(12 meses por defecto) y, si contienen datos de voluntarios, a los 30 días.
 
 ## 11. Borrar todo, incluidos los datos
 
@@ -265,6 +267,32 @@ PostgreSQL se publica solo en `127.0.0.1`, en el puerto **5433** para no
 chocar con un PostgreSQL instalado en Windows. Cámbialo con
 `POSTGRES_HOST_PORT`. Luego `python -m alembic upgrade head` y sigue el
 README.
+
+## Pruebas dentro de Docker
+
+Las pruebas pueden ejecutarse en contenedores Linux con el perfil `test`. Sirve
+cuando el anfitrión interfiere con los procesos de Windows; por ejemplo, la
+contención automática de Comodo/Xcitium, que virtualiza archivos y salida de
+`python` y `powershell`. Estos servicios no arrancan con `up`.
+
+```powershell
+# Backend: aplica las migraciones en una base desechable y ejecuta pytest
+docker compose --env-file .env.docker --profile test run --rm tests
+# Solo una parte de la suite
+docker compose --env-file .env.docker --profile test run --rm tests python -m pytest -q tests/unit
+# Frontend: npm ci, npx tsc -b y npx vitest run
+docker compose --env-file .env.docker --profile test run --rm web-tests
+# Al terminar, apagar solo la base de pruebas ("down" detendría todo el sistema)
+docker compose --env-file .env.docker --profile test rm -sf test-db
+```
+
+- `tests` usa la etapa `tests` de `docker/api.Dockerfile` (la imagen de la API
+  más pytest y git) y monta el repositorio en `/app`.
+- `test-db` es un PostgreSQL en memoria (`tmpfs`), sin puertos publicados y sin
+  datos reales; desaparece al detenerse. Nunca se usa la base `db`.
+- `web-tests` guarda `node_modules` en el volumen `emotv_web_test_node_modules`,
+  con binarios de Linux, separado del `web/node_modules` de Windows.
+- Las pruebas que requieren pesos se saltan si `models/weights/` no los tiene.
 
 ## Chatbot Emi con n8n
 

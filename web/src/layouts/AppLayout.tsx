@@ -19,9 +19,16 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   if (parts[0] === "activities") return [home, { label: "Actividades", ...(parts[1] ? { to: paths.activities } : {}) }, ...(parts[1] ? [{ label: "Detalle de actividad" }] : [])];
   if (parts[0] === "analysis") return [home, { label: "Actividades", to: paths.activities }, { label: "Analizador" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
-  if (parts[0] === "students") return [home, { label: "Estudiantes", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del estudiante" }] : [])];
+  if (parts[0] === "students") return [home, { label: "Mi grupo", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del usuario" }] : [])];
+  if (parts[0] === "participants") return [home, { label: "Participantes", ...(parts[1] ? { to: paths.participants } : {}) }, ...(parts[1] ? [{ label: "Acta de eliminación" }] : [])];
   if (parts[0] === "admin" && parts[1] === "activities") return [home, { label: "Administrar actividades" }];
-  const labels: Record<string, string> = { users: "Usuarios", unauthorized: "Acceso denegado", "connection-error": "Error de conexión" };
+  if (parts[0] === "admin" && parts[1] === "models") return [home, { label: "Modelos" }];
+  if (parts[0] === "admin" && parts[1] === "expressions") return [home, { label: "Catálogo de expresiones" }];
+  const labels: Record<string, string> = {
+    users: role === "superadmin" ? "Cuenta de administrador" : "Cuentas y grupos", audit: "Auditoría",
+    commitment: "Compromiso de confidencialidad", consent: "Consentimiento",
+    unauthorized: "Acceso denegado", "connection-error": "Error de conexión",
+  };
   return [home, { label: labels[parts[0]] ?? "Página no encontrada" }];
 }
 

@@ -26,10 +26,17 @@ from emotv.application.ports.recommendation_repository import RecommendationSour
 from emotv.application.emotion_stabilizer import EmotionStabilizer
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.application.live_expression import LiveExpressionTracker, LiveReading
+from emotv.application.local_model_service import (
+    FERPLUS_MODEL_ID,
+    HSEMOTION_MODEL_ID,
+    LOCAL_MODEL_IDS,
+    LocalModelService,
+    ModelChoice,
+)
 from emotv.application.neutral_calibration import NeutralCalibration
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.config import LiveExpressionSettings
-from emotv.domain import AccessAction, Activity, Role, SessionState, StabilizedEmotion
+from emotv.domain import Activity, Role, SessionState, StabilizedEmotion
 from emotv.interfaces.web.analysis_capacity import (
     SERVER_BUSY_CLOSE_CODE,
     SERVER_BUSY_MESSAGE,
@@ -46,13 +53,10 @@ class EmotionAnalyzer(Protocol):
 EmotionAnalyzerFactory = Callable[[str], EmotionAnalyzer]
 AdaptiveProcessorFactory = Callable[[Activity, EmotionAnalyzer, StabilizedEmotion], BrowserActivityService]
 MAX_FRAME_BYTES = 2_500_000
-DEFAULT_EMOTION_MODEL_ID = "ferplus_onnx"
-# Modelo preferido para la lectura en vivo; si su admisión no es válida, FER+.
-LIVE_EMOTION_MODEL_ID = "hsemotion_enet_b0_8_best_afew"
-EMOTION_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, LIVE_EMOTION_MODEL_ID, "hardlyhumans_vit")
-# Modelos que una cuenta que no es de administración puede pedir de forma explícita.
-NON_ADMIN_MODEL_IDS = (DEFAULT_EMOTION_MODEL_ID, LIVE_EMOTION_MODEL_ID)
-ADMITTED_STATES = ("SUPPORTED", "WARNING")
+EMOTION_MODEL_IDS = (FERPLUS_MODEL_ID, HSEMOTION_MODEL_ID, "hardlyhumans_vit")
+# Quien conduce la sesión puede probar cualquier modelo local admitido; el
+# experimental queda solo para administración.
+NON_ADMIN_MODEL_IDS = LOCAL_MODEL_IDS
 # Estados en los que la sesión sigue abierta en el WebSocket.
 OPEN_STATES = (SessionState.IN_PROGRESS, SessionState.RECOGNIZED)
 
@@ -100,10 +104,13 @@ def create_analysis_router(
     expression_info: Callable[[str], dict[str, object] | None] | None = None,
     recommendations: RecommendationSource | None = None,
     capacity: AnalysisCapacity | None = None,
+    local_models: LocalModelService | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
     load = capacity or AnalysisCapacity()
+    # Sin configuración guardada rige el predeterminado inicial (HSEmotion).
+    models = local_models or LocalModelService(admission=model_admission)
     policy = authorization or AuthorizationService()
     # Un recomendador por router y sin estado mutable: lee las asociaciones en
     # cada recomendación, así que sirve igual con varias conexiones y procesos.
@@ -113,11 +120,15 @@ def create_analysis_router(
 
     @router.get("/analysis/models")
     def available_models(user=Depends(create_current_user_dependency(authentication, users))):
-        # Elegir modelo es una tarea de administración; el servidor elige el del estudiante.
-        if user.role is not Role.ADMIN:
-            raise HTTPException(403, "Solo administración puede consultar y elegir modelos faciales")
-        return [model_admission(model_id) if model_admission else
-                dict(model_id=model_id, state="BLOCKED", reasons=["Evaluación de modelos no configurada"])
+        default = models.settings().default_model_id
+        if user.role is not Role.SUPERADMIN:
+            # Quien conduce la sesión ve los modelos locales, su disponibilidad y
+            # cuál es el predeterminado; los detalles operativos quedan en administración.
+            return [dict(model_id=model_id, state=_state(admission), is_default=is_default)
+                    for model_id, admission, is_default in models.status()]
+        return [{**(model_admission(model_id) if model_admission else
+                    dict(model_id=model_id, state="BLOCKED", reasons=["Evaluación de modelos no configurada"])),
+                 "is_default": model_id == default}
                 for model_id in EMOTION_MODEL_IDS]
 
     @router.websocket("/ws/activity")
@@ -153,25 +164,19 @@ def create_analysis_router(
                     or claims.get("tv") != user.token_version):
                 await _error(websocket, "Usuario no autorizado", 4401)
                 return
-            if user.role is Role.PSYCHOLOGIST:
-                # Consultar sesiones asignadas no autoriza a enviar frames de
-                # otra cámara a la sesión de un estudiante.
-                await _error(websocket, "El análisis lo realiza el estudiante desde su cuenta", 4403)
-                return
 
             session = sessions.get_session(str(credentials.get("session_id", "")))
             if session is None:
                 await _error(websocket, "Sesión no encontrada", 4404)
                 return
             actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
-            try:
-                policy.require(
-                    user,
-                    AccessAction.VIEW_SESSION,
-                    resource_student_id=session.student_id,
-                    actor_student_id=actor.id if actor else None,
-                )
-            except PermissionError:
+            # Solo quien conduce la sesión envía su cámara: que un docente pueda
+            # consultar las sesiones de su grupo no le permite enviar cuadros a
+            # la sesión de otra cuenta. Usuario y docente conducen las suyas.
+            conducts = session.owner_user_id == user.id or (
+                session.owner_user_id is None and actor is not None and session.student_id == actor.id)
+            if not conducts or not policy.can_access_session(user, session,
+                                                             actor_student_id=actor.id if actor else None):
                 await _error(websocket, "No tienes acceso a esta sesión", 4403)
                 return
             if session.state is not SessionState.IN_PROGRESS:
@@ -205,31 +210,25 @@ def create_analysis_router(
             if requested_model is not None and requested_model not in EMOTION_MODEL_IDS:
                 await _error(websocket, "Modelo facial no permitido", 4400)
                 return
-            if user.role is not Role.ADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
-                await _error(websocket, "Solo administración puede elegir otro modelo facial", 4403)
+            if user.role is not Role.SUPERADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
+                await _error(websocket, "Solo administración puede elegir el modelo experimental", 4403)
                 return
-            admission = None
-            if requested_model is not None:
-                model_id = requested_model
-            elif adaptive and model_admission is not None:
-                # Lectura en vivo sin modelo pedido: HSEmotion si su admisión es
-                # válida; si no, FER+ (que también debe estar admitido).
-                admission = await asyncio.to_thread(model_admission, LIVE_EMOTION_MODEL_ID)
-                model_id = LIVE_EMOTION_MODEL_ID
-                if admission.get("state") not in ADMITTED_STATES:
-                    model_id, admission = DEFAULT_EMOTION_MODEL_ID, None
-            else:
-                model_id = DEFAULT_EMOTION_MODEL_ID
-            if not adaptive and model_id != DEFAULT_EMOTION_MODEL_ID and model_processor_factory is None:
-                await _error(websocket, "El modelo seleccionado no está configurado en el servidor", 1011)
-                return
-            if model_admission is not None and admission is None:
-                admission = await asyncio.to_thread(model_admission, model_id)
-            if admission is not None:
-                if admission.get("state") not in ADMITTED_STATES:
-                    await websocket.send_json({"type": "error", "message": "Modelo bloqueado: " + "; ".join(admission.get("reasons", [])), "admission": admission})
-                    await websocket.close(code=4409)
+            if not adaptive and model_processor_factory is None:
+                # Sin fábrica por modelo, el procesador usa su clasificador fijo (FER+).
+                if requested_model not in (None, FERPLUS_MODEL_ID):
+                    await _error(websocket, "El modelo seleccionado no está configurado en el servidor", 1011)
                     return
+                choice = ModelChoice(FERPLUS_MODEL_ID, await asyncio.to_thread(models.evaluate, FERPLUS_MODEL_ID))
+            else:
+                # El modelo pedido vale solo para esta sesión; sin pedido rige el
+                # predeterminado actual y, si perdió su admisión, el respaldo.
+                choice = await asyncio.to_thread(models.resolve, requested_model)
+            model_id, admission = choice.model_id, choice.admission
+            if not choice.admitted:
+                assert admission is not None
+                await websocket.send_json({"type": "error", "message": "Modelo bloqueado: " + "; ".join(admission.get("reasons", [])), "admission": admission})
+                await websocket.close(code=4409)
+                return
             try:
                 if adaptive:
                     assert emotion_analyzer_factory is not None
@@ -241,7 +240,7 @@ def create_analysis_router(
                     assert activity is not None
                     processor = await asyncio.to_thread(processor_factory, activity)
             except (FileNotFoundError, RuntimeError):
-                await _error(websocket, "Modelo no disponible. Revisa sus pesos y dependencias en el servidor o selecciona FER+", 1011)
+                await _error(websocket, "Modelo no disponible. Revisa sus pesos y dependencias en el servidor o elige otro modelo", 1011)
                 return
             model_version = EmotionModelCatalog().get(model_id).version
             sessions.record_emotion_model(session.id, model_id, model_version)
@@ -579,6 +578,11 @@ def create_analysis_router(
                 pass
 
     return router
+
+
+def _state(admission: dict | None) -> str:
+    # Sin evaluación configurada el modelo no puede considerarse admitido.
+    return "BLOCKED" if admission is None else str(admission.get("state", "BLOCKED"))
 
 
 async def _report_stage(websocket: WebSocket, stage: str) -> None:

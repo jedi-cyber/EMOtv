@@ -360,8 +360,8 @@ def test_start_complete_and_reject_cancel_of_completed_session(flow):
         socket.send_bytes(jpeg.tobytes())
         assert socket.receive_json()["type"] == "completed"
     assert sessions.get_session(session_id).state is SessionState.COMPLETED
-    assert sessions.get_session(session_id).emotion_model_id == "ferplus_onnx"
-    assert client.get(f"/sessions/{session_id}", headers=headers).json()["emotion_model_version"] == "1.0"
+    assert sessions.get_session(session_id).emotion_model_id == HSEMOTION
+    assert client.get(f"/sessions/{session_id}", headers=headers).json()["emotion_model_version"] ==         EmotionModelCatalog().get(HSEMOTION).version
     assert processors[0].closed
     assert client.post(f"/sessions/{session_id}/cancel", headers=headers).status_code == 409
 
@@ -388,16 +388,15 @@ def test_socket_cancel_and_disconnect_release_resources(flow):
 
 def _admin(auth, users):
     return users.save(User("admin-flow", "admin-flow@example.com", auth.hash_password("admin-password-123"),
-                           Role.ADMIN, datetime.now(timezone.utc)))
+                           Role.SUPERADMIN, datetime.now(timezone.utc)))
 
 
-@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hardlyhumans_vit"])
-def test_admin_selected_model_reaches_processor(flow, model_id):
-    client, auth, _, _, student, sessions, _, processors, users = flow
-    admin = _admin(auth, users)
-    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
+@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hsemotion_enet_b0_8_best_afew"])
+def test_conductor_selected_local_model_reaches_processor(flow, model_id):
+    client, auth, user, _, student, sessions, _, processors, _ = flow
+    session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s", owner_user_id=user.id)
     with client.websocket_connect("/ws/activity") as socket:
-        socket.send_json({**credentials(auth, admin, session.id), "emotion_model_id": model_id})
+        socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": model_id})
         ready = socket.receive_json()
         assert ready["type"] == "ready"
         assert ready["emotion_model_id"] == model_id
@@ -486,13 +485,14 @@ def test_student_cannot_choose_non_default_model(flow):
     assert sessions.get_session(session.id).emotion_model_id is None
 
 
-def test_student_without_model_id_uses_ferplus(flow):
+def test_student_without_model_id_uses_the_configured_default(flow):
     client, auth, user, _, student, sessions, _, processors, _ = flow
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
     with client.websocket_connect("/ws/activity") as socket:
         socket.send_json(credentials(auth, user, session.id))
-        assert socket.receive_json()["emotion_model_id"] == "ferplus_onnx"
-    assert processors[-1].model_id == "ferplus_onnx"
+        # Sin configuración guardada, el predeterminado es HSEmotion.
+        assert socket.receive_json()["emotion_model_id"] == "hsemotion_enet_b0_8_best_afew"
+    assert processors[-1].model_id == "hsemotion_enet_b0_8_best_afew"
 
 
 def test_invalid_model_is_rejected_without_loading(flow):
@@ -511,7 +511,9 @@ def test_admission_blocks_socket_and_exposes_authenticated_status(flow):
     client, auth, user, _, student, sessions, _, processors, users = flow
     assert client.get("/analysis/models").status_code == 401
     student_headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
-    assert client.get("/analysis/models", headers=student_headers).status_code == 403
+    # Quien conduce la sesión ve solo los modelos locales y su estado.
+    assert [item["model_id"] for item in client.get("/analysis/models", headers=student_headers).json()] == [
+        "hsemotion_enet_b0_8_best_afew", "ferplus_onnx"]
     admin_headers = {"Authorization": f"Bearer {auth.create_access_token(_admin(auth, users))}"}
     assert client.get("/analysis/models", headers=admin_headers).json()[0]["state"] == "BLOCKED"
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")

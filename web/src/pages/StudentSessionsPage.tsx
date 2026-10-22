@@ -20,10 +20,10 @@ export function StudentSessionsPage() {
   const activityName = (id: string | null) => id
     ? (activitiesQuery.data ?? []).find((item) => item.id === id)?.name ?? "Actividad no disponible"
     : "Sin actividad";
-  return <section><ButtonLink variant="ghost" className="back-link" to={paths.students}>← Volver a estudiantes</ButtonLink>
-    <PageHeader title={code ? `Sesiones de ${code}` : "Sesiones del estudiante"} description="Abre una sesión para ver la expresión registrada y el resultado de la actividad." />
+  return <section><ButtonLink variant="ghost" className="back-link" to={paths.students}>← Volver a mi grupo</ButtonLink>
+    <PageHeader title={code ? `Sesiones de ${code}` : "Sesiones del usuario"} description="Abre una sesión para ver la expresión registrada y el resultado de la actividad." />
     <PageState {...query} empty={!query.loading && !query.error && sessions.length === 0}
-      emptyMessage="Este estudiante todavía no tiene sesiones registradas." onRetry={query.reload} />
+      emptyMessage="Este usuario todavía no tiene sesiones registradas." onRetry={query.reload} />
     {sessions.length > 0 && <div className="card-list">{sessions.map((session) => <Card as="article" className="row-card" key={session.id}><div><ButtonLink variant="ghost" className="row-card-link" to={paths.session(session.id)}>{new Date(session.started_at).toLocaleString("es-PE")}</ButtonLink><span>{activityName(session.activity_id)}</span></div><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></Card>)}</div>}
   </section>;
 }

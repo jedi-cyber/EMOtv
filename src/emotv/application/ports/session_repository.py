@@ -28,3 +28,8 @@ class SessionRepository(Protocol):
         """Devuelve las sesiones asociadas al estudiante indicado."""
 
         ...
+
+    def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
+        """Devuelve las sesiones que condujo la cuenta indicada."""
+
+        ...

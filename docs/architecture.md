@@ -181,9 +181,11 @@ servidor. Nada de esto cambia el modelo ni el umbral de registro.
 - **Pool propio.** La decodificación del JPEG y el análisis corren en un
   `ThreadPoolExecutor` dedicado, fuera del bucle de eventos: el login, la API
   y el chat siguen respondiendo aunque el análisis esté saturado.
-- **Hilos por sesión.** Cada conexión tiene su clasificador; onnxruntime usa
-  `ONNX_THREADS_PER_SESSION` hilos (1 por defecto) para que varias sesiones no
-  compitan por todos los núcleos. HardlyHumans (PyTorch) y YuNet (OpenCV) no
+- **Hilos por sesión.** Cada clasificador se carga una vez por proceso y lo
+  comparten las sesiones (las sesiones ONNX admiten llamadas concurrentes); cada
+  análisis usa `ONNX_THREADS_PER_SESSION` hilos de onnxruntime (1 por defecto) y
+  `MAX_CONCURRENT_ANALYSES` limita cuántos corren a la vez, así varias sesiones
+  no compiten por todos los núcleos. HardlyHumans (PyTorch) y YuNet (OpenCV) no
   usan este límite.
 - **Inactividad.** Si no llegan cuadros durante `LIVE_IDLE_TIMEOUT_SECONDS`
   (60) mientras se esperan, el servidor cierra con el código 4408 y libera la
@@ -193,8 +195,8 @@ servidor. Nada de esto cambia el modelo ni el umbral de registro.
   (`API_MEMORY_LIMIT`, 2560 MiB) para dejar recursos a `db` y `web`; ver
   [docker.md](docker.md#consumo-medido).
 - **Benchmark.** `run_emotion_models_benchmark.py` mide también el cuadro
-  completo con 1, 2 y 4 sesiones simultáneas. Administración ve ese p95 en el
-  selector de modelos del analizador. Es solo informativo: no cambia el modelo
+  completo con 1, 2 y 4 sesiones simultáneas. El superadministrador ve ese p95
+  en la página «Modelos». Es solo informativo: no cambia el modelo
   ni bloquea nada. Si HSEmotion queda bloqueado por CPU o RAM, la admisión ya
   hace que la lectura en vivo use FER+.
 

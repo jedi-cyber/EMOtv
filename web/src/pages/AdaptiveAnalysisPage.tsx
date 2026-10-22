@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
-import type { Activity, ActivityStep, EmotionalSession, Student } from "../api/types";
+import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { useActiveSession } from "../analysis/ActiveSessionContext";
@@ -13,7 +13,6 @@ import { remainingSeconds, stepPosition } from "../analysis/activityProgress";
 import { Callout } from "../components/Callout";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageHeader } from "../components/PageHeader";
-import { PageState } from "../components/PageState";
 import { paths } from "../routes/paths";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
@@ -30,20 +29,6 @@ import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
-type Admission = {
-  model_id: string; state: "SUPPORTED" | "WARNING" | "BLOCKED"; reasons: string[];
-  metrics?: { concurrent_frame_p95_ms?: Record<string, number> | null };
-};
-
-/** p95 del cuadro completo con 1, 2 y 4 sesiones simultáneas; solo informativo. */
-function concurrencyText(admission: Admission): string | null {
-  const values = admission.metrics?.concurrent_frame_p95_ms;
-  if (!values) return null;
-  const parts = Object.entries(values).sort(([a], [b]) => Number(a) - Number(b))
-    .map(([sessions, p95]) => `${sessions} ${sessions === "1" ? "sesión" : "sesiones"}: ${Math.round(p95)} ms`);
-  return `p95 del cuadro completo según el benchmark: ${parts.join(" · ")}`;
-}
-const LIVE_MODEL_ID = "hsemotion_enet_b0_8_best_afew";
 type Message = Partial<LiveReading> & {
   type: "ready" | "live" | "calibration_started" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
   emotion_model_id?: string;
@@ -87,16 +72,16 @@ export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
 
 export function AdaptiveAnalysisPage() {
   const { token, user } = useAuth();
-  // Solo administración elige modelo. Sin elección ("" = automático) el servidor usa
-  // HSEmotion si su admisión es válida y, si no, FER+; el estudiante nunca elige.
-  const canChooseModel = user?.role === "admin";
   const { setActiveSession } = useActiveSession();
-  const modelsQuery = useApiQuery<Admission[]>(canChooseModel ? "/analysis/models" : null);
+  // Quien conduce la sesión puede probar otro modelo local admitido; la elección
+  // vale solo para esta sesión. Sin elección ("") el servidor usa el predeterminado
+  // que fijó el superadministrador (o su respaldo si perdió la admisión).
+  const modelsQuery = useApiQuery<LocalModelOption[]>("/analysis/models");
+  const models = Array.isArray(modelsQuery.data) ? modelsQuery.data : [];
+  const defaultModel = models.find((item) => item.is_default);
   const [modelId, setModelId] = useState("");
-  const admissionOf = (id: string) => modelsQuery.data?.find((item) => item.model_id === id);
-  const automaticModel = [LIVE_MODEL_ID, "ferplus_onnx"].map(admissionOf).find((item) => item && item.state !== "BLOCKED");
-  const admission = modelId ? admissionOf(modelId) : automaticModel ?? admissionOf("ferplus_onnx");
-  const modelBlocked = canChooseModel && (modelsQuery.loading || Boolean(modelsQuery.error) || !admission || admission.state === "BLOCKED");
+  const selectedModel = modelId ? models.find((item) => item.model_id === modelId) : undefined;
+  const modelBlocked = selectedModel?.state === "BLOCKED";
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("ready");
   const [starting, setStarting] = useState(false);
@@ -194,7 +179,7 @@ export function AdaptiveAnalysisPage() {
       detail: consentReady ? "Aceptaste la política vigente."
         : consentStatus.state === "outdated" ? "La política cambió; acepta la nueva versión."
           : consentStatus.state === "missing" ? "Acepta la política de análisis facial."
-            : consentStatus.state === "loading" ? "Comprobando…" : "No se puede solicitar el consentimiento ahora. Consulta con administración.",
+            : consentStatus.state === "loading" ? "Comprobando…" : "No se puede solicitar el consentimiento ahora. Consulta con el superadministrador.",
       action: consentStatus.state === "missing" || consentStatus.state === "outdated"
         ? <ButtonLink variant="secondary" size="sm" to={paths.consent}>Revisar consentimiento</ButtonLink>
         : consentStatus.state === "error" ? <Button variant="secondary" size="sm" onClick={() => { void consentStatus.reload(); }}>Comprobar de nuevo</Button> : undefined },
@@ -304,12 +289,14 @@ export function AdaptiveAnalysisPage() {
 
   async function requireConsent(): Promise<void> {
     if (!token) throw new Error("Inicia sesión nuevamente para continuar.");
+    // El docente conduce sesiones propias sin perfil de usuario; el servidor no le exige este consentimiento.
+    if (user?.role === "psychologist") return;
     const policy = await apiRequest<{ id?: string | null; version: string | null; mode?: string; available: boolean }>("/consent-policy", { token });
     if (policy.mode === "development") return;
-    if (!policy.available) throw new Error("No hay una política de consentimiento activa. Consulta con administración.");
+    if (!policy.available) throw new Error("No hay una política de consentimiento activa. Consulta con el superadministrador.");
     const students = await apiRequest<Student[]>("/students", { token });
     const student = students[0];
-    if (!student) throw new Error("Tu cuenta no tiene un perfil de estudiante asociado.");
+    if (!student) throw new Error("Tu cuenta de usuario no tiene un perfil asociado. Consulta con el administrador.");
     const consent = await apiRequest<{ policy_version: string } | null>(`/students/${encodeURIComponent(student.id)}/consents/active`, { token });
     if (!consent || consent.policy_version !== (policy.id ?? policy.version))
       throw new Error("Debes aceptar la versión vigente del consentimiento antes de iniciar el análisis.");
@@ -325,7 +312,8 @@ export function AdaptiveAnalysisPage() {
       if (lifecycle !== lifecycleRef.current) return;
       if (!await previewCamera()) return;
       if (lifecycle !== lifecycleRef.current) return;
-      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({}), token });
+      // Sesión propia: quien inicia sesión se analiza a sí mismo.
+      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ session_type: "propia" }), token });
       if (lifecycle !== lifecycleRef.current) {
         await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
         return;
@@ -335,8 +323,8 @@ export function AdaptiveAnalysisPage() {
       socket.binaryType = "arraybuffer"; socketRef.current = socket;
       socket.onopen = () => socket.send(JSON.stringify({
         type: "authenticate", token, session_id: created?.id, include_landmarks: includeLandmarks,
-        // Sin modelo, el servidor elige el de la lectura en vivo.
-        ...(canChooseModel && modelId ? { emotion_model_id: modelId } : {}),
+        // Sin modelo, el servidor usa el predeterminado.
+        ...(modelId ? { emotion_model_id: modelId } : {}),
       }));
       socket.onmessage = (event) => {
         awaitingFrame.current = false;
@@ -575,17 +563,16 @@ export function AdaptiveAnalysisPage() {
               {item.action && item.state !== "ready" && <div className="requirement-action">{item.action}</div>}
             </li>)}
           </ul>
-          {canChooseModel && <>
+          {defaultModel && models.length > 1 && <>
             <label htmlFor="adaptive-model">Modelo facial</label>
-            <select id="adaptive-model" value={modelId} onChange={(event) => setModelId(event.target.value)}>
-              <option value="">Automático (HSEmotion; si no está disponible, FER+)</option>
-              <option value={LIVE_MODEL_ID}>HSEmotion · ONNX</option>
-              <option value="ferplus_onnx">FER+ · ONNX</option>
-              <option value="hardlyhumans_vit">HardlyHumans · ViT/PyTorch</option>
+            <select id="adaptive-model" value={modelId} aria-describedby="adaptive-model-help" onChange={(event) => setModelId(event.target.value)}>
+              <option value="">Predeterminado ({emotionModelName(defaultModel.model_id)})</option>
+              {models.filter((item) => !item.is_default).map((item) => <option key={item.model_id} value={item.model_id} disabled={item.state === "BLOCKED"}>
+                {emotionModelName(item.model_id)}{item.state === "BLOCKED" ? " (no disponible)" : ""}
+              </option>)}
             </select>
-            <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
-            {admission && <Callout variant={admission.state === "BLOCKED" ? "error" : admission.state === "WARNING" ? "warning" : "info"}>{admission.state === "BLOCKED" ? "Modelo no disponible" : admission.state === "WARNING" ? "Modelo con advertencias" : "Modelo disponible"}: {admission.reasons.join("; ") || "listo para usar"}</Callout>}
-            {admission && concurrencyText(admission) && <p className="muted">{concurrencyText(admission)}</p>}
+            <p id="adaptive-model-help" className="muted">Puedes probar otro modelo local. La elección vale solo para esta sesión.</p>
+            {selectedModel?.reasons && selectedModel.reasons.length > 0 && <Callout variant={selectedModel.state === "BLOCKED" ? "error" : "warning"}>{selectedModel.state === "BLOCKED" ? "Modelo no disponible" : "Modelo con advertencias"}: {selectedModel.reasons.join("; ")}</Callout>}
           </>}
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
@@ -635,7 +622,7 @@ export function AdaptiveAnalysisPage() {
                 {availableActivities.filter((item) => !recommendation || item.id !== recommendation.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
               <Button variant="primary" type="submit" disabled={selectingActivity || !selectedActivityId} onClick={() => chooseActivity()}>{selectingActivity ? "Preparando actividad…" : "Continuar con la actividad"}</Button>
-            </> : !recommendation && <p>No hay actividades configuradas. Contacta con administración.</p>}
+            </> : !recommendation && <p>No hay actividades configuradas. Contacta con el superadministrador.</p>}
             {(recommendation || availableActivities.length > 0) && <Callout variant="info" role="note">
               <strong>Antes de la actividad:</strong> aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, y deja espacio para mover los brazos.
             </Callout>}

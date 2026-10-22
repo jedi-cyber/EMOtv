@@ -1,4 +1,4 @@
-import type { SessionState } from "../api/types";
+import type { SessionState, SessionType } from "../api/types";
 
 export const sessionStateNames: Record<SessionState, string> = {
   created: "Creada",
@@ -21,6 +21,16 @@ const emotionModelNames: Record<string, string> = {
   hsemotion_enet_b0_8_best_afew: "HSEmotion",
   hardlyhumans_vit: "HardlyHumans (experimental)",
 };
+
+const sessionTypeNames: Record<SessionType, string> = {
+  propia: "Propia",
+  participante_adulto: "Participante adulto",
+  participante_infantil: "Participante infantil",
+};
+
+export function sessionTypeName(type: string | null | undefined): string {
+  return sessionTypeNames[(type ?? "propia") as SessionType] ?? "Tipo desconocido";
+}
 
 export function activityOutcomeName(result: string | null | undefined): string {
   if (!result) return "—";

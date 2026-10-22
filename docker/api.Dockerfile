@@ -73,3 +73,20 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
     CMD python -c "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=4).status == 200 else 1)"
 
 ENTRYPOINT ["/usr/local/bin/api-entrypoint.sh"]
+
+
+# --- Etapa 3: pruebas (docker compose --profile test; ver docs/docker.md) ---
+# Misma base que la API más pytest y git. El código no se copia: el servicio
+# tests monta el repositorio en /app y ejecuta la suite dentro de Linux, fuera
+# del alcance de antivirus del anfitrión que virtualizan procesos de Windows.
+FROM runtime AS tests
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir pytest==9.1.1 \
+    && git config --system --add safe.directory '*'
+ENV PYTHONPATH=/app/src:/app
+HEALTHCHECK NONE
+ENTRYPOINT []
+CMD ["python", "-m", "pytest", "-q"]

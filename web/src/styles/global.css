@@ -439,3 +439,9 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Impresión del acta de eliminación: solo el documento, sin navegación ni Emi. */
+@media print {
+  .sidebar, .sidebar-backdrop, .topbar, .skip-link, .assistant-widget, .no-print { display: none !important; }
+  .app-shell, .content { display: block; padding: 0; margin: 0; }
+}

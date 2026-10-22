@@ -24,13 +24,14 @@ class PostgresUserRepository:
                     password_hash=user.password_hash, role=user.role.value,
                     is_active=user.is_active, must_change_password=user.must_change_password,
                     token_version=user.token_version,
-                    created_at=user.created_at))
+                    created_at=user.created_at, password_reset_at=user.password_reset_at))
             else:
                 row.email, row.password_hash = user.email, user.password_hash
                 row.role, row.is_active = user.role.value, user.is_active
                 row.must_change_password = user.must_change_password
                 row.token_version = user.token_version
                 row.created_at = user.created_at
+                row.password_reset_at = user.password_reset_at
         return user
 
     def get_by_id(self, user_id: str) -> User | None:
@@ -52,8 +53,11 @@ class PostgresUserRepository:
     @staticmethod
     def _domain(row: UserRecord) -> User:
         created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)
+        reset = row.password_reset_at
+        if reset is not None and reset.tzinfo is None:
+            reset = reset.replace(tzinfo=timezone.utc)
         return User(row.id, row.email, row.password_hash, Role(row.role), created,
-                    row.is_active, row.must_change_password, row.token_version)
+                    row.is_active, row.must_change_password, row.token_version, reset)
 
 
 def _text(value: str, name: str) -> str:
