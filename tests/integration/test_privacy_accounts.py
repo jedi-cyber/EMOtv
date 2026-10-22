@@ -35,6 +35,15 @@ from emotv.infrastructure.persistence import (
     PostgresStudentRepository,
     PostgresUserRepository,
 )
+from emotv.application.protocol_service import ProtocolService
+from emotv.application.stimulus_service import StimulusService
+from emotv.infrastructure.persistence.postgres_practice_repositories import (
+    PostgresAuthorizationRepository,
+    PostgresProtocolRepository,
+    PostgresStimulusRepository,
+)
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
+from emotv.interfaces.web.stimulus_router import create_stimulus_router
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     ParticipantRecord,
@@ -104,8 +113,12 @@ def env():
 
     authorization = AuthorizationService(assignments.is_assigned, docente_of, participant_repository.get_by_id)
     participants = ParticipantService(participant_repository, authorization, commitments, audit, group_user_ids,
-                                      retention_months=12, notice_days=30, clock=clock)
+                                      retention_months=12, notice_days=30, clock=clock,
+                                      authorizations=PostgresAuthorizationRepository(factory))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
+    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
+    protocols = ProtocolService(PostgresProtocolRepository(factory), stimuli, audit, docente_of, group_user_ids,
+                                clock=clock)
     app = FastAPI()
     app.include_router(create_auth_router(auth, users))
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,
@@ -113,9 +126,12 @@ def env():
     app.include_router(create_privacy_router(commitments, audit, auth, users))
     app.include_router(create_participant_router(participants, auth, users))
     app.include_router(create_session_router(sessions, auth, users, students, authorization=authorization,
-                                             assignments=assignments, commitments=commitments))
+                                             assignments=assignments, commitments=commitments,
+                                             participants=participants, protocols=protocols))
+    app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
     e.audit, e.commitments, e.participants, e.sessions = audit, commitments, participants, sessions
     e.participant_repository, e.authorization = participant_repository, authorization
+    e.stimuli, e.protocols = stimuli, protocols
     with TestClient(app) as client:
         e.client = client
         yield e
@@ -130,9 +146,15 @@ def accept_commitment(env, user):
     env.commitments.accept(user, load_text("commitment").version)
 
 
-def register(env, user, kind="adult", notes=None):
+AGES = {"adult": 30, "child": 9}
+
+
+def register(env, user, kind="adult", notes=None, age=None):
     accept_commitment(env, user)
-    response = env.client.post("/participants", headers=headers(env, user), json={"kind": kind, "notes": notes})
+    if kind == "child":
+        env.commitments.accept(user, load_text("child_notice").version, "child_notice")
+    response = env.client.post("/participants", headers=headers(env, user),
+                               json={"kind": kind, "age_years": age or AGES[kind], "notes": notes})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -265,12 +287,12 @@ def test_without_the_commitment_participants_and_sessions_are_refused(env):
     commitment = env.client.get("/commitment", headers=headers(env, env.user_1)).json()
     assert commitment["required"] is True and commitment["provisional"] is True
     assert "no guarda imágenes" in commitment["content"]
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult"}).status_code == 428
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 428
     assert env.client.post("/sessions", headers=headers(env, env.user_1), json={}).status_code == 428
     accepted = env.client.post("/commitment/accept", headers=headers(env, env.user_1),
                                json={"version": commitment["version"]})
     assert accepted.status_code == 200 and accepted.json()["accepted"] is True
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult"}).status_code == 201
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 201
     assert ("commitment_accept", "commitment", "success") in audit_actions(env, action="commitment_accept")
     # Una versión distinta no se acepta.
     assert env.client.post("/commitment/accept", headers=headers(env, env.user_2), json={"version": "otra"}).status_code == 409
@@ -278,14 +300,14 @@ def test_without_the_commitment_participants_and_sessions_are_refused(env):
 
 def test_the_first_child_requires_the_reinforced_notice(env):
     accept_commitment(env, env.user_1)
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child"}).status_code == 428
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 428
     notice = env.client.get("/commitment/child-notice", headers=headers(env, env.user_1)).json()
     assert "más sensibles" in notice["content"]
     created = env.client.post("/participants", headers=headers(env, env.user_1),
-                              json={"kind": "child", "child_notice_version": notice["version"]})
+                              json={"kind": "child", "age_years": 9, "child_notice_version": notice["version"]})
     assert created.status_code == 201
     # Con el aviso ya aceptado, el siguiente niño no lo vuelve a pedir.
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child"}).status_code == 201
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 201
     assert ("child_notice_accept", "child_notice", "success") in audit_actions(env, action="child_notice_accept")
 
 
@@ -385,7 +407,7 @@ def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(en
     assert response.status_code == 200
     certificate = response.json()
     assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
-    assert certificate["counts"] == {"sessions": 1, "participants": 1}
+    assert certificate["counts"] == {"authorizations": 0, "sessions": 1, "participants": 1}
     with env.factory() as db:
         assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
         assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0

@@ -27,6 +27,8 @@ import { AdminExpressionsPage } from "./pages/AdminExpressionsPage";
 import { AdminModelsPage } from "./pages/AdminModelsPage";
 import { CommitmentPage } from "./pages/CommitmentPage";
 import { ParticipantsPage } from "./pages/ParticipantsPage";
+import { ProtocolsPage } from "./pages/ProtocolsPage";
+import { StimuliPage } from "./pages/StimuliPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
 
@@ -43,6 +45,8 @@ export function App() {
           {/* El docente también conduce sesiones propias. */}
           <Route path={paths.analysis} element={<RoleRoute allowed={["student", "psychologist"]}><AnalysisPage /></RoleRoute>} />
           <Route path={paths.participants} element={<RoleRoute allowed={["student", "psychologist"]}><ParticipantsPage /></RoleRoute>} />
+          <Route path={paths.protocols} element={<RoleRoute allowed={["student", "psychologist"]}><ProtocolsPage /></RoleRoute>} />
+          <Route path={paths.stimuli} element={<RoleRoute allowed={["psychologist", "admin"]}><StimuliPage /></RoleRoute>} />
           <Route path={paths.deletionCertificatePattern} element={<RoleRoute allowed={["student", "psychologist"]}><DeletionCertificatePage /></RoleRoute>} />
           <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
           <Route path={paths.activities} element={<ActivitiesPage />} />

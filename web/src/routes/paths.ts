@@ -13,6 +13,8 @@ export const paths = {
   participants: "/participants",
   deletionCertificate: (id: string) => `/participants/deletions/${encodeURIComponent(id)}`,
   deletionCertificatePattern: "/participants/deletions/:certificateId",
+  stimuli: "/stimuli",
+  protocols: "/protocols",
   sessions: "/sessions",
   session: (id: string) => `/sessions/${encodeURIComponent(id)}`,
   sessionPattern: "/sessions/:sessionId",

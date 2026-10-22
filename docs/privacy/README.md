@@ -23,8 +23,11 @@ psicológico de nadie y no sustituye a un profesional.
   administrador mueve un usuario a otro grupo: el acceso del docente sigue la
   asignación vigente y el cambio queda en la auditoría.
 - Los **participantes no tienen cuenta**: se identifican con un código aleatorio
-  (`P-XXXXXX`), sin nombre, DNI ni foto. No existe ningún registro ni inicio de
-  sesión de participantes.
+  (`P-XXXXXX`) que no se puede editar y con su edad en años (adulto: 18 o más),
+  sin nombre, DNI, foto ni datos del tutor. La API rechaza cualquier otro dato.
+  La relación entre el código y la persona se anota en una ficha de papel que
+  custodia el docente; el sistema no puede recuperarla. No existe ningún
+  registro ni inicio de sesión de participantes.
 - La cuenta de superadministrador se crea con `scripts/security/create_admin.py`
   y su contraseña se recupera con `scripts/security/reset_admin_password.py`
   (solo en el servidor).
@@ -43,14 +46,60 @@ participante usa la misma regla (`can_access_session`); una sesión propia la ve
 quien la conduce y su docente. Solo quien conduce una sesión puede enviar su
 cámara o cancelarla.
 
+## Autorizaciones firmadas
+
+Se registran a partir del formato firmado en papel: versión del formato, fecha
+de la firma y dos casillas independientes, que empiezan sin marcar:
+
+- (a) participación y registro de la expresión estimada;
+- (b) uso de la cámara.
+
+Las otorga el propio participante si es adulto y su padre, madre o tutor si es
+niño; con niños se registra además el **asentimiento** del niño o la niña,
+explicado de acuerdo con su edad. No se guarda ningún dato de quien firma.
+
+Una sesión con participante se inicia solo si la última autorización registrada
+tiene (a), (b) y, en niños, el asentimiento. La inicia únicamente quien registró
+al participante.
+
+**Retiro.** Se registra quién retiró (el participante o el tutor) y qué retiró
+(participación, cámara o asentimiento). Desde ese momento no se inician sesiones
+nuevas ni se registran autorizaciones nuevas, y el participante queda marcado
+para que el docente decida su eliminación con el procedimiento de eliminación y
+acta. Si la persona quiere volver a participar, se registra con un código nuevo.
+Cada registro y cada retiro quedan en la auditoría.
+
+## Banco de estímulos y protocolos
+
+- Los estímulos los crean los docentes (para los usuarios de su grupo) y el
+  administrador (para toda la institución); los usuarios los usan en sus
+  protocolos, pero no los crean. Cada uno tiene tipo (emocional o abstracta),
+  categoría, expresión que se espera provocar (solo en los emocionales),
+  intensidad (leve o moderada), edad mínima, y origen y licencia obligatorios.
+- **Nunca son fotos de participantes**: quien sube la imagen lo declara. Las
+  abstractas son de creación propia o con una licencia que lo permita; no se
+  incluyen láminas de pruebas proyectivas publicadas (también se declara).
+- La imagen se decodifica y se vuelve a codificar antes de guardarse, lo que
+  descarta los metadatos (EXIF, ubicación, autor). Solo PNG, JPEG o WebP de
+  hasta 5 MB y 4096 px de lado.
+- El sistema solo muestra y registra: no relaciona ninguna imagen con una
+  condición ni interpreta lo que el participante dice ver.
+- **Con niños** solo se ofrecen estímulos leves, aprobados, vigentes y con edad
+  mínima adecuada. Un protocolo para niños se usa solo cuando el docente lo
+  aprueba; con adultos se usa sin aprobación.
+- Una versión de un protocolo usada en una sesión no se edita: editarla crea una
+  versión nueva, que vuelve a pedir aprobación. La sesión conserva la versión
+  que aplicó.
+
 ## Imágenes
 
 Ningún endpoint, pantalla ni exportación devuelve imágenes de participantes:
 los cuadros de la cámara se procesan en memoria y se descartan. La prueba
 `tests/integration/test_no_participant_images.py` revisa el esquema de la API y
 recorre cada ruta GET con los cuatro papeles para comprobarlo. Las únicas
-imágenes que se podrán guardar son estímulos subidos por docentes o por el
-administrador, nunca fotos de participantes.
+imágenes guardadas son estímulos subidos por docentes o por el administrador,
+nunca fotos de participantes; `GET /stimuli/{id}/file` es la única ruta que
+sirve una imagen y la prueba la trata como excepción explícita.
 
 ## Compromiso de confidencialidad
 

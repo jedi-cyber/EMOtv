@@ -41,9 +41,11 @@ superadministrador nunca acceden a participantes, sesiones ni resultados. Ver
 | `PUT`, `DELETE` | `/users/{docente}/assigned-students/{student_id}` | Administrador; asignar a otro docente mueve al usuario |
 | `GET` | `/commitment`, `/commitment/child-notice` | Texto versionado y si la cuenta debe aceptarlo |
 | `POST` | `/commitment/accept`, `/commitment/child-notice/accept` | Usuarios y docentes, con la versión vigente |
-| `GET`, `POST` | `/participants` | Usuarios y docentes (el docente ve también los de su grupo); `428` sin compromiso o, para el primer niño, sin el aviso |
+| `GET`, `POST` | `/participants` | Usuarios y docentes (el docente ve también los de su grupo); `428` sin compromiso o, para el primer niño, sin el aviso. El registro pide `kind` y `age_years` (adulto: 18 o más) y rechaza cualquier otro dato de identidad (`422`) |
 | `GET` | `/participants/{id}` | `can_access_participant` |
 | `GET` | `/participants/expiring` | Docente: vencen en los próximos 30 días |
+| `GET`, `POST` | `/participants/{id}/authorizations` | `can_access_participant`; registra el formato firmado (`form_version`, `signed_on`, `participation`, `camera` y, en niños, `child_assent`) |
+| `POST` | `/participants/{id}/authorizations/{auth_id}/revoke` | `can_access_participant`; `party` y `scope`. Bloquea sesiones nuevas y marca al participante |
 | `POST` | `/participants/{id}/deletion-request` | Quien registró al participante |
 | `POST` | `/participants/{id}/delete` | Docente con acceso; devuelve el acta |
 | `GET` | `/participant-deletions`, `/participant-deletions/{id}` | Quien solicitó o ejecutó |
@@ -51,6 +53,22 @@ superadministrador nunca acceden a participantes, sesiones ni resultados. Ver
 | `GET` | `/audit` | Administrador y superadministrador, con filtros; no hay operaciones de escritura |
 
 Sin `SENSITIVE_DATA_KEY`, las rutas de participantes responden `503`.
+
+## Estímulos y protocolos
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `GET` | `/stimuli` | Usuarios (institucionales y los de su docente), docentes (los suyos e institucionales) y administrador (institucionales). `?child_age=N`: solo leves, aprobados, vigentes y con edad mínima ≤ N |
+| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` y, en abstractas, `not_a_projective_test`. Los usuarios reciben `403` |
+| `GET` | `/stimuli/{id}`, `/stimuli/{id}/file` | Quien puede verlo; `/file` es la única ruta que sirve una imagen, siempre un estímulo reescrito sin metadatos |
+| `POST` | `/stimuli/{id}/approve` | Quien lo gestiona |
+| `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
+| `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo |
+| `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) sin aprobación |
+| `POST` | `/protocols/{id}/approve` | Docente del autor (o el docente que lo armó); solo protocolos para niños |
+
+`pre_questionnaire_id` queda reservado para el cuestionario previo (P6A); hasta
+que exista ese módulo, cualquier valor responde `422`.
 
 ## Sesiones
 
@@ -69,9 +87,12 @@ sesión asociada exige consentimiento activo.
 
 Cada sesión guarda su `session_type`: `propia` (quien inicia sesión se analiza a
 sí mismo, sin participante), `participante_adulto` o `participante_infantil`.
-`POST /sessions` acepta `session_type` (por defecto `propia`). Mientras no exista
-el registro de participantes y de su autorización firmada, los dos tipos con
-participante responden `422`.
+`POST /sessions` acepta `session_type` (por defecto `propia`), `participant_id`
+(obligatorio en los tipos con participante) y `protocol_id` (opcional). Con
+participante, solo quien lo registró inicia la sesión y el servidor exige la
+última autorización con participación (a), cámara (b) y, en niños,
+asentimiento; sin ellas, o tras un retiro, responde `409`. Un protocolo para
+niños se aplica solo aprobado y con estímulos adecuados a la edad (`409`).
 
 ## Actividades
 

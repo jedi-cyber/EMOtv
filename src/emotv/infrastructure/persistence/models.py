@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, String, Integer, Text, UniqueConstraint, Index, JSON, text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, String, Integer, LargeBinary, Text, UniqueConstraint, Index, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -120,6 +120,9 @@ class SessionRecord(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     participant_id: Mapped[str | None] = mapped_column(
         ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Versión del protocolo aplicado; un protocolo usado no se borra ni se edita.
+    protocol_id: Mapped[str | None] = mapped_column(
+        ForeignKey("protocols.id", ondelete="RESTRICT"), nullable=True, index=True)
 
 
 class UserRecord(Base):
@@ -255,6 +258,11 @@ class ParticipantRecord(Base):
             "(deletion_requested_at IS NOT NULL AND deletion_requested_by_user_id IS NOT NULL)",
             name="ck_participants_deletion_request",
         ),
+        CheckConstraint(
+            "age_years IS NULL OR (kind = 'adult' AND age_years BETWEEN 18 AND 120) OR "
+            "(kind = 'child' AND age_years BETWEEN 1 AND 17)",
+            name="ck_participants_age_matches_kind",
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
@@ -265,6 +273,130 @@ class ParticipantRecord(Base):
     notes_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deletion_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    age_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    authorization_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ParticipantAuthorizationRecord(Base):
+    """Formato firmado en papel: versión, fecha y lo que autoriza. Sin nombres
+    ni datos de quien firma."""
+
+    __tablename__ = "participant_authorizations"
+    __table_args__ = (
+        CheckConstraint("grantor IN ('participant', 'guardian')", name="ck_participant_authorizations_grantor"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_by_user_id IS NULL AND revoked_party IS NULL "
+            "AND revoked_scope IS NULL) OR "
+            "(revoked_at IS NOT NULL AND revoked_by_user_id IS NOT NULL "
+            "AND revoked_party IN ('participant', 'guardian') "
+            "AND revoked_scope IN ('participation', 'camera', 'assent'))",
+            name="ck_participant_authorizations_revocation",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    participant_id: Mapped[str] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    form_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    signed_on: Mapped[date] = mapped_column(Date, nullable=False)
+    grantor: Mapped[str] = mapped_column(String(16), nullable=False)
+    participation: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    camera: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    child_assent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    revoked_party: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    revoked_scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+class StimulusRecord(Base):
+    """Imagen del banco de estímulos, nunca una foto de un participante. La
+    imagen se guarda reescrita, sin metadatos."""
+
+    __tablename__ = "stimuli"
+    __table_args__ = (
+        CheckConstraint("kind IN ('emotional', 'abstract')", name="ck_stimuli_kind"),
+        CheckConstraint("intensity IN ('mild', 'moderate')", name="ck_stimuli_intensity"),
+        CheckConstraint("scope IN ('group', 'institution')", name="ck_stimuli_scope"),
+        CheckConstraint("min_age BETWEEN 1 AND 99", name="ck_stimuli_min_age"),
+        CheckConstraint(
+            "(kind = 'emotional' AND expected_expression IS NOT NULL) OR "
+            "(kind = 'abstract' AND expected_expression IS NULL)",
+            name="ck_stimuli_expected_expression",
+        ),
+        CheckConstraint(
+            "(approved_at IS NULL AND approved_by_user_id IS NULL) OR "
+            "(approved_at IS NOT NULL AND approved_by_user_id IS NOT NULL)",
+            name="ck_stimuli_approval",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    expected_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    intensity: Mapped[str] = mapped_column(String(16), nullable=False)
+    min_age: Mapped[int] = mapped_column(Integer, nullable=False)
+    origin: Mapped[str] = mapped_column(String(500), nullable=False)
+    license: Mapped[str] = mapped_column(String(300), nullable=False)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+
+class ProtocolRecord(Base):
+    """Una versión de un protocolo; las de un mismo protocolo comparten family_id."""
+
+    __tablename__ = "protocols"
+    __table_args__ = (
+        UniqueConstraint("family_id", "version", name="uq_protocols_family_version"),
+        CheckConstraint("version >= 1", name="ck_protocols_version"),
+        CheckConstraint(
+            "(approved_at IS NULL AND approved_by_user_id IS NULL) OR "
+            "(approved_at IS NOT NULL AND approved_by_user_id IS NOT NULL)",
+            name="ck_protocols_approval",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    for_children: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Cuestionario previo opcional (P6A); mientras no exista ese módulo queda nulo.
+    pre_questionnaire_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProtocolStepRecord(Base):
+    __tablename__ = "protocol_steps"
+    __table_args__ = (
+        UniqueConstraint("protocol_id", "position", name="uq_protocol_steps_position"),
+        CheckConstraint("exposure_seconds BETWEEN 1 AND 120", name="ck_protocol_steps_exposure"),
+        CheckConstraint("capture_after_seconds >= 0 AND capture_after_seconds <= exposure_seconds",
+                        name="ck_protocol_steps_capture"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    protocol_id: Mapped[str] = mapped_column(
+        ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False, index=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    stimulus_id: Mapped[str] = mapped_column(
+        ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False, index=True)
+    exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class CommitmentAcceptanceRecord(Base):

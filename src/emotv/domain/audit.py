@@ -10,6 +10,7 @@ class AuditAction(str, Enum):
 
     VIEW = "view"
     CREATE = "create"
+    UPDATE = "update"
     PRINT = "print"
     APPROVE = "approve"
     DELETE = "delete"

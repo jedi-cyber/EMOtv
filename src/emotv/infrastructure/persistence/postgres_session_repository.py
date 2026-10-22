@@ -89,6 +89,7 @@ class PostgresSessionRepository:
             session_type=SessionType(session.session_type).value,
             owner_user_id=session.owner_user_id,
             participant_id=session.participant_id,
+            protocol_id=session.protocol_id,
         )
 
     @staticmethod
@@ -114,6 +115,7 @@ class PostgresSessionRepository:
         record.session_type = SessionType(session.session_type).value
         record.owner_user_id = session.owner_user_id
         record.participant_id = session.participant_id
+        record.protocol_id = session.protocol_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -145,6 +147,7 @@ class PostgresSessionRepository:
             session_type=SessionType(record.session_type or SessionType.OWN.value),
             owner_user_id=record.owner_user_id,
             participant_id=record.participant_id,
+            protocol_id=record.protocol_id,
         )
 
     @staticmethod

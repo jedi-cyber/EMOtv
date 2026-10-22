@@ -39,6 +39,8 @@ class EmotionalSession:
     # si lo hay. Una sesión propia no tiene participante.
     owner_user_id: str | None = None
     participant_id: str | None = None
+    # Versión del protocolo aplicado, si la sesión sigue uno.
+    protocol_id: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -140,7 +142,7 @@ class EmotionalSession:
         object.__setattr__(self, "id", session_id)
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "session_type", session_type)
-        for name in ("owner_user_id", "participant_id"):
+        for name in ("owner_user_id", "participant_id", "protocol_id"):
             value = getattr(self, name)
             if value is not None:
                 if not isinstance(value, str) or not value.strip():

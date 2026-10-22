@@ -58,6 +58,15 @@ from emotv.application.commitment_service import CommitmentService
 from emotv.application.participant_service import ParticipantService
 from emotv.interfaces.web.privacy_router import create_privacy_router
 from emotv.interfaces.web.participant_router import create_participant_router
+from emotv.interfaces.web.stimulus_router import create_stimulus_router
+from emotv.application.protocol_service import ProtocolService
+from emotv.application.stimulus_service import StimulusService
+from emotv.infrastructure.persistence.postgres_practice_repositories import (
+    PostgresAuthorizationRepository,
+    PostgresProtocolRepository,
+    PostgresStimulusRepository,
+)
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
@@ -164,7 +173,14 @@ if DATABASE_URL and JWT_SECRET_KEY:
         participant_service = ParticipantService(
             participant_repository, authorization_service, commitment_service, audit_service, group_user_ids,
             retention_months=privacy_settings.participant_retention_months,
-            notice_days=privacy_settings.expiry_notice_days)
+            notice_days=privacy_settings.expiry_notice_days,
+            authorizations=PostgresAuthorizationRepository(database_sessions))
+    stimulus_service = StimulusService(PostgresStimulusRepository(database_sessions), audit_service, docente_of,
+                                       sanitize_stimulus_image)
+    protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
+                                       audit_service, docente_of, group_user_ids)
+    app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
+                                              user_repository))
     app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
                                              user_repository))
     app.include_router(create_participant_router(participant_service, authentication_service, user_repository))
@@ -197,6 +213,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         activities=activity_catalog,
         assignments=assignment_repository,
         commitments=commitment_service,
+        participants=participant_service,
+        protocols=protocol_service,
     ))
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
     local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
@@ -254,6 +272,7 @@ else:
     app.include_router(create_model_admin_router(None, None, None))
     app.include_router(create_privacy_router(None, None, None, None))
     app.include_router(create_participant_router(None, None, None))
+    app.include_router(create_stimulus_router(None, None, None, None))
 
 
 def run_retention() -> None:

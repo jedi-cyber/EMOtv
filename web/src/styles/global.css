@@ -147,6 +147,12 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .row-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
 .row-card div { display: grid; gap: var(--space-xxs); justify-items: start; }
 .row-card span { color: var(--color-slate); }
+.stimulus-row { justify-content: flex-start; align-items: flex-start; }
+.stimulus-row > div:last-child { margin-left: auto; }
+.stimulus-thumb { flex: none; width: 96px; height: 72px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-neutral-soft); object-fit: contain; }
+.stimulus-thumb-empty { display: grid; place-items: center; font-size: var(--text-caption); }
+.protocol-step { align-items: flex-start; flex-wrap: wrap; }
+.protocol-step input[type="number"] { width: 6rem; }
 .row-card-link { margin-left: calc(-1 * var(--space-sm)); }
 .metadata { display: flex; flex-wrap: wrap; gap: var(--space-lg); width: 100%; margin: var(--space-xs) 0; }
 .metadata div { display: grid; gap: 2px; }

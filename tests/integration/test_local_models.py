@@ -218,7 +218,7 @@ def test_sessions_store_their_type(env):
     assert response.json()["session_type"] == "propia"
     assert env.sessions.get_session(response.json()["id"]).session_type is SessionType.OWN
     for session_type in ("participante_adulto", "participante_infantil"):
-        # Sin registro de participantes ni autorización firmada no se inician.
+        # Sin un participante registrado con su autorización firmada no se inician.
         rejected = env.client.post("/sessions", headers=env.headers(env.student_user),
                                    json={"session_type": session_type})
         assert rejected.status_code == 422

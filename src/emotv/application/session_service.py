@@ -64,8 +64,13 @@ class SessionService:
         activity_id: str | None = None,
         session_type: SessionType | str = SessionType.OWN,
         owner_user_id: str | None = None,
+        participant_id: str | None = None,
+        protocol_id: str | None = None,
     ) -> EmotionalSession:
-        """Inicia una sesión nueva o una sesión previamente creada."""
+        """Inicia una sesión nueva o una sesión previamente creada.
+
+        participant_id y protocol_id solo se indican en una sesión nueva; quien
+        llama ya comprobó las autorizaciones del participante y el protocolo."""
 
         if session_id is None:
             self._require_active_consent(student_id)
@@ -77,6 +82,8 @@ class SessionService:
                 activity_id=activity_id,
                 session_type=session_type,
                 owner_user_id=owner_user_id,
+                participant_id=participant_id,
+                protocol_id=protocol_id,
             )
         else:
             current = self._get_required(session_id)

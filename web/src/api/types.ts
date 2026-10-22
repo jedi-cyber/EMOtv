@@ -70,6 +70,72 @@ export interface Participant {
   notes: string | null;
   registered_by_me: boolean;
   deletion_requested_at: string | null;
+  age_years: number | null;
+  authorization_status: AuthorizationStatus;
+  authorization_revoked_at: string | null;
+}
+
+/** ready: puede iniciar sesiones; revoked: se retiró una autorización. */
+export type AuthorizationStatus = "ready" | "missing" | "revoked" | "no_age";
+
+/** Formato firmado en papel: sin nombres ni datos de quien firma. */
+export interface ParticipantAuthorization {
+  id: string;
+  form_version: string;
+  signed_on: string;
+  grantor: "participant" | "guardian";
+  participation: boolean;
+  camera: boolean;
+  child_assent: boolean | null;
+  recorded_at: string;
+  revoked_at: string | null;
+  revoked_party: "participant" | "guardian" | null;
+  revoked_scope: "participation" | "camera" | "assent" | null;
+}
+
+export type StimulusKind = "emotional" | "abstract";
+export type StimulusIntensity = "mild" | "moderate";
+
+/** Imagen del banco de estímulos; nunca una foto de un participante. */
+export interface Stimulus {
+  id: string;
+  title: string;
+  kind: StimulusKind;
+  category: string;
+  expected_expression: string | null;
+  intensity: StimulusIntensity;
+  min_age: number;
+  origin: string;
+  license: string;
+  scope: "group" | "institution";
+  created_at: string;
+  approved: boolean;
+  active: boolean;
+  can_manage: boolean;
+}
+
+export interface ProtocolStep {
+  stimulus_id: string;
+  exposure_seconds: number;
+  capture_after_seconds: number;
+  record_verbal_response: boolean;
+}
+
+export interface Protocol {
+  id: string;
+  family_id: string;
+  version: number;
+  name: string;
+  description: string;
+  for_children: boolean;
+  pre_questionnaire_id: string | null;
+  steps: ProtocolStep[];
+  created_at: string;
+  approved: boolean;
+  approved_at: string | null;
+  owned_by_me: boolean;
+  can_approve: boolean;
+  used: boolean;
 }
 
 /** Acta de eliminación: sin datos personales. */
