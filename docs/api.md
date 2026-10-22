@@ -154,6 +154,22 @@ tiempo desde su aparición; nunca la imagen. Las pantallas con imágenes
 abstractas muestran: "Registro descriptivo. Una sesión breve no permite sacar
 conclusiones a partir de una imagen."
 
+## Línea de tiempo, métricas y tendencias
+
+Describen lo registrado; no interpretan. Con participante, el acceso pasa por
+`can_access_participant` (quien lo registró y su docente); en una sesión propia,
+por `can_access_session`. Cada consulta, también las denegadas, queda en la
+auditoría (`session_timeline`, `session_metrics`, `participant_trends`).
+
+| Método | Ruta | Contenido |
+| --- | --- | --- |
+| `GET` | `/sessions/{id}/timeline` | Un solo eje en segundos desde el inicio: respuestas de cuestionarios, aparición de cada estímulo, expresión estimada de cada captura, lo que el participante dijo ver, marcadores y el carril `heart_rate`, vacío y reservado para el sensor |
+| `GET` | `/sessions/{id}/metrics` | Por estímulo emocional: expresión estimada, probabilidad, segundos desde la aparición, calidad y si coincide con la esperada. Las capturas marcadas se muestran pero no cuentan; la primera de buena calidad decide. Las abstractas solo traen sus expresiones y lo que dijo ver, sin coincidencia, y `abstract_notice` |
+| `GET` | `/participants/{id}/trends` | Por protocolo (todas sus versiones), las coincidencias de cada sesión. Con menos de dos sesiones comparables, `comparable: false` y un mensaje en lugar de la tendencia |
+
+Los textos describen: "En 3 de 5 estímulos la expresión estimada coincidió con
+la esperada". Nunca valoran a la persona.
+
 ## Actividades
 
 | Método | Ruta | Acceso |

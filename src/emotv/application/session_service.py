@@ -348,6 +348,9 @@ class SessionService:
 
         return self.repository.list_by_student(student_id)
 
+    def list_sessions_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        return self.repository.list_by_participant(participant_id)
+
     def list_sessions_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         return self.repository.list_by_owner(owner_user_id)
 

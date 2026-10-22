@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { StatusChip, toneForSession } from "../components/StatusChip";
 import { ApiError, apiRequest } from "../api/http";
-import type { Activity, EmotionalSession, GuidedState, QuestionnaireAnswers, Student } from "../api/types";
+import type { Activity, EmotionalSession, GuidedState, QuestionnaireAnswers, SessionMetrics, SessionTimeline as Timeline, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { PageState } from "../components/PageState";
 import { Callout } from "../components/Callout";
@@ -14,6 +14,8 @@ import { activityOutcomeName, emotionModelName, sessionStateName, sessionTypeNam
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { Button, ButtonLink } from "../components/Button";
 import { AnswerList, QuestionnaireNote } from "../questionnaires/QuestionnaireForm";
+import { SessionTimeline } from "../insights/SessionTimeline";
+import { StimulusMetrics } from "../insights/StimulusMetrics";
 
 const dateTime = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
 
@@ -32,6 +34,8 @@ export function SessionDetailPage() {
   const responses = responsesQuery.data ?? [];
   const guidedQuery = useApiQuery<GuidedState>(session?.protocol_id ? `/sessions/${encodeURIComponent(sessionId)}/guided-results` : null);
   const guided = guidedQuery.data;
+  const timelineQuery = useApiQuery<Timeline>(session?.protocol_id ? `/sessions/${encodeURIComponent(sessionId)}/timeline` : null);
+  const metricsQuery = useApiQuery<SessionMetrics>(session?.protocol_id ? `/sessions/${encodeURIComponent(sessionId)}/metrics` : null);
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
@@ -80,21 +84,18 @@ export function SessionDetailPage() {
     <p className="muted">La expresión registrada es una estimación del modelo sobre el rostro visible; no indica lo que sentías.</p>
     {guided && <section className="card">
       <h2>Sesión guiada</h2>
-      {guided.abstract_notice && <Callout variant="info" role="note">{guided.abstract_notice}</Callout>}
+      {guided.abstract_notice && !metricsQuery.data && <Callout variant="info" role="note">{guided.abstract_notice}</Callout>}
       {conductedByMe && !["finished", "stopped"].includes(guided.phase) &&
         <ButtonLink variant="secondary" to={paths.guidedSession(session.id)}>Continuar la sesión guiada</ButtonLink>}
-      <p className="muted">{guided.captures.length} capturas · {guided.markers.length} marcadores. Las expresiones son estimaciones del modelo; no indican lo que la persona sentía.</p>
-      {guided.captures.length > 0 && <div className="table-wrap"><table><thead><tr>
-        <th>Estímulo</th><th>Segundo</th><th>Expresión estimada</th><th>Calidad</th>
-      </tr></thead><tbody>{guided.captures.map((item) => <tr key={item.id}>
-        <td>{guided.steps[item.step_index]?.title ?? "—"}</td>
-        <td>{item.seconds_since_stimulus} s</td>
-        <td>{item.emotion ? expressionLabel(item.emotion) : <span className="muted">—</span>}</td>
-        <td>{item.quality === "good" ? "Buena" : `Marcada (${item.quality_issues.join(", ")})`}</td>
-      </tr>)}</tbody></table></div>}
-      {guided.verbal_responses.length > 0 && <dl className="answer-list">{guided.verbal_responses.map((item) => <div key={item.step_index}>
-        <dt>Dijo ver en «{guided.steps[item.step_index]?.title}»</dt><dd>{item.text}</dd>
-      </div>)}</dl>}
+      <p className="muted">El sistema describe lo registrado; no interpreta. Las expresiones son estimaciones del modelo; no indican lo que la persona sentía.</p>
+      {timelineQuery.data && <>
+        <h3>Línea de tiempo</h3>
+        <SessionTimeline timeline={timelineQuery.data} expressionLabel={expressionLabel} />
+      </>}
+      {metricsQuery.data && <>
+        <h3>Métricas por estímulo</h3>
+        <StimulusMetrics metrics={metricsQuery.data} expressionLabel={expressionLabel} />
+      </>}
     </section>}
     {hasQuestionnaires && <section className="card">
       <h2>Cuestionarios</h2>

@@ -267,3 +267,48 @@ export interface ParticipantViewState {
   frame_interval_ms: number;
   abstract_notice: string | null;
 }
+
+/** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
+export interface SessionTimeline {
+  session_id: string;
+  started_at: string;
+  duration_seconds: number;
+  lanes: {
+    questionnaires: { time: number; moment: QuestionnaireMoment; title: string; answers: { question: string; kind: QuestionKind; answer: AnswerValue | null }[] }[];
+    stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean }[];
+    captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
+    said: { time: number; step_index: number; title: string; text: string }[];
+    markers: { time: number; kind: MarkerKind; note: string | null }[];
+    /** Reservado para el ritmo cardíaco, cuando exista el sensor. */
+    heart_rate: never[];
+  };
+}
+
+export interface MetricCapture {
+  id: string;
+  captured_at: string;
+  emotion: string | null;
+  probability: number | null;
+  seconds_since_stimulus: number;
+  quality: "good" | "flagged";
+  quality_issues: string[];
+  counted: boolean;
+  matches_expected?: boolean | null;
+}
+
+/** Métricas descriptivas: describen, no interpretan. */
+export interface SessionMetrics {
+  session_id: string;
+  emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
+    captures: MetricCapture[]; counted: boolean; matches_expected: boolean | null; excluded_captures: number }[];
+  abstract: { step_index: number; title: string; category: string; skipped: boolean; captures: MetricCapture[]; said: string | null }[];
+  totals: { emotional_stimuli: number; counted: number; matched: number; excluded_captures: number; sentence: string };
+  abstract_notice: string | null;
+}
+
+export interface ParticipantTrends {
+  participant_id: string;
+  code: string;
+  protocols: { protocol_family_id: string; protocol_name: string; comparable: boolean; message: string;
+    sessions: { session_id: string; started_at: string; protocol_version: number; matched: number; counted: number; sentence: string }[] }[];
+}

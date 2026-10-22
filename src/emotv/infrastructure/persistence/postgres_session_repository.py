@@ -57,6 +57,16 @@ class PostgresSessionRepository:
             records = database_session.scalars(statement).all()
             return tuple(self._to_domain(record) for record in records)
 
+    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        statement = (
+            select(SessionRecord)
+            .where(SessionRecord.participant_id == participant_id)
+            .order_by(SessionRecord.started_at, SessionRecord.id)
+        )
+        with self._session_factory() as database_session:
+            records = database_session.scalars(statement).all()
+            return tuple(self._to_domain(record) for record in records)
+
     def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         statement = (
             select(SessionRecord)

@@ -11,6 +11,8 @@ export const paths = {
   analysis: "/analysis",
   analysisForActivity: (id: string) => `/analysis?activity=${encodeURIComponent(id)}`,
   participants: "/participants",
+  participantTrends: (id: string) => `/participants/${encodeURIComponent(id)}/trends`,
+  participantTrendsPattern: "/participants/:participantId/trends",
   deletionCertificate: (id: string) => `/participants/deletions/${encodeURIComponent(id)}`,
   deletionCertificatePattern: "/participants/deletions/:certificateId",
   stimuli: "/stimuli",

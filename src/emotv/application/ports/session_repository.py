@@ -29,6 +29,11 @@ class SessionRepository(Protocol):
 
         ...
 
+    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        """Devuelve las sesiones de un participante, de la más antigua a la más reciente."""
+
+        ...
+
     def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         """Devuelve las sesiones que condujo la cuenta indicada."""
 

@@ -132,6 +132,16 @@ Cada registro y cada retiro quedan en la auditoría.
 - La eliminación y la retención de un participante incluyen su sesión guiada,
   capturas, marcadores y respuestas.
 
+## Línea de tiempo, métricas y tendencias
+
+- Las ven solo quien condujo la sesión y su docente (`can_access_participant`, o
+  `can_access_session` en una sesión propia); nunca los administradores. Cada
+  consulta, permitida o denegada, queda en la auditoría.
+- Describen lo registrado sin interpretarlo: cuántos estímulos emocionales
+  coincidieron con la expresión esperada, nunca valoraciones sobre la persona.
+  Las imágenes abstractas no tienen métricas de coincidencia y llevan el aviso
+  fijo. El carril del ritmo cardíaco queda vacío hasta que exista el sensor.
+
 ## Imágenes
 
 Ningún endpoint, pantalla ni exportación devuelve imágenes de participantes:

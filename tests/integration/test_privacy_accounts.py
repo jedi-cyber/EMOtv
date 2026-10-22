@@ -47,6 +47,8 @@ from emotv.application.guided_session_service import GuidedSessionService
 from emotv.domain.guided_session import FrameAssessment
 from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
 from emotv.interfaces.web.guided_router import create_guided_router
+from emotv.application.session_insights_service import SessionInsightsService
+from emotv.interfaces.web.insights_router import create_insights_router
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresAuthorizationRepository,
@@ -170,6 +172,14 @@ def env():
     app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
                                             decode_frame=lambda data: data or None))
     e.guided = guided
+    insights = SessionInsightsService(
+        sessions, guided.repository, protocols=protocols.repository.get, stimuli=stimuli.repository.get,
+        participants=participant_repository.get_by_id, questionnaire_responses=questionnaires.responses.list_for_session,
+        questionnaires=questionnaires.repository.get, authorization=authorization,
+        actor_student_id=lambda user: (students.get_by_user_id(user.id).id
+                                       if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
+        audit=audit)
+    app.include_router(create_insights_router(insights, auth, users))
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))

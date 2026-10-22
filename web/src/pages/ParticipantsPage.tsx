@@ -161,6 +161,7 @@ export function ParticipantsPage() {
         <td>{item.deletion_requested_at ? <StatusChip tone="progress">Eliminación solicitada</StatusChip> : <StatusChip tone="neutral">Vigente</StatusChip>}</td>
         <td className="inline-actions">
           <Button variant="secondary" type="button" disabled={busy} onClick={() => setAuthorizing(item)}>Autorizaciones</Button>
+          <ButtonLink variant="ghost" to={paths.participantTrends(item.id)}>Tendencias</ButtonLink>
           {!isDocente && item.registered_by_me && !item.deletion_requested_at &&
             <Button variant="secondary" type="button" disabled={busy} onClick={() => { void requestDeletion(item); }}>Solicitar eliminación</Button>}
           {isDocente && <Button variant="danger" type="button" disabled={busy} onClick={() => setDeleting(item)}>Eliminar</Button>}
