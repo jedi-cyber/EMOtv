@@ -129,7 +129,8 @@ class EmotionalSession:
         if state is SessionState.RECOGNIZED and self.recognized_at is None:
             raise ValueError("una sesión reconocida requiere recognized_at")
 
-        if state is SessionState.COMPLETED:
+        # Una sesión guiada (con protocolo) registra capturas, no una expresión única.
+        if state is SessionState.COMPLETED and self.protocol_id is None:
             if emotion is None or exercise_result is None:
                 raise ValueError(
                     "una sesión completada requiere emoción y resultado de la actividad"

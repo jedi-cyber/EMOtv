@@ -43,6 +43,10 @@ from emotv.infrastructure.persistence.postgres_questionnaire_repositories import
 )
 from emotv.interfaces.web.questionnaire_router import create_questionnaire_router
 from emotv.interfaces.web.analysis_router import create_analysis_router
+from emotv.application.guided_session_service import GuidedSessionService
+from emotv.domain.guided_session import FrameAssessment
+from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresAuthorizationRepository,
@@ -146,6 +150,26 @@ def env():
                                              questionnaires=questionnaires))
     app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
     app.include_router(create_questionnaire_router(questionnaires, auth, users))
+    # Analizador falso: cada prueba fija el resultado del próximo cuadro (sin modelos ni imágenes).
+    e.frame_result = FrameAssessment((), "happiness", 0.8, {"happiness": 0.8, "neutral": 0.2})
+    e.frames_assessed = 0
+
+    def assess(frame):
+        e.frames_assessed += 1
+        return e.frame_result
+
+    guided = GuidedSessionService(
+        PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
+        protocols=protocols.repository.get, stimuli=stimuli.repository.get,
+        participants=participant_repository.get_by_id,
+        participant_ready=lambda participant: participants.status(participant) == "ready",
+        questionnaire_answered=questionnaires.answered,
+        resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
+        assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
+        calibration_seconds=3.0, clock=clock)
+    app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
+                                            decode_frame=lambda data: data or None))
+    e.guided = guided
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
@@ -427,7 +451,8 @@ def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(en
     assert response.status_code == 200
     certificate = response.json()
     assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
-    assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "sessions": 1, "participants": 1}
+    assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "expression_captures": 0, "session_markers": 0,
+                                    "verbal_responses": 0, "guided_runs": 0, "sessions": 1, "participants": 1}
     with env.factory() as db:
         assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
         assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0

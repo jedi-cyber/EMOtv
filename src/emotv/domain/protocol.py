@@ -12,12 +12,14 @@ class ProtocolStep:
     """Un estímulo de la secuencia. capture_after_seconds es el tiempo hasta la
     captura automática de la expresión estimada, dentro de la exposición.
     record_verbal_response solo aplica a imágenes abstractas: se registra lo que
-    el participante dice ver, sin interpretarlo."""
+    el participante dice ver, sin interpretarlo. shown_before_analyzer (solo
+    abstractas) la muestra antes de la calibración, sin capturas."""
 
     stimulus_id: str
     exposure_seconds: int
     capture_after_seconds: int
     record_verbal_response: bool = False
+    shown_before_analyzer: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.stimulus_id, str) or not self.stimulus_id.strip():

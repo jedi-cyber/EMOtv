@@ -16,6 +16,8 @@ Tablas con datos vinculados a un usuario o estudiante:
   commitment_acceptances;
 - protocols armados por la cuenta y sus protocol_steps;
 - questionnaires de la cuenta y questionnaire_responses de sus sesiones;
+- de sus sesiones guiadas: guided_runs, expression_captures, session_markers y
+  verbal_responses;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
@@ -44,7 +46,9 @@ from emotv.infrastructure.persistence.models import (
     ChatMessageRecord,
     CommitmentAcceptanceRecord,
     ConsentRecordModel,
+    ExpressionCaptureRecord,
     ExpressionInfoRecord,
+    GuidedRunRecord,
     LoginAttemptRecord,
     ParticipantAuthorizationRecord,
     ParticipantRecord,
@@ -53,9 +57,11 @@ from emotv.infrastructure.persistence.models import (
     PsychologistAssignmentRecord,
     QuestionnaireRecord,
     QuestionnaireResponseRecord,
+    SessionMarkerRecord,
     SessionRecord,
     StudentRecord,
     UserRecord,
+    VerbalResponseRecord,
 )
 
 CODE_PREFIX = "PRUEBA-"
@@ -69,7 +75,8 @@ REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
 # Orden de borrado: primero las filas que dependen de otras.
-TABLES = ("chat_messages", "chat_conversations", "questionnaire_responses", "sessions",
+TABLES = ("chat_messages", "chat_conversations", "questionnaire_responses", "expression_captures",
+          "session_markers", "verbal_responses", "guided_runs", "sessions",
           "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
           "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
@@ -302,6 +309,10 @@ _MODELS = {
     "chat_messages": ChatMessageRecord,
     "chat_conversations": ChatConversationRecord,
     "questionnaire_responses": QuestionnaireResponseRecord,
+    "expression_captures": ExpressionCaptureRecord,
+    "session_markers": SessionMarkerRecord,
+    "verbal_responses": VerbalResponseRecord,
+    "guided_runs": GuidedRunRecord,
     "sessions": SessionRecord,
     "participant_authorizations": ParticipantAuthorizationRecord,
     "participants": ParticipantRecord,
@@ -329,6 +340,10 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
         "chat_conversations": ChatConversationRecord.user_id == account.user_id,
         "questionnaire_responses": QuestionnaireResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "expression_captures": ExpressionCaptureRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "session_markers": SessionMarkerRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "verbal_responses": VerbalResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "guided_runs": GuidedRunRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "sessions": sessions,
         "participant_authorizations": ParticipantAuthorizationRecord.participant_id.in_(participants),
         "participants": ParticipantRecord.registered_by_user_id == account.user_id,

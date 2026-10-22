@@ -172,6 +172,14 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .answer-list dd { margin: 0; }
 .answer-face { display: inline-flex; align-items: center; gap: var(--space-sm); }
 .session-answers + .session-answers { border-top: 1px solid var(--color-hairline); padding-top: var(--space-md); }
+.participant-view { display: grid; grid-template-rows: 1fr auto auto; min-height: 100dvh; padding: var(--space-lg); background: var(--color-canvas); color: var(--color-ink); }
+.participant-view-stage { display: grid; place-items: center; gap: var(--space-md); text-align: center; }
+.participant-stimulus { max-width: 100%; max-height: 75dvh; object-fit: contain; }
+.participant-message { font-size: var(--text-section-title); }
+.participant-notice { margin: var(--space-sm) 0; color: var(--color-slate); font-size: var(--text-body-sm); text-align: center; }
+.participant-actions { display: flex; justify-content: center; gap: var(--space-md); }
+.participant-camera { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+kbd { margin-left: var(--space-xs); padding: 0 4px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm, 4px); font-size: var(--text-caption); }
 .row-card-link { margin-left: calc(-1 * var(--space-sm)); }
 .metadata { display: flex; flex-wrap: wrap; gap: var(--space-lg); width: 100%; margin: var(--space-xs) 0; }
 .metadata div { display: grid; gap: 2px; }

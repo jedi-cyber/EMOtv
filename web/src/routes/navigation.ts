@@ -15,6 +15,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   student: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
     { to: paths.participants, label: "Participantes", icon: "students" },
     { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
     { to: paths.protocols, label: "Protocolos", icon: "document" },
@@ -26,6 +27,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
     { to: paths.participants, label: "Participantes", icon: "students" },
     { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
     { to: paths.protocols, label: "Protocolos", icon: "document" },

@@ -50,6 +50,8 @@ class StepModel(BaseModel):
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
     capture_after_seconds: int = Field(ge=0, le=MAX_EXPOSURE_SECONDS)
     record_verbal_response: bool = False
+    # Solo imágenes abstractas: se muestran antes de la calibración, sin capturas.
+    shown_before_analyzer: bool = False
 
 
 class ProtocolRequest(BaseModel):
@@ -125,7 +127,8 @@ def create_stimulus_router(
             post_questionnaire_id=item.post_questionnaire_id,
             steps=[StepModel(stimulus_id=step.stimulus_id, exposure_seconds=step.exposure_seconds,
                              capture_after_seconds=step.capture_after_seconds,
-                             record_verbal_response=step.record_verbal_response) for step in item.steps],
+                             record_verbal_response=step.record_verbal_response,
+                             shown_before_analyzer=step.shown_before_analyzer) for step in item.steps],
             created_at=item.created_at, approved=item.approved, approved_at=item.approved_at,
             owned_by_me=item.owner_user_id == user.id, can_approve=service.can_approve(user, item),
             used=service.is_used(item))
@@ -133,7 +136,8 @@ def create_stimulus_router(
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
             steps = tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
-                                       step.record_verbal_response) for step in request.steps)
+                                       step.record_verbal_response, step.shown_before_analyzer)
+                          for step in request.steps)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,

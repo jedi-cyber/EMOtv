@@ -17,11 +17,15 @@ from emotv.domain.participant import Participant
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     CommitmentAcceptanceRecord,
+    ExpressionCaptureRecord,
+    GuidedRunRecord,
     ParticipantAuthorizationRecord,
     ParticipantDeletionRecord,
     ParticipantRecord,
     QuestionnaireResponseRecord,
+    SessionMarkerRecord,
     SessionRecord,
+    VerbalResponseRecord,
 )
 from emotv.shared.security.field_encryption import FieldCipher
 
@@ -31,6 +35,10 @@ from emotv.shared.security.field_encryption import FieldCipher
 PARTICIPANT_LINKED_RECORDS = (
     ("authorizations", ParticipantAuthorizationRecord, ParticipantAuthorizationRecord.participant_id),
     ("questionnaire_responses", QuestionnaireResponseRecord, QuestionnaireResponseRecord.participant_id),
+    ("expression_captures", ExpressionCaptureRecord, ExpressionCaptureRecord.participant_id),
+    ("session_markers", SessionMarkerRecord, SessionMarkerRecord.participant_id),
+    ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.participant_id),
+    ("guided_runs", GuidedRunRecord, GuidedRunRecord.participant_id),
     ("sessions", SessionRecord, SessionRecord.participant_id),
 )
 

@@ -125,6 +125,8 @@ class ProtocolService:
                 raise ValueError(f"El estímulo «{stimulus.title}» fue retirado del banco")
             if step.record_verbal_response and stimulus.kind is not StimulusKind.ABSTRACT:
                 raise ValueError("Lo que el participante dice ver solo se registra en imágenes abstractas")
+            if step.shown_before_analyzer and stimulus.kind is not StimulusKind.ABSTRACT:
+                raise ValueError("Solo las imágenes abstractas se muestran antes del analizador")
             if draft.for_children and not (stimulus.approved and stimulus.intensity is StimulusIntensity.MILD):
                 raise ValueError(f"Con niños solo se usan estímulos leves y aprobados: «{stimulus.title}» no lo es")
 

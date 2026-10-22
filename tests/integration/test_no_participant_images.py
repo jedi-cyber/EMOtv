@@ -39,7 +39,10 @@ def test_no_route_declares_images_in_the_real_api():
             for status, response in operation.get("responses", {}).items():
                 for content_type in response.get("content", {}):
                     assert not IMAGE_CONTENT.match(content_type), f"{method.upper()} {path} {status}: {content_type}"
-        assert not re.search(r"(capture|captura|frame|photo|foto|snapshot|imagen|image)", path, re.I), path
+        # Ninguna ruta de consulta se llama como una imagen. La vista del participante
+        # sí envía cuadros (POST), pero solo recibe "recibido": se analizan y se descartan.
+        if "get" in operations:
+            assert not re.search(r"(capture|captura|frame|photo|foto|snapshot|imagen|image)", path, re.I), path
     assert _schemas_with_image_fields(spec) == []
 
 

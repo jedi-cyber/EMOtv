@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { StatusChip, toneForSession } from "../components/StatusChip";
 import { ApiError, apiRequest } from "../api/http";
-import type { Activity, EmotionalSession, QuestionnaireAnswers, Student } from "../api/types";
+import type { Activity, EmotionalSession, GuidedState, QuestionnaireAnswers, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { PageState } from "../components/PageState";
 import { Callout } from "../components/Callout";
@@ -30,6 +30,8 @@ export function SessionDetailPage() {
   const responsesQuery = useApiQuery<QuestionnaireAnswers[]>(hasQuestionnaires
     ? `/sessions/${encodeURIComponent(sessionId)}/questionnaire-responses` : null);
   const responses = responsesQuery.data ?? [];
+  const guidedQuery = useApiQuery<GuidedState>(session?.protocol_id ? `/sessions/${encodeURIComponent(sessionId)}/guided-results` : null);
+  const guided = guidedQuery.data;
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
@@ -76,6 +78,24 @@ export function SessionDetailPage() {
       <div><dt>Pasos completados</dt><dd>{session.exercise_steps_total == null ? "—" : `${session.exercise_steps_completed ?? 0} de ${session.exercise_steps_total}${(session.exercise_repetitions ?? 1) > 1 ? ` (${session.exercise_repetitions} repeticiones)` : ""}`}</dd></div>
     </dl>
     <p className="muted">La expresión registrada es una estimación del modelo sobre el rostro visible; no indica lo que sentías.</p>
+    {guided && <section className="card">
+      <h2>Sesión guiada</h2>
+      {guided.abstract_notice && <Callout variant="info" role="note">{guided.abstract_notice}</Callout>}
+      {conductedByMe && !["finished", "stopped"].includes(guided.phase) &&
+        <ButtonLink variant="secondary" to={paths.guidedSession(session.id)}>Continuar la sesión guiada</ButtonLink>}
+      <p className="muted">{guided.captures.length} capturas · {guided.markers.length} marcadores. Las expresiones son estimaciones del modelo; no indican lo que la persona sentía.</p>
+      {guided.captures.length > 0 && <div className="table-wrap"><table><thead><tr>
+        <th>Estímulo</th><th>Segundo</th><th>Expresión estimada</th><th>Calidad</th>
+      </tr></thead><tbody>{guided.captures.map((item) => <tr key={item.id}>
+        <td>{guided.steps[item.step_index]?.title ?? "—"}</td>
+        <td>{item.seconds_since_stimulus} s</td>
+        <td>{item.emotion ? expressionLabel(item.emotion) : <span className="muted">—</span>}</td>
+        <td>{item.quality === "good" ? "Buena" : `Marcada (${item.quality_issues.join(", ")})`}</td>
+      </tr>)}</tbody></table></div>}
+      {guided.verbal_responses.length > 0 && <dl className="answer-list">{guided.verbal_responses.map((item) => <div key={item.step_index}>
+        <dt>Dijo ver en «{guided.steps[item.step_index]?.title}»</dt><dd>{item.text}</dd>
+      </div>)}</dl>}
+    </section>}
     {hasQuestionnaires && <section className="card">
       <h2>Cuestionarios</h2>
       <p className="muted">Las respuestas se muestran tal como se dieron; no se suman ni se interpretan.</p>

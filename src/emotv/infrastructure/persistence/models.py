@@ -55,7 +55,7 @@ class SessionRecord(Base):
             name="ck_sessions_completion_timestamp",
         ),
         CheckConstraint(
-            "state <> 'completed' OR "
+            "state <> 'completed' OR protocol_id IS NOT NULL OR "
             "(initial_emotion IS NOT NULL AND exercise_result IS NOT NULL AND "
             "(exercise_result <> 'completed' OR "
             "(activity_id IS NOT NULL AND exercise_duration_seconds IS NOT NULL)))",
@@ -454,6 +454,103 @@ class ProtocolStepRecord(Base):
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    shown_before_analyzer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                        server_default=text("false"))
+
+
+class GuidedRunRecord(Base):
+    """Estado de una sesión guiada. La base neutral no se guarda: vive en memoria."""
+
+    __tablename__ = "guided_runs"
+    __table_args__ = (
+        CheckConstraint("phase IN ('confirmation', 'pre_questionnaire', 'before_analyzer', 'calibration', "
+                        "'stimuli', 'post_questionnaire', 'finished', 'stopped')", name="ck_guided_runs_phase"),
+        CheckConstraint("(phase = 'stopped') = (stop_reason IS NOT NULL)", name="ck_guided_runs_stop_reason"),
+        CheckConstraint("stop_reason IS NULL OR stop_reason IN ('participant', 'guardian', 'conductor')",
+                        name="ck_guided_runs_stop_reason_value"),
+    )
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    phase: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    step_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_capture_due: Mapped[float | None] = mapped_column(Float, nullable=True)
+    steps_log: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    calibrated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    view_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+class ExpressionCaptureRecord(Base):
+    """Captura del protocolo: expresión estimada, distribución y calidad. Nunca
+    la imagen ni datos de identidad."""
+
+    __tablename__ = "expression_captures"
+    __table_args__ = (
+        CheckConstraint("quality IN ('good', 'flagged')", name="ck_expression_captures_quality"),
+        CheckConstraint("(emotion IS NULL) = (confidence IS NULL)", name="ck_expression_captures_emotion"),
+        CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+                        name="ck_expression_captures_confidence"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    emotion_model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    emotion_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    emotion: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distribution: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    calibrated_emotion: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quality: Mapped[str] = mapped_column(String(16), nullable=False)
+    quality_issues: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    stimulus_id: Mapped[str] = mapped_column(ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False, index=True)
+    seconds_since_stimulus: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class SessionMarkerRecord(Base):
+    """Marcadores con hora de quien conduce la sesión; la nota va cifrada."""
+
+    __tablename__ = "session_markers"
+    __table_args__ = (
+        CheckConstraint("kind IN ('distracted', 'laughed', 'asked_to_stop', 'cried', 'note')",
+                        name="ck_session_markers_kind"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    note_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    step_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class VerbalResponseRecord(Base):
+    """Lo que el participante dice ver en una imagen abstracta, cifrado."""
+
+    __tablename__ = "verbal_responses"
+    __table_args__ = (UniqueConstraint("session_id", "step_index", name="uq_verbal_responses_session_step"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    stimulus_id: Mapped[str] = mapped_column(ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False)
+    text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class CommitmentAcceptanceRecord(Base):

@@ -26,6 +26,9 @@ class FaceDetection:
     width: int
     height: int
     confidence: float
+    # Centros de los ojos (x, y) que entrega YuNet; sirven para la inclinación.
+    right_eye: tuple[float, float] | None = None
+    left_eye: tuple[float, float] | None = None
 
     @property
     def bbox(self) -> tuple[int, int, int, int]:
@@ -203,6 +206,8 @@ class YuNetFaceDetector:
                     width=face_width,
                     height=face_height,
                     confidence=confidence,
+                    right_eye=(float(face[4]), float(face[5])),
+                    left_eye=(float(face[6]), float(face[7])),
                 )
             )
 

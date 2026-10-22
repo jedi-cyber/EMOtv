@@ -109,6 +109,29 @@ Cada registro y cada retiro quedan en la auditoría.
 - Se muestran tal como se dieron, sin sumarlas ni interpretarlas. La eliminación
   y la retención de un participante incluyen sus respuestas.
 
+## Sesión guiada
+
+- No empieza sin la confirmación de quien conduce la sesión: con un adulto, que
+  dio su autorización; con un niño, que su padre, madre o tutor está presente y
+  que el niño dio su asentimiento. Antes se muestra un recordatorio del
+  compromiso de confidencialidad.
+- La vista del participante se abre con un enlace propio (token aleatorio que el
+  servidor guarda solo como hash), sin cuenta y sin la navegación de la
+  aplicación; deja de valer cuando la sesión termina. Solo recibe lo que debe
+  mostrar: nunca expresiones, probabilidades, calidad ni notas.
+- Los cuadros de su cámara se analizan en memoria y se descartan. La tabla
+  `expression_captures` guarda solo la expresión estimada, la confianza, la
+  distribución, el indicador de calidad, el estímulo y el tiempo desde su
+  aparición; ninguna imagen ni dato de identidad. La base de la calibración
+  neutral vive solo en memoria.
+- Las notas de quien conduce la sesión y lo que el participante dice ver en una
+  imagen abstracta se guardan cifrados. EMOtv no interpreta esa respuesta ni la
+  relaciona con ninguna condición.
+- El participante puede pedir parar con un botón visible; si lo pide él o su
+  tutor, la sesión termina de inmediato y queda registrado quién lo pidió.
+- La eliminación y la retención de un participante incluyen su sesión guiada,
+  capturas, marcadores y respuestas.
+
 ## Imágenes
 
 Ningún endpoint, pantalla ni exportación devuelve imágenes de participantes:

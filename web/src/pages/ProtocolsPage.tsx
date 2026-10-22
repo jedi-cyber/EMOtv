@@ -58,7 +58,7 @@ export function ProtocolsPage() {
   }
   function addStep() {
     if (!choice) return;
-    update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false }] });
+    update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
   function startEditing(item: Protocol) {
@@ -146,6 +146,8 @@ export function ProtocolsPage() {
               onChange={(event) => updateStep(index, { capture_after_seconds: Number(event.target.value) })} /></label>
             {stimulus?.kind === "abstract" && <Checkbox checked={step.record_verbal_response}
               onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
+            {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
+              onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
             <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
             <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
             <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>

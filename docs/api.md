@@ -118,6 +118,42 @@ participante, solo quien lo registró inicia la sesión y el servidor exige la
 asentimiento; sin ellas, o tras un retiro, responde `409`. Un protocolo para
 niños se aplica solo aprobado y con estímulos adecuados a la edad (`409`).
 
+## Sesión guiada
+
+Orden: confirmación, cuestionario previo, imágenes abstractas marcadas "antes del
+analizador" (sin capturas), calibración neutral, estímulos del protocolo con
+capturas y, si el protocolo lo indica, cuestionario posterior. El servidor lleva
+el tiempo de cada exposición, así quien conduce y el participante pueden usar
+dispositivos distintos.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `POST` | `/guided-sessions/{session_id}` | Quien conduce una sesión en progreso con protocolo; devuelve una sola vez `view_token`, el enlace de la vista del participante |
+| `POST` | `/guided-sessions/{id}/view-link` | Reemplaza el enlace (el anterior deja de valer) |
+| `GET` | `/guided-sessions/{id}` | Quien conduce: fase, paso, tiempo restante, estado de la captura, capturas, marcadores y lo que el participante dijo ver |
+| `POST` | `/guided-sessions/{id}/confirm` | `commitment_reminder` y, con adulto, `authorization_confirmed`; con niño, `guardian_present` y `child_assent`. Sin ella, `422` y la sesión no empieza |
+| `POST` | `/guided-sessions/{id}/advance` | Continúa tras el cuestionario previo o posterior (`409` si falta responderlo) |
+| `POST` | `/guided-sessions/{id}/calibration` | Inicia la calibración neutral (solo después del cuestionario previo) |
+| `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
+| `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant`, `guardian` o `conductor`; termina de inmediato y cancela la sesión |
+| `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |
+| `POST` | `/guided-sessions/{id}/verbal-responses` | `step_index` y `text`: lo que el participante dice ver en una abstracta que lo pide, cifrado |
+| `GET` | `/sessions/{id}/guided-results` | Quien condujo y su docente (`can_access_session`); se audita |
+| `GET` | `/participant-view/{token}` | Vista del participante, sin cuenta: fase, indicación y estímulo actual. Nunca expresiones, probabilidades, calidad ni notas |
+| `GET` | `/participant-view/{token}/stimulus` | La imagen del estímulo que se muestra ahora (nunca la de un participante) |
+| `POST` | `/participant-view/{token}/frames` | Un cuadro JPEG (hasta 1 MB); se analiza en memoria y se descarta. Responde solo `{"received": true}` |
+| `POST` | `/participant-view/{token}/stop` | El participante pide parar: la sesión termina de inmediato |
+
+Antes de cada captura se revisa rostro, centrado, tamaño, iluminación e
+inclinación de la cabeza; si falla, se reintenta 3 segundos y luego se guarda
+marcada con su problema (`quality: flagged`, `quality_issues`). Un estímulo
+emocional se captura una vez; una imagen abstracta, cada 3 segundos durante la
+exposición. Cada captura (`expression_captures`) guarda el modelo local, la
+expresión estimada, la confianza, la distribución, la calidad, el estímulo y el
+tiempo desde su aparición; nunca la imagen. Las pantallas con imágenes
+abstractas muestran: "Registro descriptivo. Una sesión breve no permite sacar
+conclusiones a partir de una imagen."
+
 ## Actividades
 
 | Método | Ruta | Acceso |

@@ -297,6 +297,14 @@ class SessionService:
             emotion_model_version=model_version,
         ))
 
+    def finish_guided(self, session_id: str) -> EmotionalSession:
+        """Completa una sesión guiada: sus resultados son las capturas del protocolo."""
+        current = self._get_required(session_id)
+        if current.protocol_id is None:
+            raise ValueError("Solo una sesión con protocolo se completa sin expresión registrada")
+        self._require_state(current, SessionState.IN_PROGRESS, "completar")
+        return self.repository.save(replace(current, state=SessionState.COMPLETED, completed_at=self.clock()))
+
     def finish_without_activity(self, session_id: str) -> EmotionalSession:
         """Cierra una sesión reconocida sin actividad, conservando la expresión."""
         current = self._get_required(session_id)

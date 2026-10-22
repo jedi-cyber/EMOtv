@@ -74,6 +74,11 @@ from emotv.infrastructure.persistence.postgres_questionnaire_repositories import
     PostgresQuestionnaireResponseRepository,
 )
 from emotv.interfaces.web.questionnaire_router import create_questionnaire_router
+from emotv.application.emotion_model_catalog import EmotionModelCatalog
+from emotv.application.guided_session_service import GuidedSessionService
+from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, decode_frame
+from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
@@ -240,6 +245,33 @@ if DATABASE_URL and JWT_SECRET_KEY:
     local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
                                      model_admission.evaluate)
     app.include_router(create_model_admin_router(local_models, authentication_service, user_repository))
+
+    def resolve_guided_model() -> tuple[str, str]:
+        """Modelo local predeterminado (o su respaldo) para las capturas de una sesión guiada."""
+        choice = local_models.resolve()
+        if not choice.admitted:
+            raise RuntimeError("El modelo facial no está disponible en el servidor")
+        return choice.model_id, EmotionModelCatalog().get(choice.model_id).version
+
+    live_expression = get_live_expression_settings()
+    guided_service = None
+    if field_cipher is not None and participant_service is not None:
+        guided_service = GuidedSessionService(
+            PostgresGuidedSessionRepository(database_sessions, field_cipher), session_service,
+            protocols=protocol_service.repository.get, stimuli=stimulus_service.repository.get,
+            participants=participant_repository.get_by_id,
+            participant_ready=lambda participant: participant_service.status(participant) == "ready",
+            questionnaire_answered=questionnaire_service.answered,
+            resolve_model=resolve_guided_model,
+            # Cada cuadro se analiza en memoria con el modelo local y se descarta.
+            assess_factory=lambda model_id: GuidedFrameAnalyzer(
+                EmotionFrameAnalyzer(classifier=classifiers.get(model_id))).assess,
+            audit=audit_service, session_access=session_access,
+            calibration_seconds=live_expression.calibration_seconds,
+            calibration_min_increase=live_expression.calibration_min_increase)
+    app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
+                                            stimulus_image=stimulus_service.repository.get_image,
+                                            decode_frame=decode_frame))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -295,6 +327,7 @@ else:
     app.include_router(create_participant_router(None, None, None))
     app.include_router(create_stimulus_router(None, None, None, None))
     app.include_router(create_questionnaire_router(None, None, None))
+    app.include_router(create_guided_router(None, None, None))
 
 
 def run_retention() -> None:

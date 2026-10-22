@@ -124,6 +124,8 @@ export interface ProtocolStep {
   exposure_seconds: number;
   capture_after_seconds: number;
   record_verbal_response: boolean;
+  /** Solo imágenes abstractas: se muestran antes de la calibración, sin capturas. */
+  shown_before_analyzer: boolean;
 }
 
 export interface Protocol {
@@ -203,4 +205,65 @@ export interface QuestionnaireAnswers {
   submitted_at: string;
   questionnaire: Questionnaire;
   answers: Answers;
+}
+
+export type GuidedPhase = "confirmation" | "pre_questionnaire" | "before_analyzer" | "calibration" | "stimuli"
+  | "post_questionnaire" | "finished" | "stopped";
+export type MarkerKind = "distracted" | "laughed" | "asked_to_stop" | "cried" | "note";
+
+export interface GuidedStep {
+  index: number;
+  stimulus_id: string;
+  title: string;
+  kind: "emotional" | "abstract" | "";
+  exposure_seconds: number;
+  capture_after_seconds: number;
+  record_verbal_response: boolean;
+  shown_before_analyzer: boolean;
+}
+
+export interface GuidedCapture {
+  id: string;
+  captured_at: string;
+  step_index: number;
+  stimulus_id: string;
+  seconds_since_stimulus: number;
+  emotion: string | null;
+  confidence: number | null;
+  calibrated_emotion: string | null;
+  quality: "good" | "flagged";
+  quality_issues: string[];
+  emotion_model_id: string;
+}
+
+/** Estado para quien conduce la sesión guiada (nunca llega a la vista del participante). */
+export interface GuidedState {
+  session_id: string;
+  phase: GuidedPhase;
+  participant_kind: "adult" | "child" | null;
+  stop_reason: "participant" | "guardian" | "conductor" | null;
+  step_index: number | null;
+  step_count: number;
+  steps: GuidedStep[];
+  remaining_seconds: number | null;
+  steps_log: { step_index: number; skipped: boolean }[];
+  calibration: { state: "none" | "calibrating" | "calibrated"; progress: number; notice: string | null };
+  capture_status: string[];
+  pre_questionnaire_id: string | null;
+  post_questionnaire_id: string | null;
+  abstract_notice: string | null;
+  captures: GuidedCapture[];
+  markers: { id: string; kind: MarkerKind; occurred_at: string; step_index: number | null; note: string | null }[];
+  verbal_responses: { step_index: number; stimulus_id: string; text: string; recorded_at: string }[];
+}
+
+/** Lo único que recibe la vista del participante. */
+export interface ParticipantViewState {
+  phase: GuidedPhase;
+  message: string | null;
+  stimulus: { exposure: string } | null;
+  remaining_seconds: number | null;
+  capture_frames: boolean;
+  frame_interval_ms: number;
+  abstract_notice: string | null;
 }
