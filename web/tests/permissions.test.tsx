@@ -40,7 +40,7 @@ describe("rutas y navegación por rol", () => {
     });
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md); Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/participants", "/protocols", "/activities", "/sessions", "/consent"]);
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/participants", "/questionnaires", "/protocols", "/activities", "/sessions", "/consent"]);
     // Los usuarios usan estímulos en sus protocolos, pero no los gestionan.
     expect(navigationByRole.student.some((item) => item.to === "/stimuli")).toBe(false);
     expect(navigationByRole.psychologist.map((item) => item.to)).toEqual(expect.arrayContaining(["/protocols", "/stimuli"]));

@@ -48,6 +48,11 @@ export interface EmotionalSession {
   session_type?: SessionType;
   /** Cuenta que conduce la sesión; solo ella puede cancelarla. */
   owner_user_id?: string | null;
+  participant_id?: string | null;
+  protocol_id?: string | null;
+  /** Versiones exactas de los cuestionarios previo y posterior. */
+  pre_questionnaire_id?: string | null;
+  post_questionnaire_id?: string | null;
 }
 
 /** Modelo local que puede probar quien conduce la sesión (GET /analysis/models). */
@@ -129,6 +134,7 @@ export interface Protocol {
   description: string;
   for_children: boolean;
   pre_questionnaire_id: string | null;
+  post_questionnaire_id: string | null;
   steps: ProtocolStep[];
   created_at: string;
   approved: boolean;
@@ -156,4 +162,45 @@ export interface AuditEntry {
   resource_type: string;
   resource_id: string | null;
   result: "success" | "denied" | "failure";
+}
+
+export type QuestionKind = "scale" | "single_choice" | "multiple_choice" | "short_text" | "faces";
+
+export interface Question {
+  id: string;
+  kind: QuestionKind;
+  text: string;
+  required: boolean;
+  options: string[];
+  scale_points: number | null;
+  min_label: string | null;
+  max_label: string | null;
+}
+
+/** Cuestionario creado por quien conduce la sesión. EMOtv no lo valida ni lo puntúa. */
+export interface Questionnaire {
+  id: string;
+  family_id: string;
+  version: number;
+  title: string;
+  instructions: string;
+  questions: Question[];
+  created_at: string;
+  shared_with_group: boolean;
+  owned_by_me: boolean;
+  used: boolean;
+}
+
+export type AnswerValue = number | string | string[];
+export type Answers = Record<string, AnswerValue>;
+export type QuestionnaireMoment = "pre" | "post";
+
+/** Respuestas tal como se dieron, con la versión exacta del cuestionario. */
+export interface QuestionnaireAnswers {
+  id: string;
+  moment: QuestionnaireMoment;
+  entry_mode: "participant" | "conductor";
+  submitted_at: string;
+  questionnaire: Questionnaire;
+  answers: Answers;
 }

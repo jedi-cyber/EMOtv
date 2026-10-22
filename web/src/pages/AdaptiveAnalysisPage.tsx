@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
-import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Student } from "../api/types";
+import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Questionnaire, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { useActiveSession } from "../analysis/ActiveSessionContext";
@@ -25,10 +25,11 @@ import { Checkbox } from "../components/Checkbox";
 import { NavIcon } from "../components/NavIcon";
 import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { useConsentStatus } from "../consent/useConsentStatus";
+import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
 
-type Phase = "ready" | "live" | "result" | "exercise" | "completed";
+type Phase = "ready" | "questionnaire" | "live" | "result" | "exercise" | "completed";
 type Message = Partial<LiveReading> & {
   type: "ready" | "live" | "calibration_started" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
   emotion_model_id?: string;
@@ -77,6 +78,10 @@ export function AdaptiveAnalysisPage() {
   // vale solo para esta sesión. Sin elección ("") el servidor usa el predeterminado
   // que fijó el superadministrador (o su respaldo si perdió la admisión).
   const modelsQuery = useApiQuery<LocalModelOption[]>("/analysis/models");
+  const questionnairesQuery = useApiQuery<Questionnaire[]>("/questionnaires");
+  // Sesión propia: se puede aplicar un cuestionario antes del analizador o saltarlo.
+  const [questionnaireId, setQuestionnaireId] = useState("");
+  const [pendingQuestionnaire, setPendingQuestionnaire] = useState<Questionnaire | null>(null);
   const models = Array.isArray(modelsQuery.data) ? modelsQuery.data : [];
   const defaultModel = models.find((item) => item.is_default);
   const [modelId, setModelId] = useState("");
@@ -310,6 +315,19 @@ export function AdaptiveAnalysisPage() {
     try {
       await requireConsent();
       if (lifecycle !== lifecycleRef.current) return;
+      if (questionnaireId) {
+        created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", token,
+          body: JSON.stringify({ session_type: "propia", pre_questionnaire_id: questionnaireId }) });
+        if (lifecycle !== lifecycleRef.current) {
+          await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
+          return;
+        }
+        sessionRef.current = created; setSession(created);
+        const pending = await apiRequest<{ questionnaire: Questionnaire }>(`/sessions/${created.id}/questionnaires/pre`, { token });
+        // El cuestionario previo se responde antes de encender la cámara y calibrar.
+        setPendingQuestionnaire(pending.questionnaire); setPhase("questionnaire");
+        return;
+      }
       if (!await previewCamera()) return;
       if (lifecycle !== lifecycleRef.current) return;
       // Sesión propia: quien inicia sesión se analiza a sí mismo.
@@ -319,101 +337,7 @@ export function AdaptiveAnalysisPage() {
         return;
       }
       sessionRef.current = created; setSession(created);
-      const socket = new WebSocket(apiWebSocketUrl("/ws/activity"));
-      socket.binaryType = "arraybuffer"; socketRef.current = socket;
-      socket.onopen = () => socket.send(JSON.stringify({
-        type: "authenticate", token, session_id: created?.id, include_landmarks: includeLandmarks,
-        // Sin modelo, el servidor usa el predeterminado.
-        ...(modelId ? { emotion_model_id: modelId } : {}),
-      }));
-      socket.onmessage = (event) => {
-        awaitingFrame.current = false;
-        let result: Message;
-        try { result = JSON.parse(event.data) as Message; }
-        catch { failAnalysis("El analizador devolvió una respuesta inválida."); return; }
-        if (result.type === "error" && result.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
-        if (result.type === "error") { failAnalysis(result.message ?? "No se pudo completar el análisis."); return; }
-        if (result.type === "cancelled") {
-          releaseMedia(); setPreviewing(false); setSession(null); sessionRef.current = null; setPhase("ready"); setLive(null);
-          if (result.recognition_kept) setNotice("Actividad cancelada. Tu expresión quedó registrada.");
-          return;
-        }
-        if (result.type === "live") {
-          // Lectura momentánea: solo se muestra; no se acumula ni se persiste.
-          setLive({
-            face_detected: Boolean(result.face_detected), emotion: result.emotion ?? null,
-            emotion_confidence: result.emotion_confidence ?? null, distribution: result.distribution ?? [],
-            calibration: result.calibration ?? NO_CALIBRATION,
-            stable_seconds: result.stable_seconds ?? 0, required_stable_seconds: result.required_stable_seconds ?? 1,
-            can_confirm: Boolean(result.can_confirm), blocked_reason: result.blocked_reason ?? null,
-          });
-          return;
-        }
-        if (result.type === "calibration_started") {
-          setLive((current) => current && { ...current, calibration: { ...NO_CALIBRATION, state: "calibrating" } });
-          return;
-        }
-        if (result.type === "confirm_rejected") {
-          setConfirming(false); setConfirmNotice(result.message ?? "Todavía no se puede registrar la expresión.");
-          return;
-        }
-        setMessage(result.message ?? "Procesando…");
-        if (result.type !== "status" && result.emotion) setEmotion(result.emotion);
-        if (result.type !== "status" && result.emotion_confidence != null) setConfidence(result.emotion_confidence);
-        if (result.type === "ready") { setActiveModel(result.emotion_model_id ?? null); setPhase("live"); resumeFrames(); }
-        else if (result.type === "recognized") {
-          // El servidor responde con la expresión que realmente registró.
-          pauseFrames(); setConfirming(false); setConfirmNotice(""); setLive(null); setPhase("result");
-        } else if (result.type === "recommendation") {
-          setExpressionInfo(result.expression ?? null);
-          if (result.notice) setNotice(result.notice);
-          setSelectingActivity(false);
-          setShowAlternatives(false);
-          setRecommendation(result.activity ?? null);
-          setAvailableActivities(result.activities ?? []);
-          setSelectedActivityId(result.activity?.id ?? result.activities?.[0]?.id ?? "");
-        } else if (result.type === "activity_started") {
-          setActivity(result.activity ?? null); setPhase("exercise"); setSelectingActivity(false); resumeFrames();
-          const firstStep = result.activity?.steps?.[0];
-          const repetitions = result.activity?.repetitions ?? 1;
-          const total = (result.activity?.steps?.length ?? 1) * repetitions;
-          setCurrentStep(firstStep ?? null);
-          setStepNumber(0);
-          setStepCount(total);
-          setRepetitionCount(repetitions);
-          setStepRemaining(firstStep?.duration_seconds ?? result.activity?.duration_seconds ?? null);
-          announcedStepRef.current = 0;
-          if (voiceEnabled && result.activity) {
-            if (firstStep) announceStep(firstStep, 0, total, repetitions);
-            else speakExercise(result.activity);
-          }
-        } else if (result.type === "completed") {
-          if (restartAfterFinishRef.current) {
-            // "Analizar otra expresión": esta sesión ya quedó cerrada como omitida; se inicia otra.
-            restartAfterFinishRef.current = false; completedRef.current = true; analyzeAgain(); return;
-          }
-          setOutcome(result.exercise_result ?? null);
-          setProgress(result.exercise_result === "completed" ? 1 : 0); setPhase("completed"); completedRef.current = true;
-          releaseMedia(); setPreviewing(false);
-        } else if (result.type === "status") {
-          setProgress(result.progress ?? 0); drawLandmarks(result.landmarks);
-          if (result.step && result.step_index != null) {
-            const repetitions = result.repetition_count ?? 1;
-            setCurrentStep(result.step); setStepNumber(result.step_index);
-            setStepCount(result.step_count ?? 1);
-            setRepetitionCount(repetitions);
-            setStepRemaining(result.step_remaining_seconds ?? result.step.duration_seconds);
-            if (voiceEnabled && result.step_index !== announcedStepRef.current) {
-              announcedStepRef.current = result.step_index;
-              announceStep(result.step, result.step_index, result.step_count ?? 1, repetitions);
-            }
-          }
-        }
-      };
-      socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Comprueba tu conexión y vuelve a intentarlo.");
-      socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
-        ? expireAnalysis()
-        : failAnalysis("Se perdió la conexión con el analizador. La cámara se apagó.");
+      openSocket(created);
     } catch (reason) {
       if (lifecycle !== lifecycleRef.current) {
         if (created) await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
@@ -426,6 +350,125 @@ export function AdaptiveAnalysisPage() {
       }
       setError(reason instanceof ApiError ? reason.message : reason instanceof Error ? reason.message : "No se pudo iniciar el análisis.");
     } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
+  }
+
+  async function continueAfterQuestionnaire() {
+    const created = sessionRef.current;
+    const lifecycle = lifecycleRef.current;
+    setPendingQuestionnaire(null);
+    if (!created) { setPhase("ready"); return; }
+    setStarting(true); setError("");
+    try {
+      if (!await previewCamera()) {
+        await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
+        sessionRef.current = null; setSession(null); setPhase("ready");
+        return;
+      }
+      if (lifecycle !== lifecycleRef.current) return;
+      openSocket(created);
+    } catch (reason) {
+      await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
+      sessionRef.current = null; setSession(null); releaseMedia(); setPreviewing(false); setPhase("ready");
+      setError(reason instanceof Error ? reason.message : "No se pudo iniciar el análisis.");
+    } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
+  }
+
+  function openSocket(created: EmotionalSession) {
+    const socket = new WebSocket(apiWebSocketUrl("/ws/activity"));
+    socket.binaryType = "arraybuffer"; socketRef.current = socket;
+    socket.onopen = () => socket.send(JSON.stringify({
+      type: "authenticate", token, session_id: created?.id, include_landmarks: includeLandmarks,
+      // Sin modelo, el servidor usa el predeterminado.
+      ...(modelId ? { emotion_model_id: modelId } : {}),
+    }));
+    socket.onmessage = (event) => {
+      awaitingFrame.current = false;
+      let result: Message;
+      try { result = JSON.parse(event.data) as Message; }
+      catch { failAnalysis("El analizador devolvió una respuesta inválida."); return; }
+      if (result.type === "error" && result.code === SESSION_EXPIRED_CLOSE_CODE) { expireAnalysis(); return; }
+      if (result.type === "error") { failAnalysis(result.message ?? "No se pudo completar el análisis."); return; }
+      if (result.type === "cancelled") {
+        releaseMedia(); setPreviewing(false); setSession(null); sessionRef.current = null; setPhase("ready"); setLive(null);
+        if (result.recognition_kept) setNotice("Actividad cancelada. Tu expresión quedó registrada.");
+        return;
+      }
+      if (result.type === "live") {
+        // Lectura momentánea: solo se muestra; no se acumula ni se persiste.
+        setLive({
+          face_detected: Boolean(result.face_detected), emotion: result.emotion ?? null,
+          emotion_confidence: result.emotion_confidence ?? null, distribution: result.distribution ?? [],
+          calibration: result.calibration ?? NO_CALIBRATION,
+          stable_seconds: result.stable_seconds ?? 0, required_stable_seconds: result.required_stable_seconds ?? 1,
+          can_confirm: Boolean(result.can_confirm), blocked_reason: result.blocked_reason ?? null,
+        });
+        return;
+      }
+      if (result.type === "calibration_started") {
+        setLive((current) => current && { ...current, calibration: { ...NO_CALIBRATION, state: "calibrating" } });
+        return;
+      }
+      if (result.type === "confirm_rejected") {
+        setConfirming(false); setConfirmNotice(result.message ?? "Todavía no se puede registrar la expresión.");
+        return;
+      }
+      setMessage(result.message ?? "Procesando…");
+      if (result.type !== "status" && result.emotion) setEmotion(result.emotion);
+      if (result.type !== "status" && result.emotion_confidence != null) setConfidence(result.emotion_confidence);
+      if (result.type === "ready") { setActiveModel(result.emotion_model_id ?? null); setPhase("live"); resumeFrames(); }
+      else if (result.type === "recognized") {
+        // El servidor responde con la expresión que realmente registró.
+        pauseFrames(); setConfirming(false); setConfirmNotice(""); setLive(null); setPhase("result");
+      } else if (result.type === "recommendation") {
+        setExpressionInfo(result.expression ?? null);
+        if (result.notice) setNotice(result.notice);
+        setSelectingActivity(false);
+        setShowAlternatives(false);
+        setRecommendation(result.activity ?? null);
+        setAvailableActivities(result.activities ?? []);
+        setSelectedActivityId(result.activity?.id ?? result.activities?.[0]?.id ?? "");
+      } else if (result.type === "activity_started") {
+        setActivity(result.activity ?? null); setPhase("exercise"); setSelectingActivity(false); resumeFrames();
+        const firstStep = result.activity?.steps?.[0];
+        const repetitions = result.activity?.repetitions ?? 1;
+        const total = (result.activity?.steps?.length ?? 1) * repetitions;
+        setCurrentStep(firstStep ?? null);
+        setStepNumber(0);
+        setStepCount(total);
+        setRepetitionCount(repetitions);
+        setStepRemaining(firstStep?.duration_seconds ?? result.activity?.duration_seconds ?? null);
+        announcedStepRef.current = 0;
+        if (voiceEnabled && result.activity) {
+          if (firstStep) announceStep(firstStep, 0, total, repetitions);
+          else speakExercise(result.activity);
+        }
+      } else if (result.type === "completed") {
+        if (restartAfterFinishRef.current) {
+          // "Analizar otra expresión": esta sesión ya quedó cerrada como omitida; se inicia otra.
+          restartAfterFinishRef.current = false; completedRef.current = true; analyzeAgain(); return;
+        }
+        setOutcome(result.exercise_result ?? null);
+        setProgress(result.exercise_result === "completed" ? 1 : 0); setPhase("completed"); completedRef.current = true;
+        releaseMedia(); setPreviewing(false);
+      } else if (result.type === "status") {
+        setProgress(result.progress ?? 0); drawLandmarks(result.landmarks);
+        if (result.step && result.step_index != null) {
+          const repetitions = result.repetition_count ?? 1;
+          setCurrentStep(result.step); setStepNumber(result.step_index);
+          setStepCount(result.step_count ?? 1);
+          setRepetitionCount(repetitions);
+          setStepRemaining(result.step_remaining_seconds ?? result.step.duration_seconds);
+          if (voiceEnabled && result.step_index !== announcedStepRef.current) {
+            announcedStepRef.current = result.step_index;
+            announceStep(result.step, result.step_index, result.step_count ?? 1, repetitions);
+          }
+        }
+      }
+    };
+    socket.onerror = () => failAnalysis("No se pudo conectar con el analizador. Comprueba tu conexión y vuelve a intentarlo.");
+    socket.onclose = (event) => event?.code === SESSION_EXPIRED_CLOSE_CODE
+      ? expireAnalysis()
+      : failAnalysis("Se perdió la conexión con el analizador. La cámara se apagó.");
   }
 
   function chooseActivity(activityId = selectedActivityId) {
@@ -574,6 +617,13 @@ export function AdaptiveAnalysisPage() {
             <p id="adaptive-model-help" className="muted">Puedes probar otro modelo local. La elección vale solo para esta sesión.</p>
             {selectedModel?.reasons && selectedModel.reasons.length > 0 && <Callout variant={selectedModel.state === "BLOCKED" ? "error" : "warning"}>{selectedModel.state === "BLOCKED" ? "Modelo no disponible" : "Modelo con advertencias"}: {selectedModel.reasons.join("; ")}</Callout>}
           </>}
+          <label htmlFor="adaptive-questionnaire">Cuestionario antes del análisis</label>
+          <select id="adaptive-questionnaire" value={questionnaireId} aria-describedby="adaptive-questionnaire-help"
+            onChange={(event) => setQuestionnaireId(event.target.value)}>
+            <option value="">Sin cuestionario</option>
+            {(questionnairesQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select>
+          <p id="adaptive-questionnaire-help" className="muted">Es opcional. Si eliges uno, se responde antes de encender la cámara.</p>
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
           <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0} aria-describedby="start-help" onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
@@ -581,7 +631,13 @@ export function AdaptiveAnalysisPage() {
             ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
             : "Todo listo. La cámara se usará solo mientras dure el análisis."}</p>
         </>}
-        {phase !== "ready" && <>
+        {phase === "questionnaire" && session && pendingQuestionnaire && <>
+          <p className="step-caption">Antes del análisis · Cuestionario</p>
+          <SessionQuestionnaire sessionId={session.id} moment="pre" questionnaire={pendingQuestionnaire}
+            onDone={() => { void continueAfterQuestionnaire(); }} />
+          <Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar sesión</Button>
+        </>}
+        {phase !== "ready" && phase !== "questionnaire" && <>
           <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
           {phase === "live" && activeModel && <p className="muted">Modelo facial: {emotionModelName(activeModel)}</p>}

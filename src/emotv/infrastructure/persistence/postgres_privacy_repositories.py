@@ -20,6 +20,7 @@ from emotv.infrastructure.persistence.models import (
     ParticipantAuthorizationRecord,
     ParticipantDeletionRecord,
     ParticipantRecord,
+    QuestionnaireResponseRecord,
     SessionRecord,
 )
 from emotv.shared.security.field_encryption import FieldCipher
@@ -29,6 +30,7 @@ from emotv.shared.security.field_encryption import FieldCipher
 # reportes) se agrega aquí para que la retención y la eliminación la incluyan.
 PARTICIPANT_LINKED_RECORDS = (
     ("authorizations", ParticipantAuthorizationRecord, ParticipantAuthorizationRecord.participant_id),
+    ("questionnaire_responses", QuestionnaireResponseRecord, QuestionnaireResponseRecord.participant_id),
     ("sessions", SessionRecord, SessionRecord.participant_id),
 )
 

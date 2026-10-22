@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
 from emotv.application.ports.practice_repositories import ProtocolRepository
+from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
 from emotv.domain.participant import Participant, ParticipantKind
@@ -25,7 +26,6 @@ from emotv.domain.user import User
 RESOURCE = "protocol"
 DocenteOf = Callable[[str], str | None]
 GroupUserIds = Callable[[str], Iterable[str]]
-QuestionnaireExists = Callable[[User, str], bool]
 
 
 class ProtocolNotFound(LookupError):
@@ -43,6 +43,7 @@ class ProtocolDraft:
     for_children: bool
     steps: tuple[ProtocolStep, ...]
     pre_questionnaire_id: str | None = None
+    post_questionnaire_id: str | None = None
 
 
 class ProtocolService:
@@ -53,7 +54,7 @@ class ProtocolService:
         audit: AuditService,
         docente_of: DocenteOf,
         group_user_ids: GroupUserIds,
-        questionnaire_exists: QuestionnaireExists | None = None,
+        questionnaires: QuestionnaireService | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.repository = repository
@@ -61,8 +62,8 @@ class ProtocolService:
         self.audit = audit
         self.docente_of = docente_of
         self.group_user_ids = group_user_ids
-        # Sin módulo de cuestionarios (P6A) no se acepta ningún cuestionario previo.
-        self.questionnaire_exists = questionnaire_exists
+        # Sin cuestionarios configurados no se acepta ninguno.
+        self.questionnaires = questionnaires
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     # --- Acceso --------------------------------------------------------------
@@ -106,9 +107,15 @@ class ProtocolService:
     # --- Armado y versiones --------------------------------------------------
 
     def _validate(self, user: User, draft: ProtocolDraft) -> None:
-        if draft.pre_questionnaire_id is not None and (
-                self.questionnaire_exists is None or not self.questionnaire_exists(user, draft.pre_questionnaire_id)):
-            raise ValueError("El cuestionario previo indicado no existe o no está disponible")
+        for questionnaire_id in (draft.pre_questionnaire_id, draft.post_questionnaire_id):
+            if questionnaire_id is None:
+                continue
+            try:
+                if self.questionnaires is None:
+                    raise QuestionnaireNotFound(questionnaire_id)
+                self.questionnaires.get(user, questionnaire_id)
+            except QuestionnaireNotFound as error:
+                raise ValueError("Un cuestionario indicado no existe o no está disponible") from error
         for step in draft.steps:
             try:
                 stimulus = self.stimuli.get(user, step.stimulus_id)
@@ -128,7 +135,8 @@ class ProtocolService:
         protocol = self.repository.add(Protocol(
             id=family, family_id=family, version=1, owner_user_id=user.id, name=draft.name,
             description=draft.description, for_children=draft.for_children, created_at=self.clock(),
-            steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id))
+            steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
+            post_questionnaire_id=draft.post_questionnaire_id))
         self.audit.record(user, AuditAction.CREATE, RESOURCE, protocol.id)
         return protocol
 
@@ -144,6 +152,7 @@ class ProtocolService:
         self._validate(user, draft)
         fields = dict(name=draft.name, description=draft.description, for_children=draft.for_children,
                       steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
+                      post_questionnaire_id=draft.post_questionnaire_id,
                       approved_at=None, approved_by_user_id=None)
         if self.repository.is_used(current.id):
             now = self.clock()

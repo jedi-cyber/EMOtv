@@ -91,6 +91,24 @@ Cada registro y cada retiro quedan en la auditoría.
   versión nueva, que vuelve a pedir aprobación. La sesión conserva la versión
   que aplicó.
 
+## Cuestionarios
+
+- Los crea quien conduce la sesión (usuario o docente); el docente puede
+  compartir uno suyo con su grupo como plantilla, que los usuarios copian y
+  modifican. EMOtv no los valida como instrumento, no calcula puntajes ni
+  interpreta respuestas; una nota fija bajo cada cuestionario lo dice.
+- Un cuestionario usado en una sesión no se edita: se crea una versión nueva.
+  Cada respuesta queda asociada a la versión exacta que se respondió.
+- El previo se responde antes de iniciar el analizador (el servidor no permite
+  la calibración sin él); el posterior, si lo hay, al terminar. Responde quien
+  participa en la vista de participante, o quien conduce la sesión registra las
+  respuestas a mano; queda anotado cuál de las dos.
+- Las respuestas se guardan **cifradas** con `SENSITIVE_DATA_KEY`. Las ven quien
+  condujo la sesión y su docente, nunca los administradores; cada consulta, y
+  cada acceso denegado, queda en la auditoría sin el contenido.
+- Se muestran tal como se dieron, sin sumarlas ni interpretarlas. La eliminación
+  y la retención de un participante incluyen sus respuestas.
+
 ## Imágenes
 
 Ningún endpoint, pantalla ni exportación devuelve imágenes de participantes:

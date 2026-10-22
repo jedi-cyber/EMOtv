@@ -90,6 +90,8 @@ class PostgresSessionRepository:
             owner_user_id=session.owner_user_id,
             participant_id=session.participant_id,
             protocol_id=session.protocol_id,
+            pre_questionnaire_id=session.pre_questionnaire_id,
+            post_questionnaire_id=session.post_questionnaire_id,
         )
 
     @staticmethod
@@ -116,6 +118,8 @@ class PostgresSessionRepository:
         record.owner_user_id = session.owner_user_id
         record.participant_id = session.participant_id
         record.protocol_id = session.protocol_id
+        record.pre_questionnaire_id = session.pre_questionnaire_id
+        record.post_questionnaire_id = session.post_questionnaire_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -148,6 +152,8 @@ class PostgresSessionRepository:
             owner_user_id=record.owner_user_id,
             participant_id=record.participant_id,
             protocol_id=record.protocol_id,
+            pre_questionnaire_id=record.pre_questionnaire_id,
+            post_questionnaire_id=record.post_questionnaire_id,
         )
 
     @staticmethod

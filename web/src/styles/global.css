@@ -153,6 +153,25 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .stimulus-thumb-empty { display: grid; place-items: center; font-size: var(--text-caption); }
 .protocol-step { align-items: flex-start; flex-wrap: wrap; }
 .protocol-step input[type="number"] { width: 6rem; }
+.questionnaire-form { display: grid; gap: var(--space-md); }
+.questionnaire-form .question { display: grid; gap: var(--space-sm); margin: 0; padding: 0; border: 0; }
+.questionnaire-form legend { padding: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }
+.questionnaire-form-large { font-size: var(--text-card-title); }
+.required-mark { color: var(--color-slate); font-weight: var(--weight-regular); }
+.questionnaire-note { margin: 0; font-size: var(--text-caption); }
+.faces-options, .scale-options { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.face-option, .scale-option { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: var(--space-xs); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); color: var(--color-ink); cursor: pointer; position: relative; }
+.face-option input, .scale-option input { position: absolute; opacity: 0; pointer-events: none; }
+.face-option:focus-within, .scale-option:focus-within { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.face-option-selected, .scale-option:has(input:checked) { border: 2px solid var(--color-primary); background: var(--color-primary-soft); }
+.scale-ends { display: flex; justify-content: space-between; gap: var(--space-md); color: var(--color-slate); font-size: var(--text-body-sm); }
+.choice-options { display: grid; gap: var(--space-xs); }
+.question-editor { display: grid; gap: var(--space-sm); }
+.answer-list { display: grid; gap: var(--space-sm); margin: var(--space-sm) 0; }
+.answer-list dt { color: var(--color-slate); font-size: var(--text-body-sm); }
+.answer-list dd { margin: 0; }
+.answer-face { display: inline-flex; align-items: center; gap: var(--space-sm); }
+.session-answers + .session-answers { border-top: 1px solid var(--color-hairline); padding-top: var(--space-md); }
 .row-card-link { margin-left: calc(-1 * var(--space-sm)); }
 .metadata { display: flex; flex-wrap: wrap; gap: var(--space-lg); width: 100%; margin: var(--space-xs) 0; }
 .metadata div { display: grid; gap: 2px; }

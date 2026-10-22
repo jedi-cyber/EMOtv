@@ -14,6 +14,7 @@ from emotv.interfaces.web.auth_router import create_current_user_dependency
 from emotv.application.commitment_service import CommitmentRequired, CommitmentService
 from emotv.application.participant_service import ParticipantNotFound, ParticipantService, SessionNotAllowed
 from emotv.application.protocol_service import ProtocolNotFound, ProtocolService, ProtocolUnavailable
+from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.domain import ParticipantKind
 
 
@@ -34,6 +35,10 @@ class CreateSessionRequest(BaseModel):
     participant_id: str | None = None
     # Versión del protocolo que se aplica, si lo hay.
     protocol_id: str | None = None
+    # Sin protocolo, quien conduce elige un cuestionario previo (o lo salta) y,
+    # si quiere, uno posterior. Con protocolo rigen los del protocolo.
+    pre_questionnaire_id: str | None = None
+    post_questionnaire_id: str | None = None
 
 
 class SessionResponse(BaseModel):
@@ -58,6 +63,8 @@ class SessionResponse(BaseModel):
     owner_user_id: str | None = None
     participant_id: str | None = None
     protocol_id: str | None = None
+    pre_questionnaire_id: str | None = None
+    post_questionnaire_id: str | None = None
 
     @classmethod
     def from_domain(cls, session: EmotionalSession) -> "SessionResponse":
@@ -78,7 +85,9 @@ class SessionResponse(BaseModel):
                    session_type=SessionType(session.session_type).value,
                    owner_user_id=session.owner_user_id,
                    participant_id=session.participant_id,
-                   protocol_id=session.protocol_id)
+                   protocol_id=session.protocol_id,
+                   pre_questionnaire_id=session.pre_questionnaire_id,
+                   post_questionnaire_id=session.post_questionnaire_id)
 
 
 def create_session_router(
@@ -92,6 +101,7 @@ def create_session_router(
     commitments: CommitmentService | None = None,
     participants: ParticipantService | None = None,
     protocols: ProtocolService | None = None,
+    questionnaires: QuestionnaireService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/sessions", tags=["sessions"])
     policy = authorization or AuthorizationService()
@@ -145,10 +155,21 @@ def create_session_router(
                 participant = participants.require_session(user, request.participant_id)
                 if participant.kind is not expected_kind:
                     raise HTTPException(status_code=422, detail="El tipo de sesión no coincide con la edad del participante")
+            questionnaire_ids = (request.pre_questionnaire_id, request.post_questionnaire_id)
             if request.protocol_id is not None:
                 if protocols is None:
                     raise HTTPException(status_code=503, detail="Los protocolos no están configurados")
-                protocols.require_usable(user, request.protocol_id, participant)
+                if any(questionnaire_ids):
+                    raise HTTPException(status_code=422, detail="Con protocolo rigen sus cuestionarios")
+                protocol = protocols.require_usable(user, request.protocol_id, participant)
+                questionnaire_ids = (protocol.pre_questionnaire_id, protocol.post_questionnaire_id)
+            if any(questionnaire_ids):
+                if questionnaires is None or questionnaires.responses is None:
+                    raise HTTPException(status_code=503, detail="Los cuestionarios no están disponibles: falta la "
+                                                                "clave de cifrado de datos sensibles")
+                # Se aplica la versión vigente; la sesión guarda esa versión exacta.
+                questionnaire_ids = tuple(questionnaires.current_for(user, item).id if item else None
+                                          for item in questionnaire_ids)
             session = service.start_session(
                 student_id=resource_id,
                 activity_id=request.activity_id,
@@ -156,13 +177,15 @@ def create_session_router(
                 owner_user_id=user.id,
                 participant_id=participant.id if participant else None,
                 protocol_id=request.protocol_id,
+                pre_questionnaire_id=questionnaire_ids[0],
+                post_questionnaire_id=questionnaire_ids[1],
             )
             if participant is not None and participants is not None:
                 participants.record_session_start(user, session.id)
         except CommitmentRequired as error:
             raise HTTPException(status_code=428, detail=str(error)) from error
-        except (ParticipantNotFound, ProtocolNotFound) as error:
-            raise HTTPException(status_code=404, detail="Participante o protocolo no encontrado") from error
+        except (ParticipantNotFound, ProtocolNotFound, QuestionnaireNotFound) as error:
+            raise HTTPException(status_code=404, detail="Participante, protocolo o cuestionario no encontrado") from error
         except (SessionNotAllowed, ProtocolUnavailable) as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except KeyError as error:

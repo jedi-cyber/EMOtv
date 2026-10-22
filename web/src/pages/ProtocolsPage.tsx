@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { apiRequest } from "../api/http";
-import type { Protocol, ProtocolStep, Stimulus } from "../api/types";
+import type { Protocol, ProtocolStep, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button } from "../components/Button";
@@ -17,9 +17,11 @@ interface Draft {
   description: string;
   for_children: boolean;
   steps: ProtocolStep[];
+  pre_questionnaire_id: string;
+  post_questionnaire_id: string;
 }
 
-const emptyDraft: Draft = { name: "", description: "", for_children: false, steps: [] };
+const emptyDraft: Draft = { name: "", description: "", for_children: false, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
 
 function suitableForChildren(item: Stimulus) {
   return item.active && item.approved && item.intensity === "mild";
@@ -31,6 +33,8 @@ export function ProtocolsPage() {
   const isDocente = user?.role === "psychologist";
   const query = useApiQuery<Protocol[]>("/protocols");
   const stimuliQuery = useApiQuery<Stimulus[]>("/stimuli");
+  const questionnairesQuery = useApiQuery<Questionnaire[]>("/questionnaires");
+  const questionnaires = questionnairesQuery.data ?? [];
   const protocols = query.data ?? [];
   const stimuli = stimuliQuery.data ?? [];
   const byId = new Map(stimuli.map((item) => [item.id, item]));
@@ -59,7 +63,8 @@ export function ProtocolsPage() {
   }
   function startEditing(item: Protocol) {
     setEditing(item);
-    setDraft({ name: item.name, description: item.description, for_children: item.for_children, steps: item.steps });
+    setDraft({ name: item.name, description: item.description, for_children: item.for_children, steps: item.steps,
+      pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" });
     setMessage(""); setError("");
   }
   function reset() { setEditing(null); setDraft(emptyDraft); }
@@ -69,7 +74,8 @@ export function ProtocolsPage() {
     setBusy(true); setError(""); setMessage("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
-        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, pre_questionnaire_id: null }),
+        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, pre_questionnaire_id: draft.pre_questionnaire_id || null,
+          post_questionnaire_id: draft.post_questionnaire_id || null }),
       });
       setMessage(editing && saved.id !== editing.id
         ? `Se creó la versión ${saved.version}: la anterior ya se usó en una sesión y se conserva sin cambios.`
@@ -110,7 +116,17 @@ export function ProtocolsPage() {
       <Checkbox checked={draft.for_children} onChange={(event) => update({ for_children: event.target.checked })}>
         Para usar con niños (solo estímulos leves y aprobados; requiere la aprobación del docente)
       </Checkbox>
-      <p className="muted">Cuestionario previo: estará disponible cuando se agreguen los cuestionarios.</p>
+      <div className="inline-actions">
+        <label>Cuestionario previo (opcional)<select value={draft.pre_questionnaire_id} onChange={(event) => update({ pre_questionnaire_id: event.target.value })}>
+          <option value="">Sin cuestionario</option>
+          {questionnaires.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select></label>
+        <label>Cuestionario posterior (opcional)<select value={draft.post_questionnaire_id} onChange={(event) => update({ post_questionnaire_id: event.target.value })}>
+          <option value="">Sin cuestionario</option>
+          {questionnaires.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select></label>
+      </div>
+      <p className="muted">El previo se responde antes de iniciar el analizador; el posterior, al terminar. Se aplica la versión vigente de cada cuestionario.</p>
 
       <h3>Estímulos en orden</h3>
       {draft.steps.length === 0 && <p className="muted">Agrega al menos un estímulo.</p>}

@@ -15,6 +15,7 @@ Tablas con datos vinculados a un usuario o estudiante:
 - participants registrados por la cuenta, sus participant_authorizations y
   commitment_acceptances;
 - protocols armados por la cuenta y sus protocol_steps;
+- questionnaires de la cuenta y questionnaire_responses de sus sesiones;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
@@ -50,6 +51,8 @@ from emotv.infrastructure.persistence.models import (
     ProtocolRecord,
     ProtocolStepRecord,
     PsychologistAssignmentRecord,
+    QuestionnaireRecord,
+    QuestionnaireResponseRecord,
     SessionRecord,
     StudentRecord,
     UserRecord,
@@ -66,8 +69,9 @@ REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
 # Orden de borrado: primero las filas que dependen de otras.
-TABLES = ("chat_messages", "chat_conversations", "sessions", "participant_authorizations", "participants",
-          "protocol_steps", "protocols", "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
+TABLES = ("chat_messages", "chat_conversations", "questionnaire_responses", "sessions",
+          "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
+          "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
 
 BACKUP_WARNING = (
@@ -297,11 +301,13 @@ _NO_SYNC = {"synchronize_session": False}
 _MODELS = {
     "chat_messages": ChatMessageRecord,
     "chat_conversations": ChatConversationRecord,
+    "questionnaire_responses": QuestionnaireResponseRecord,
     "sessions": SessionRecord,
     "participant_authorizations": ParticipantAuthorizationRecord,
     "participants": ParticipantRecord,
     "protocol_steps": ProtocolStepRecord,
     "protocols": ProtocolRecord,
+    "questionnaires": QuestionnaireRecord,
     "commitment_acceptances": CommitmentAcceptanceRecord,
     "psychologist_assignments": PsychologistAssignmentRecord,
     "consents": ConsentRecordModel,
@@ -316,16 +322,19 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
     conversations = select(ChatConversationRecord.id).where(ChatConversationRecord.user_id == account.user_id)
     participants = select(ParticipantRecord.id).where(ParticipantRecord.registered_by_user_id == account.user_id)
     protocols = select(ProtocolRecord.id).where(ProtocolRecord.owner_user_id == account.user_id)
+    sessions = or_(SessionRecord.student_id == student if student else false(),
+                   SessionRecord.owner_user_id == account.user_id,
+                   SessionRecord.participant_id.in_(participants))
     return {
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
         "chat_conversations": ChatConversationRecord.user_id == account.user_id,
-        "sessions": or_(SessionRecord.student_id == student if student else false(),
-                        SessionRecord.owner_user_id == account.user_id,
-                        SessionRecord.participant_id.in_(participants)),
+        "questionnaire_responses": QuestionnaireResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "sessions": sessions,
         "participant_authorizations": ParticipantAuthorizationRecord.participant_id.in_(participants),
         "participants": ParticipantRecord.registered_by_user_id == account.user_id,
         "protocol_steps": ProtocolStepRecord.protocol_id.in_(protocols),
         "protocols": ProtocolRecord.owner_user_id == account.user_id,
+        "questionnaires": QuestionnaireRecord.owner_user_id == account.user_id,
         "commitment_acceptances": CommitmentAcceptanceRecord.user_id == account.user_id,
         "psychologist_assignments": or_(
             PsychologistAssignmentRecord.student_id == student if student else false(),

@@ -180,6 +180,7 @@ class PostgresProtocolRepository:
         row.description = item.description
         row.for_children = item.for_children
         row.pre_questionnaire_id = item.pre_questionnaire_id
+        row.post_questionnaire_id = item.post_questionnaire_id
         row.created_at = item.created_at
         row.approved_at = item.approved_at
         row.approved_by_user_id = item.approved_by_user_id
@@ -200,6 +201,7 @@ class PostgresProtocolRepository:
             id=row.id, family_id=row.family_id, version=row.version, owner_user_id=row.owner_user_id,
             name=row.name, description=row.description, for_children=row.for_children,
             created_at=_aware(row.created_at), pre_questionnaire_id=row.pre_questionnaire_id,
+            post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
             superseded_at=_aware(row.superseded_at),
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,

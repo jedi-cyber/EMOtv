@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from emotv.application import AuthenticationService, IdentityRegistrationService, SessionService
+from emotv.application import ActivityCatalog, AuthenticationService, IdentityRegistrationService, SessionService
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.commitment_service import CommitmentService, load_text
@@ -36,6 +36,13 @@ from emotv.infrastructure.persistence import (
     PostgresUserRepository,
 )
 from emotv.application.protocol_service import ProtocolService
+from emotv.application.questionnaire_service import QuestionnaireService
+from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
+    PostgresQuestionnaireRepository,
+    PostgresQuestionnaireResponseRepository,
+)
+from emotv.interfaces.web.questionnaire_router import create_questionnaire_router
+from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresAuthorizationRepository,
@@ -117,8 +124,16 @@ def env():
                                       authorizations=PostgresAuthorizationRepository(factory))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
     stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
+    def session_access(user, session):
+        actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        return authorization.can_access_session(user, session, actor_student_id=actor.id if actor else None)
+
+    questionnaires = QuestionnaireService(
+        PostgresQuestionnaireRepository(factory), audit, docente_of,
+        responses=PostgresQuestionnaireResponseRepository(factory, FieldCipher([KEY])),
+        sessions=sessions.get_session, session_access=session_access, clock=clock)
     protocols = ProtocolService(PostgresProtocolRepository(factory), stimuli, audit, docente_of, group_user_ids,
-                                clock=clock)
+                                questionnaires=questionnaires, clock=clock)
     app = FastAPI()
     app.include_router(create_auth_router(auth, users))
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,
@@ -127,11 +142,16 @@ def env():
     app.include_router(create_participant_router(participants, auth, users))
     app.include_router(create_session_router(sessions, auth, users, students, authorization=authorization,
                                              assignments=assignments, commitments=commitments,
-                                             participants=participants, protocols=protocols))
+                                             participants=participants, protocols=protocols,
+                                             questionnaires=questionnaires))
     app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
+    app.include_router(create_questionnaire_router(questionnaires, auth, users))
+    app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
+                                              authorization=authorization,
+                                              questionnaire_ready=questionnaires.pre_completed))
     e.audit, e.commitments, e.participants, e.sessions = audit, commitments, participants, sessions
     e.participant_repository, e.authorization = participant_repository, authorization
-    e.stimuli, e.protocols = stimuli, protocols
+    e.stimuli, e.protocols, e.questionnaires = stimuli, protocols, questionnaires
     with TestClient(app) as client:
         e.client = client
         yield e
@@ -407,7 +427,7 @@ def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(en
     assert response.status_code == 200
     certificate = response.json()
     assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
-    assert certificate["counts"] == {"authorizations": 0, "sessions": 1, "participants": 1}
+    assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "sessions": 1, "participants": 1}
     with env.factory() as db:
         assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
         assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0

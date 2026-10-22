@@ -66,6 +66,8 @@ class SessionService:
         owner_user_id: str | None = None,
         participant_id: str | None = None,
         protocol_id: str | None = None,
+        pre_questionnaire_id: str | None = None,
+        post_questionnaire_id: str | None = None,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada.
 
@@ -84,6 +86,8 @@ class SessionService:
                 owner_user_id=owner_user_id,
                 participant_id=participant_id,
                 protocol_id=protocol_id,
+                pre_questionnaire_id=pre_questionnaire_id,
+                post_questionnaire_id=post_questionnaire_id,
             )
         else:
             current = self._get_required(session_id)

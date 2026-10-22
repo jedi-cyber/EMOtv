@@ -58,6 +58,7 @@ class ProtocolRequest(BaseModel):
     description: str = Field(default="", max_length=2000)
     for_children: bool = False
     pre_questionnaire_id: str | None = Field(default=None, max_length=36)
+    post_questionnaire_id: str | None = Field(default=None, max_length=36)
     steps: list[StepModel] = Field(min_length=1, max_length=MAX_STEPS)
 
 
@@ -69,6 +70,7 @@ class ProtocolResponse(BaseModel):
     description: str
     for_children: bool
     pre_questionnaire_id: str | None
+    post_questionnaire_id: str | None
     steps: list[StepModel]
     created_at: datetime
     approved: bool
@@ -120,6 +122,7 @@ def create_stimulus_router(
             id=item.id, family_id=item.family_id, version=item.version, name=item.name,
             description=item.description, for_children=item.for_children,
             pre_questionnaire_id=item.pre_questionnaire_id,
+            post_questionnaire_id=item.post_questionnaire_id,
             steps=[StepModel(stimulus_id=step.stimulus_id, exposure_seconds=step.exposure_seconds,
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response) for step in item.steps],
@@ -134,7 +137,8 @@ def create_stimulus_router(
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,
-                             steps=steps, pre_questionnaire_id=request.pre_questionnaire_id)
+                             steps=steps, pre_questionnaire_id=request.pre_questionnaire_id,
+                             post_questionnaire_id=request.post_questionnaire_id)
 
     # --- Estímulos -------------------------------------------------------------
 

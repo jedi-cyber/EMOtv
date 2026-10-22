@@ -336,7 +336,7 @@ def test_protocol_rules_for_verbal_responses_questionnaires_and_ownership(env): 
                            json=protocol_body(emotional, verbal=True)).status_code == 422
     assert env.client.post("/protocols", headers=headers(env, env.user_1),
                            json=protocol_body(abstract, verbal=True)).status_code == 201
-    # El cuestionario previo llegará con P6A: hoy no se acepta ninguno.
+    # Un cuestionario previo inexistente o ajeno no se acepta.
     body = {**protocol_body(abstract), "pre_questionnaire_id": "q-1"}
     assert env.client.post("/protocols", headers=headers(env, env.user_1), json=body).status_code == 422
     # La captura ocurre durante la exposición.

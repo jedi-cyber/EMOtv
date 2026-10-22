@@ -53,6 +53,7 @@ class Protocol:
     created_at: datetime
     steps: tuple[ProtocolStep, ...] = field(default_factory=tuple)
     pre_questionnaire_id: str | None = None
+    post_questionnaire_id: str | None = None
     approved_at: datetime | None = None
     approved_by_user_id: str | None = None
     superseded_at: datetime | None = None
@@ -70,7 +71,8 @@ class Protocol:
         if not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
         object.__setattr__(self, "steps", steps)
-        object.__setattr__(self, "pre_questionnaire_id", (self.pre_questionnaire_id or "").strip() or None)
+        for name in ("pre_questionnaire_id", "post_questionnaire_id"):
+            object.__setattr__(self, name, (getattr(self, name) or "").strip() or None)
         if (self.approved_at is None) != (self.approved_by_user_id is None):
             raise ValueError("La aprobación requiere fecha y quien aprueba")
         for name in ("created_at", "approved_at", "superseded_at"):

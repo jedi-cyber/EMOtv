@@ -123,6 +123,11 @@ class SessionRecord(Base):
     # Versión del protocolo aplicado; un protocolo usado no se borra ni se edita.
     protocol_id: Mapped[str | None] = mapped_column(
         ForeignKey("protocols.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # Versiones exactas de los cuestionarios previo y posterior.
+    pre_questionnaire_id: Mapped[str | None] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True, index=True)
+    post_questionnaire_id: Mapped[str | None] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True, index=True)
 
 
 class UserRecord(Base):
@@ -372,12 +377,64 @@ class ProtocolRecord(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
     for_children: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    # Cuestionario previo opcional (P6A); mientras no exista ese módulo queda nulo.
-    pre_questionnaire_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Cuestionario previo opcional y, solo si hay previo, uno posterior.
+    pre_questionnaire_id: Mapped[str | None] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True)
+    post_questionnaire_id: Mapped[str | None] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class QuestionnaireRecord(Base):
+    """Una versión de un cuestionario; las de uno mismo comparten family_id.
+    questions guarda las preguntas en orden (JSON); no es contenido de
+    participantes y no se cifra."""
+
+    __tablename__ = "questionnaires"
+    __table_args__ = (
+        UniqueConstraint("family_id", "version", name="uq_questionnaires_family_version"),
+        CheckConstraint("version >= 1", name="ck_questionnaires_version"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    instructions: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    questions: Mapped[list] = mapped_column(JSON, nullable=False)
+    shared_with_group: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    copied_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class QuestionnaireResponseRecord(Base):
+    """Respuestas de una sesión, cifradas con SENSITIVE_DATA_KEY. participant_id
+    las vincula al participante para que la retención y la eliminación las
+    incluyan."""
+
+    __tablename__ = "questionnaire_responses"
+    __table_args__ = (
+        UniqueConstraint("session_id", "moment", name="uq_questionnaire_responses_session_moment"),
+        CheckConstraint("moment IN ('pre', 'post')", name="ck_questionnaire_responses_moment"),
+        CheckConstraint("entry_mode IN ('participant', 'conductor')", name="ck_questionnaire_responses_entry_mode"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    questionnaire_id: Mapped[str] = mapped_column(
+        ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=False, index=True)
+    participant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
+    moment: Mapped[str] = mapped_column(String(8), nullable=False)
+    answers_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    entry_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ProtocolStepRecord(Base):

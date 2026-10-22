@@ -67,8 +67,28 @@ Sin `SENSITIVE_DATA_KEY`, las rutas de participantes responden `503`.
 | `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) sin aprobación |
 | `POST` | `/protocols/{id}/approve` | Docente del autor (o el docente que lo armó); solo protocolos para niños |
 
-`pre_questionnaire_id` queda reservado para el cuestionario previo (P6A); hasta
-que exista ese módulo, cualquier valor responde `422`.
+Un protocolo puede indicar `pre_questionnaire_id` y `post_questionnaire_id`
+(cuestionarios propios o la plantilla que el docente comparte); al iniciar la
+sesión se aplica la versión vigente de cada uno.
+
+## Cuestionarios
+
+Los crea quien conduce la sesión. EMOtv solo los presenta y registra las
+respuestas tal como se dieron: no los valida, no calcula puntajes ni interpreta
+respuestas. Ninguna respuesta de la API incluye sumas ni resultados.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `GET`, `POST` | `/questionnaires` | Usuarios y docentes: los propios y las plantillas que su docente comparte. Preguntas: `scale` (2 a 7 puntos, etiquetas de los extremos obligatorias), `single_choice`, `multiple_choice` (2 a 10 opciones), `short_text` (hasta 500 caracteres) y `faces` (cinco caritas, extremos opcionales); cada una puede ser `required` |
+| `POST` | `/questionnaires/starter` | Copia a la cuenta la plantilla inicial editable (dos preguntas de caritas) |
+| `GET`, `PUT` | `/questionnaires/{id}` | `PUT` solo su autor. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
+| `POST` | `/questionnaires/{id}/copy` | Copia propia y editable (de un cuestionario propio o de una plantilla del docente) |
+| `PUT` | `/questionnaires/{id}/share` | Docente: comparte un cuestionario suyo con su grupo como plantilla |
+| `GET`, `POST` | `/sessions/{id}/questionnaires/{pre\|post}` | Solo quien conduce la sesión: el cuestionario que espera y el registro de las respuestas (`answers`, `entry_mode`: `participant` o `conductor`). `422` si falta una obligatoria; `409` si ya se respondió |
+| `GET` | `/sessions/{id}/questionnaire-responses` | Quien condujo la sesión y su docente (`can_access_session`); nunca los administradores. Cada consulta queda en la auditoría |
+
+Las respuestas se guardan cifradas con `SENSITIVE_DATA_KEY`; sin esa clave los
+cuestionarios se pueden armar, pero una sesión no puede aplicar ninguno (`503`).
 
 ## Sesiones
 
@@ -88,7 +108,11 @@ sesión asociada exige consentimiento activo.
 Cada sesión guarda su `session_type`: `propia` (quien inicia sesión se analiza a
 sí mismo, sin participante), `participante_adulto` o `participante_infantil`.
 `POST /sessions` acepta `session_type` (por defecto `propia`), `participant_id`
-(obligatorio en los tipos con participante) y `protocol_id` (opcional). Con
+(obligatorio en los tipos con participante), `protocol_id` (opcional) y, sin
+protocolo, `pre_questionnaire_id` y `post_questionnaire_id` (opcionales; una
+sesión propia puede saltar el cuestionario). El WebSocket del analizador cierra
+con `4428` mientras falte el cuestionario previo de la sesión, así que no hay
+calibración ni análisis sin él. Con
 participante, solo quien lo registró inicia la sesión y el servidor exige la
 última autorización con participación (a), cámara (b) y, en niños,
 asentimiento; sin ellas, o tras un retiro, responde `409`. Un protocolo para
