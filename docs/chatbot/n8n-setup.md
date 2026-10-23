@@ -126,8 +126,21 @@ exportarse desde n8n.
 
 Referencia: [exportar e importar workflows](https://docs.n8n.io/workflows/export-import/).
 
-## 7. Verificación
+## 7. Clasificador y público
+
+Emi responde a usuarios y docentes preguntas de Psicología en general
+(incluida la evaluación infantil) y sobre el uso de EMOtv. Al actualizar el
+nodo **Clasificar alcance**, usa las categorías de
+[../chatbot-emi.md](../chatbot-emi.md#categorías): son las que cuenta FastAPI;
+cualquier otra se cuenta como `otro`. El contrato del webhook no cambia
+(`request_id`, `question`, `history`, `knowledge` → `answer`, `in_scope`,
+`category`, `request_id`).
+
+Las preguntas con DNI, correos o teléfonos nunca llegan al workflow: las
+bloquea FastAPI.
+
+## 8. Verificación
 
 - Prueba manual del chat con Docker: [../chatbot-emi.md](../chatbot-emi.md#prueba-manual-con-docker-compose).
-- Evaluación con 35 preguntas: [../../tests/chatbot/emi_eval.md](../../tests/chatbot/emi_eval.md)
+- Evaluación con 45 preguntas: [../../tests/chatbot/emi_eval.md](../../tests/chatbot/emi_eval.md)
   y `scripts/chatbot/run_eval.py`.

@@ -58,8 +58,8 @@ export async function startFakeN8n(port: number, expectedKey = ""): Promise<Fake
     requests.push({ key: keyValue, body });
     const question = body.question.toLowerCase();
     if (question.includes(triggers.llmDown)) return reply(502, { error: "llm_unavailable", answer: LLM_DOWN_ANSWER, request_id: body.request_id });
-    if (question.includes(triggers.outOfScope)) return reply(200, { answer: OUT_OF_SCOPE_ANSWER, in_scope: false, category: "fuera_de_alcance", request_id: body.request_id });
-    return reply(200, { answer: IN_SCOPE_ANSWER, in_scope: true, category: "plataforma", request_id: body.request_id });
+    if (question.includes(triggers.outOfScope)) return reply(200, { answer: OUT_OF_SCOPE_ANSWER, in_scope: false, category: "otro", request_id: body.request_id });
+    return reply(200, { answer: IN_SCOPE_ANSWER, in_scope: true, category: "uso_emotv", request_id: body.request_id });
   });
   // 0.0.0.0: el contenedor de la API llega por host.docker.internal.
   await new Promise<void>((resolve, reject) => {

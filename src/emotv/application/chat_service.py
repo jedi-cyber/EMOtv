@@ -1,10 +1,12 @@
-"""Emi: conversaciones, límites de uso y filtro de riesgo antes de llamar a n8n.
+"""Emi: conversaciones, límites de uso y filtros de riesgo e identificadores antes de llamar a n8n.
 
-FastAPI es responsable de la autenticación, los límites, el filtro de riesgo,
-el historial y la retención; n8n clasifica el alcance y genera la respuesta.
-Al webhook solo llegan la pregunta, el historial de esa conversación dentro de
-alcance y ``knowledge`` (conocimiento general de EMOtv): nunca resultados emocionales, sesiones, nombres,
-correos ni el id del usuario.
+Emi es para usuarios y docentes; los participantes no tienen cuenta. FastAPI es
+responsable de la autenticación, los límites, los filtros, el historial y la
+retención; n8n clasifica el alcance y genera la respuesta. Al webhook solo
+llegan la pregunta tal como la escribió la persona (sin identificadores
+detectables), el historial de esa conversación dentro de alcance y
+``knowledge`` (conocimiento general de EMOtv): nunca datos de participantes,
+sesiones, reportes, resultados, nombres, correos ni el id del usuario.
 """
 from __future__ import annotations
 
@@ -14,7 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from emotv.application.chat_safety import RISK_CATEGORY, is_risky
+from emotv.application.chat_categories import normalize_category
+from emotv.application.chat_safety import (IDENTIFIER_CATEGORY, IDENTIFIER_MESSAGE, RISK_CATEGORY,
+                                           has_identifier, is_risky)
 from emotv.application.ports.chat_repository import ChatRepository, StoredChatMessage
 from emotv.config import ChatSettings
 from emotv.infrastructure.chat.n8n_client import ChatGateway, ChatGatewayError, HistoryMessage
@@ -22,7 +26,6 @@ from emotv.infrastructure.chat.n8n_client import ChatGateway, ChatGatewayError, 
 logger = logging.getLogger(__name__)
 
 CURRENT_MESSAGES = 30
-UNCATEGORIZED = "sin_categoria"
 
 GATEWAY_ERRORS: dict[str, tuple[int, str]] = {
     "timeout": (504, "Emi tardó demasiado en responder. Intenta de nuevo en unos momentos."),
@@ -82,6 +85,11 @@ class ChatService:
     def new_conversation(self, user_id: str) -> str:
         return self.repository.create_conversation(user_id, self.clock())
 
+    def delete_conversation(self, user_id: str, conversation_id: str) -> None:
+        """Borra la conversación y sus mensajes. Solo su dueño puede hacerlo."""
+        if not self.repository.delete_conversation(conversation_id, user_id):
+            raise ChatError(404, "Conversación no encontrada")
+
     def purge_expired(self) -> int:
         return self.repository.purge(self.clock() - timedelta(days=self.settings.retention_days))
 
@@ -104,6 +112,13 @@ class ChatService:
             logger.info("Emi request_id=%s bloqueada por el filtro de riesgo (sin llamada a n8n)", request_id)
             return ChatAnswer(conversation_id, self.settings.risk_message, False, RISK_CATEGORY, request_id)
 
+        if has_identifier(text):
+            # Igual que el riesgo: ni webhook ni texto guardado; el contador solo suma la categoría.
+            self.repository.record_rejection(IDENTIFIER_CATEGORY, now)
+            logger.info("Emi request_id=%s bloqueada por el filtro de identificadores (sin llamada a n8n)",
+                        request_id)
+            return ChatAnswer(conversation_id, IDENTIFIER_MESSAGE, False, IDENTIFIER_CATEGORY, request_id)
+
         if self.gateway is None:
             raise ChatError(503, "Emi no está disponible: el servidor no tiene configurada la conexión "
                                  "con el asistente.")
@@ -122,7 +137,7 @@ class ChatService:
                            error.status_code if error.status_code is not None else "sin_respuesta", error.kind)
             status, message = GATEWAY_ERRORS.get(error.kind, GATEWAY_ERRORS["unavailable"])
             raise ChatError(status, message) from error
-        category = (reply.category.strip().lower()[:64] or UNCATEGORIZED)
+        category = normalize_category(reply.category)
         self.repository.complete_exchange(message_id, conversation_id, reply.answer,
                                           reply.in_scope, category, self.clock())
         logger.info("Emi request_id=%s n8n_status=%s in_scope=%s", request_id, reply.status_code, reply.in_scope)

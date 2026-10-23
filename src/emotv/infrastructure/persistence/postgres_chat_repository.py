@@ -104,6 +104,18 @@ class PostgresChatRepository:
             if not in_scope:
                 self._increment(db, category, at)
 
+    def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+        """Borra la conversación del usuario con sus mensajes; los contadores no cambian."""
+        with self._factory.begin() as db:
+            owned = db.scalar(select(ChatConversationRecord).where(
+                ChatConversationRecord.id == conversation_id,
+                ChatConversationRecord.user_id == user_id))
+            if owned is None:
+                return False
+            db.execute(delete(ChatMessageRecord).where(ChatMessageRecord.conversation_id == conversation_id))
+            db.delete(owned)
+            return True
+
     def record_rejection(self, category: str, at: datetime) -> None:
         with self._factory.begin() as db:
             self._increment(db, category, at)

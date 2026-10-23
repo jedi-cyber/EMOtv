@@ -1,11 +1,58 @@
-# Privacidad y control de acceso
+# Privacidad y protección de datos personales
 
-Cómo protege EMOtv los datos de los participantes antes de guardar cualquiera de
-ellos. Todo lo que se describe aquí lo aplica el servidor (FastAPI); ocultar un
-botón en la interfaz nunca es la única protección.
+Documentación de la protección de datos personales de EMOtv, derivada del código
+y de las migraciones, para que la Facultad de Psicología de la UNHEVAL la revise
+y la apruebe. Se refiere a la Ley N.° 29733 y a su reglamento (Decreto Supremo
+016-2024-JUS). No interpreta la norma: los puntos que dependen de su
+interpretación están marcados **«verificar con asesoría legal»**.
 
 EMOtv **estima una expresión facial**: no diagnostica, no determina el estado
 psicológico de nadie y no sustituye a un profesional.
+
+## Datos que debe completar la Facultad
+
+Los documentos usan estos campos entre corchetes, con su número (por ejemplo,
+`[3: CONTACTO PARA EJERCER DERECHOS]`). No se rellenan con datos supuestos: los
+completa la Facultad antes de aprobar los documentos.
+
+1. `[1: RESPONSABLE DEL TRATAMIENTO]`: institución y unidad responsable.
+2. `[2: DOMICILIO DEL RESPONSABLE]`.
+3. `[3: CONTACTO PARA EJERCER DERECHOS]`: correo u oficina donde se presentan
+   las solicitudes de acceso, rectificación, cancelación y oposición.
+4. `[4: RESPONSABLE TÉCNICO DE LA PLATAFORMA]`: quien opera el servidor.
+5. `[5: FECHA DE APROBACIÓN DE LA POLÍTICA]`.
+6. `[6: ÓRGANO QUE APRUEBA]`.
+7. `[7: VERSIÓN DEL FORMATO DE AUTORIZACIÓN]`: la que se registra en EMOtv.
+8. `[8: FECHA DE APROBACIÓN DEL COMPROMISO]`.
+9. `[9: PLAZO DE RETENCIÓN APROBADO]`: hoy `PARTICIPANT_RETENTION_MONTHS=12`.
+10. `[10: LUGAR DE CUSTODIA DE LAS FICHAS Y FORMATOS EN PAPEL]`.
+11. `[11: RESPONSABLE DE INCIDENTES]`.
+12. `[12: UBICACIÓN DEL SERVIDOR Y DE LOS RESPALDOS]`.
+13. `[13: INSCRIPCIÓN DEL BANCO DE DATOS, SI CORRESPONDE]` (verificar con
+    asesoría legal).
+14. `[14: UBICACIÓN DEL REGISTRO DE SOLICITUDES]`.
+15. `[15: UBICACIÓN DEL REGISTRO DE INCIDENTES]`.
+16. `[16: CANAL DE COMUNICACIÓN CON LA AUTORIDAD]` de protección de datos
+    personales.
+
+## Índice
+
+| Documento | Para quién | Contenido |
+| --- | --- | --- |
+| [politica-de-privacidad.md](politica-de-privacidad.md) | Participantes y tutores | Qué datos se tratan, para qué, quién accede, cuánto tiempo, servicios externos y derechos |
+| [formato-consentimiento.md](formato-consentimiento.md) | Participantes, tutores y quien conduce | Modelo de autorización (adulto y tutor), asentimiento del niño y retiro |
+| [registro-de-tratamiento.md](registro-de-tratamiento.md) | Facultad y asesoría legal | Cada tabla con datos personales: campos, finalidad, base, acceso, cifrado y retención |
+| [matriz-de-accesos.md](matriz-de-accesos.md) | Facultad y responsable técnico | Qué ve y qué puede hacer cada cuenta |
+| [compromiso-de-confidencialidad.md](compromiso-de-confidencialidad.md) | Usuarios y docentes | Texto vigente y reparto de responsabilidades |
+| [guia-de-uso.md](guia-de-uso.md) | Usuarios y docentes | Qué registrar y qué no, Emi y qué hacer ante una filtración |
+| [procedimiento-derechos.md](procedimiento-derechos.md) | Docentes | Acceso, rectificación, cancelación y oposición |
+| [procedimiento-incidentes.md](procedimiento-incidentes.md) | Responsable de incidentes | Detección, contención, evaluación, comunicación y registro |
+| [checklist-despliegue-seguro.md](checklist-despliegue-seguro.md) | Responsable técnico | HTTPS, claves, cuentas, respaldos, registros, dependencias y retención |
+
+El resto de esta página describe los controles técnicos tal como los aplica el
+servidor (FastAPI); ocultar un botón en la interfaz nunca es la única protección.
+
+## Controles técnicos
 
 ## Papeles
 
@@ -181,17 +228,25 @@ sirve una imagen y la prueba la trata como excepción explícita.
 
 ## Cifrado de campos sensibles
 
-- Se cifran en reposo con Fernet: notas libres, marcadores con texto, respuestas
-  de cuestionarios, respuestas a imágenes abstractas, comentarios del docente y
-  texto de reportes. Hoy existe el primero (notas del participante); los demás
-  usan la misma utilidad (`emotv.shared.security.field_encryption`) cuando se
-  agreguen.
+- Se cifran en reposo con Fernet (`emotv.shared.security.field_encryption`):
+  notas del participante (`participants.notes_encrypted`), notas de los
+  marcadores (`session_markers.note_encrypted`), respuestas de cuestionarios
+  (`questionnaire_responses.answers_encrypted`), lo que el participante dice ver
+  en una imagen abstracta (`verbal_responses.text_encrypted`), texto de los
+  reportes (`session_reports.narrative_encrypted`) y comentarios del docente
+  (`report_comments.text_encrypted`).
+- **No se cifran en la aplicación**: el código, la edad y el tipo de
+  participante, las autorizaciones, las expresiones estimadas
+  (`expression_captures`, `sessions`), los correos de las cuentas ni las
+  conversaciones con Emi (`chat_messages`). El detalle está en el
+  [registro de tratamiento](registro-de-tratamiento.md).
 - La clave es `SENSITIVE_DATA_KEY` (vacía en los archivos de ejemplo; nunca en
   el repositorio). Generar una:
   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 - **Rotación:** `SENSITIVE_DATA_KEY=nueva,anterior`. La primera clave cifra y
-  todas descifran; cuando todos los datos estén cifrados con la nueva, se retira
-  la anterior.
+  todas descifran. Todavía no hay un script que vuelva a cifrar los datos
+  existentes con la clave nueva, así que la anterior no se puede retirar sin
+  perder lo cifrado con ella.
 - Sin clave válida, el módulo de sesiones con participantes **no se activa**
   (`503`) y la API registra el motivo en el log.
 
@@ -213,7 +268,8 @@ respuestas, correos ni imágenes.
 
 - **Retención:** una tarea que corre al arrancar la API y luego una vez al día
   elimina los participantes con más de `PARTICIPANT_RETENTION_MONTHS` meses (12
-  por defecto) con todos sus registros. La auditoría anota solo la cantidad.
+  por defecto; el código cuenta meses de 30 días) **desde su registro**, con
+  todos sus registros. La auditoría anota solo la cantidad.
   Treinta días antes, el docente ve la lista de participantes por vencer para
   decidir si imprime el reporte aprobado.
 - **Eliminación a pedido:** el usuario la solicita y el docente la ejecuta; el
@@ -228,6 +284,11 @@ respuestas, correos ni imágenes.
 ## Registros y respuestas HTTP
 
 - Los logs no incluyen cuerpos de peticiones, notas, respuestas ni imágenes.
+  Sí incluyen el registro de acceso de uvicorn y nginx: IP, método, ruta y código
+  de cada petición. La ruta de la vista del participante contiene su enlace
+  temporal (`/participant-view/{token}`), válido mientras dura la sesión. Docker
+  Compose no configura rotación de logs (ver el
+  [checklist](checklist-despliegue-seguro.md#6-registros-logs-y-auditoría)).
 - Todas las respuestas de la API llevan `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` y
   `X-Frame-Options: DENY`; `Strict-Transport-Security` cuando se sirven por
@@ -254,3 +315,5 @@ cuentas de voluntarios a los 30 días.
 | `MAX_ADMIN_ACCOUNTS` | 1 | Cuentas de administrador activas a la vez |
 | `PARTICIPANT_RETENTION_MONTHS` | 12 | Retención de participantes y sus registros |
 | `AUDIT_RETENTION_MONTHS` | 24 | Retención de la auditoría |
+| `CHAT_RETENTION_DAYS` | 90 | Retención de las conversaciones con Emi |
+| `TEST_DATA_RETENTION_DAYS` | 30 | Plazo de las cuentas de voluntarios (máximo 30; se aplica con `scripts/testdata/delete_test_data.py --expired`) |

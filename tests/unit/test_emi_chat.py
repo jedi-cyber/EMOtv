@@ -17,9 +17,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from emotv.application import AuthenticationService, IdentityRegistrationService
-from emotv.application.chat_safety import RISK_CATEGORY, is_risky
+from emotv.application.chat_categories import CATEGORIES, normalize_category
+from emotv.application.chat_safety import (IDENTIFIER_CATEGORY, IDENTIFIER_MESSAGE, RISK_CATEGORY,
+                                           identifier_kind, is_risky)
 from emotv.application.chat_service import ChatService
 from emotv.config import N8N_PRODUCTION_WEBHOOK_URL, ChatSettings, get_chat_settings
+from emotv.domain import Role
 from emotv.infrastructure.chat import N8nWebhookChatGateway
 from emotv.infrastructure.chat.n8n_client import KEY_HEADER, _verify_setting
 from emotv.infrastructure.persistence import (Base, PostgresChatRepository, PostgresConsentRepository,
@@ -52,7 +55,7 @@ class FakeN8n:
         return httpx.Response(200, json={
             "answer": f"Respuesta a: {body['question']}" if in_scope else "Solo puedo ayudarte con temas de EMOtv.",
             "in_scope": in_scope,
-            "category": "emotv" if in_scope else "fuera_de_alcance",
+            "category": "psicologia_general" if in_scope else "matematica",
             "request_id": body["request_id"],
         })
 
@@ -87,6 +90,9 @@ def emi():
     for code in ("PRUEBA-01", "PRUEBA-02"):
         user, _ = identity.register_student(f"{code.lower()}@example.org", "student-secret-123", code)
         accounts[code] = (user, {"Authorization": f"Bearer {auth.create_access_token(user)}"})
+    for name, role in (("docente", Role.PSYCHOLOGIST), ("admin", Role.ADMIN), ("superadmin", Role.SUPERADMIN)):
+        user = identity.register_user(f"{name}@example.org", "account-secret-123", role)
+        accounts[name] = (user, {"Authorization": f"Bearer {auth.create_access_token(user)}"})
     with TestClient(app) as client:
         yield client, service, repository, fake, clock, accounts
     engine.dispose()
@@ -126,7 +132,7 @@ def test_knowledge_travels_in_every_request_and_category_is_returned(emi):
     first = ask(client, headers, "¿Qué es una postura?").json()
     ask(client, headers, "Otra pregunta", first["conversation_id"])
 
-    assert first["category"] == "fuera_de_alcance"
+    assert first["category"] == "matematica"
     assert [body["knowledge"] for body in fake.bodies()] == ["## Posturas\n- Brazos arriba"] * 2
 
 
@@ -161,9 +167,9 @@ def test_out_of_scope_answer_is_stored_with_category_and_counted(emi):
     assert response.status_code == 200 and response.json()["in_scope"] is False
     stored = repository.list_messages(response.json()["conversation_id"], 30)
     assert [(item.role, item.in_scope, item.category) for item in stored] == [
-        ("user", False, "fuera_de_alcance"), ("assistant", False, "fuera_de_alcance"),
+        ("user", False, "matematica"), ("assistant", False, "matematica"),
     ]
-    assert repository.rejection_counts() == {"fuera_de_alcance": 1}
+    assert repository.rejection_counts() == {"matematica": 1}
 
 
 def test_users_only_access_their_own_conversations(emi):
@@ -344,3 +350,109 @@ def test_ssl_cert_file_is_respected(tmp_path):
     assert _verify_setting(str(tmp_path / "missing.pem")) is True
     context = _verify_setting(certifi.where())
     assert not isinstance(context, bool)
+
+
+# --- Público, filtro de identificadores, categorías y borrado ---
+
+def test_emi_is_for_users_and_docentes_only(emi):
+    client, _, _, fake, _, accounts = emi
+    assert ask(client, accounts["docente"][1], "¿Qué es la teoría del apego?").status_code == 200
+    for name in ("admin", "superadmin"):
+        headers = accounts[name][1]
+        assert ask(client, headers, "Hola").status_code == 403
+        assert client.get("/chat/conversations/current", headers=headers).status_code == 403
+        assert client.post("/chat/conversations", headers=headers).status_code == 403
+    assert client.post("/chat", json={"question": "Hola"}).status_code == 401
+    assert len(fake.requests) == 1
+
+
+@pytest.mark.parametrize("question,kind", [
+    ("El niño tiene DNI 45678912, ¿cómo lo evalúo?", "dni"),
+    ("Su documento es 12.345.678", "dni"),
+    ("Escríbele a la madre: madre.familia@example.org", "correo"),
+    ("La tutora dejó su celular 987 654 321", "telefono"),
+    ("Llamar al +51 (062) 51-2345 para coordinar", "telefono"),
+])
+def test_identifier_filter_blocks_without_calling_the_webhook(emi, caplog, question, kind):
+    client, _, repository, fake, _, accounts = emi
+    _, headers = accounts["PRUEBA-01"]
+    assert identifier_kind(question) == kind
+
+    with caplog.at_level(logging.INFO):
+        response = ask(client, headers, question)
+
+    assert response.status_code == 200
+    assert response.json() == {"conversation_id": None, "answer": IDENTIFIER_MESSAGE,
+                               "in_scope": False, "category": IDENTIFIER_CATEGORY}
+    assert fake.requests == []
+    # Solo la categoría: ni el texto ni el tipo de dato quedan guardados ni en el log.
+    assert repository.rejection_counts() == {IDENTIFIER_CATEGORY: 1}
+    assert client.get("/chat/conversations/current", headers=headers).json()["messages"] == []
+    assert question not in caplog.text and "45678912" not in caplog.text
+
+
+@pytest.mark.parametrize("text", [
+    "Un niño de 7 años evita mirar a los ojos durante la sesión, ¿qué debo observar?",
+    "¿Qué diferencias hubo entre los periodos 2024-2025 en la evaluación infantil?",
+    "Aplicamos 3 cuestionarios y 12 estímulos en 15 minutos.",
+    "Fecha de la sesión: 12/10/2026, puntaje 120 de 150.",
+])
+def test_identifier_filter_lets_ordinary_numbers_through(text):
+    assert identifier_kind(text) is None
+
+
+def test_case_description_is_sent_exactly_as_written(emi):
+    client, _, _, fake, _, accounts = emi
+    _, headers = accounts["docente"]
+    case = ("  Una niña de 6 años llora cuando la madre sale del aula y no quiere\n"
+            "participar en las actividades grupales. ¿Qué aspectos del desarrollo conviene revisar?  ")
+
+    response = ask(client, headers, case)
+
+    assert response.status_code == 200
+    body = fake.bodies()[0]
+    # Contrato sin cambios; la pregunta solo pierde los espacios de los extremos.
+    assert set(body) == {"request_id", "question", "history", "knowledge"}
+    assert body["question"] == case.strip()
+
+
+def test_rejection_counter_uses_the_classifier_categories(emi):
+    client, _, repository, fake, _, accounts = emi
+    _, headers = accounts["PRUEBA-01"]
+    for category in ("diagnostico_persona", "otra_psicologia", "categoria_inventada", ""):
+        fake.next.append(httpx.Response(200, json={"answer": "No puedo ayudarte con eso.", "in_scope": False,
+                                                   "category": category, "request_id": "r"}))
+        ask(client, headers, "Pregunta")
+
+    assert repository.rejection_counts() == {"diagnostico_persona": 1, "psicologia_general": 1, "otro": 2}
+
+
+def test_category_catalog():
+    for category in ("psicologia_general", "evaluacion_infantil", "uso_emotv", "limites_de_emi", "matematica",
+                     "idiomas", "programacion", "diagnostico_persona", "reemplazo_docente", "cambio_de_reglas",
+                     RISK_CATEGORY, IDENTIFIER_CATEGORY):
+        assert category in CATEGORIES and normalize_category(category.upper()) == category
+    assert normalize_category("plataforma") == "uso_emotv"
+    assert normalize_category("x" * 300) == "otro"
+
+
+def test_user_deletes_only_their_own_conversation(emi):
+    client, _, repository, fake, _, accounts = emi
+    _, owner = accounts["PRUEBA-01"]
+    _, other = accounts["PRUEBA-02"]
+    fake.next.append("out")
+    conversation_id = ask(client, owner, "Pregunta para borrar").json()["conversation_id"]
+
+    assert client.delete(f"/chat/conversations/{conversation_id}", headers=other).status_code == 404
+    assert client.delete(f"/chat/conversations/{conversation_id}", headers=accounts["admin"][1]).status_code == 403
+    assert len(repository.list_messages(conversation_id, 30)) == 2
+
+    deleted = client.delete(f"/chat/conversations/{conversation_id}", headers=owner)
+
+    assert deleted.status_code == 204
+    assert repository.list_messages(conversation_id, 30) == []
+    assert client.get("/chat/conversations/current", headers=owner).json() == {"conversation_id": None,
+                                                                              "messages": []}
+    assert client.delete(f"/chat/conversations/{conversation_id}", headers=owner).status_code == 404
+    # El contador agregado no depende de la conversación.
+    assert repository.rejection_counts() == {"matematica": 1}

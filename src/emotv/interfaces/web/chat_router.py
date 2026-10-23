@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from emotv.application.chat_service import ChatError, ChatService
 from emotv.domain import User
+from emotv.domain.role import CONDUCTOR_ROLES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 
@@ -36,7 +37,13 @@ class ConversationResponse(BaseModel):
 
 def create_chat_router(service: ChatService | None, authentication=None, users=None) -> APIRouter:
     router = APIRouter(prefix="/chat", tags=["chat"])
-    current_user = create_current_user_dependency(authentication, users)
+    authenticated_user = create_current_user_dependency(authentication, users)
+
+    def current_user(user: User = Depends(authenticated_user)) -> User:
+        # Emi es para usuarios y docentes; administración no la usa y los participantes no tienen cuenta.
+        if user.role not in CONDUCTOR_ROLES:
+            raise HTTPException(403, "Emi está disponible para usuarios y docentes")
+        return user
 
     def require_service() -> ChatService:
         if service is None:
@@ -63,5 +70,12 @@ def create_chat_router(service: ChatService | None, authentication=None, users=N
     @router.post("/conversations", response_model=ConversationResponse, status_code=201)
     def new_conversation(user: User = Depends(current_user)) -> ConversationResponse:
         return ConversationResponse(conversation_id=require_service().new_conversation(user.id), messages=[])
+
+    @router.delete("/conversations/{conversation_id}", status_code=204)
+    def delete_conversation(conversation_id: str, user: User = Depends(current_user)) -> None:
+        try:
+            require_service().delete_conversation(user.id, conversation_id)
+        except ChatError as error:
+            raise HTTPException(error.status_code, error.message) from error
 
     return router

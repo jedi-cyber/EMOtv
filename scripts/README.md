@@ -90,8 +90,8 @@ tiempo y una barra de progreso. Teclas:
 python scripts/chatbot/run_eval.py --base-url http://localhost:8080
 ```
 
-Envía las 35 preguntas de `tests/chatbot/emi_eval.md` a `/chat` con una cuenta
-de prueba (`PRUEBA-NN`, consentimiento aceptado) y guarda en
+Envía las 45 preguntas de `tests/chatbot/emi_eval.md` a `/chat` con una cuenta
+de prueba de usuario o docente (`PRUEBA-NN`) y guarda en
 `reports/chatbot/` (ignorado por git) un informe con fecha para revisión
 humana. No califica las respuestas. Pide el correo y la contraseña por consola
 o los lee de `EMOTV_EVAL_EMAIL` y `EMOTV_EVAL_PASSWORD`; no los escribe en el

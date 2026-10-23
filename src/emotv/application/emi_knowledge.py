@@ -1,9 +1,11 @@
 """Conocimiento verificado de EMOtv que viaja en el campo ``knowledge`` del webhook de Emi.
 
 Se genera desde la base de datos (actividades y catálogo de expresiones) más
-textos fijos del proyecto: posturas, flujo de uso, datos guardados y roles. No
-incluye datos de ningún usuario: ni sesiones, ni resultados, ni nombres, ni
-identificadores (tampoco quién revisó un texto).
+textos fijos del proyecto: posturas, flujo de uso, participantes y
+autorizaciones, protocolos, métricas de la sesión, estados del reporte,
+limitaciones del reconocimiento facial, datos guardados y roles. No incluye
+datos de ningún usuario ni participante: ni sesiones, ni reportes, ni
+resultados, ni nombres, ni identificadores (tampoco quién revisó un texto).
 
 El workflow EMI corta lo que exceda ``MAX_KNOWLEDGE_CHARS``; si el contenido
 editado por administración crece, los textos de expresiones y actividades se
@@ -38,27 +40,56 @@ POSTURES: dict[PostureId, tuple[str, str]] = {
 }
 
 INTRO = """# Conocimiento de EMOtv
-EMOtv es un proyecto formativo de la Facultad de Psicología de la UNHEVAL. Estima la expresión facial visible con la cámara, muestra información educativa sobre esa expresión y propone una actividad guiada de posturas. La estimación no indica lo que una persona siente, no es diagnóstico ni evaluación psicológica y no sustituye a un profesional. Las actividades son actividad guiada, no terapia."""
+EMOtv es una herramienta de apoyo de la Facultad de Psicología de la UNHEVAL para usuarios y docentes, que la aplican con participantes adultos o niños. Estima la expresión facial visible con la cámara, permite aplicar cuestionarios y estímulos en sesiones guiadas con protocolos, muestra una línea de tiempo con métricas descriptivas y un reporte que revisa el docente, y propone actividades guiadas de posturas. La estimación no indica lo que una persona siente, no es diagnóstico ni evaluación psicológica y no sustituye a un profesional. Las actividades son actividad guiada, no terapia. Emi responde a usuarios y docentes; los participantes no tienen cuenta ni usan Emi."""
 
 FLOW = """## Flujo de uso
 1. Iniciar sesión con la cuenta asignada. Algunas cuentas deben cambiar su contraseña provisional al entrar.
-2. Aceptar la política de consentimiento vigente en la página Consentimiento; se puede revocar en cualquier momento y entonces no se inicia ningún análisis nuevo.
-3. En Analizador facial, permitir la cámara del navegador y pulsar «Reconocer mi expresión». Se ve la lectura en vivo; cuando es estable, el estudiante pulsa «Registrar esta expresión».
-4. La pantalla de resultado muestra la expresión registrada, su confianza y textos educativos, con la limitación de que la imagen no determina el estado emocional.
-5. Se sugiere una actividad de varias posturas; se puede elegir otra de la lista, finalizar sin actividad o analizar otra expresión.
-6. Durante la actividad la cámara verifica cada postura: el tiempo de un paso solo avanza mientras la postura es correcta. Si la persona no se ve completa, conviene alejarse un poco y centrarse. La web indica paso, repetición, postura esperada y tiempo restante, y puede leer las instrucciones en voz alta.
-7. Las sesiones anteriores se consultan en Sesiones."""
+2. Aceptar el compromiso de confidencialidad vigente; sin aceptarlo no se registran participantes.
+3. En Analizador facial, permitir la cámara del navegador y pulsar «Reconocer mi expresión». Cuando la lectura es estable, se pulsa «Registrar esta expresión»; el resultado muestra la expresión, su confianza y textos educativos.
+4. Se sugiere una actividad de varias posturas. La cámara verifica cada postura: el tiempo de un paso solo avanza mientras la postura es correcta. Si la persona no se ve completa, conviene alejarse un poco y centrarse.
+5. Las sesiones anteriores se consultan en Sesiones."""
+
+PARTICIPANTS = """## Participantes y autorizaciones
+- Un participante se identifica solo por un código aleatorio: sin nombre, DNI ni foto.
+- Antes de una sesión hace falta la autorización firmada en papel para participar y para la cámara: la del propio adulto o, si es un niño, la del padre, madre o tutor, más el asentimiento del niño. Con niños, el tutor está presente.
+- Acceden a los datos de un participante el usuario que lo registró y su docente. La administración no accede a contenidos."""
+
+PROTOCOLS = """## Protocolos y sesión guiada
+- Un protocolo es una secuencia de 1 a 30 estímulos (imágenes emocionales o abstractas). Cada paso indica la exposición (1 a 120 s) y el momento de la captura automática de la expresión estimada. Puede incluir un cuestionario previo y uno posterior.
+- Los protocolos tienen versiones: uno usado en una sesión no se edita, se crea una versión nueva. Un protocolo para niños necesita la aprobación del docente.
+- Fases de la sesión guiada: confirmación de autorizaciones, cuestionario previo, calibración neutral, estímulos, cuestionario posterior y fin. Se detiene en cualquier momento si el participante, su tutor o quien conduce lo piden.
+- Antes de cada captura se revisa la calidad: rostro visible, centrado, tamaño, iluminación e inclinación. Una captura con problemas se marca y no cuenta en las métricas.
+- Quien conduce agrega marcadores (se distrajo, se rió, lloró, pidió parar o una nota). El participante ve los estímulos en su propia pantalla, sin resultados.
+- Los cuestionarios y las imágenes abstractas solo se muestran y se registran: EMOtv no calcula puntajes ni interpreta las respuestas ni lo que el participante dice ver."""
+
+METRICS = """## Línea de tiempo y métricas de la sesión
+- La línea de tiempo ordena cuestionarios, estímulos, capturas, lo que el participante dijo ver y marcadores.
+- Para cada estímulo emocional se compara la primera captura de buena calidad con la expresión esperada del estímulo. Resumen: «En X de Y estímulos la expresión estimada coincidió con la esperada». Es una descripción, no una evaluación.
+- Las tendencias de un participante necesitan al menos 2 sesiones comparables (mismo protocolo).
+- Una sesión breve con imágenes abstractas no permite concluir nada sobre la persona."""
+
+REPORTS = """## Reporte de la sesión
+- Lo redacta quien condujo la sesión y lo revisa su docente, por secciones.
+- Estados: borrador, enviado a revisión, con observaciones (el docente lo devolvió) y aprobado. El reporte de un docente se cierra sin revisión.
+- Un reporte aprobado no se edita: se crea una versión nueva, que vuelve a revisión. Solo se imprime un reporte aprobado y cada impresión queda registrada.
+- Todo reporte lleva el aviso de que las expresiones son estimaciones de apoyo de un modelo automático."""
+
+LIMITATIONS = """## Limitaciones del reconocimiento facial
+- El modelo estima la expresión visible del rostro; una expresión no equivale a lo que la persona siente.
+- Influyen la iluminación, el ángulo, la distancia, los lentes, la mascarilla, el cabello y el movimiento.
+- Las expresiones varían entre personas, culturas y edades; con niños la estimación puede ser menos precisa.
+- Una persona puede contener o actuar una expresión, y una captura dura un instante.
+- El modelo puede equivocarse: los resultados son de apoyo y los interpreta un profesional, nunca el sistema."""
 
 DATA = """## Qué se guarda y qué no
-- No se guardan fotografías, video ni los puntos del cuerpo. Cada imagen se analiza en memoria y se descarta.
-- Se guarda, asociado a la cuenta: la expresión registrada y su confianza, la actividad, los pasos completados, su resultado y su duración.
-- Las preguntas a Emi y sus respuestas se guardan hasta 90 días. A Emi solo llegan la pregunta y la conversación; nunca nombres, correos, cuentas ni resultados.
-- En las pruebas con voluntarios, los datos de la cuenta de prueba se eliminan como máximo a los 30 días."""
+- No se guardan fotografías, video ni los puntos del cuerpo. Cada imagen se analiza en memoria y se descarta. Las únicas imágenes guardadas son los estímulos subidos por docentes o administración.
+- Se guardan la expresión estimada y su confianza, las actividades, las respuestas a cuestionarios, los marcadores y los reportes. Notas, respuestas, comentarios y textos de reportes se guardan cifrados.
+- Las preguntas a Emi y sus respuestas se guardan hasta 90 días y cada persona puede borrar su conversación. A Emi nunca llegan datos de participantes, sesiones, reportes ni resultados. Emi rechaza mensajes con DNI, correos o teléfonos; no se deben escribir nombres ni datos de niños o familias."""
 
 ROLES = """## Roles
-- Estudiante: analiza su expresión, realiza actividades, consulta sus sesiones y gestiona su consentimiento.
-- Psicólogo: consulta las sesiones de los estudiantes que administración le asignó; no realiza análisis en nombre de otros.
-- Administrador: gestiona usuarios, actividades, textos del catálogo de expresiones, recomendaciones y políticas de consentimiento."""
+- Usuario: registra participantes, conduce sesiones guiadas, redacta reportes y también analiza su propia expresión.
+- Docente: tiene un grupo de usuarios, revisa y aprueba sus reportes, aprueba protocolos para niños y también conduce sesiones propias.
+- Administración: gestiona cuentas y grupos; no accede a participantes, sesiones ni resultados."""
 
 
 def shorten(text: str, limit: int) -> str:
@@ -98,10 +129,11 @@ def _expressions_section(expressions: Iterable[ExpressionInfo], limit: int) -> s
 def build_knowledge(activities: Iterable[Activity], expressions: Iterable[ExpressionInfo]) -> str:
     activities, expressions = tuple(activities), tuple(expressions)
     postures = "## Posturas\n" + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values())
-    fixed = [INTRO, postures, FLOW, DATA, ROLES]
+    fixed = [INTRO, postures, FLOW, PARTICIPANTS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
     for limit in (400, 320, 260, 200, 160, 120, 90, 60):
-        text = "\n\n".join([*fixed[:2], _activities_section(activities, limit),
-                            _expressions_section(expressions, limit), *fixed[2:]])
+        # Los textos fijos van primero: si hay que recortar, solo se pierde contenido editable.
+        text = "\n\n".join([*fixed, _activities_section(activities, limit),
+                            _expressions_section(expressions, limit)])
         if len(text) <= TARGET_CHARS:
             return text
     marker = "\n[Conocimiento recortado por longitud]"

@@ -1,12 +1,21 @@
 import { useRef, useState } from "react";
+import { matchPath, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/useAuth";
+import { paths } from "../routes/paths";
 import { useAssistant } from "./AssistantContext";
 import { ChatConversation } from "./ChatConversation";
 import { NavIcon } from "./NavIcon";
 
+/** Emi es para usuarios y docentes; FastAPI rechaza al resto con 403. */
+const EMI_ROLES = new Set(["student", "psychologist"]);
+/** Pantallas donde hay un participante delante: Emi no aparece. */
+const PARTICIPANT_SCREENS = [paths.participantViewPattern, paths.guidedSessionPattern];
+
 export function AssistantWidget() {
   const { user, token, loading } = useAuth();
-  if (!user || !token || loading) return null;
+  const { pathname } = useLocation();
+  if (!user || !token || loading || !EMI_ROLES.has(user.role)) return null;
+  if (PARTICIPANT_SCREENS.some((pattern) => matchPath(pattern, pathname))) return null;
   return <AssistantPanel key={user.id} />;
 }
 
