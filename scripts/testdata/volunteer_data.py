@@ -12,7 +12,13 @@ Tablas con datos vinculados a un usuario o estudiante:
 - sessions (sessions.student_id es SET NULL: se borran aquí para que no queden
   sesiones anónimas huérfanas), también las que la cuenta condujo y las de sus
   participantes;
-- participants registrados por la cuenta y commitment_acceptances;
+- participants registrados por la cuenta, sus participant_authorizations y
+  commitment_acceptances;
+- protocols armados por la cuenta y sus protocol_steps;
+- questionnaires de la cuenta y questionnaire_responses de sus sesiones;
+- de sus sesiones guiadas: guided_runs, expression_captures, session_markers y
+  verbal_responses;
+- de sus sesiones: session_reports con sus report_comments y report_events;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
@@ -41,13 +47,25 @@ from emotv.infrastructure.persistence.models import (
     ChatMessageRecord,
     CommitmentAcceptanceRecord,
     ConsentRecordModel,
+    ExpressionCaptureRecord,
     ExpressionInfoRecord,
+    GuidedRunRecord,
     LoginAttemptRecord,
+    ParticipantAuthorizationRecord,
     ParticipantRecord,
+    ProtocolRecord,
+    ProtocolStepRecord,
     PsychologistAssignmentRecord,
+    QuestionnaireRecord,
+    QuestionnaireResponseRecord,
+    ReportCommentRecord,
+    ReportEventRecord,
+    SessionMarkerRecord,
+    SessionReportRecord,
     SessionRecord,
     StudentRecord,
     UserRecord,
+    VerbalResponseRecord,
 )
 
 CODE_PREFIX = "PRUEBA-"
@@ -61,8 +79,11 @@ REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
 # Orden de borrado: primero las filas que dependen de otras.
-TABLES = ("chat_messages", "chat_conversations", "sessions", "participants", "commitment_acceptances",
-          "psychologist_assignments", "consents", "login_attempts", "students", "users")
+TABLES = ("chat_messages", "chat_conversations", "report_comments", "report_events", "session_reports",
+          "questionnaire_responses", "expression_captures",
+          "session_markers", "verbal_responses", "guided_runs", "sessions",
+          "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
+          "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
 
 BACKUP_WARNING = (
@@ -292,8 +313,20 @@ _NO_SYNC = {"synchronize_session": False}
 _MODELS = {
     "chat_messages": ChatMessageRecord,
     "chat_conversations": ChatConversationRecord,
+    "report_comments": ReportCommentRecord,
+    "report_events": ReportEventRecord,
+    "session_reports": SessionReportRecord,
+    "questionnaire_responses": QuestionnaireResponseRecord,
+    "expression_captures": ExpressionCaptureRecord,
+    "session_markers": SessionMarkerRecord,
+    "verbal_responses": VerbalResponseRecord,
+    "guided_runs": GuidedRunRecord,
     "sessions": SessionRecord,
+    "participant_authorizations": ParticipantAuthorizationRecord,
     "participants": ParticipantRecord,
+    "protocol_steps": ProtocolStepRecord,
+    "protocols": ProtocolRecord,
+    "questionnaires": QuestionnaireRecord,
     "commitment_acceptances": CommitmentAcceptanceRecord,
     "psychologist_assignments": PsychologistAssignmentRecord,
     "consents": ConsentRecordModel,
@@ -307,13 +340,28 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
     student = account.student_id
     conversations = select(ChatConversationRecord.id).where(ChatConversationRecord.user_id == account.user_id)
     participants = select(ParticipantRecord.id).where(ParticipantRecord.registered_by_user_id == account.user_id)
+    protocols = select(ProtocolRecord.id).where(ProtocolRecord.owner_user_id == account.user_id)
+    sessions = or_(SessionRecord.student_id == student if student else false(),
+                   SessionRecord.owner_user_id == account.user_id,
+                   SessionRecord.participant_id.in_(participants))
+    reports = select(SessionReportRecord.id).where(SessionReportRecord.session_id.in_(select(SessionRecord.id).where(sessions)))
     return {
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
         "chat_conversations": ChatConversationRecord.user_id == account.user_id,
-        "sessions": or_(SessionRecord.student_id == student if student else false(),
-                        SessionRecord.owner_user_id == account.user_id,
-                        SessionRecord.participant_id.in_(participants)),
+        "report_comments": ReportCommentRecord.report_id.in_(reports),
+        "report_events": ReportEventRecord.report_id.in_(reports),
+        "session_reports": SessionReportRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "questionnaire_responses": QuestionnaireResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "expression_captures": ExpressionCaptureRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "session_markers": SessionMarkerRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "verbal_responses": VerbalResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "guided_runs": GuidedRunRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "sessions": sessions,
+        "participant_authorizations": ParticipantAuthorizationRecord.participant_id.in_(participants),
         "participants": ParticipantRecord.registered_by_user_id == account.user_id,
+        "protocol_steps": ProtocolStepRecord.protocol_id.in_(protocols),
+        "protocols": ProtocolRecord.owner_user_id == account.user_id,
+        "questionnaires": QuestionnaireRecord.owner_user_id == account.user_id,
         "commitment_acceptances": CommitmentAcceptanceRecord.user_id == account.user_id,
         "psychologist_assignments": or_(
             PsychologistAssignmentRecord.student_id == student if student else false(),

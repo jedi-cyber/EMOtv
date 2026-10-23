@@ -15,7 +15,10 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   student: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
     { to: paths.participants, label: "Participantes", icon: "students" },
+    { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
+    { to: paths.protocols, label: "Protocolos", icon: "document" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
@@ -24,15 +27,20 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
+    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
     { to: paths.participants, label: "Participantes", icon: "students" },
+    { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
+    { to: paths.protocols, label: "Protocolos", icon: "document" },
+    { to: paths.stimuli, label: "Estímulos", icon: "manage" },
     { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
   ],
-  // Cuentas, grupos y auditoría; nunca participantes ni resultados.
+  // Cuentas, grupos, estímulos institucionales y auditoría; nunca participantes ni resultados.
   admin: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.users, label: "Cuentas y grupos", icon: "users" },
+    { to: paths.stimuli, label: "Estímulos institucionales", icon: "manage" },
     { to: paths.audit, label: "Auditoría", icon: "shield" },
   ],
   // Soporte técnico: modelos, catálogos, la cuenta de administrador y auditoría.

@@ -17,9 +17,18 @@ from emotv.domain.participant import Participant
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     CommitmentAcceptanceRecord,
+    ExpressionCaptureRecord,
+    GuidedRunRecord,
+    ParticipantAuthorizationRecord,
     ParticipantDeletionRecord,
     ParticipantRecord,
+    QuestionnaireResponseRecord,
+    ReportCommentRecord,
+    ReportEventRecord,
+    SessionMarkerRecord,
+    SessionReportRecord,
     SessionRecord,
+    VerbalResponseRecord,
 )
 from emotv.shared.security.field_encryption import FieldCipher
 
@@ -27,6 +36,15 @@ from emotv.shared.security.field_encryption import FieldCipher
 # con datos de participantes (autorizaciones, capturas, respuestas, marcadores,
 # reportes) se agrega aquí para que la retención y la eliminación la incluyan.
 PARTICIPANT_LINKED_RECORDS = (
+    ("authorizations", ParticipantAuthorizationRecord, ParticipantAuthorizationRecord.participant_id),
+    ("questionnaire_responses", QuestionnaireResponseRecord, QuestionnaireResponseRecord.participant_id),
+    ("expression_captures", ExpressionCaptureRecord, ExpressionCaptureRecord.participant_id),
+    ("session_markers", SessionMarkerRecord, SessionMarkerRecord.participant_id),
+    ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.participant_id),
+    ("guided_runs", GuidedRunRecord, GuidedRunRecord.participant_id),
+    ("report_comments", ReportCommentRecord, ReportCommentRecord.participant_id),
+    ("report_events", ReportEventRecord, ReportEventRecord.participant_id),
+    ("session_reports", SessionReportRecord, SessionReportRecord.participant_id),
     ("sessions", SessionRecord, SessionRecord.participant_id),
 )
 
@@ -110,13 +128,17 @@ class PostgresParticipantRepository:
             row.notes_encrypted = self._cipher.encrypt(participant.notes)
             row.deletion_requested_at = participant.deletion_requested_at
             row.deletion_requested_by_user_id = participant.deletion_requested_by_user_id
+            row.age_years = participant.age_years
+            row.authorization_revoked_at = participant.authorization_revoked_at
         return participant
 
     def _domain(self, row: ParticipantRecord) -> Participant:
         return Participant(id=row.id, code=row.code, kind=row.kind, registered_by_user_id=row.registered_by_user_id,
                            created_at=_aware(row.created_at), notes=self._cipher.decrypt(row.notes_encrypted),
                            deletion_requested_at=_aware(row.deletion_requested_at),
-                           deletion_requested_by_user_id=row.deletion_requested_by_user_id)
+                           deletion_requested_by_user_id=row.deletion_requested_by_user_id,
+                           age_years=row.age_years,
+                           authorization_revoked_at=_aware(row.authorization_revoked_at))
 
     def get_by_id(self, participant_id: str) -> Participant | None:
         with self._factory() as db:

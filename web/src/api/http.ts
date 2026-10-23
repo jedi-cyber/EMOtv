@@ -75,3 +75,15 @@ export async function apiRequest<T>(
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+/** Descarga un archivo autenticado (la imagen de un estímulo del banco). */
+export async function apiBlob(path: string, token?: string | null): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError(0, "No se pudo conectar con EMOtv. Comprueba tu conexión e inténtalo de nuevo.");
+  }
+  if (!response.ok) throw new ApiError(response.status, "No se pudo cargar la imagen");
+  return response.blob();
+}

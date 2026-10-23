@@ -64,8 +64,15 @@ class SessionService:
         activity_id: str | None = None,
         session_type: SessionType | str = SessionType.OWN,
         owner_user_id: str | None = None,
+        participant_id: str | None = None,
+        protocol_id: str | None = None,
+        pre_questionnaire_id: str | None = None,
+        post_questionnaire_id: str | None = None,
     ) -> EmotionalSession:
-        """Inicia una sesión nueva o una sesión previamente creada."""
+        """Inicia una sesión nueva o una sesión previamente creada.
+
+        participant_id y protocol_id solo se indican en una sesión nueva; quien
+        llama ya comprobó las autorizaciones del participante y el protocolo."""
 
         if session_id is None:
             self._require_active_consent(student_id)
@@ -77,6 +84,10 @@ class SessionService:
                 activity_id=activity_id,
                 session_type=session_type,
                 owner_user_id=owner_user_id,
+                participant_id=participant_id,
+                protocol_id=protocol_id,
+                pre_questionnaire_id=pre_questionnaire_id,
+                post_questionnaire_id=post_questionnaire_id,
             )
         else:
             current = self._get_required(session_id)
@@ -286,6 +297,14 @@ class SessionService:
             emotion_model_version=model_version,
         ))
 
+    def finish_guided(self, session_id: str) -> EmotionalSession:
+        """Completa una sesión guiada: sus resultados son las capturas del protocolo."""
+        current = self._get_required(session_id)
+        if current.protocol_id is None:
+            raise ValueError("Solo una sesión con protocolo se completa sin expresión registrada")
+        self._require_state(current, SessionState.IN_PROGRESS, "completar")
+        return self.repository.save(replace(current, state=SessionState.COMPLETED, completed_at=self.clock()))
+
     def finish_without_activity(self, session_id: str) -> EmotionalSession:
         """Cierra una sesión reconocida sin actividad, conservando la expresión."""
         current = self._get_required(session_id)
@@ -328,6 +347,9 @@ class SessionService:
         """Consulta exclusivamente las sesiones asociadas a un estudiante."""
 
         return self.repository.list_by_student(student_id)
+
+    def list_sessions_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        return self.repository.list_by_participant(participant_id)
 
     def list_sessions_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         return self.repository.list_by_owner(owner_user_id)

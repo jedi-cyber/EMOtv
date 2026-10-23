@@ -36,7 +36,7 @@ from emotv.application.local_model_service import (
 from emotv.application.neutral_calibration import NeutralCalibration
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.config import LiveExpressionSettings
-from emotv.domain import Activity, Role, SessionState, StabilizedEmotion
+from emotv.domain import Activity, EmotionalSession, Role, SessionState, StabilizedEmotion
 from emotv.interfaces.web.analysis_capacity import (
     SERVER_BUSY_CLOSE_CODE,
     SERVER_BUSY_MESSAGE,
@@ -105,6 +105,7 @@ def create_analysis_router(
     recommendations: RecommendationSource | None = None,
     capacity: AnalysisCapacity | None = None,
     local_models: LocalModelService | None = None,
+    questionnaire_ready: Callable[[EmotionalSession], bool] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
@@ -181,6 +182,11 @@ def create_analysis_router(
                 return
             if session.state is not SessionState.IN_PROGRESS:
                 await _error(websocket, "La sesión no está en progreso", 4409)
+                return
+            # El cuestionario previo se responde antes de la calibración y del análisis.
+            if session.pre_questionnaire_id is not None and (
+                    questionnaire_ready is None or not questionnaire_ready(session)):
+                await _error(websocket, "Responde el cuestionario previo antes de iniciar el analizador", 4428)
                 return
             active_session_id = session.id
             # Cupo de sesión activa antes de cargar el modelo; sin cupo tras la

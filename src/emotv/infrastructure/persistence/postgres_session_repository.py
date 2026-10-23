@@ -57,6 +57,16 @@ class PostgresSessionRepository:
             records = database_session.scalars(statement).all()
             return tuple(self._to_domain(record) for record in records)
 
+    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        statement = (
+            select(SessionRecord)
+            .where(SessionRecord.participant_id == participant_id)
+            .order_by(SessionRecord.started_at, SessionRecord.id)
+        )
+        with self._session_factory() as database_session:
+            records = database_session.scalars(statement).all()
+            return tuple(self._to_domain(record) for record in records)
+
     def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         statement = (
             select(SessionRecord)
@@ -89,6 +99,9 @@ class PostgresSessionRepository:
             session_type=SessionType(session.session_type).value,
             owner_user_id=session.owner_user_id,
             participant_id=session.participant_id,
+            protocol_id=session.protocol_id,
+            pre_questionnaire_id=session.pre_questionnaire_id,
+            post_questionnaire_id=session.post_questionnaire_id,
         )
 
     @staticmethod
@@ -114,6 +127,9 @@ class PostgresSessionRepository:
         record.session_type = SessionType(session.session_type).value
         record.owner_user_id = session.owner_user_id
         record.participant_id = session.participant_id
+        record.protocol_id = session.protocol_id
+        record.pre_questionnaire_id = session.pre_questionnaire_id
+        record.post_questionnaire_id = session.post_questionnaire_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -145,6 +161,9 @@ class PostgresSessionRepository:
             session_type=SessionType(record.session_type or SessionType.OWN.value),
             owner_user_id=record.owner_user_id,
             participant_id=record.participant_id,
+            protocol_id=record.protocol_id,
+            pre_questionnaire_id=record.pre_questionnaire_id,
+            post_questionnaire_id=record.post_questionnaire_id,
         )
 
     @staticmethod

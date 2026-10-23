@@ -37,6 +37,11 @@ class InMemorySessionRepository:
                 if session.student_id == normalized_id
             )
 
+    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
+        with self._lock:
+            return tuple(sorted((session for session in self._sessions.values() if session.participant_id == participant_id),
+                                key=lambda session: (session.started_at, session.id)))
+
     def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         with self._lock:
             return tuple(session for session in self._sessions.values() if session.owner_user_id == owner_user_id)

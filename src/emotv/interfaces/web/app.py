@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from emotv import __version__
+from emotv.domain import Role
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.consent_policy_service import ConsentPolicyService
 from emotv.application import BrowserActivityService, PoseService
@@ -58,6 +59,31 @@ from emotv.application.commitment_service import CommitmentService
 from emotv.application.participant_service import ParticipantService
 from emotv.interfaces.web.privacy_router import create_privacy_router
 from emotv.interfaces.web.participant_router import create_participant_router
+from emotv.interfaces.web.stimulus_router import create_stimulus_router
+from emotv.application.protocol_service import ProtocolService
+from emotv.application.stimulus_service import StimulusService
+from emotv.infrastructure.persistence.postgres_practice_repositories import (
+    PostgresAuthorizationRepository,
+    PostgresProtocolRepository,
+    PostgresStimulusRepository,
+)
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
+from emotv.application.questionnaire_service import QuestionnaireService
+from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
+    PostgresQuestionnaireRepository,
+    PostgresQuestionnaireResponseRepository,
+)
+from emotv.interfaces.web.questionnaire_router import create_questionnaire_router
+from emotv.application.emotion_model_catalog import EmotionModelCatalog
+from emotv.application.guided_session_service import GuidedSessionService
+from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, decode_frame
+from emotv.interfaces.web.guided_router import create_guided_router
+from emotv.application.session_insights_service import SessionInsightsService
+from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.report_service import ReportService
+from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
+from emotv.interfaces.web.report_router import create_report_router
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
@@ -164,7 +190,26 @@ if DATABASE_URL and JWT_SECRET_KEY:
         participant_service = ParticipantService(
             participant_repository, authorization_service, commitment_service, audit_service, group_user_ids,
             retention_months=privacy_settings.participant_retention_months,
-            notice_days=privacy_settings.expiry_notice_days)
+            notice_days=privacy_settings.expiry_notice_days,
+            authorizations=PostgresAuthorizationRepository(database_sessions))
+    stimulus_service = StimulusService(PostgresStimulusRepository(database_sessions), audit_service, docente_of,
+                                       sanitize_stimulus_image)
+    def session_access(user, session) -> bool:
+        actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        return authorization_service.can_access_session(user, session, actor_student_id=actor.id if actor else None)
+
+    # Respuestas cifradas: sin SENSITIVE_DATA_KEY los cuestionarios se arman, pero no se aplican.
+    questionnaire_service = QuestionnaireService(
+        PostgresQuestionnaireRepository(database_sessions), audit_service, docente_of,
+        responses=(PostgresQuestionnaireResponseRepository(database_sessions, field_cipher)
+                   if field_cipher is not None else None),
+        sessions=lambda session_id: session_repository.get_by_id(session_id),
+        session_access=session_access)
+    protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
+                                       audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service)
+    app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
+    app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
+                                              user_repository))
     app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
                                              user_repository))
     app.include_router(create_participant_router(participant_service, authentication_service, user_repository))
@@ -197,11 +242,62 @@ if DATABASE_URL and JWT_SECRET_KEY:
         activities=activity_catalog,
         assignments=assignment_repository,
         commitments=commitment_service,
+        participants=participant_service,
+        protocols=protocol_service,
+        questionnaires=questionnaire_service,
     ))
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
     local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
                                      model_admission.evaluate)
     app.include_router(create_model_admin_router(local_models, authentication_service, user_repository))
+
+    def resolve_guided_model() -> tuple[str, str]:
+        """Modelo local predeterminado (o su respaldo) para las capturas de una sesión guiada."""
+        choice = local_models.resolve()
+        if not choice.admitted:
+            raise RuntimeError("El modelo facial no está disponible en el servidor")
+        return choice.model_id, EmotionModelCatalog().get(choice.model_id).version
+
+    live_expression = get_live_expression_settings()
+    guided_service = None
+    if field_cipher is not None and participant_service is not None:
+        guided_service = GuidedSessionService(
+            PostgresGuidedSessionRepository(database_sessions, field_cipher), session_service,
+            protocols=protocol_service.repository.get, stimuli=stimulus_service.repository.get,
+            participants=participant_repository.get_by_id,
+            participant_ready=lambda participant: participant_service.status(participant) == "ready",
+            questionnaire_answered=questionnaire_service.answered,
+            resolve_model=resolve_guided_model,
+            # Cada cuadro se analiza en memoria con el modelo local y se descarta.
+            assess_factory=lambda model_id: GuidedFrameAnalyzer(
+                EmotionFrameAnalyzer(classifier=classifiers.get(model_id))).assess,
+            audit=audit_service, session_access=session_access,
+            calibration_seconds=live_expression.calibration_seconds,
+            calibration_min_increase=live_expression.calibration_min_increase)
+    app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
+                                            stimulus_image=stimulus_service.repository.get_image,
+                                            decode_frame=decode_frame))
+
+    def actor_student_id(user) -> str | None:
+        student = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        return student.id if student else None
+
+    insights_service = None
+    if guided_service is not None:
+        insights_service = SessionInsightsService(
+            session_service, guided_service.repository, protocols=protocol_service.repository.get,
+            stimuli=stimulus_service.repository.get, participants=participant_repository.get_by_id,
+            questionnaire_responses=(questionnaire_service.responses.list_for_session
+                                     if questionnaire_service.responses is not None else None),
+            questionnaires=questionnaire_service.repository.get, authorization=authorization_service,
+            actor_student_id=actor_student_id, audit=audit_service)
+    app.include_router(create_insights_router(insights_service, authentication_service, user_repository))
+    report_service = None
+    if insights_service is not None:
+        report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
+                                       participant_repository.get_by_id, authorization_service, docente_of,
+                                       insights_service, audit_service)
+    app.include_router(create_report_router(report_service, authentication_service, user_repository))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -231,6 +327,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         recommendations=recommendation_repository,
         capacity=analysis_capacity,
         local_models=local_models,
+        questionnaire_ready=questionnaire_service.pre_completed,
     ))
     chat_gateway = None
     if chat_settings.webhook_key:
@@ -254,6 +351,11 @@ else:
     app.include_router(create_model_admin_router(None, None, None))
     app.include_router(create_privacy_router(None, None, None, None))
     app.include_router(create_participant_router(None, None, None))
+    app.include_router(create_stimulus_router(None, None, None, None))
+    app.include_router(create_questionnaire_router(None, None, None))
+    app.include_router(create_guided_router(None, None, None))
+    app.include_router(create_insights_router(None, None, None))
+    app.include_router(create_report_router(None, None, None))
 
 
 def run_retention() -> None:

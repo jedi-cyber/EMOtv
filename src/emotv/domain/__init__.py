@@ -19,6 +19,9 @@ from emotv.domain.local_model_settings import LocalModelSettings
 from emotv.domain.consent import ConsentRecord
 from emotv.domain.role import CONDUCTOR_ROLES, MANAGEMENT_ROLES, Role
 from emotv.domain.participant import Participant, ParticipantKind
+from emotv.domain.participant_authorization import Grantor, ParticipantAuthorization, RevokedScope
+from emotv.domain.protocol import Protocol, ProtocolStep
+from emotv.domain.stimulus import Stimulus, StimulusIntensity, StimulusKind, StimulusScope
 from emotv.domain.audit import AuditAction, AuditEntry, AuditResult
 from emotv.domain.user import Student, User
 from emotv.domain.stabilized_emotion import StabilizedEmotion
@@ -49,6 +52,15 @@ __all__ = [
     "MANAGEMENT_ROLES",
     "Participant",
     "ParticipantKind",
+    "Grantor",
+    "ParticipantAuthorization",
+    "RevokedScope",
+    "Protocol",
+    "ProtocolStep",
+    "Stimulus",
+    "StimulusIntensity",
+    "StimulusKind",
+    "StimulusScope",
     "AuditAction",
     "AuditEntry",
     "AuditResult",

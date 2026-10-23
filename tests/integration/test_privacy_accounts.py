@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from emotv.application import AuthenticationService, IdentityRegistrationService, SessionService
+from emotv.application import ActivityCatalog, AuthenticationService, IdentityRegistrationService, SessionService
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.commitment_service import CommitmentService, load_text
@@ -35,6 +35,31 @@ from emotv.infrastructure.persistence import (
     PostgresStudentRepository,
     PostgresUserRepository,
 )
+from emotv.application.protocol_service import ProtocolService
+from emotv.application.questionnaire_service import QuestionnaireService
+from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
+    PostgresQuestionnaireRepository,
+    PostgresQuestionnaireResponseRepository,
+)
+from emotv.interfaces.web.questionnaire_router import create_questionnaire_router
+from emotv.interfaces.web.analysis_router import create_analysis_router
+from emotv.application.guided_session_service import GuidedSessionService
+from emotv.domain.guided_session import FrameAssessment
+from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.interfaces.web.guided_router import create_guided_router
+from emotv.application.session_insights_service import SessionInsightsService
+from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.report_service import ReportService
+from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
+from emotv.interfaces.web.report_router import create_report_router
+from emotv.application.stimulus_service import StimulusService
+from emotv.infrastructure.persistence.postgres_practice_repositories import (
+    PostgresAuthorizationRepository,
+    PostgresProtocolRepository,
+    PostgresStimulusRepository,
+)
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
+from emotv.interfaces.web.stimulus_router import create_stimulus_router
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     ParticipantRecord,
@@ -104,8 +129,20 @@ def env():
 
     authorization = AuthorizationService(assignments.is_assigned, docente_of, participant_repository.get_by_id)
     participants = ParticipantService(participant_repository, authorization, commitments, audit, group_user_ids,
-                                      retention_months=12, notice_days=30, clock=clock)
+                                      retention_months=12, notice_days=30, clock=clock,
+                                      authorizations=PostgresAuthorizationRepository(factory))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
+    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
+    def session_access(user, session):
+        actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        return authorization.can_access_session(user, session, actor_student_id=actor.id if actor else None)
+
+    questionnaires = QuestionnaireService(
+        PostgresQuestionnaireRepository(factory), audit, docente_of,
+        responses=PostgresQuestionnaireResponseRepository(factory, FieldCipher([KEY])),
+        sessions=sessions.get_session, session_access=session_access, clock=clock)
+    protocols = ProtocolService(PostgresProtocolRepository(factory), stimuli, audit, docente_of, group_user_ids,
+                                questionnaires=questionnaires, clock=clock)
     app = FastAPI()
     app.include_router(create_auth_router(auth, users))
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,
@@ -113,9 +150,48 @@ def env():
     app.include_router(create_privacy_router(commitments, audit, auth, users))
     app.include_router(create_participant_router(participants, auth, users))
     app.include_router(create_session_router(sessions, auth, users, students, authorization=authorization,
-                                             assignments=assignments, commitments=commitments))
+                                             assignments=assignments, commitments=commitments,
+                                             participants=participants, protocols=protocols,
+                                             questionnaires=questionnaires))
+    app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
+    app.include_router(create_questionnaire_router(questionnaires, auth, users))
+    # Analizador falso: cada prueba fija el resultado del próximo cuadro (sin modelos ni imágenes).
+    e.frame_result = FrameAssessment((), "happiness", 0.8, {"happiness": 0.8, "neutral": 0.2})
+    e.frames_assessed = 0
+
+    def assess(frame):
+        e.frames_assessed += 1
+        return e.frame_result
+
+    guided = GuidedSessionService(
+        PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
+        protocols=protocols.repository.get, stimuli=stimuli.repository.get,
+        participants=participant_repository.get_by_id,
+        participant_ready=lambda participant: participants.status(participant) == "ready",
+        questionnaire_answered=questionnaires.answered,
+        resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
+        assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
+        calibration_seconds=3.0, clock=clock)
+    app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
+                                            decode_frame=lambda data: data or None))
+    e.guided = guided
+    insights = SessionInsightsService(
+        sessions, guided.repository, protocols=protocols.repository.get, stimuli=stimuli.repository.get,
+        participants=participant_repository.get_by_id, questionnaire_responses=questionnaires.responses.list_for_session,
+        questionnaires=questionnaires.repository.get, authorization=authorization,
+        actor_student_id=lambda user: (students.get_by_user_id(user.id).id
+                                       if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
+        audit=audit)
+    app.include_router(create_insights_router(insights, auth, users))
+    e.reports = ReportService(PostgresReportRepository(factory, FieldCipher([KEY])), sessions,
+                              participant_repository.get_by_id, authorization, docente_of, insights, audit, clock)
+    app.include_router(create_report_router(e.reports, auth, users))
+    app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
+                                              authorization=authorization,
+                                              questionnaire_ready=questionnaires.pre_completed))
     e.audit, e.commitments, e.participants, e.sessions = audit, commitments, participants, sessions
     e.participant_repository, e.authorization = participant_repository, authorization
+    e.stimuli, e.protocols, e.questionnaires = stimuli, protocols, questionnaires
     with TestClient(app) as client:
         e.client = client
         yield e
@@ -130,9 +206,15 @@ def accept_commitment(env, user):
     env.commitments.accept(user, load_text("commitment").version)
 
 
-def register(env, user, kind="adult", notes=None):
+AGES = {"adult": 30, "child": 9}
+
+
+def register(env, user, kind="adult", notes=None, age=None):
     accept_commitment(env, user)
-    response = env.client.post("/participants", headers=headers(env, user), json={"kind": kind, "notes": notes})
+    if kind == "child":
+        env.commitments.accept(user, load_text("child_notice").version, "child_notice")
+    response = env.client.post("/participants", headers=headers(env, user),
+                               json={"kind": kind, "age_years": age or AGES[kind], "notes": notes})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -265,12 +347,12 @@ def test_without_the_commitment_participants_and_sessions_are_refused(env):
     commitment = env.client.get("/commitment", headers=headers(env, env.user_1)).json()
     assert commitment["required"] is True and commitment["provisional"] is True
     assert "no guarda imágenes" in commitment["content"]
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult"}).status_code == 428
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 428
     assert env.client.post("/sessions", headers=headers(env, env.user_1), json={}).status_code == 428
     accepted = env.client.post("/commitment/accept", headers=headers(env, env.user_1),
                                json={"version": commitment["version"]})
     assert accepted.status_code == 200 and accepted.json()["accepted"] is True
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult"}).status_code == 201
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 201
     assert ("commitment_accept", "commitment", "success") in audit_actions(env, action="commitment_accept")
     # Una versión distinta no se acepta.
     assert env.client.post("/commitment/accept", headers=headers(env, env.user_2), json={"version": "otra"}).status_code == 409
@@ -278,14 +360,14 @@ def test_without_the_commitment_participants_and_sessions_are_refused(env):
 
 def test_the_first_child_requires_the_reinforced_notice(env):
     accept_commitment(env, env.user_1)
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child"}).status_code == 428
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 428
     notice = env.client.get("/commitment/child-notice", headers=headers(env, env.user_1)).json()
     assert "más sensibles" in notice["content"]
     created = env.client.post("/participants", headers=headers(env, env.user_1),
-                              json={"kind": "child", "child_notice_version": notice["version"]})
+                              json={"kind": "child", "age_years": 9, "child_notice_version": notice["version"]})
     assert created.status_code == 201
     # Con el aviso ya aceptado, el siguiente niño no lo vuelve a pedir.
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child"}).status_code == 201
+    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 201
     assert ("child_notice_accept", "child_notice", "success") in audit_actions(env, action="child_notice_accept")
 
 
@@ -385,7 +467,9 @@ def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(en
     assert response.status_code == 200
     certificate = response.json()
     assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
-    assert certificate["counts"] == {"sessions": 1, "participants": 1}
+    assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "expression_captures": 0, "session_markers": 0,
+                                    "verbal_responses": 0, "guided_runs": 0, "report_comments": 0, "report_events": 0,
+                                    "session_reports": 0, "sessions": 1, "participants": 1}
     with env.factory() as db:
         assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
         assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0

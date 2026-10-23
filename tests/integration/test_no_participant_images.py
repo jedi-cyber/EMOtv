@@ -1,17 +1,21 @@
 """Ninguna ruta de la API entrega imágenes de participantes: las capturas de la
-cámara se procesan en memoria y se descartan."""
+cámara se procesan en memoria y se descartan. La única imagen que sirve la API
+es la de un estímulo del banco, subido por un docente o el administrador."""
 from __future__ import annotations
 
 import json
 import re
 
 from emotv.interfaces.web import app as api_module
+from tests.integration.test_participant_practices import png_bytes, upload_stimulus
 from tests.integration.test_privacy_accounts import accept_commitment, env, headers, register  # noqa: F401
 
 IMAGE_CONTENT = re.compile(r"^(image/|video/|application/octet-stream)")
 # Firmas de imágenes en base64 o como data URI (JPEG, PNG, GIF, WebP).
 IMAGE_SIGNATURES = ("data:image", "/9j/", "iVBORw0KGgo", "R0lGOD", "UklGR")
 IMAGE_FIELDS = re.compile(r"(image|imagen|frame|cuadro|photo|foto|capture|captura|snapshot|picture|jpeg|png)", re.I)
+# Única excepción: la imagen de un estímulo del banco (nunca de un participante).
+STIMULUS_FILE = "/stimuli/{stimulus_id}/file"
 
 
 def _schemas_with_image_fields(spec: dict) -> list[str]:
@@ -35,7 +39,10 @@ def test_no_route_declares_images_in_the_real_api():
             for status, response in operation.get("responses", {}).items():
                 for content_type in response.get("content", {}):
                     assert not IMAGE_CONTENT.match(content_type), f"{method.upper()} {path} {status}: {content_type}"
-        assert not re.search(r"(capture|captura|frame|photo|foto|snapshot|imagen|image)", path, re.I), path
+        # Ninguna ruta de consulta se llama como una imagen. La vista del participante
+        # sí envía cuadros (POST), pero solo recibe "recibido": se analizan y se descartan.
+        if "get" in operations:
+            assert not re.search(r"(capture|captura|frame|photo|foto|snapshot|imagen|image)", path, re.I), path
     assert _schemas_with_image_fields(spec) == []
 
 
@@ -46,8 +53,13 @@ def test_every_get_route_answers_without_images_for_every_role(env):  # noqa: F8
     certificate = None
     other = register(env, env.user_1)
     certificate = env.client.post(f"/participants/{other['id']}/delete", headers=headers(env, env.docente_a)).json()
+    stimulus = upload_stimulus(env, env.docente_a, png_bytes())
+    authorization = env.client.post(f"/participants/{participant['id']}/authorizations", headers=headers(env, env.user_1),
+                                    json={"form_version": "F-1", "signed_on": "2026-10-20", "participation": True,
+                                          "camera": True}).json()
     values = {"participant_id": participant["id"], "session_id": session["id"], "certificate_id": certificate["id"],
-              "user_id": env.user_1.id, "student_id": env.student_1.id}
+              "user_id": env.user_1.id, "student_id": env.student_1.id, "stimulus_id": stimulus["id"],
+              "authorization_id": authorization["id"]}
     spec = env.client.app.openapi()
     checked = 0
     for path, operations in spec["paths"].items():
@@ -57,6 +69,11 @@ def test_every_get_route_answers_without_images_for_every_role(env):  # noqa: F8
         for user in (env.superadmin, env.admin, env.docente_a, env.user_1):
             response = env.client.get(url, headers=headers(env, user))
             content_type = response.headers.get("content-type", "")
+            if path == STIMULUS_FILE:
+                # Solo el estímulo, y solo para quien puede verlo (docente A y su grupo).
+                assert response.status_code == (200 if user in (env.docente_a, env.user_1) else 404), user.role
+                checked += 1
+                continue
             assert not IMAGE_CONTENT.match(content_type), f"GET {url}: {content_type}"
             body = response.text
             assert not any(signature in body for signature in IMAGE_SIGNATURES), f"GET {url} devolvió una imagen"
