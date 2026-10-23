@@ -21,7 +21,7 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_server_load_settings,
-                          get_privacy_settings, get_sensitive_data_keys)
+                          get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -48,7 +48,11 @@ from emotv.interfaces.web.security import configure_web_security, load_web_setti
 from emotv.interfaces.web.activity_router import create_activity_router
 from emotv.interfaces.web.analysis_capacity import AnalysisCapacity
 from emotv.interfaces.web.analysis_router import create_analysis_router
-from emotv.interfaces.web.session_router import create_session_router
+from emotv.interfaces.web.session_router import create_session_router, create_session_starter
+from emotv.interfaces.web.mobile_router import create_mobile_router
+from emotv.application.mobile_auth_service import MobileAuthService
+from emotv.application.signed_urls import StimulusUrlSigner
+from emotv.infrastructure.persistence import PostgresMobileSessionRepository
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
@@ -298,6 +302,27 @@ if DATABASE_URL and JWT_SECRET_KEY:
                                        participant_repository.get_by_id, authorization_service, docente_of,
                                        insights_service, audit_service)
     app.include_router(create_report_router(report_service, authentication_service, user_repository))
+    # Aplicativo Android: mismos servicios y reglas que la web (docs/mobile-api.md).
+    app.include_router(create_mobile_router(
+        MobileAuthService(PostgresMobileSessionRepository(database_sessions), authentication_service,
+                          user_repository, audit_service, login_throttle),
+        user_repository,
+        audit=audit_service,
+        sessions=session_service,
+        start_session=create_session_starter(session_service, student_repository, authorization_service,
+                                             activity_catalog, commitment_service, participant_service,
+                                             protocol_service, questionnaire_service),
+        participants=participant_service,
+        protocols=protocol_service,
+        questionnaires=questionnaire_service,
+        guided=guided_service,
+        signer=StimulusUrlSigner(JWT_SECRET_KEY),
+        stimulus_image=stimulus_service.repository.get_image,
+        decode_frame=decode_frame,
+        production=web_settings.production,
+        api_version=__version__,
+        min_app_version=get_mobile_min_app_version(),
+    ))
     app.include_router(create_analysis_router(
         session_service,
         activity_catalog,
@@ -346,6 +371,8 @@ else:
     app.include_router(create_session_router(None, None, None, None))
     app.include_router(create_analysis_router(None, None, None, None, None, None))
     app.include_router(create_chat_router(None, None, None))
+    app.include_router(create_mobile_router(None, None, production=web_settings.production, api_version=__version__,
+                                            min_app_version=get_mobile_min_app_version()))
     app.include_router(create_expression_router(None, None, None))
     app.include_router(create_recommendation_router(None, None, None))
     app.include_router(create_model_admin_router(None, None, None))

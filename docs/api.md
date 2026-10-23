@@ -26,6 +26,11 @@ Authorization: Bearer <access_token>
 `GET /auth/me` devuelve la identidad actual. `GET /auth/users` requiere permiso
 administrativo.
 
+El aplicativo Android usa sus propias rutas `/mobile` (tokens de acceso cortos y
+de renovación revocables, solo usuarios y docentes): contrato completo en
+[mobile-api.md](mobile-api.md). Un token del aplicativo no sirve en estas rutas
+y uno de la web no sirve en `/mobile`.
+
 ## Papeles, participantes, compromiso y auditoría
 
 Papeles: `superadmin` (Superadministrador), `admin` (Administrador),

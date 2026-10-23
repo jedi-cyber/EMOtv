@@ -180,6 +180,26 @@ class LoginAttemptRecord(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
+class MobileSessionRecord(Base):
+    """Sesión del aplicativo móvil: el token de renovación vigente y el anterior
+    se guardan solo como SHA-256. Sin datos del dispositivo ni IP."""
+
+    __tablename__ = "mobile_sessions"
+    __table_args__ = (
+        UniqueConstraint("refresh_token_hash", name="uq_mobile_sessions_refresh_token_hash"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # El anterior a la última renovación: si vuelve a usarse, la sesión se revoca.
+    previous_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class StudentRecord(Base):
     __tablename__ = "students"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

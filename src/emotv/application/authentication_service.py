@@ -62,14 +62,16 @@ class AuthenticationService:
             _DUMMY_HASH = self.passwords.hash(secrets.token_urlsafe(32))
         return _DUMMY_HASH
 
-    def create_access_token(self, user: User) -> str:
+    def create_access_token(self, user: User, *, minutes: float | None = None,
+                            claims: dict[str, object] | None = None) -> str:
+        """Token de acceso. ``claims`` agrega, por ejemplo, la audiencia del
+        aplicativo móvil: un token con audiencia no sirve en la web y viceversa."""
         now = self.clock()
-        return jwt.encode(
-            {"sub": user.id, "role": user.role.value, "tv": user.token_version, "iat": now,
-             "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)},
-            self.secret_key,
-            algorithm=JWT_ALGORITHM,
-        )
+        payload = {"sub": user.id, "role": user.role.value, "tv": user.token_version, "iat": now,
+                   "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES if minutes is None else minutes)}
+        return jwt.encode({**payload, **(claims or {})}, self.secret_key, algorithm=JWT_ALGORITHM)
 
-    def decode_access_token(self, token: str) -> dict[str, object]:
-        return jwt.decode(token, self.secret_key, algorithms=[JWT_ALGORITHM])
+    def decode_access_token(self, token: str, audience: str | None = None) -> dict[str, object]:
+        # Sin audiencia, PyJWT rechaza los tokens que la traen (los del aplicativo móvil).
+        options = {"require": ["aud"]} if audience else {}
+        return jwt.decode(token, self.secret_key, algorithms=[JWT_ALGORITHM], audience=audience, options=options)

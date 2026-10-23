@@ -24,6 +24,9 @@ class AuditAction(str, Enum):
     ACCOUNT_REACTIVATE = "account_reactivate"
     COMMITMENT_ACCEPT = "commitment_accept"
     CHILD_NOTICE_ACCEPT = "child_notice_accept"
+    # Inicio y cierre de sesión en el aplicativo móvil.
+    LOGIN = "login"
+    LOGOUT = "logout"
 
 
 class AuditResult(str, Enum):

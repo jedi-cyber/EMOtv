@@ -1,7 +1,7 @@
 # Registro de tratamiento de datos personales
 
 > Derivado del código (`src/emotv/infrastructure/persistence/models.py`), de las
-> migraciones (`migrations/versions/`, hasta `20261025_22`) y de los servicios que
+> migraciones (`migrations/versions/`, hasta `20261026_23`) y de los servicios que
 > aplican la retención. Si el código cambia, este registro debe actualizarse: la
 > fuente de verdad son el código y las migraciones.
 > Sujeto a revisión de la Facultad. Las bases de legitimación marcadas deben
@@ -79,6 +79,7 @@ política aprobada).
 | `consents` | Versión de la política aceptada, fechas de aceptación y revocación | Requisito para analizar la propia expresión | La propia cuenta | No | Sin retención automática |
 | `commitment_acceptances` | Cuenta, tipo (compromiso o aviso de menores), versión y fecha | Evidencia de la aceptación del compromiso de confidencialidad | Uso interno del servidor; queda también en la auditoría | No | Sin retención automática |
 | `sessions` (sin `participant_id`) | Expresión estimada propia y confianza, actividad, resultado y duración | Análisis de la propia expresión y actividad guiada | La propia cuenta y su docente | No | **Sin retención automática** |
+| `mobile_sessions` | `user_id`, SHA-256 del token de renovación vigente y del anterior, versión de la contraseña, fechas de inicio, vencimiento, último uso y revocación. Sin datos del dispositivo ni IP | Sesión revocable del aplicativo móvil | Uso interno del servidor; el inicio y el cierre quedan en la auditoría | No (los tokens, solo como hash) | **Sin purga automática**: cada sesión vence a los 30 días y queda revocada; se borra con la cuenta |
 | `login_attempts` | `email_hash` (SHA-256 del correo), `ip`, fecha, éxito | Limitar intentos de inicio de sesión | Nadie desde la API | No (el correo, solo como hash) | 24 horas: se purga en cada nuevo intento |
 | `chat_conversations`, `chat_messages` | Cuenta, preguntas a Emi y respuestas (`content`), categoría | Historial del asistente Emi | Solo la propia cuenta | **No** | `CHAT_RETENTION_DAYS` (90). Se purga al arrancar la API y en cada pregunta. La persona puede borrar su conversación |
 | `access_audit` | `actor_user_id`, `actor_role`, acción, tipo e id del recurso (puede ser el id de un participante), resultado | Rendición de cuentas de accesos. **Sin contenido** | Administrador y superadministrador (`GET /audit`) | No | `AUDIT_RETENTION_MONTHS` (24, 720 días); tarea diaria |

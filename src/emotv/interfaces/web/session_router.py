@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
 
@@ -90,40 +91,26 @@ class SessionResponse(BaseModel):
                    post_questionnaire_id=session.post_questionnaire_id)
 
 
-def create_session_router(
+def create_session_starter(
     sessions: SessionService | None,
-    authentication: AuthenticationService | None,
-    users: UserRepository | None,
     students: StudentRepository | None,
-    authorization: AuthorizationService | None = None,
+    policy: AuthorizationService,
     activities: ActivityCatalog | None = None,
-    assignments: AssignmentRepository | None = None,
     commitments: CommitmentService | None = None,
     participants: ParticipantService | None = None,
     protocols: ProtocolService | None = None,
     questionnaires: QuestionnaireService | None = None,
-) -> APIRouter:
-    router = APIRouter(prefix="/sessions", tags=["sessions"])
-    policy = authorization or AuthorizationService()
-    current_user = create_current_user_dependency(authentication, users)
+) -> Callable[[User, CreateSessionRequest], EmotionalSession]:
+    """Inicia una sesión con las mismas reglas para la web y el aplicativo móvil:
+    compromiso, can_access_participant, autorizaciones, protocolo utilizable y
+    cuestionarios vigentes. Lanza HTTPException con el código del contrato."""
 
     def services() -> tuple[SessionService, StudentRepository]:
         if sessions is None or students is None:
             raise HTTPException(status_code=503, detail="Sesiones no configuradas")
         return sessions, students
 
-    def actor_student_id(user: User) -> str | None:
-        _, student_repository = services()
-        actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
-        return actor.id if actor else None
-
-    def require_session_access(user: User, session: EmotionalSession) -> None:
-        # El administrador y el superadministrador nunca acceden a sesiones.
-        if not policy.can_access_session(user, session, actor_student_id=actor_student_id(user)):
-            raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
-
-    @router.post("", response_model=SessionResponse, status_code=201)
-    def start(request: CreateSessionRequest, user: User = Depends(current_user)) -> SessionResponse:
+    def start(user: User, request: CreateSessionRequest) -> EmotionalSession:
         service, student_repository = services()
         expected_kind = PARTICIPANT_KIND_BY_TYPE.get(request.session_type)
         if expected_kind is None and request.participant_id is not None:
@@ -194,7 +181,48 @@ def create_session_router(
             raise HTTPException(status_code=403, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
-        return SessionResponse.from_domain(session)
+        return session
+
+    return start
+
+
+def create_session_router(
+    sessions: SessionService | None,
+    authentication: AuthenticationService | None,
+    users: UserRepository | None,
+    students: StudentRepository | None,
+    authorization: AuthorizationService | None = None,
+    activities: ActivityCatalog | None = None,
+    assignments: AssignmentRepository | None = None,
+    commitments: CommitmentService | None = None,
+    participants: ParticipantService | None = None,
+    protocols: ProtocolService | None = None,
+    questionnaires: QuestionnaireService | None = None,
+) -> APIRouter:
+    router = APIRouter(prefix="/sessions", tags=["sessions"])
+    policy = authorization or AuthorizationService()
+    current_user = create_current_user_dependency(authentication, users)
+    starter = create_session_starter(sessions, students, policy, activities, commitments, participants,
+                                     protocols, questionnaires)
+
+    def services() -> tuple[SessionService, StudentRepository]:
+        if sessions is None or students is None:
+            raise HTTPException(status_code=503, detail="Sesiones no configuradas")
+        return sessions, students
+
+    def actor_student_id(user: User) -> str | None:
+        _, student_repository = services()
+        actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        return actor.id if actor else None
+
+    def require_session_access(user: User, session: EmotionalSession) -> None:
+        # El administrador y el superadministrador nunca acceden a sesiones.
+        if not policy.can_access_session(user, session, actor_student_id=actor_student_id(user)):
+            raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
+
+    @router.post("", response_model=SessionResponse, status_code=201)
+    def start(request: CreateSessionRequest, user: User = Depends(current_user)) -> SessionResponse:
+        return SessionResponse.from_domain(starter(user, request))
 
     @router.post("/{session_id}/cancel", response_model=SessionResponse)
     def cancel(session_id: str, user: User = Depends(current_user)) -> SessionResponse:
