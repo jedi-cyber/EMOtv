@@ -6,14 +6,14 @@ import { AssistantWidget } from "../src/components/AssistantWidget";
 import { ApiError } from "../src/api/http";
 
 const mocks = vi.hoisted(() => ({
-  auth: { user: { id: "student-1" } as { id: string } | null, token: "token", loading: false },
+  auth: { user: { id: "student-1", role: "student" } as { id: string; role: string } | null, token: "token", loading: false },
   request: vi.fn(),
 }));
 vi.mock("../src/auth/useAuth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: mocks.request }));
 
-function Harness() {
-  return <MemoryRouter><Link to="/activities">Actividades</Link><AssistantWidget /></MemoryRouter>;
+function Harness({ path = "/dashboard" }: { path?: string }) {
+  return <MemoryRouter initialEntries={[path]}><Link to="/activities">Actividades</Link><AssistantWidget /></MemoryRouter>;
 }
 
 type Handler = (path: string, init?: { body?: string }) => unknown;
@@ -24,7 +24,7 @@ const empty = { conversation_id: null, messages: [] };
 
 describe("Emi", () => {
   beforeEach(() => {
-    mocks.auth.user = { id: "student-1" };
+    mocks.auth.user = { id: "student-1", role: "student" };
     mocks.request.mockReset();
   });
 
@@ -34,7 +34,7 @@ describe("Emi", () => {
     expect(screen.getByRole("button", { name: "Abrir a Emi" })).toHaveTextContent("Emi");
     await userEvent.click(screen.getByRole("button", { name: "Abrir a Emi" }));
     expect(screen.getByRole("heading", { name: "Emi" })).toBeVisible();
-    expect(screen.getByText(/no reemplaza la atención psicológica/)).toBeVisible();
+    expect(screen.getByText(/no diagnostica a nadie ni reemplaza a tu docente/)).toBeVisible();
     await userEvent.type(screen.getByLabelText("Tu pregunta"), "¿Cómo comienzo?");
     await userEvent.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText("Abre Actividades para comenzar.")).toBeVisible();
@@ -108,9 +108,63 @@ describe("Emi", () => {
     mocks.auth.user = null;
     view.rerender(<Harness />);
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-    mocks.auth.user = { id: "student-2" };
+    mocks.auth.user = { id: "student-2", role: "student" };
     view.rerender(<Harness />);
     await userEvent.click(screen.getByRole("button", { name: "Abrir a Emi" }));
     expect(screen.getByLabelText("Tu pregunta")).toHaveValue("");
+  });
+
+  it("es para usuarios y docentes; no aparece para la administración", () => {
+    serve(() => empty);
+    mocks.auth.user = { id: "docente-1", role: "psychologist" };
+    const view = render(<Harness />);
+    expect(screen.getByRole("button", { name: "Abrir a Emi" })).toBeInTheDocument();
+    for (const role of ["admin", "superadmin"]) {
+      mocks.auth.user = { id: `${role}-1`, role };
+      view.rerender(<Harness />);
+      expect(screen.queryByRole("button", { name: "Abrir a Emi" })).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ["la vista del participante", "/participant-view/token-de-prueba"],
+    ["la sesión guiada con un participante", "/guided/s-1"],
+  ])("no carga a Emi en %s", (_, path) => {
+    serve(() => empty);
+    render(<Harness path={path} />);
+    expect(screen.queryByRole("button", { name: "Abrir a Emi" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it("muestra siempre el aviso de no escribir datos de niños o familias", async () => {
+    serve((path) => path === "/chat" ? { conversation_id: null, answer: "Tu mensaje no se envió.", in_scope: false } : empty);
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Abrir a Emi" }));
+    const notice = /No escribas nombres ni datos de niños o familias/;
+    expect(screen.getByText(notice)).toBeVisible();
+    await userEvent.type(screen.getByLabelText("Tu pregunta"), "Pregunta");
+    await userEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(await screen.findByText("Tu mensaje no se envió.")).toBeVisible();
+    expect(screen.getByText(notice)).toBeVisible();
+  });
+
+  it("borra la propia conversación después de confirmar", async () => {
+    serve((path) => path === "/chat/conversations/current"
+      ? { conversation_id: "c-9", messages: [{ role: "user", content: "Mi pregunta", created_at: "2026-10-23T10:00:00Z" }] }
+      : null);
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Abrir a Emi" }));
+    expect(await screen.findByText("Mi pregunta")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Borrar conversación" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.getByText("Mi pregunta")).toBeVisible();
+    expect(mocks.request).not.toHaveBeenCalledWith("/chat/conversations/c-9", expect.anything());
+    await userEvent.click(screen.getByRole("button", { name: "Borrar conversación" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sí, borrar" }));
+    expect(await screen.findByText("Conversación borrada.")).toBeVisible();
+    expect(mocks.request).toHaveBeenCalledWith("/chat/conversations/c-9", expect.objectContaining({ method: "DELETE", token: "token" }));
+    expect(screen.queryByText("Mi pregunta")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Borrar conversación" })).toBeDisabled();
   });
 });

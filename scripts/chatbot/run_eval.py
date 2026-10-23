@@ -1,17 +1,19 @@
 """Envía las preguntas de tests/chatbot/emi_eval.md al endpoint /chat de EMOtv.
 
-Guarda cada respuesta con in_scope y category en reports/chatbot/ para revisión
-humana. No califica las respuestas.
+Guarda cada respuesta con in_scope y category, junto a lo esperado, en
+reports/chatbot/ para revisión humana. No califica las respuestas.
 
 Uso (con EMOtv en marcha, por ejemplo con Docker Compose):
     python scripts/chatbot/run_eval.py --base-url http://localhost:8080
 
-Usa una cuenta de prueba (código PRUEBA-NN) con el consentimiento aceptado.
+Usa una cuenta de prueba de usuario o docente (código PRUEBA-NN); Emi no
+responde a cuentas de administración.
 El correo y la contraseña se piden por consola o se leen de EMOTV_EVAL_EMAIL y
 EMOTV_EVAL_PASSWORD; nunca se escriben en el informe. Cada pregunta va en una
-conversación nueva para que no influya en las siguientes. Las 35 preguntas
+conversación nueva para que no influya en las siguientes. Las 45 preguntas
 consumen cuota de Groq y superan el límite de 20 mensajes cada 10 minutos: el
-script espera y reintenta cuando EMOtv responde 429.
+script espera y reintenta cuando EMOtv responde 429. Las del grupo F las
+bloquea el filtro de identificadores de FastAPI: no llegan a n8n ni gastan cuota.
 """
 from __future__ import annotations
 
@@ -32,8 +34,8 @@ import httpx
 ROOT = Path(__file__).resolve().parents[2]
 QUESTIONS = ROOT / "tests" / "chatbot" / "emi_eval.md"
 OUTPUT_DIR = ROOT / "reports" / "chatbot"
-ROW = re.compile(r"^\| (?P<id>[A-E]\d{2}) \| (?P<question>.+?) \| (?P<expected>true o false|true|false) \| "
-                 r"(?P<behavior>.+?) \|$")
+ROW = re.compile(r"^\| (?P<id>[A-F]\d{2}) \| (?P<question>.+?) \| (?P<expected>true o false|true|false) \| "
+                 r"(?P<category>[a-z_]+) \| (?P<behavior>.+?) \|$")
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,7 @@ class Question:
     id: str
     question: str
     expected_in_scope: str
+    expected_category: str
     expected_behavior: str
 
 
@@ -49,6 +52,7 @@ class Result:
     id: str
     question: str
     expected_in_scope: str
+    expected_category: str
     expected_behavior: str
     status_code: int | None
     answer: str | None
@@ -63,7 +67,9 @@ def load_questions(path: Path = QUESTIONS) -> list[Question]:
     questions = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if match := ROW.match(line.strip()):
-            questions.append(Question(match["id"], match["question"], match["expected"], match["behavior"]))
+            # Las comillas invertidas solo dan formato en Markdown; no son parte de la pregunta.
+            questions.append(Question(match["id"], match["question"].replace("`", ""), match["expected"],
+                                      match["category"], match["behavior"]))
     return questions
 
 
@@ -90,8 +96,8 @@ def ask(client: httpx.Client, headers: dict[str, str], question: Question, *, re
         if response.status_code != 200:
             return _failure(question, response, started)
         body = response.json()
-        return Result(question.id, question.question, question.expected_in_scope, question.expected_behavior,
-                      200, body.get("answer"), body.get("in_scope"), body.get("category"), None,
+        return Result(question.id, question.question, question.expected_in_scope, question.expected_category,
+                      question.expected_behavior, 200, body.get("answer"), body.get("in_scope"), body.get("category"), None,
                       round(time.monotonic() - started, 2))
     raise AssertionError("inalcanzable")
 
@@ -110,7 +116,8 @@ def write_report(results: list[Result], base_url: str, output_dir: Path, now: da
     for result in results:
         lines += [f"## {result.id}. {result.question}", "",
                   f"- in_scope esperado: {result.expected_in_scope} · recibido: {result.in_scope}"
-                  f" · category: {result.category} · HTTP {result.status_code} · {result.seconds} s",
+                  f" · category esperada: {result.expected_category} · recibida: {result.category}"
+                  f" · HTTP {result.status_code} · {result.seconds} s",
                   f"- Esperado: {result.expected_behavior}", "",
                   "> " + (result.answer or f"(sin respuesta: {result.error})").replace("\n", "\n> "), "",
                   "Revisión: ", ""]
@@ -131,8 +138,8 @@ def run(client: httpx.Client, email: str, password: str, questions: list[Questio
 
 
 def _failure(question: Question, response: httpx.Response, started: float) -> Result:
-    return Result(question.id, question.question, question.expected_in_scope, question.expected_behavior,
-                  response.status_code, None, None, None, _detail(response), round(time.monotonic() - started, 2))
+    return Result(question.id, question.question, question.expected_in_scope, question.expected_category,
+                  question.expected_behavior, response.status_code, None, None, None, _detail(response), round(time.monotonic() - started, 2))
 
 
 def _detail(response: httpx.Response) -> str:

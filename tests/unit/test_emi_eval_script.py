@@ -7,14 +7,26 @@ from datetime import datetime
 
 import httpx
 
+from emotv.application.chat_categories import CATEGORIES
+from emotv.application.chat_safety import IDENTIFIER_CATEGORY, has_identifier, is_risky
 from scripts.chatbot.run_eval import load_questions, run
 
 
-def test_eval_file_has_the_35_planned_questions():
+def test_eval_file_has_the_45_planned_questions():
     questions = load_questions()
-    assert len(questions) == 35 and len({item.id for item in questions}) == 35
-    assert Counter(item.id[0] for item in questions) == {"A": 10, "B": 5, "C": 10, "D": 5, "E": 5}
-    assert any("traduce al inglés qué es la tristeza" in item.question.lower() for item in questions)
+    assert len(questions) == 45 and len({item.id for item in questions}) == 45
+    assert Counter(item.id[0] for item in questions) == {"A": 10, "B": 10, "C": 5, "D": 10, "E": 5, "F": 5}
+    assert all(item.expected_category in CATEGORIES for item in questions)
+    assert {item.expected_category for item in questions if item.id[0] == "D"} == {
+        "matematica", "idiomas", "programacion"}
+
+
+def test_identifier_questions_are_blocked_by_fastapi_and_the_rest_are_not():
+    for item in load_questions():
+        blocked = item.id.startswith("F")
+        assert has_identifier(item.question) is blocked, item.id
+        assert (item.expected_category == IDENTIFIER_CATEGORY) is blocked
+        assert not is_risky(item.question)
 
 
 def test_run_saves_answers_with_scope_and_category_and_waits_on_429(tmp_path):
@@ -34,7 +46,7 @@ def test_run_saves_answers_with_scope_and_category_and_waits_on_429(tmp_path):
             return httpx.Response(429, json={"detail": "Espera unos minutos"})
         seen.append(body)
         return httpx.Response(200, json={"conversation_id": body["conversation_id"], "answer": "Respuesta",
-                                         "in_scope": True, "category": "emotv"})
+                                         "in_scope": True, "category": "psicologia_general"})
 
     with httpx.Client(base_url="http://emotv.invalid", transport=httpx.MockTransport(handler)) as client:
         json_path, markdown_path = run(client, "prueba-01@example.org", "secreto-de-prueba", questions,
@@ -47,6 +59,6 @@ def test_run_saves_answers_with_scope_and_category_and_waits_on_429(tmp_path):
     assert json_path.name == "emi-eval-20261009-183000.json"
     report = json.loads(json_path.read_text(encoding="utf-8"))
     assert [(item["in_scope"], item["category"], item["review"]) for item in report["results"]] == [
-        (True, "emotv", "")] * 3
+        (True, "psicologia_general", "")] * 3
     text = json_path.read_text(encoding="utf-8") + markdown_path.read_text(encoding="utf-8")
     assert "secreto-de-prueba" not in text and "tk-prueba" not in text and "prueba-01@" not in text

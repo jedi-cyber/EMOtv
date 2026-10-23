@@ -27,6 +27,8 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
   const historyRequested = useRef(false);
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -61,7 +63,7 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
     const text = question.trim();
     if (!text || sending) return;
     setMessages((current) => [...current, { role: "user", text }]);
-    setQuestion(""); setSending(true); setError(null);
+    setQuestion(""); setSending(true); setError(null); setNotice(null);
     try {
       const body = conversationId ? { conversation_id: conversationId, question: text } : { question: text };
       const result = await apiRequest<ChatAnswer>("/chat", { method: "POST", token, body: JSON.stringify(body) });
@@ -75,9 +77,24 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
     } finally { setSending(false); }
   }
 
-  async function newConversation() {
+  async function deleteConversation() {
     if (sending || starting) return;
     setStarting(true); setError(null);
+    try {
+      // Sin conversación guardada (por ejemplo, solo mensajes bloqueados por los filtros) basta con limpiar la vista.
+      if (conversationId) await apiRequest(`/chat/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE", token });
+      setConversationId(null);
+      setMessages([]);
+      setNotice("Conversación borrada.");
+      inputRef.current?.focus();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally { setStarting(false); setConfirmingDelete(false); }
+  }
+
+  async function newConversation() {
+    if (sending || starting) return;
+    setStarting(true); setError(null); setNotice(null);
     try {
       const created = await apiRequest<StoredConversation>("/chat/conversations", { method: "POST", token });
       setConversationId(created.conversation_id ?? null);
@@ -89,12 +106,22 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
   }
 
   return <div className="chat-panel">
-      <Callout variant="info">Emi ofrece orientación educativa sobre EMOtv; no reemplaza la atención psicológica ni los servicios de emergencia.</Callout>
+      <Callout variant="info">Emi ofrece orientación educativa sobre Psicología y EMOtv; no diagnostica a nadie ni reemplaza a tu docente, la atención psicológica o los servicios de emergencia.</Callout>
+      {/* Aviso permanente: el servidor además rechaza DNI, correos y teléfonos antes de llamar al asistente. */}
+      <Callout variant="warning" role="note">No escribas nombres ni datos de niños o familias. Si describes un caso, hazlo sin datos que identifiquen a la persona.</Callout>
       <div className="inline-actions">
         <Button variant="secondary" type="button" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</Button>
+        {!confirmingDelete && <Button variant="ghost" type="button" disabled={sending || starting || (!conversationId && messages.length === 0)}
+          onClick={() => { setConfirmingDelete(true); setNotice(null); }}>Borrar conversación</Button>}
       </div>
+      {confirmingDelete && <div className="inline-actions" role="group" aria-label="Confirmar borrado">
+        <span>¿Borrar esta conversación? No se puede recuperar.</span>
+        <Button variant="danger" type="button" disabled={starting} onClick={() => { void deleteConversation(); }}>Sí, borrar</Button>
+        <Button variant="ghost" type="button" disabled={starting} onClick={() => setConfirmingDelete(false)}>Cancelar</Button>
+      </div>}
+      {notice && <p role="status" className="muted">{notice}</p>}
       <div ref={messagesRef} className="chat-messages" role="log" aria-label="Conversación con Emi" aria-live="polite">
-        {messages.length === 0 && <div className="assistant-welcome"><strong>Hola, soy Emi</strong><p>Puedo orientarte sobre la plataforma, sus actividades y las expresiones faciales. ¿En qué te ayudo?</p></div>}
+        {messages.length === 0 && <div className="assistant-welcome"><strong>Hola, soy Emi</strong><p>Puedo orientarte sobre Psicología en general, la evaluación infantil y el uso de EMOtv. ¿En qué te ayudo?</p></div>}
         {messages.map((message, index) => <div key={index} className={`chat-message ${message.role}`}>
           <strong>{message.role === "user" ? "Tú" : "Emi"}</strong><p>{message.text}</p>
         </div>)}
