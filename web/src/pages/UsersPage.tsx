@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { AssignmentsPanel } from "../components/AssignmentsPanel";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Button } from "../components/Button";
+import { Modal } from "../components/Modal";
 
 type CreatedUser = CurrentUser & { temporary_password: string | null };
 
@@ -34,6 +35,7 @@ export function UsersPage() {
   const [assigning, setAssigning] = useState<CurrentUser | null>(null);
   const [resetting, setResetting] = useState<CurrentUser | null>(null);
   const [toggling, setToggling] = useState<CurrentUser | null>(null);
+  const [creating, setCreating] = useState(false);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setCreated(null);
@@ -42,7 +44,7 @@ export function UsersPage() {
         method: "POST", token,
         body: JSON.stringify({ email: email.trim(), role, ...(role === "student" ? { student_code: code.trim() } : {}) }),
       });
-      setCreated(result); setEmail(""); setCode("");
+      setCreated(result); setEmail(""); setCode(""); setCreating(false);
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo crear la cuenta."); }
     finally { setBusy(false); }
@@ -71,18 +73,24 @@ export function UsersPage() {
     <PageHeader title={isSuperadmin ? "Cuenta de administrador" : "Cuentas y grupos"}
       description={isSuperadmin
         ? "La cuenta de administrador es para la persona con cargo superior en la Facultad. Por defecto solo puede haber una activa."
-        : "Crea cuentas de docentes y usuarios, y asigna cada usuario a un docente."} />
-    {error && <Callout variant="error">{error}</Callout>}
-    <form className="card onboarding-card" onSubmit={(event) => { void create(event); }}>
-      <h2>Crear cuenta</h2>
+        : "Crea cuentas de docentes y usuarios, y asigna cada usuario a un docente."}
+      actions={<Button variant="primary" type="button" onClick={() => { setError(""); setCreating(true); }}>Crear cuenta</Button>} />
+    {error && !creating && <Callout variant="error">{error}</Callout>}
+    <Modal open={creating} title="Crear cuenta" onClose={() => setCreating(false)} busy={busy}
+      footer={<>
+        <Button variant="secondary" type="button" disabled={busy} onClick={() => setCreating(false)}>Cancelar</Button>
+        <Button variant="primary" type="submit" form="create-account-form" disabled={busy}>{busy ? "Creando…" : `Crear cuenta de ${roleNames[role].toLowerCase()}`}</Button>
+      </>}>
+    <form id="create-account-form" className="form-stack" onSubmit={(event) => { void create(event); }}>
       <p>Se generará una contraseña provisional única. La persona deberá cambiarla en su primer acceso.</p>
+      {error && <Callout variant="error">{error}</Callout>}
       <label>Correo electrónico<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       {options.length > 1 && <label>Papel<select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>
         {options.map((item) => <option key={item} value={item}>{roleNames[item]}</option>)}
       </select></label>}
       {role === "student" && <label>Código de usuario<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>}
-      <Button variant="primary" type="submit" disabled={busy}>{busy ? "Creando…" : `Crear cuenta de ${roleNames[role].toLowerCase()}`}</Button>
     </form>
+    </Modal>
     {created?.temporary_password && <Callout variant="info">
       Contraseña provisional para {created.email} (solo se muestra ahora):
       <code className="temporary-secret">{created.temporary_password}</code>

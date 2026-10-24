@@ -75,7 +75,7 @@ describe("administración del catálogo", () => {
     await userEvent.clear(why);
     await userEvent.type(why, "Texto general sobre las personas. Revisado por Psicología.");
     await userEvent.click(within(form).getByLabelText(/Marcar como revisado/));
-    await userEvent.click(within(form).getByRole("button", { name: "Guardar" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Guardar" }));
     const [path, options] = vi.mocked(apiRequest).mock.calls[0];
     expect(path).toBe("/expressions/sadness");
     expect(options?.method).toBe("PUT");
@@ -92,7 +92,7 @@ describe("administración del catálogo", () => {
     const tip = within(form).getByLabelText("Para practicar");
     await userEvent.clear(tip);
     await userEvent.type(tip, "Corto.");
-    await userEvent.click(within(form).getByRole("button", { name: "Guardar" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Guardar" }));
     expect(screen.getByRole("alert")).toHaveTextContent("«Para practicar» debe tener entre 20 y 1200 caracteres.");
     expect(apiRequest).not.toHaveBeenCalled();
   });

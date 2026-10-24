@@ -47,13 +47,16 @@ describe("participantes", () => {
     });
     withUser("student", <ParticipantsPage />);
     expect(document.body.textContent).not.toMatch(/estudiante/i);
+    await userEvent.click(screen.getByRole("button", { name: "Registrar participante" }));
+    expect(screen.getByRole("dialog", { name: "Registrar participante" })).toBeInTheDocument();
     // Solo la edad: el código lo genera el sistema y la equivalencia queda en la ficha de papel.
     expect(screen.getByText(/ficha de papel que custodia el docente/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/nombre|dni|tutor/i)).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Edad en años"), "9");
     expect(screen.getByText("Se registrará como: niño o niña.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Registrar participante" }));
+    await userEvent.click(screen.getByRole("button", { name: "Registrar" }));
     expect(await screen.findByRole("dialog", { name: "Antes de registrar a un niño o una niña" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Registrar participante" })).not.toBeInTheDocument();
     expect(screen.getByText("más sensibles")).toBeInTheDocument();
     const confirm = screen.getByRole("button", { name: "Entendido, registrar" });
     expect(confirm).toBeDisabled();
@@ -115,7 +118,9 @@ describe("participantes", () => {
   it("los estímulos exigen origen, licencia y declarar que no son fotos de participantes", async () => {
     vi.mocked(apiRequest).mockResolvedValue({ title: "Forma" } as never);
     withUser("psychologist", <StimuliPage />, "/stimuli");
-    const submit = screen.getByRole("button", { name: "Agregar estímulo" });
+    await userEvent.click(screen.getByRole("button", { name: "Agregar estímulo" }));
+    expect(screen.getByRole("dialog", { name: "Agregar estímulo" })).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: "Agregar" });
     await userEvent.upload(screen.getByLabelText(/Imagen/), new File(["x"], "forma.png", { type: "image/png" }));
     await userEvent.type(screen.getByLabelText("Título"), "Forma");
     await userEvent.selectOptions(screen.getByLabelText("Tipo"), "abstract");

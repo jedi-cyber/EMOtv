@@ -7,6 +7,7 @@ import { useAuth } from "../auth/useAuth";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
+import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
@@ -40,6 +41,7 @@ export function ProtocolsPage() {
   const byId = new Map(stimuli.map((item) => [item.id, item]));
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editing, setEditing] = useState<Protocol | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -62,12 +64,12 @@ export function ProtocolsPage() {
     setChoice("");
   }
   function startEditing(item: Protocol) {
-    setEditing(item);
+    setEditing(item); setEditorOpen(true);
     setDraft({ name: item.name, description: item.description, for_children: item.for_children, steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" });
     setMessage(""); setError("");
   }
-  function reset() { setEditing(null); setDraft(emptyDraft); }
+  function reset() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,12 +103,20 @@ export function ProtocolsPage() {
     <PageHeader title="Protocolos"
       description={isDocente
         ? "Secuencias de estímulos para tus sesiones. Aquí apruebas las de tu grupo que se usarán con niños."
-        : "Secuencias de estímulos para tus sesiones. Con niños se usan solo cuando tu docente las aprueba."} />
+        : "Secuencias de estímulos para tus sesiones. Con niños se usan solo cuando tu docente las aprueba."}
+      actions={<Button variant="primary" onClick={() => { reset(); setMessage(""); setError(""); setEditorOpen(true); }}>Nuevo protocolo</Button>} />
     {message && <Callout variant="success">{message}</Callout>}
-    {error && <Callout variant="error">{error}</Callout>}
+    {error && !editorOpen && <Callout variant="error">{error}</Callout>}
 
-    <form className="card form-stack" onSubmit={(event) => { void submit(event); }}>
-      <h2>{editing ? `Editar «${editing.name}»` : "Nuevo protocolo"}</h2>
+    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={reset} busy={busy}
+      footer={<>
+        <Button disabled={busy} onClick={reset}>Cancelar</Button>
+        <Button variant="primary" type="submit" form="protocol-editor" disabled={busy || draft.steps.length === 0 || !draft.name.trim()}>
+          {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear protocolo"}
+        </Button>
+      </>}>
+    <form id="protocol-editor" className="form-stack" onSubmit={(event) => { void submit(event); }}>
+      {error && <Callout variant="error">{error}</Callout>}
       {editing?.used && <Callout variant="info" role="note">
         Este protocolo ya se usó en una sesión: al guardar se crea la versión {editing.version + 1} y la actual se conserva.
       </Callout>}
@@ -161,13 +171,8 @@ export function ProtocolsPage() {
         </select></label>
         <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
       </div>
-      <div className="inline-actions">
-        <Button variant="primary" type="submit" disabled={busy || draft.steps.length === 0 || !draft.name.trim()}>
-          {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear protocolo"}
-        </Button>
-        {editing && <Button onClick={reset}>Cancelar</Button>}
-      </div>
     </form>
+    </Modal>
 
     <PageState {...query} empty={!query.loading && !query.error && protocols.length === 0}
       emptyMessage="Todavía no hay protocolos." onRetry={query.reload} />

@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssignmentsPanel } from "../src/components/AssignmentsPanel";
 import { StudentsPage } from "../src/pages/StudentsPage";
+import { UsersPage } from "../src/pages/UsersPage";
 import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest } from "../src/api/http";
 import type { UserRole } from "../src/auth/types";
@@ -67,6 +68,23 @@ describe("grupos de docentes", () => {
     await userEvent.click(screen.getByRole("button", { name: "Asignar 1 usuario" }));
     expect(screen.getByText("No se pudo asignar a: tres@ejemplo.local.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /tres@/ })).toBeChecked();
+  });
+
+  it("crea cuentas desde un modal y muestra la contraseña provisional en la página", async () => {
+    data.value["/users"] = [psychologist];
+    vi.mocked(apiRequest).mockResolvedValue({ ...psychologist, id: "psy-2", email: "nuevo@ejemplo.local", temporary_password: "provisional-de-prueba" } as never);
+    withUser("admin", <UsersPage />);
+    expect(screen.queryByLabelText("Correo electrónico")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Crear cuenta" }));
+    const dialog = screen.getByRole("dialog", { name: "Crear cuenta" });
+    await userEvent.type(within(dialog).getByLabelText("Correo electrónico"), "nuevo@ejemplo.local");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Papel"), "psychologist");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear cuenta de docente" }));
+    expect(apiRequest).toHaveBeenCalledWith("/users", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ email: "nuevo@ejemplo.local", role: "psychologist" }),
+    }));
+    expect(await screen.findByText("provisional-de-prueba")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("explica al docente sin grupo por qué no ve usuarios", () => {
