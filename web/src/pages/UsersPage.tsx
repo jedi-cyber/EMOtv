@@ -98,7 +98,7 @@ export function UsersPage() {
         <td className="inline-actions">
           <Button variant="secondary" type="button" disabled={busy || !item.is_active} onClick={() => setResetting(item)}>Restablecer clave</Button>
           <Button variant="secondary" type="button" disabled={busy} onClick={() => setToggling(item)}>{item.is_active ? "Desactivar" : "Reactivar"}</Button>
-          {item.role === "psychologist" && <Button variant="secondary" type="button" onClick={() => setAssigning(item)}>Grupo</Button>}
+          {item.role === "psychologist" && <Button variant="secondary" type="button" onClick={() => setAssigning(item)}>Asignar usuarios</Button>}
         </td>
       </tr>)}
     </tbody></table></div>}
@@ -110,6 +110,6 @@ export function UsersPage() {
       message={toggling?.is_active ? `¿Desactivar la cuenta de ${toggling.email}? No podrá ingresar hasta que la reactives.` : `¿Reactivar la cuenta de ${toggling?.email ?? ""}?`}
       confirming={busy} confirmLabel={toggling?.is_active ? "Desactivar" : "Reactivar"} onCancel={() => setToggling(null)}
       onConfirm={() => { if (toggling) void toggleActive(toggling); }} />
-    {assigning && <AssignmentsPanel key={assigning.id} psychologist={assigning} onClose={() => setAssigning(null)} />}
+    {assigning && <AssignmentsPanel key={assigning.id} psychologist={assigning} accounts={users} onClose={() => setAssigning(null)} />}
   </section>;
 }

@@ -54,7 +54,7 @@ describe("recorridos principales por rol", () => {
     renderAs("admin");
     await userEvent.click(screen.getByRole("link", { name: "Gestionar cuentas" }));
     expect(screen.getByRole("heading", { level: 1, name: "Cuentas y grupos" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Grupo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Asignar usuarios" })).toBeInTheDocument();
     renderAs("admin", "/sessions");
     expect(await screen.findByRole("heading", { name: "No tienes acceso a esta página" })).toBeInTheDocument();
   });
