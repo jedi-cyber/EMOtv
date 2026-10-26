@@ -210,6 +210,24 @@ class ParticipantService:
             return AuthorizationStatus.READY
         return AuthorizationStatus.MISSING
 
+    def authorization_gaps(self, participant: Participant) -> tuple[str, ...]:
+        """Qué falta para iniciar una sesión: participation, camera o child_assent
+        (revoked si se retiró una, age si se registró sin edad). Vacío si está lista. Sin auditoría: el
+        llamador ya auditó la consulta del participante o de la lista."""
+        if participant.authorization_revoked_at is not None:
+            return ("revoked",)
+        if participant.age_years is None:
+            return ("age",)
+        items = self._authorization_store().list_for(participant.id)
+        latest = items[0] if items else None
+        is_child = participant.kind is ParticipantKind.CHILD
+        if latest is not None and latest.allows_sessions(is_child):
+            return ()
+        gaps = [name for name in ("participation", "camera") if latest is None or not getattr(latest, name)]
+        if is_child and (latest is None or latest.child_assent is not True):
+            gaps.append("child_assent")
+        return tuple(gaps) or ("revoked",)
+
     def list_authorizations(self, user: User, participant_id: str) -> tuple[ParticipantAuthorization, ...]:
         participant = self.get(user, participant_id)
         items = self._authorization_store().list_for(participant.id)

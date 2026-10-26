@@ -20,6 +20,7 @@ interface ModalProps {
 /**
  * Diálogo modal accesible: el foco pasa al título al abrirse, no sale del
  * modal mientras está abierto y vuelve al elemento que lo abrió al cerrarse.
+ * Un formulario dentro del modal enlaza su botón del pie con el atributo `form`.
  */
 export function Modal({ open, title, onClose, children, footer, busy = false, role = "dialog", describedBy }: ModalProps) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -39,6 +40,8 @@ export function Modal({ open, title, onClose, children, footer, busy = false, ro
     document.body.style.overflow = "hidden";
     titleRef.current?.focus();
     const handleKey = (event: KeyboardEvent) => {
+      // Con dos modales abiertos (p. ej. una vista previa sobre un editor), solo responde el de arriba.
+      if (backdrop && backdrop !== document.body.lastElementChild) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (!latest.current.busy) latest.current.onClose();

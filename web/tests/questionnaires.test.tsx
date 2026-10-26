@@ -68,6 +68,8 @@ describe("cuestionarios", () => {
     withUser("student", <QuestionnairesPage />);
     expect(document.body.textContent).not.toMatch(/estudiante|psicolog/i);
     expect(screen.getByText(/quien conduce la sesión/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Nuevo cuestionario" }));
+    expect(screen.getByRole("dialog", { name: "Nuevo cuestionario" })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Título"), "Al llegar");
     await userEvent.selectOptions(screen.getByLabelText("Tipo de pregunta"), "scale");
     await userEvent.click(screen.getByRole("button", { name: "Agregar pregunta" }));
@@ -80,7 +82,10 @@ describe("cuestionarios", () => {
     const preview = screen.getByRole("dialog", { name: "Vista previa" });
     expect(within(preview).getAllByRole("radio")).toHaveLength(3);
     expect(within(preview).getByText("Poco")).toBeInTheDocument();
+    // Escape cierra solo la vista previa; el editor sigue abierto debajo.
     await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Vista previa" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Nuevo cuestionario" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Guardar cuestionario" }));
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/questionnaires", expect.objectContaining({ method: "POST" })));
     const body = JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body));

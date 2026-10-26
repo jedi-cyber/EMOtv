@@ -525,8 +525,37 @@ class GuidedSessionService:
         self._stop(self._by_token(token), StopReason.PARTICIPANT, None)
 
     def receive_frame(self, token: str, frame) -> None:
+        """Un cuadro de la vista del participante (enlace propio)."""
+        self._receive(self._tick(self._by_token(token)), frame)
+
+    # --- Aplicativo móvil: quien conduce y la cámara están en el mismo dispositivo -----
+
+    def conductor_frame(self, user: User, session_id: str, frame) -> dict[str, Any]:
+        """Un cuadro enviado por quien conduce la sesión. Sigue el mismo control de
+        calidad y modelo local que la vista del participante; la imagen se descarta.
+        Devuelve solo la fase y los problemas de calidad, nunca la expresión."""
+        run, _ = self._conducted(user, session_id)
+        if not run.active:
+            raise GuidedConflict("La sesión ya terminó")
+        self._receive(self._tick(run), frame)
+        run = self._tick(self.repository.get_run(session_id) or run)
+        live = self._live.get(session_id)
+        return {"phase": run.phase.value,
+                "capture_status": [item.value for item in live.pending.issues] if live and live.pending else []}
+
+    def stimulus_in_active_session(self, user_id: str, session_id: str, stimulus_id: str) -> bool:
+        """El estímulo pertenece al protocolo de una sesión activa que conduce esa cuenta."""
+        run = self.repository.get_run(session_id)
+        if run is None or run.owner_user_id != user_id:
+            return False
+        run = self._tick(run)
+        if not run.active:
+            return False
+        protocol = self._protocol(self._session(session_id))
+        return any(step.stimulus_id == stimulus_id for step in protocol.steps)
+
+    def _receive(self, run: GuidedRun, frame) -> None:
         """Analiza un cuadro en memoria (calibración o captura) y lo descarta."""
-        run = self._tick(self._by_token(token))
         if frame is None:
             return
         session = self._session(run.session_id)

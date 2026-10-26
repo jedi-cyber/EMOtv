@@ -22,6 +22,7 @@ Tablas con datos vinculados a un usuario o estudiante:
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
 - chat_conversations y chat_messages;
+- mobile_sessions (sesiones del aplicativo móvil);
 - referencias de autoría que se anulan sin borrar la fila ajena:
   psychologist_assignments.assigned_by_user_id y
   expression_info.reviewed_by_user_id.
@@ -51,6 +52,7 @@ from emotv.infrastructure.persistence.models import (
     ExpressionInfoRecord,
     GuidedRunRecord,
     LoginAttemptRecord,
+    MobileSessionRecord,
     ParticipantAuthorizationRecord,
     ParticipantRecord,
     ProtocolRecord,
@@ -83,7 +85,7 @@ TABLES = ("chat_messages", "chat_conversations", "report_comments", "report_even
           "questionnaire_responses", "expression_captures",
           "session_markers", "verbal_responses", "guided_runs", "sessions",
           "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
-          "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "students", "users")
+          "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "mobile_sessions", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
 
 BACKUP_WARNING = (
@@ -331,6 +333,7 @@ _MODELS = {
     "psychologist_assignments": PsychologistAssignmentRecord,
     "consents": ConsentRecordModel,
     "login_attempts": LoginAttemptRecord,
+    "mobile_sessions": MobileSessionRecord,
     "students": StudentRecord,
     "users": UserRecord,
 }
@@ -368,6 +371,7 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
             PsychologistAssignmentRecord.psychologist_user_id == account.user_id),
         "consents": ConsentRecordModel.student_id == student if student else false(),
         "login_attempts": LoginAttemptRecord.email_hash == hash_email(account.email),
+        "mobile_sessions": MobileSessionRecord.user_id == account.user_id,
         "students": StudentRecord.user_id == account.user_id,
         "users": UserRecord.id == account.user_id,
     }

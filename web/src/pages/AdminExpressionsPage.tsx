@@ -11,6 +11,7 @@ import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { Button } from "../components/Button";
+import { Modal } from "../components/Modal";
 
 const TEXT_MIN = 20;
 const TEXT_MAX = 1200;
@@ -47,6 +48,8 @@ export function AdminExpressionsPage() {
   const [error, setError] = useState("");
   const selected = items.find((item) => item.expression_key === selectedKey) ?? null;
 
+  function close() { setForm(null); setSelectedKey(""); setError(""); }
+
   function edit(info: ExpressionInfo) {
     setSelectedKey(info.expression_key); setForm(toForm(info)); setMessage(""); setError("");
   }
@@ -76,8 +79,8 @@ export function AdminExpressionsPage() {
   return <section>
     <PageHeader title="Catálogo de expresiones"
       description="Textos fijos que ve el usuario tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
-    {message && <Callout variant="success">{message}</Callout>}
-    {error && <Callout variant="error">{error}</Callout>}
+    {message && !form && <Callout variant="success">{message}</Callout>}
+    {error && !form && <Callout variant="error">{error}</Callout>}
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0} emptyMessage="El catálogo de expresiones está vacío. Revisa que el servidor haya cargado los textos iniciales." onRetry={query.reload} />
     {items.length > 0 && <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Estado</th><th>Revisado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
       {items.map((item) => <tr key={item.expression_key}>
@@ -87,8 +90,12 @@ export function AdminExpressionsPage() {
         <td><Button variant="secondary" type="button" onClick={() => edit(item)} aria-label={`Editar ${item.label_es}`}>Editar</Button></td>
       </tr>)}
     </tbody></table></div>}
-    {form && selected && <form className="card form-stack" onSubmit={save} aria-label={`Editar ${selected.label_es}`}>
-      <h2>Editar: {selected.label_es}</h2>
+    {form && selected && <Modal open title={`Editar: ${selected.label_es}`} onClose={close} busy={saving}
+      footer={<><Button variant="secondary" type="button" disabled={saving} onClick={close}>Cerrar</Button>
+        <Button variant="primary" type="submit" form="expression-editor" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button></>}>
+    <form id="expression-editor" className="form-stack" onSubmit={save} aria-label={`Editar ${selected.label_es}`}>
+      {message && <Callout variant="success">{message}</Callout>}
+      {error && <Callout variant="error">{error}</Callout>}
       <label>Etiqueta en español<input value={form.label_es} maxLength={LABEL_MAX} required
         onChange={(event) => setForm({ ...form, label_es: event.target.value })} /></label>
       {textFields.map(({ key, label, help }) => <div key={key} className="form-field">
@@ -100,10 +107,7 @@ export function AdminExpressionsPage() {
       <Checkbox checked={form.reviewed}
         onChange={(event) => setForm({ ...form, reviewed: event.target.checked })}>Marcar como revisado por Psicología (se registra quién y cuándo)</Checkbox>
       <p className="muted">Guardar sin marcar deja el texto como borrador y elimina una revisión anterior.</p>
-      <div className="inline-actions">
-        <Button variant="primary" type="submit" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
-        <Button variant="secondary" type="button" onClick={() => { setForm(null); setSelectedKey(""); }}>Cerrar</Button>
-      </div>
-    </form>}
+    </form>
+    </Modal>}
   </section>;
 }

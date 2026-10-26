@@ -44,6 +44,7 @@ export function QuestionnairesPage() {
   const items = query.data ?? [];
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editing, setEditing] = useState<Questionnaire | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [newKind, setNewKind] = useState<QuestionKind>("faces");
   const [preview, setPreview] = useState<Pick<Questionnaire, "title" | "instructions" | "questions"> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,10 +62,10 @@ export function QuestionnairesPage() {
     update({ questions });
   }
   function startEditing(item: Questionnaire) {
-    setEditing(item); setMessage(""); setError("");
+    setEditing(item); setEditorOpen(true); setMessage(""); setError("");
     setDraft({ title: item.title, instructions: item.instructions, questions: item.questions });
   }
-  function reset() { setEditing(null); setDraft(emptyDraft); }
+  function reset() { setEditing(null); setDraft(emptyDraft); setEditorOpen(false); }
 
   async function run(action: () => Promise<string>) {
     setBusy(true); setError(""); setMessage("");
@@ -94,22 +95,29 @@ export function QuestionnairesPage() {
 
   return <section>
     <PageHeader title="Cuestionarios"
-      description="Cuestionarios que quien conduce la sesión aplica antes de iniciar el analizador. EMOtv solo los presenta y registra las respuestas." />
-    {message && <Callout variant="success">{message}</Callout>}
-    {error && <Callout variant="error">{error}</Callout>}
-
-    <form className="card form-stack" onSubmit={save}>
-      <h2>{editing ? `Editar «${editing.title}»` : "Nuevo cuestionario"}</h2>
-      {editing?.used && <Callout variant="info" role="note">
-        Este cuestionario ya se usó en una sesión: al guardar se crea la versión {editing.version + 1} y la actual se conserva.
-      </Callout>}
-      {!editing && <div className="inline-actions">
+      description="Cuestionarios que quien conduce la sesión aplica antes de iniciar el analizador. EMOtv solo los presenta y registra las respuestas."
+      actions={<>
         <Button disabled={busy} onClick={() => { void run(async () => {
           await apiRequest("/questionnaires/starter", { method: "POST", token });
           return "Se agregó una copia de la plantilla inicial a tus cuestionarios. Puedes editarla.";
         }); }}>Usar la plantilla inicial</Button>
-        <span className="muted">Dos preguntas de caritas: cómo te sientes y qué tan tranquilo o inquieto estás.</span>
-      </div>}
+        <Button variant="primary" onClick={() => { setEditing(null); setDraft(emptyDraft); setMessage(""); setError(""); setEditorOpen(true); }}>Nuevo cuestionario</Button>
+      </>} />
+    <p className="muted">La plantilla inicial tiene dos preguntas de caritas: cómo te sientes y qué tan tranquilo o inquieto estás.</p>
+    {message && <Callout variant="success">{message}</Callout>}
+    {error && !editorOpen && <Callout variant="error">{error}</Callout>}
+
+    <Modal open={editorOpen} title={editing ? `Editar «${editing.title}»` : "Nuevo cuestionario"} onClose={reset} busy={busy}
+      footer={<>
+        <Button disabled={busy} onClick={reset}>Cancelar</Button>
+        <Button disabled={!draftReady} onClick={() => setPreview(draft)}>Vista previa</Button>
+        <Button variant="primary" type="submit" form="questionnaire-editor" disabled={busy || !draftReady}>{busy ? "Guardando…" : editing ? "Guardar cambios" : "Guardar cuestionario"}</Button>
+      </>}>
+    <form id="questionnaire-editor" className="form-stack" onSubmit={save}>
+      {error && <Callout variant="error">{error}</Callout>}
+      {editing?.used && <Callout variant="info" role="note">
+        Este cuestionario ya se usó en una sesión: al guardar se crea la versión {editing.version + 1} y la actual se conserva.
+      </Callout>}
       <label>Título<input value={draft.title} maxLength={120} required onChange={(event) => update({ title: event.target.value })} /></label>
       <label>Indicaciones<textarea rows={2} maxLength={2000} value={draft.instructions} onChange={(event) => update({ instructions: event.target.value })} /></label>
 
@@ -150,13 +158,9 @@ export function QuestionnairesPage() {
         </select></label>
         <Button disabled={draft.questions.length >= 40} onClick={() => update({ questions: [...draft.questions, blankQuestion(newKind)] })}>Agregar pregunta</Button>
       </div>
-      <div className="inline-actions">
-        <Button disabled={!draftReady} onClick={() => setPreview(draft)}>Vista previa</Button>
-        <Button variant="primary" type="submit" disabled={busy || !draftReady}>{busy ? "Guardando…" : editing ? "Guardar cambios" : "Guardar cuestionario"}</Button>
-        {editing && <Button onClick={reset}>Cancelar</Button>}
-      </div>
       <QuestionnaireNote />
     </form>
+    </Modal>
 
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0}
       emptyMessage="Todavía no tienes cuestionarios. Crea uno o usa la plantilla inicial." onRetry={query.reload} />

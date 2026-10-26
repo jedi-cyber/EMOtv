@@ -7,6 +7,7 @@ import { useAuth } from "../auth/useAuth";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
+import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
@@ -32,6 +33,7 @@ export function StimuliPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [fileKey, setFileKey] = useState(0);
+  const [adding, setAdding] = useState(false);
   const abstract = form.kind === "abstract";
   const ready = file != null && notParticipantPhoto && (!abstract || notProjective)
     && form.title.trim() && form.category.trim() && form.origin.trim() && form.license.trim();
@@ -56,7 +58,7 @@ export function StimuliPage() {
       const created = await apiRequest<Stimulus>("/stimuli", { method: "POST", body, token });
       setMessage(`Se agregó «${created.title}». Apruébalo cuando lo hayas revisado: con niños solo se ofrecen estímulos aprobados.`);
       setForm(emptyForm); setFile(null); setFileKey((key) => key + 1);
-      setNotParticipantPhoto(false); setNotProjective(false);
+      setNotParticipantPhoto(false); setNotProjective(false); setAdding(false);
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo agregar el estímulo."); }
     finally { setBusy(false); }
@@ -78,17 +80,23 @@ export function StimuliPage() {
     <PageHeader title={isAdmin ? "Estímulos institucionales" : "Estímulos"}
       description={isAdmin
         ? "Imágenes que pueden usar todos los usuarios y docentes de la Facultad."
-        : "Imágenes que los usuarios de tu grupo pueden usar en sus protocolos, junto con las institucionales."} />
+        : "Imágenes que los usuarios de tu grupo pueden usar en sus protocolos, junto con las institucionales."}
+      actions={<Button variant="primary" type="button" onClick={() => { setError(""); setMessage(""); setAdding(true); }}>Agregar estímulo</Button>} />
     <Callout variant="info" role="note">
       Un estímulo nunca es una fotografía de un participante. Las imágenes abstractas son de creación propia o con una
       licencia que lo permita; no se incluyen láminas de pruebas proyectivas publicadas. El sistema solo muestra y
       registra: no relaciona ninguna imagen con una condición.
     </Callout>
     {message && <Callout variant="success">{message}</Callout>}
-    {error && <Callout variant="error">{error}</Callout>}
+    {error && !adding && <Callout variant="error">{error}</Callout>}
 
-    <form className="card form-stack" onSubmit={(event) => { void submit(event); }}>
-      <h2>Agregar estímulo</h2>
+    <Modal open={adding} title="Agregar estímulo" onClose={() => setAdding(false)} busy={busy}
+      footer={<>
+        <Button variant="secondary" type="button" disabled={busy} onClick={() => setAdding(false)}>Cancelar</Button>
+        <Button variant="primary" type="submit" form="stimulus-form" disabled={busy || !ready}>{busy ? "Agregando…" : "Agregar"}</Button>
+      </>}>
+    <form id="stimulus-form" className="form-stack" onSubmit={(event) => { void submit(event); }}>
+      {error && <Callout variant="error">{error}</Callout>}
       <label>Imagen (PNG, JPEG o WebP, hasta 5 MB)
         <input key={fileKey} type="file" accept="image/png,image/jpeg,image/webp"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
@@ -118,8 +126,8 @@ export function StimuliPage() {
       {abstract && <Checkbox checked={notProjective} onChange={(event) => setNotProjective(event.target.checked)}>
         Confirmo que es de creación propia o con una licencia que lo permite, y que no es una lámina de una prueba proyectiva publicada
       </Checkbox>}
-      <Button variant="primary" type="submit" disabled={busy || !ready}>{busy ? "Agregando…" : "Agregar estímulo"}</Button>
     </form>
+    </Modal>
 
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0}
       emptyMessage="Todavía no hay estímulos en el banco." onRetry={query.reload} />

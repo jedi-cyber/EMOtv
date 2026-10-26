@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssignmentsPanel } from "../src/components/AssignmentsPanel";
 import { StudentsPage } from "../src/pages/StudentsPage";
+import { UsersPage } from "../src/pages/UsersPage";
 import { AuthContext } from "../src/auth/AuthContext";
 import { apiRequest } from "../src/api/http";
 import type { UserRole } from "../src/auth/types";
@@ -15,6 +16,9 @@ vi.mock("../src/api/useApiQuery", () => ({
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
 const psychologist = { id: "psy-1", email: "psicologia@ejemplo.local", role: "psychologist" as const, is_active: true };
+
+const accounts = ["uno", "dos", "tres"].map((name, index) =>
+  ({ id: `u${index + 1}`, email: `${name}@ejemplo.local`, role: "student" as const, is_active: true }));
 
 function withUser(role: UserRole, children: React.ReactNode) {
   return render(<AuthContext.Provider value={{ user: { id: "u", email: "u@ejemplo.local", role, is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}>
@@ -29,27 +33,58 @@ beforeEach(() => {
     "/students": [
       { id: "st-1", user_id: "u1", student_code: "PRUEBA-01" },
       { id: "st-2", user_id: "u2", student_code: "PRUEBA-02" },
+      { id: "st-3", user_id: "u3", student_code: "PRUEBA-03" },
     ],
   };
 });
 
 describe("grupos de docentes", () => {
-  it("muestra los asignados y ofrece solo los no asignados", () => {
-    withUser("admin", <AssignmentsPanel psychologist={psychologist} onClose={vi.fn()} />);
-    expect(screen.getByText("PRUEBA-01")).toBeInTheDocument();
-    const options = screen.getAllByRole("option").map((option) => option.textContent);
-    expect(options).toEqual(["Selecciona un usuario", "PRUEBA-02"]);
+  it("muestra los asignados por correo y ofrece casillas solo para los no asignados", () => {
+    withUser("admin", <AssignmentsPanel psychologist={psychologist} accounts={accounts} onClose={vi.fn()} />);
+    const dialog = screen.getByRole("dialog", { name: "Grupo de psicologia@ejemplo.local" });
+    expect(dialog).toHaveTextContent("uno@ejemplo.local");
+    const boxes = screen.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent);
+    expect(boxes).toEqual(["Seleccionar todos", "dos@ejemplo.local (PRUEBA-02)", "tres@ejemplo.local (PRUEBA-03)"]);
   });
 
-  it("agrega y quita usuarios del grupo con la API del administrador", async () => {
-    withUser("admin", <AssignmentsPanel psychologist={psychologist} onClose={vi.fn()} />);
+  it("asigna varios usuarios a la vez y quita uno del grupo", async () => {
+    withUser("admin", <AssignmentsPanel psychologist={psychologist} accounts={accounts} onClose={vi.fn()} />);
     expect(screen.getByText(/pasará a este grupo/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Agregar al grupo" })).toBeDisabled();
-    await userEvent.selectOptions(screen.getByRole("combobox"), "st-2");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar al grupo" }));
+    expect(screen.getByRole("button", { name: "Asignar" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Seleccionar todos" }));
+    await userEvent.click(screen.getByRole("button", { name: "Asignar 2 usuarios" }));
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-2", expect.objectContaining({ method: "PUT" }));
-    await userEvent.click(screen.getByRole("button", { name: "Quitar PRUEBA-01" }));
+    expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-3", expect.objectContaining({ method: "PUT" }));
+    await userEvent.click(screen.getByRole("button", { name: "Quitar uno@ejemplo.local" }));
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-1", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("filtra por correo y deja marcados los que fallaron", async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error("falló"));
+    withUser("admin", <AssignmentsPanel psychologist={psychologist} accounts={accounts} onClose={vi.fn()} />);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Buscar por correo o código" }), "tres");
+    expect(screen.queryByRole("checkbox", { name: /dos@/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: /tres@/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Asignar 1 usuario" }));
+    expect(screen.getByText("No se pudo asignar a: tres@ejemplo.local.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /tres@/ })).toBeChecked();
+  });
+
+  it("crea cuentas desde un modal y muestra la contraseña provisional en la página", async () => {
+    data.value["/users"] = [psychologist];
+    vi.mocked(apiRequest).mockResolvedValue({ ...psychologist, id: "psy-2", email: "nuevo@ejemplo.local", temporary_password: "provisional-de-prueba" } as never);
+    withUser("admin", <UsersPage />);
+    expect(screen.queryByLabelText("Correo electrónico")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Crear cuenta" }));
+    const dialog = screen.getByRole("dialog", { name: "Crear cuenta" });
+    await userEvent.type(within(dialog).getByLabelText("Correo electrónico"), "nuevo@ejemplo.local");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Papel"), "psychologist");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Crear cuenta de docente" }));
+    expect(apiRequest).toHaveBeenCalledWith("/users", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ email: "nuevo@ejemplo.local", role: "psychologist" }),
+    }));
+    expect(await screen.findByText("provisional-de-prueba")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("explica al docente sin grupo por qué no ve usuarios", () => {

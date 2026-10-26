@@ -51,6 +51,7 @@ export function ParticipantsPage() {
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<Participant | null>(null);
   const [certificate, setCertificate] = useState<DeletionCertificate | null>(null);
+  const [registering, setRegistering] = useState(false);
 
   async function reloadAll() {
     await Promise.all([query.reload(), isDocente ? expiringQuery.reload() : Promise.resolve(), certificatesQuery.reload()]);
@@ -64,12 +65,13 @@ export function ParticipantsPage() {
         body: JSON.stringify({ kind, age_years: ageYears, notes: notes.trim() || null, ...(childNoticeVersion ? { child_notice_version: childNoticeVersion } : {}) }),
       });
       setMessage(`Participante registrado con el código ${created.code}. Anótalo en la ficha de papel junto a la persona; el sistema no puede recuperar esa relación. Antes de su primera sesión, registra su autorización firmada.`);
-      setNotes(""); setAge(""); setNotice(null); setNoticeRead(false);
+      setNotes(""); setAge(""); setNotice(null); setNoticeRead(false); setRegistering(false);
       await reloadAll();
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 428 && kind === "child" && !childNoticeVersion) {
         // Primer niño o niña: antes aparece el aviso reforzado sobre datos de menores.
-        try { setNotice(await apiRequest<VersionedText>("/commitment/child-notice", { token })); }
+        // El formulario se cierra mientras se lee el aviso y conserva lo escrito.
+        try { setNotice(await apiRequest<VersionedText>("/commitment/child-notice", { token })); setRegistering(false); }
         catch { setError("No se pudo cargar el aviso sobre datos de menores."); }
       } else {
         setError(reason instanceof Error ? reason.message : "No se pudo registrar al participante.");
@@ -105,16 +107,22 @@ export function ParticipantsPage() {
     <PageHeader title="Participantes"
       description={isDocente
         ? "Participantes que registraste y los de los usuarios de tu grupo. Se identifican solo por un código: sin nombre, DNI ni foto."
-        : "Participantes que registraste. Se identifican solo por un código: sin nombre, DNI ni foto."} />
+        : "Participantes que registraste. Se identifican solo por un código: sin nombre, DNI ni foto."}
+      actions={<Button variant="primary" type="button" onClick={() => { setError(""); setMessage(""); setRegistering(true); }}>Registrar participante</Button>} />
     {message && <Callout variant="success">{message}</Callout>}
-    {error && <Callout variant="error">{error}</Callout>}
+    {error && !registering && <Callout variant="error">{error}</Callout>}
     {certificate && <Callout variant="success">
       Se eliminó a {certificate.participant_code} con todos sus registros. Verificación: {certificate.verified ? "correcta, no quedó ningún registro" : "fallida"}.
       <ButtonLink variant="secondary" to={paths.deletionCertificate(certificate.id)}>Ver e imprimir el acta</ButtonLink>
     </Callout>}
 
-    <form className="card form-stack" onSubmit={submit}>
-      <h2>Registrar participante</h2>
+    <Modal open={registering} title="Registrar participante" onClose={() => setRegistering(false)} busy={busy}
+      footer={<>
+        <Button variant="secondary" type="button" disabled={busy} onClick={() => setRegistering(false)}>Cancelar</Button>
+        <Button variant="primary" type="submit" form="participant-form" disabled={busy || !validAge}>{busy ? "Registrando…" : "Registrar"}</Button>
+      </>}>
+    <form id="participant-form" className="form-stack" onSubmit={submit}>
+      {error && <Callout variant="error">{error}</Callout>}
       <p className="muted">Antes de cualquier sesión necesitas la autorización firmada en papel (propia, o del padre, la madre o el tutor si es un niño) y, con niños, su asentimiento.</p>
       <Callout variant="info" role="note">
         El sistema genera un código aleatorio que no se puede cambiar y guarda solo la edad: nunca el nombre, el DNI, una foto ni datos del tutor.
@@ -132,8 +140,8 @@ export function ParticipantsPage() {
           onChange={(event) => setNotes(event.target.value)} />
         <small id="participant-notes-help" className="muted">Se guardan cifradas. No escribas nombres, DNI, colegios ni datos que permitan reconocer a la persona.</small>
       </div>
-      <Button variant="primary" type="submit" disabled={busy || !validAge}>{busy ? "Registrando…" : "Registrar participante"}</Button>
     </form>
+    </Modal>
 
     {isDocente && items.some((item) => item.authorization_status === "revoked") && <Callout variant="warning">
       <strong>Autorización retirada:</strong> {items.filter((item) => item.authorization_status === "revoked").map((item) => item.code).join(", ")}.
@@ -184,9 +192,9 @@ export function ParticipantsPage() {
       confirming={busy} confirmLabel="Eliminar definitivamente" onCancel={() => setDeleting(null)}
       onConfirm={() => { if (deleting) void executeDeletion(deleting); }} />
 
-    {notice && <Modal open title="Antes de registrar a un niño o una niña" onClose={() => { setNotice(null); setNoticeRead(false); }} busy={busy}
+    {notice && <Modal open title="Antes de registrar a un niño o una niña" onClose={() => { setNotice(null); setNoticeRead(false); setRegistering(true); }} busy={busy}
       footer={<div className="inline-actions">
-        <Button variant="secondary" disabled={busy} onClick={() => { setNotice(null); setNoticeRead(false); }}>Cancelar</Button>
+        <Button variant="secondary" disabled={busy} onClick={() => { setNotice(null); setNoticeRead(false); setRegistering(true); }}>Cancelar</Button>
         <Button variant="primary" disabled={!noticeRead || busy} onClick={() => { void register(notice.version); }}>Entendido, registrar</Button>
       </div>}>
       {notice.provisional && <Callout variant="warning" role="note">Texto provisional: pendiente de la revisión de la Facultad.</Callout>}

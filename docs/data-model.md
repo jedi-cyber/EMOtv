@@ -12,6 +12,7 @@ frames se procesan en memoria y se descartan.
 erDiagram
   users ||--o| students : "user_id (CASCADE)"
   users ||--o{ chat_conversations : "user_id (CASCADE)"
+  users ||--o{ mobile_sessions : "user_id (CASCADE)"
   chat_conversations ||--o{ chat_messages : "conversation_id (CASCADE)"
   students ||--o{ consents : "student_id (CASCADE)"
   students |o--o{ sessions : "student_id (SET NULL)"
@@ -114,6 +115,17 @@ erDiagram
     timestamptz created_at
     boolean success
   }
+  mobile_sessions {
+    varchar id PK
+    varchar user_id FK
+    varchar refresh_token_hash "SHA-256, único"
+    varchar previous_token_hash "SHA-256 del reemplazado"
+    integer token_version
+    timestamptz created_at
+    timestamptz expires_at
+    timestamptz last_used_at
+    timestamptz revoked_at
+  }
   chat_conversations {
     varchar id PK
     varchar user_id FK
@@ -149,11 +161,12 @@ erDiagram
 | `expression_info` | `20261008_12` | textos educativos de cada expresión y su estado de revisión |
 | `emotion_activity_recommendations` | `20261009_13` | actividades recomendadas por expresión, en orden de prioridad |
 | `chat_conversations`, `chat_messages`, `chat_rejection_counts` | `20261009_15` | conversaciones con Emi (retención de 90 días) y contadores agregados de preguntas rechazadas por categoría |
+| `mobile_sessions` | `20261026_23` | sesiones del aplicativo móvil: token de renovación revocable (solo su SHA-256), sin datos del dispositivo ni IP |
 
 ## Reglas que se leen en el esquema
 
 - **Borrado de una cuenta.** `students`, `consents`, `chat_conversations`,
-  `chat_messages` y las asignaciones se borran en cascada. `sessions.student_id`
+  `chat_messages`, `mobile_sessions` y las asignaciones se borran en cascada. `sessions.student_id`
   queda en nulo (`SET NULL`): por eso `scripts/testdata/delete_test_data.py`
   borra las sesiones de forma explícita antes de eliminar a un voluntario.
 - **Historial estable.** `sessions.activity_id` y `consents.policy_version` no

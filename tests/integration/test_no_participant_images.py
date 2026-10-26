@@ -14,8 +14,10 @@ IMAGE_CONTENT = re.compile(r"^(image/|video/|application/octet-stream)")
 # Firmas de imágenes en base64 o como data URI (JPEG, PNG, GIF, WebP).
 IMAGE_SIGNATURES = ("data:image", "/9j/", "iVBORw0KGgo", "R0lGOD", "UklGR")
 IMAGE_FIELDS = re.compile(r"(image|imagen|frame|cuadro|photo|foto|capture|captura|snapshot|picture|jpeg|png)", re.I)
-# Única excepción: la imagen de un estímulo del banco (nunca de un participante).
+# Únicas excepciones: la imagen de un estímulo del banco (nunca de un participante),
+# en la web y en el aplicativo móvil (URL firmada; ver tests/integration/test_mobile_api.py).
 STIMULUS_FILE = "/stimuli/{stimulus_id}/file"
+MOBILE_STIMULUS_FILE = "/mobile/stimulus-images/{session_id}/{stimulus_id}"
 
 
 def _schemas_with_image_fields(spec: dict) -> list[str]:
@@ -41,7 +43,7 @@ def test_no_route_declares_images_in_the_real_api():
                     assert not IMAGE_CONTENT.match(content_type), f"{method.upper()} {path} {status}: {content_type}"
         # Ninguna ruta de consulta se llama como una imagen. La vista del participante
         # sí envía cuadros (POST), pero solo recibe "recibido": se analizan y se descartan.
-        if "get" in operations:
+        if "get" in operations and path != MOBILE_STIMULUS_FILE:
             assert not re.search(r"(capture|captura|frame|photo|foto|snapshot|imagen|image)", path, re.I), path
     assert _schemas_with_image_fields(spec) == []
 

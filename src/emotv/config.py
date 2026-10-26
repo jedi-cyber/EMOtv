@@ -234,6 +234,17 @@ def get_login_limits(environ: Mapping[str, str] | None = None) -> LoginLimits:
     return LoginLimits(*values)
 
 
+def get_mobile_min_app_version(environ: Mapping[str, str] | None = None) -> str:
+    """Versión mínima del aplicativo Android aceptada (MOBILE_MIN_APP_VERSION, x.y.z)."""
+
+    source = os.environ if environ is None else environ
+    value = source.get("MOBILE_MIN_APP_VERSION", "").strip() or "1.0.0"
+    parts = value.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError("MOBILE_MIN_APP_VERSION debe tener la forma x.y.z")
+    return value
+
+
 def get_test_data_retention_days(environ: Mapping[str, str] | None = None) -> int:
     """Días que se conservan las cuentas de voluntarios (PRUEBA-NN).
 

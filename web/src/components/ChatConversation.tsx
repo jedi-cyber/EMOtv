@@ -106,21 +106,20 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
   }
 
   return <div className="chat-panel">
-      <Callout variant="info">Emi ofrece orientación educativa sobre Psicología y EMOtv; no diagnostica a nadie ni reemplaza a tu docente, la atención psicológica o los servicios de emergencia.</Callout>
-      {/* Aviso permanente: el servidor además rechaza DNI, correos y teléfonos antes de llamar al asistente. */}
-      <Callout variant="warning" role="note">No escribas nombres ni datos de niños o familias. Si describes un caso, hazlo sin datos que identifiquen a la persona.</Callout>
-      <div className="inline-actions">
-        <Button variant="secondary" type="button" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</Button>
-        {!confirmingDelete && <Button variant="ghost" type="button" disabled={sending || starting || (!conversationId && messages.length === 0)}
+      <div className="chat-toolbar">
+        <Button variant="secondary" size="sm" type="button" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</Button>
+        {!confirmingDelete && <Button variant="ghost" size="sm" type="button" disabled={sending || starting || (!conversationId && messages.length === 0)}
           onClick={() => { setConfirmingDelete(true); setNotice(null); }}>Borrar conversación</Button>}
       </div>
-      {confirmingDelete && <div className="inline-actions" role="group" aria-label="Confirmar borrado">
+      {confirmingDelete && <div className="chat-toolbar" role="group" aria-label="Confirmar borrado">
         <span>¿Borrar esta conversación? No se puede recuperar.</span>
-        <Button variant="danger" type="button" disabled={starting} onClick={() => { void deleteConversation(); }}>Sí, borrar</Button>
-        <Button variant="ghost" type="button" disabled={starting} onClick={() => setConfirmingDelete(false)}>Cancelar</Button>
+        <Button variant="danger" size="sm" type="button" disabled={starting} onClick={() => { void deleteConversation(); }}>Sí, borrar</Button>
+        <Button variant="ghost" size="sm" type="button" disabled={starting} onClick={() => setConfirmingDelete(false)}>Cancelar</Button>
       </div>}
       {notice && <p role="status" className="muted">{notice}</p>}
       <div ref={messagesRef} className="chat-messages" role="log" aria-label="Conversación con Emi" aria-live="polite">
+        {/* Encabeza el historial y se desplaza con él, para dejar espacio a la conversación. */}
+        <p className="chat-disclaimer" role="note">Emi ofrece orientación educativa sobre Psicología y EMOtv; no diagnostica a nadie ni reemplaza a tu docente, la atención psicológica o los servicios de emergencia.</p>
         {messages.length === 0 && <div className="assistant-welcome"><strong>Hola, soy Emi</strong><p>Puedo orientarte sobre Psicología en general, la evaluación infantil y el uso de EMOtv. ¿En qué te ayudo?</p></div>}
         {messages.map((message, index) => <div key={index} className={`chat-message ${message.role}`}>
           <strong>{message.role === "user" ? "Tú" : "Emi"}</strong><p>{message.text}</p>
@@ -129,10 +128,14 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
       </div>
       {error && <Callout variant="error">{error}</Callout>}
       <form className="chat-form" onSubmit={send}>
-        <label htmlFor="chat-question">Tu pregunta</label>
-        <textarea ref={inputRef} id="chat-question" value={question} maxLength={MAX_QUESTION_CHARS} rows={3} aria-busy={sending}
-          onChange={(event) => setQuestion(event.target.value)} placeholder="¿Cómo funciona una actividad?" />
-        <Button variant="primary" type="submit" disabled={sending || !question.trim()}>{sending ? "Enviando…" : "Enviar"}</Button>
+        {/* Aviso permanente junto al campo: el servidor además rechaza DNI, correos y teléfonos antes de llamar al asistente. */}
+        <p className="chat-privacy" role="note" id="chat-privacy">No escribas nombres ni datos de niños o familias. Si describes un caso, hazlo sin datos que identifiquen a la persona.</p>
+        <label htmlFor="chat-question" className="sr-only">Tu pregunta</label>
+        <div className="chat-compose">
+          <textarea ref={inputRef} id="chat-question" value={question} maxLength={MAX_QUESTION_CHARS} rows={2} aria-busy={sending}
+            aria-describedby="chat-privacy" onChange={(event) => setQuestion(event.target.value)} placeholder="Escribe tu pregunta…" />
+          <Button variant="primary" type="submit" disabled={sending || !question.trim()}>{sending ? "Enviando…" : "Enviar"}</Button>
+        </div>
       </form>
     </div>;
 }
