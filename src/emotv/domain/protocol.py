@@ -12,7 +12,7 @@ class ProtocolStep:
     """Un estímulo de la secuencia. capture_after_seconds es el tiempo hasta la
     captura automática de la expresión estimada, dentro de la exposición.
     record_verbal_response solo aplica a imágenes abstractas: se registra lo que
-    el participante dice ver, sin interpretarlo. shown_before_analyzer (solo
+    la persona dice ver, sin interpretarlo. shown_before_analyzer (solo
     abstractas) la muestra antes de la calibración, sin capturas."""
 
     stimulus_id: str
@@ -37,12 +37,13 @@ class ProtocolStep:
 
 @dataclass(frozen=True, slots=True)
 class Protocol:
-    """Una versión de un protocolo. Las versiones de un mismo protocolo
-    comparten family_id; la vigente es la que no tiene superseded_at.
+    """Una versión de un protocolo: una receta guardada de qué aplicar en una
+    sesión. Las versiones de un mismo protocolo comparten family_id; la vigente
+    es la que no tiene superseded_at.
 
-    Un protocolo para niños se usa solo con la aprobación del docente; editarlo
-    o crear una versión nueva vuelve a pedirla. Uno usado en una sesión no se
-    edita: se crea una versión nueva.
+    for_children fija el público de las sesiones que lo aplican. No necesita
+    aprobación del docente (approved_at queda de versiones anteriores). Uno
+    usado en una sesión no se edita: se crea una versión nueva.
     """
 
     id: str

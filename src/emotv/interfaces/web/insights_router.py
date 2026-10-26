@@ -1,4 +1,4 @@
-"""Línea de tiempo, métricas por estímulo y tendencias del participante.
+"""Línea de tiempo y métricas por estímulo de una sesión.
 
 Describen lo registrado; no interpretan. Cada consulta se audita.
 """
@@ -43,9 +43,5 @@ def create_insights_router(
     @router.get("/sessions/{session_id}/metrics")
     def metrics(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         return guarded(lambda: service().metrics(user, session_id))
-
-    @router.get("/participants/{participant_id}/trends")
-    def trends(participant_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        return guarded(lambda: service().trends(user, participant_id))
 
     return router

@@ -16,4 +16,3 @@ class AccessAction(str, Enum):
     # Crear, desactivar y restablecer la cuenta de administrador.
     MANAGE_ADMIN_ACCOUNT = "manage_admin_account"
     VIEW_AUDIT = "view_audit"
-    REGISTER_PARTICIPANT = "register_participant"

@@ -9,8 +9,8 @@ import { QuestionnaireForm } from "./QuestionnaireForm";
 type Mode = "participant" | "conductor";
 
 /**
- * Aplica el cuestionario de una sesión. En la vista de participante, quien
- * participa responde en pantalla; en el registro manual, quien conduce la
+ * Aplica el cuestionario de una sesión. En la pantalla de la persona, ella
+ * responde; en el registro manual, quien conduce la
  * sesión anota las respuestas que le dieron.
  */
 export function SessionQuestionnaire({ sessionId, moment, questionnaire, onDone }: {
@@ -38,12 +38,12 @@ export function SessionQuestionnaire({ sessionId, moment, questionnaire, onDone 
   return <section className="session-questionnaire" aria-label={moment === "pre" ? "Cuestionario previo" : "Cuestionario posterior"}>
     <div className="inline-actions" role="group" aria-label="Quién registra las respuestas">
       <Button variant={mode === "participant" ? "secondary" : "ghost"} aria-pressed={mode === "participant"}
-        onClick={() => setMode("participant")}>Vista de participante</Button>
+        onClick={() => setMode("participant")}>Responde la persona</Button>
       <Button variant={mode === "conductor" ? "secondary" : "ghost"} aria-pressed={mode === "conductor"}
         onClick={() => setMode("conductor")}>Registrar a mano</Button>
     </div>
     <p className="muted">{mode === "participant"
-      ? "Entrega la pantalla a quien participa para que responda."
+      ? "Entrega la pantalla a la persona para que responda."
       : "Anota las respuestas tal como te las dieron."}</p>
     {error && <Callout variant="error">{error}</Callout>}
     <QuestionnaireForm key={mode} questionnaire={questionnaire} large={mode === "participant"} busy={busy}

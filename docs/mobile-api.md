@@ -6,14 +6,15 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 2 (2026-10-24). Ver [historial](#historial) |
+| Revisión del contrato | 3 (2026-10-26). Ver [historial](#historial). **Incompatible con la revisión 2** |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile` |
 | Formato | JSON en UTF-8, salvo el envío de cuadros (`image/jpeg`) y las imágenes de estímulos |
 
 La API móvil no tiene reglas propias: llama a los mismos servicios que la web
-(`can_access_participant`, autorizaciones, compromiso de confidencialidad,
-protocolos, cuestionarios y sesión guiada). **Lo que la web rechaza, el
+(`can_access_session`, confirmación de la sesión, compromiso de
+confidencialidad, aviso sobre datos de menores, protocolos, cuestionarios y
+sesión con protocolo). **Lo que la web rechaza, el
 aplicativo también lo rechaza**, y toda restricción la impone el servidor.
 
 ## Contenido
@@ -25,7 +26,7 @@ aplicativo también lo rechaza**, y toda restricción la impone el servidor.
 5. [Autenticación y tokens](#autenticación-y-tokens)
 6. [Flujo del aplicativo](#flujo-del-aplicativo)
 7. [Endpoints](#endpoints)
-8. [Sesión guiada: fases y ciclo](#sesión-guiada-fases-y-ciclo)
+8. [Sesión: fases y ciclo](#sesión-fases-y-ciclo)
 9. [Tipos de datos](#tipos-de-datos)
 10. [Valores enumerados](#valores-enumerados)
 11. [Reintentos e idempotencia](#reintentos-e-idempotencia)
@@ -40,15 +41,15 @@ aplicativo también lo rechaza**, y toda restricción la impone el servidor.
 | Regla | Detalle |
 | --- | --- |
 | HTTPS | En producción (`ENVIRONMENT=production`), toda ruta `/mobile` responde `403 https_required` si la petición no llega por HTTPS |
-| Quién usa el aplicativo | Solo **usuarios** (`student`) y **docentes** (`psychologist`). Administrador y superadministrador: `403 role_not_allowed`. Los participantes no tienen cuenta |
+| Quién usa el aplicativo | Solo **usuarios** (`student`) y **docentes** (`psychologist`). Administrador y superadministrador: `403 role_not_allowed`. Las personas evaluadas no se registran ni tienen cuenta |
 | Tokens | Acceso: 15 minutos, cabecera `Authorization: Bearer <token de acceso>`. Renovación: 30 días desde el inicio de sesión, cambia en cada renovación |
 | Separación web/móvil | Un token del aplicativo no sirve en la web y uno de la web no sirve en `/mobile` (`401 invalid_token`) |
 | Caché | Todas las respuestas llevan `Cache-Control: no-store`. El aplicativo no guarda respuestas en disco |
 | Imágenes | **Ninguna imagen de una persona se guarda ni sale del servidor.** Los cuadros se analizan en memoria con el modelo local y se descartan. Las únicas imágenes que el aplicativo descarga son los estímulos |
-| Resultados | Ninguna respuesta incluye la expresión estimada, probabilidades ni capturas: el dispositivo lo ve el participante. Los resultados se consultan en la web |
-| Participantes | Solo se identifican por código, tipo y edad. Ninguna respuesta trae nombre, DNI ni foto |
+| Resultados | Ninguna respuesta incluye la expresión estimada, probabilidades ni capturas: el dispositivo lo ve la persona evaluada. Los resultados se consultan en la web |
+| Personas evaluadas | No se registran. Cada sesión lleva un **código aleatorio** (`S-4F7K2Q`) que quien conduce anota en el formato firmado en papel. Ninguna respuesta trae nombre, DNI ni foto |
 | Registros | El servidor no registra cuerpos de peticiones (contraseñas, respuestas ni cuadros) |
-| Auditoría | Se auditan, sin contenido: inicio y cierre de sesión (también los rechazados por papel), el resumen, cada consulta a un participante (también las denegadas), la sesión guiada y cada imagen de estímulo servida o rechazada |
+| Auditoría | Se auditan, sin contenido: inicio y cierre de sesión (también los rechazados por papel), el resumen, el inicio de cada sesión, cada acceso denegado a una sesión, la sesión con protocolo y cada imagen de estímulo servida o rechazada |
 
 ## Convenciones
 
@@ -62,7 +63,7 @@ aplicativo también lo rechaza**, y toda restricción la impone el servidor.
 | Identificadores | Cadenas opacas (UUID o `user-<uuid>`). No se interpretan ni se arman en el aplicativo |
 | Fechas y horas | ISO 8601 con zona: `2026-10-23T14:04:10.922662+00:00` (UTC). La fracción de segundo es opcional. Las fechas sin hora: `YYYY-MM-DD` |
 | Duraciones | `expires_in` y `refresh_expires_in` en segundos enteros; `exposure_seconds` y `remaining_seconds` en segundos (número, puede tener decimales); `frame_interval_ms` en milisegundos enteros |
-| Textos | En español y listos para mostrar: `message`, `warnings`, `reminder`, `notice`, `abstract_notice`, `role_name` y los textos de cuestionarios. El aplicativo no los traduce ni los reescribe |
+| Textos | En español y listos para mostrar: `message`, `confirmation`, `reminder`, `notice`, `abstract_notice`, `role_name` y los textos de cuestionarios. El aplicativo no los traduce ni los reescribe |
 | Códigos HTTP de éxito | `200`, salvo `201` en `POST /mobile/sessions` y `POST .../questionnaires/{moment}`, y `204` sin cuerpo en `POST /mobile/auth/logout` |
 
 ## Compatibilidad entre versiones
@@ -76,8 +77,8 @@ aplicativo también lo rechaza**, y toda restricción la impone el servidor.
 - Ante un valor desconocido de una enumeración abierta, el aplicativo no falla:
   - `phase` desconocida: no envía cuadros, muestra «Espera un momento» y sigue
     consultando `GET .../next`.
-  - `capture_status`, `missing` o `code` desconocidos: usa el texto
-    (`warnings`, `message`) si lo hay; si no, lo ignora.
+  - `capture_status` o `code` desconocidos: usa el texto (`message`) si lo
+    hay; si no, lo ignora.
 - `api_version` es informativa (puede tener sufijos como `rc1`). Solo
   `min_app_version` se compara, siempre con la forma `x.y.z`.
 
@@ -102,14 +103,15 @@ Todos los errores propios de `/mobile` tienen esta forma:
 | 403 | `https_required` | Petición sin HTTPS en producción | Error de configuración: mostrar `message`. No reintentar |
 | 403 | `role_not_allowed` | La cuenta es de administración | Mostrar `message`; no guardar nada |
 | 403 | `password_change_required` | La cuenta tiene contraseña provisional | Explicar que se cambia en la web y volver al inicio de sesión |
-| 403 | `forbidden` | La cuenta no tiene acceso a ese participante o sesión | Mostrar `message`; en una sesión, salir del modo sesión |
+| 403 | `forbidden` | La cuenta no tiene acceso a esa sesión o protocolo | Mostrar `message`; en una sesión, salir del modo sesión |
 | 403 | `invalid_or_expired_url` | URL de imagen vencida, alterada o de una sesión que ya no está activa | Pedir `GET .../next` (trae una URL nueva o la fase terminal) |
-| 404 | `not_found` | Participante, protocolo, cuestionario, sesión o imagen inexistente (o ajeno) | Mostrar `message`; recargar el resumen |
-| 409 | `conflict` | La acción no corresponde a la fase actual, la sesión terminó, falta la autorización o el protocolo no se puede usar | Pedir `GET .../next` y seguir la fase que indique. Al iniciar una sesión: mostrar `message` |
+| 404 | `not_found` | Protocolo, cuestionario, sesión o imagen inexistente (o ajeno) | Mostrar `message`; recargar el resumen |
+| 409 | `conflict` | La acción no corresponde a la fase actual, la sesión terminó o el protocolo no se puede usar | Pedir `GET .../next` y seguir la fase que indique. Al iniciar una sesión: mostrar `message` |
 | 413 | `too_large` | Cuadro de más de 1 000 000 bytes | Bajar la calidad o la resolución del siguiente cuadro |
 | 415 | `unsupported_media_type` | Cuadro sin `Content-Type: image/jpeg` | Error interno |
-| 422 | `invalid` | Datos rechazados por una regla: falta una confirmación, una respuesta obligatoria, valor fuera de rango o cuadro que no es un JPEG válido | Mostrar `message` y dejar corregir. En cuadros: descartar y enviar el siguiente |
+| 422 | `invalid` | Datos rechazados por una regla: falta la confirmación o el público de la sesión, el público elegido contradice el del protocolo, falta una respuesta obligatoria, valor fuera de rango o cuadro que no es un JPEG válido | Mostrar `message` y dejar corregir. En cuadros: descartar y enviar el siguiente |
 | 428 | `commitment_required` | La cuenta no aceptó el compromiso de confidencialidad vigente | Explicar que se acepta en la web |
+| 428 | `child_notice_required` | Primera sesión con un niño o una niña y la cuenta no aceptó el aviso sobre datos de menores | Explicar que el aviso se lee y se acepta una vez en la web (al empezar la primera sesión infantil en el Analizador) |
 | 429 | `too_many_attempts` | Bloqueo por intentos fallidos de inicio de sesión. Cabecera `Retry-After` en segundos | Deshabilitar el botón durante `Retry-After` segundos |
 | 503 | `unavailable` | El servidor no tiene configurado el módulo (sin base de datos, sin clave de tokens o sin clave de cifrado) | Mostrar `message`. Reintentar más tarde |
 | 5xx | (sin forma garantizada) | Error inesperado del servidor o del proxy | Tratar como sin conexión: reintentar con espera creciente |
@@ -168,20 +170,23 @@ no cierra las otras.
 ```text
 GET  /mobile/status                         pantalla de carga: versión mínima y servicios
 POST /mobile/auth/login                     inicio de sesión
-GET  /mobile/summary                        dashboard (y sesiones en curso para retomar)
-GET  /mobile/protocols?participant_id=...   elegir protocolo
-POST /mobile/sessions                       iniciar sesión con participante
-POST /mobile/sessions/{id}/confirm          confirmación previa
+GET  /mobile/summary                        dashboard: sesiones recientes, protocolos y públicos
+POST /mobile/sessions                       iniciar: con protocolo, o sin protocolo eligiendo con quién es,
+                                            siempre con la única confirmación ya marcada
 loop:
   GET  /mobile/sessions/{id}/next           qué mostrar ahora
   ├─ cuestionario  → POST .../questionnaires/{pre|post}  (o .../advance si answered)
   ├─ calibración   → POST .../calibration, luego cuadros mientras send_frames
   ├─ estímulo      → GET image_url, cuadros mientras send_frames
+  ├─ en vivo       → cuadros mientras send_frames; POST .../finish para terminar (sin protocolo)
   └─ fin           → finished o stopped
 POST /mobile/sessions/{id}/stop             interrumpir en cualquier momento
 POST /mobile/auth/refresh                   antes de que venza el acceso (o ante 401 invalid_token)
 POST /mobile/auth/logout                    cerrar sesión
 ```
+
+Mostrar `code` al empezar y al terminar la sesión, para anotarlo en el formato
+firmado.
 
 ---
 
@@ -198,13 +203,13 @@ Resumen:
 | `GET /mobile/summary` | Sí | 200 | Sí |
 | `GET /mobile/protocols` | Sí | 200 | Sí |
 | `POST /mobile/sessions` | Sí | 201 | **No**: puede crear dos sesiones |
-| `POST /mobile/sessions/{id}/confirm` | Sí | 200 | Sí (el segundo responde `409`) |
 | `GET /mobile/sessions/{id}/next` | Sí | 200 | Sí |
 | `POST /mobile/sessions/{id}/questionnaires/{moment}` | Sí | 201 | Sí (el segundo responde `409`) |
 | `POST /mobile/sessions/{id}/advance` | Sí | 200 | Sí (el segundo responde `409`) |
 | `POST /mobile/sessions/{id}/calibration` | Sí | 200 | Sí, pero reinicia la calibración |
 | `POST /mobile/sessions/{id}/frames` | Sí | 200 | No: se descarta y se envía el siguiente |
 | `POST /mobile/sessions/{id}/skip` | Sí | 200 | **No**: saltaría otro estímulo |
+| `POST /mobile/sessions/{id}/finish` | Sí | 200 | Sí (el segundo responde `409`) |
 | `POST /mobile/sessions/{id}/stop` | Sí | 200 | Sí |
 | `GET /mobile/stimulus-images/...` | No (URL firmada) | 200 | Sí, hasta que vence |
 
@@ -222,7 +227,7 @@ Sin token. No devuelve datos personales. Primera llamada al abrir el aplicativo.
   "api_version": "1.0.0rc1",
   "min_app_version": "1.0.0",
   "server_time": "2026-10-23T14:04:10.922662+00:00",
-  "services": {"login": true, "participant_sessions": true}
+  "services": {"login": true, "sessions": true}
 }
 ```
 
@@ -230,9 +235,8 @@ Sin token. No devuelve datos personales. Primera llamada al abrir el aplicativo.
   actualice y no continuar.
 - `services.login` falso: el servidor no tiene base de datos o clave de tokens.
   No mostrar el inicio de sesión.
-- `services.participant_sessions` falso: no se pueden conducir sesiones (por
-  ejemplo, falta la clave de cifrado). Se puede iniciar sesión, pero no iniciar
-  sesiones con participantes.
+- `services.sessions` falso: no se pueden conducir sesiones (por ejemplo, falta
+  la clave de cifrado). Se puede iniciar sesión, pero no iniciar sesiones.
 - `server_time`: hora del servidor. Sirve para detectar un reloj del dispositivo
   muy desfasado; los tiempos de la sesión los lleva siempre el servidor.
 
@@ -304,127 +308,126 @@ Con token.
 | `date` | `YYYY-MM-DD` | hoy, según `utc_offset_minutes` | Día de «sesiones del día» |
 | `utc_offset_minutes` | entero, -720 a 840 | `-300` (Perú) | Desfase horario del dispositivo |
 
-Solo datos de la cuenta que inició sesión: sus participantes y sus sesiones.
-Un docente tampoco ve aquí los participantes de los usuarios de su grupo (se
-revisan en la web).
+| `limit` | entero, 1 a 50 | `10` | Cuántas sesiones trae `recent_sessions` |
+
+Solo datos de la cuenta que inició sesión: sus sesiones y los protocolos que
+puede aplicar. Un docente tampoco ve aquí las sesiones de los usuarios de su
+grupo (se revisan en la web).
 
 **200** — [`Summary`](#summary)
 
 ```json
 {
   "user": {"id": "user-3245af00-...", "email": "usuario1@example.com", "role": "student", "role_name": "Usuario"},
-  "date": "2026-10-23",
+  "date": "2026-10-26",
   "today_sessions": [
-    {"id": "221e2a72-...", "started_at": "2026-10-23T14:04:10.922662+00:00", "state": "in_progress",
-     "guided_phase": "stimuli", "participant_id": "3e7ac862-...", "participant_code": "P-RGNYTB",
-     "protocol_name": "Secuencia móvil"}
+    {"id": "221e2a72-...", "code": "S-4F7K2Q", "started_at": "2026-10-26T14:04:10.922662+00:00",
+     "state": "in_progress", "audience": "adulto", "guided_phase": "stimuli", "protocol_name": "Secuencia móvil"}
   ],
-  "participants": [
-    {
-      "id": "3e7ac862-...", "code": "P-RGNYTB", "kind": "adult", "age_years": 30,
-      "ready": true, "missing": [], "warnings": [],
-      "last_session": {"id": "221e2a72-...", "started_at": "2026-10-23T14:04:10.922662+00:00",
-                       "state": "in_progress", "guided_phase": "stimuli", "participant_id": "3e7ac862-...",
-                       "participant_code": "P-RGNYTB", "protocol_name": "Secuencia móvil"}
-    },
-    {
-      "id": "9a1c...", "code": "P-7KQ2MD", "kind": "child", "age_years": 9,
-      "ready": false, "missing": ["child_assent"],
-      "warnings": ["Falta el asentimiento del niño o la niña"], "last_session": null
-    }
+  "recent_sessions": [
+    {"id": "221e2a72-...", "code": "S-4F7K2Q", "started_at": "2026-10-26T14:04:10.922662+00:00",
+     "state": "in_progress", "audience": "adulto", "guided_phase": "stimuli", "protocol_name": "Secuencia móvil"}
+  ],
+  "protocols": [
+    {"id": "98128891-...", "name": "Secuencia móvil", "version": 1, "for_children": false, "audience": "adulto",
+     "step_count": 1, "has_pre_questionnaire": true, "has_post_questionnaire": false,
+     "confirmation": "Es una sesión mía o cuento con la autorización firmada de la persona adulta"}
+  ],
+  "audiences": [
+    {"value": "propia", "confirmation": "Es una sesión mía o cuento con la autorización firmada de la persona adulta"},
+    {"value": "adulto", "confirmation": "Es una sesión mía o cuento con la autorización firmada de la persona adulta"},
+    {"value": "infantil", "confirmation": "Su tutor autorizó por escrito, está presente y el niño aceptó participar"}
   ]
 }
 ```
 
-- Con `ready: false` no se puede iniciar una sesión; `warnings` trae el texto
-  para mostrar, en el mismo orden que `missing`.
-- Las autorizaciones se registran en la web, a partir del formato firmado en papel.
-- `today_sessions` va de la más reciente a la más antigua e incluye sesiones
-  propias sin participante (`participant_id` y `participant_code` en `null`).
+- `today_sessions` y `recent_sessions` van de la más reciente a la más antigua.
+- `protocols` es lo mismo que `GET /mobile/protocols`.
+- `audiences`: las opciones de «¿Con quién es la sesión?» para empezar **sin
+  protocolo** (`propia` = Conmigo, `adulto` = Un adulto, `infantil` = Un niño o
+  niña) y el texto de la confirmación de cada una.
 - Una sesión con `state: "in_progress"` y `guided_phase` no terminal se puede
   [retomar](#retomar-una-sesión).
 
 Errores: `503 unavailable`. Un parámetro inválido responde `422` de esquema.
 
-### Sesión con participante
+### Sesión
 
-#### `GET /mobile/protocols?participant_id={id}`
+#### `GET /mobile/protocols`
 
-Con token. Protocolos que la cuenta puede aplicar a ese participante: los que
-armó ella misma, en su versión vigente y con todos sus estímulos activos; con
-niños, además, preparados para niños, aprobados por el docente y con estímulos
-aptos para su edad. Una lista vacía significa que no hay ninguno utilizable (se
-arman en la web).
+Con token, sin parámetros. Protocolos que la cuenta puede aplicar: los que armó
+ella misma, en su versión vigente y con todos sus estímulos activos (en un
+protocolo para niños, además, leves y aprobados). Cada uno trae su público
+(`audience`) y el texto de su confirmación. Una lista vacía significa que no hay
+ninguno utilizable (se arman en la web, en Protocolos); se puede empezar igual
+**sin protocolo**.
 
 **200** — lista de [`Protocol`](#protocol)
 
 ```json
 [
-  {"id": "98128891-...", "name": "Secuencia móvil", "version": 1, "for_children": false, "step_count": 1,
-   "has_pre_questionnaire": true, "has_post_questionnaire": false}
+  {"id": "98128891-...", "name": "Secuencia móvil", "version": 1, "for_children": false, "audience": "adulto",
+   "step_count": 1, "has_pre_questionnaire": true, "has_post_questionnaire": false,
+   "confirmation": "Es una sesión mía o cuento con la autorización firmada de la persona adulta"}
 ]
 ```
 
-Errores: `403 forbidden` (participante ajeno), `404 not_found`, `503 unavailable`.
+Errores: `503 unavailable`.
 
 #### `POST /mobile/sessions`
 
-Con token.
+Con token. La confirmación se pide **una sola vez, antes de crear la sesión**:
+el aplicativo muestra la casilla con el texto de `confirmation` (del protocolo o
+del público elegido), empezando sin marcar, y solo con la casilla marcada envía
+`authorization_confirmed: true`.
+
+| Campo | Tipo | Por defecto | Regla |
+| --- | --- | --- | --- |
+| `protocol_id` | string | `null` | Con protocolo: su público decide y no se envía `session_type` |
+| `session_type` | `propia` \| `adulto` \| `infantil` | `null` | Obligatorio **sin** protocolo (`422` si falta). Con un protocolo para adultos se admite `propia`; uno que contradiga el público del protocolo responde `422` |
+| `authorization_confirmed` | boolean | `false` | Debe ser `true` (`422` si no) |
+| `child_notice_version` | string | `null` | Versión del aviso sobre datos de menores aceptado en ese momento. El aplicativo no la tiene: con `428 child_notice_required` se acepta en la web |
+
+Con protocolo:
 
 ```json
-{"participant_id": "3e7ac862-...", "protocol_id": "98128891-..."}
+{"protocol_id": "98128891-...", "authorization_confirmed": true}
 ```
 
-Exige, igual que en la web: compromiso de confidencialidad aceptado, que la
-cuenta haya registrado al participante, autorizaciones vigentes (participación,
-cámara y, con niños, asentimiento) y un protocolo utilizable. Se aplica la
-versión vigente de los cuestionarios del protocolo.
+Sin protocolo:
+
+```json
+{"session_type": "adulto", "authorization_confirmed": true}
+```
+
+Exige además, igual que en la web, el compromiso de confidencialidad aceptado y,
+en la primera sesión con un niño o una niña, el aviso sobre datos de menores. Se
+aplica la versión vigente de los cuestionarios del protocolo.
 
 **201** — [`StartedSession`](#startedsession)
 
 ```json
 {
   "session_id": "221e2a72-...",
-  "phase": "confirmation",
-  "participant": {"id": "3e7ac862-...", "code": "P-RGNYTB", "kind": "adult"},
-  "confirmation": {
-    "reminder": "Recuerda tu compromiso de confidencialidad: los datos de la sesión son solo para tu práctica y la de tu docente.",
-    "required": ["commitment_reminder", "authorization_confirmed"]
-  }
+  "code": "S-4F7K2Q",
+  "phase": "pre_questionnaire",
+  "audience": "adulto",
+  "has_protocol": true,
+  "reminder": "Recuerda tu compromiso de confidencialidad: los datos de la sesión son solo para tu práctica y la de tu docente."
 }
 ```
 
-Con un niño, `required` es `["commitment_reminder", "guardian_present", "child_assent"]`.
+`phase` es la primera fase de la sesión: `pre_questionnaire`,
+`before_analyzer` o `calibration` con protocolo; `calibration` sin protocolo.
 
-Errores: `403 forbidden` (participante registrado por otra cuenta), `404 not_found`,
-`409 conflict` (falta o se retiró una autorización, falta la edad o el protocolo
-no es utilizable), `422 invalid`, `428 commitment_required`, `503 unavailable`.
+Errores: `404 not_found` (protocolo inexistente o ajeno), `409 conflict` (el
+protocolo no es utilizable), `422 invalid` (falta la confirmación o el público,
+o el público contradice el del protocolo), `428 commitment_required`,
+`428 child_notice_required`, `503 unavailable`.
 
 Iniciar una sesión nueva **no** cierra otra que siga en curso. **No reintentar a
 ciegas** si no hubo respuesta: consultar primero `GET /mobile/summary` y, si la
 sesión se creó, retomarla o detenerla.
-
-#### `POST /mobile/sessions/{id}/confirm`
-
-Con token. Las casillas empiezan sin marcar; quien conduce las marca en el
-aplicativo antes de entregar el dispositivo.
-
-| Campo | Tipo | Por defecto | Obligatorio en `true` cuando |
-| --- | --- | --- | --- |
-| `commitment_reminder` | boolean | `false` | Siempre |
-| `authorization_confirmed` | boolean | `false` | Participante adulto |
-| `guardian_present` | boolean | `false` | Niño o niña |
-| `child_assent` | boolean | `false` | Niño o niña |
-
-```json
-{"commitment_reminder": true, "authorization_confirmed": true, "guardian_present": false, "child_assent": false}
-```
-
-**200** — [`SessionStep`](#sessionstep) de la fase siguiente (el mismo cuerpo que
-`GET .../next`).
-
-Errores: `422 invalid` (falta una confirmación requerida), `409 conflict` (ya se
-confirmó o el participante perdió su autorización), `403 forbidden`, `404 not_found`.
 
 #### `GET /mobile/sessions/{id}/next`
 
@@ -436,6 +439,7 @@ tiempo (fin de cada estímulo) en esta misma llamada.
 ```json
 {
   "session_id": "221e2a72-...",
+  "code": "S-4F7K2Q",
   "phase": "stimuli",
   "stop_reason": null,
   "send_frames": true,
@@ -450,11 +454,10 @@ tiempo (fin de cada estímulo) en esta misma llamada.
     "exposure_seconds": 6,
     "remaining_seconds": 5.4,
     "image_url": "/mobile/stimulus-images/221e2a72-.../68f45199-...?expires=1792764370&signature=5129118438...",
-    "image_expires_at": "2026-10-23T14:06:10+00:00",
+    "image_expires_at": "2026-10-26T14:06:10+00:00",
     "abstract_notice": null,
     "records_verbal_response": false
   },
-  "confirmation": null,
   "step_count": 1
 }
 ```
@@ -483,8 +486,9 @@ En `calibration`, `calibration` es un [`Calibration`](#calibration):
 "calibration": {"state": "calibrating", "progress": 0.4, "notice": null}
 ```
 
-En `confirmation`, `confirmation` trae `reminder` y `required` como en
-`POST /mobile/sessions`.
+En `live` (sesión sin protocolo, tras la calibración) solo se envían cuadros:
+`send_frames` es `true` y `questionnaire`, `calibration` y `stimulus` vienen en
+`null`. El servidor registra una lectura cada 3 segundos; el aplicativo no la ve.
 
 Errores: `403 forbidden` (sesión de otra cuenta), `404 not_found`, `503 unavailable`.
 Una sesión terminada **no** da error: responde con `phase` `finished` o `stopped`.
@@ -496,7 +500,7 @@ Con token. `moment` es `pre` o `post`.
 | Campo | Tipo | Regla |
 | --- | --- | --- |
 | `answers` | objeto | Clave: `id` de una pregunta de ese cuestionario (otra clave responde `422`). Valor según la tabla siguiente. Una pregunta sin responder se omite; `null`, `""` y `[]` también cuentan como sin responder |
-| `entry_mode` | `participant` \| `conductor` | Por defecto `participant`. `conductor` si quien conduce anotó lo que dijo el participante |
+| `entry_mode` | `participant` \| `conductor` | Por defecto `participant` (respondió la persona en el dispositivo). `conductor` si quien conduce anotó lo que le dijo |
 
 | `kind` | Valor |
 | --- | --- |
@@ -544,7 +548,8 @@ Con token. Cuerpo: un cuadro **JPEG** (`Content-Type: image/jpeg`, máximo
 analiza en memoria con el modelo local, aplica el control de calidad (rostro,
 centrado, tamaño, iluminación e inclinación) y lo descarta.
 
-En fases que no son `calibration` ni `stimuli` el cuadro se acepta y se ignora.
+En fases que no son `calibration`, `stimuli` ni `live` el cuadro se acepta y se
+ignora.
 
 **200** — [`FrameResult`](#frameresult)
 
@@ -565,10 +570,23 @@ aplicativo, solo tras el PIN. **200** — [`PhaseResult`](#phaseresult).
 
 Errores: `409 conflict` (no hay un estímulo en curso).
 
+#### `POST /mobile/sessions/{id}/finish`
+
+Con token, sin cuerpo. Termina una sesión **sin protocolo** (fase `live`). La
+sesión conserva como expresión registrada la última lectura de buena calidad; si
+no hubo ninguna, queda cancelada. Es una acción de quien conduce: en el
+aplicativo, solo tras el PIN.
+
+**200** — `{"phase": "finished", "code": "S-4F7K2Q"}`. Mostrar `code` para
+anotarlo en el formato firmado.
+
+Errores: `409 conflict` (la sesión no está en `live`: con protocolo termina sola
+o con `stop`), `403 forbidden`, `404 not_found`.
+
 #### `POST /mobile/sessions/{id}/stop`
 
 Con token. Interrumpe de inmediato: la sesión pasa a `stopped` y se cancela. Usar
-en cuanto el participante o su tutor pidan parar.
+en cuanto la persona o su tutor pidan parar.
 
 ```json
 {"reason": "participant"}
@@ -602,26 +620,32 @@ disco del cargador de imágenes. Identificar la imagen por `session_id` +
 
 ---
 
-## Sesión guiada: fases y ciclo
+## Sesión: fases y ciclo
 
 ### Fases
 
 ```text
-confirmation ──confirm──▶ pre_questionnaire* ──respuestas──▶ before_analyzer* ──tiempo──▶
-calibration ──cuadros (≈3 s)──▶ stimuli ──tiempo, por estímulo──▶ post_questionnaire* ──respuestas──▶ finished
+Con protocolo:
+pre_questionnaire* ──respuestas──▶ before_analyzer* ──tiempo──▶ calibration ──cuadros (≈3 s)──▶
+stimuli ──tiempo, por estímulo──▶ post_questionnaire* ──respuestas──▶ finished
+
+Sin protocolo:
+calibration ──cuadros (≈3 s)──▶ live ──finish──▶ finished
 
 * se omite si el protocolo no la tiene. Desde cualquier fase activa: stop ──▶ stopped
 ```
 
+La confirmación ya no es una fase: se envía al crear la sesión.
+
 | `phase` | Qué muestra el aplicativo | Envía cuadros | Cómo avanza |
 | --- | --- | --- | --- |
-| `confirmation` | Recordatorio y casillas de `confirmation.required` (lo ve quien conduce) | No | `POST .../confirm` |
 | `pre_questionnaire` | El cuestionario previo | No | `POST .../questionnaires/pre` (o `.../advance` si `answered`) |
 | `before_analyzer` | Imagen abstracta y `abstract_notice`, **sin cámara** | No | El servidor, al cumplirse `exposure_seconds` de cada estímulo |
-| `calibration` | «Mira a la pantalla con el rostro relajado» y `progress` | Mientras `send_frames` | `POST .../calibration` y cuadros; el servidor pasa solo a `stimuli` |
+| `calibration` | «Mira a la pantalla con el rostro relajado» y `progress` | Mientras `send_frames` | `POST .../calibration` y cuadros; el servidor pasa solo a `stimuli` (o a `live` sin protocolo) |
 | `stimuli` | El estímulo (y `abstract_notice` si es abstracto) | Mientras `send_frames` | El servidor, al cumplirse `exposure_seconds` de cada estímulo |
 | `post_questionnaire` | El cuestionario posterior | No | `POST .../questionnaires/post` (o `.../advance`) |
-| `finished` | Agradecer al participante. Fin | No | Terminal |
+| `live` | Sin protocolo: la cámara en curso, sin resultados | Sí | Quien conduce termina con `POST .../finish` |
+| `finished` | Agradecer a la persona y mostrar el código. Fin | No | Terminal |
 | `stopped` | Se interrumpió (`stop_reason`). Fin | No | Terminal |
 
 Las fases terminales son `finished` y `stopped`. Una sesión también puede pasar a
@@ -631,7 +655,7 @@ Las fases terminales son `finished` y `stopped`. Una sesión también puede pasa
 ### Ciclo recomendado
 
 - **Consultar `next`** cada segundo mientras la sesión avanza, y además de
-  inmediato tras cada acción (`confirm`, cuestionario, `calibration`) o cuando un
+  inmediato tras cada acción (cuestionario, `calibration`, `finish`) o cuando un
   cuadro devuelve otra `phase`. El servidor lleva todos los tiempos:
   `remaining_seconds` solo sirve para mostrar una cuenta regresiva.
 - **Enviar cuadros** cada `frame_interval_ms` mientras `send_frames` sea `true`,
@@ -644,11 +668,12 @@ Las fases terminales son `finished` y `stopped`. Una sesión también puede pasa
 ### Calibración
 
 1. En `calibration`, `calibration.state` empieza en `none`: mostrar la indicación
-   y llamar `POST .../calibration` cuando el participante esté listo.
+   y llamar `POST .../calibration` cuando la persona esté lista.
 2. Con `state: "calibrating"` (`send_frames: true`), enviar cuadros. `progress`
    va de `0.0` a `1.0` en unos **3 segundos**.
 3. Se completa con el primer cuadro recibido después de esos 3 segundos, si hubo
-   al menos **5 cuadros con rostro**. Entonces la sesión pasa sola a `stimuli`.
+   al menos **5 cuadros con rostro**. Entonces la sesión pasa sola a `stimuli`
+   (o a `live` sin protocolo).
 4. Si no hubo rostros suficientes, `state` vuelve a `none` y `notice` trae el
    texto para mostrar: repetir desde el paso 1.
 
@@ -676,9 +701,10 @@ curso en el servidor (los estímulos siguen corriendo por tiempo):
    sesiones con `state: "in_progress"`.
 2. Para retomarla se sigue con `GET /mobile/sessions/{id}/next`. Recomendado:
    antes de devolver el dispositivo, quien conduce vuelve a comprobar en el
-   aplicativo que el participante (y, con niños, su tutor) sigue presente; el
+   aplicativo que la persona (y, con niños, su tutor) sigue presente; el
    servidor no lo pide de nuevo.
-3. Si no se va a retomar, detenerla con `POST .../stop` y `reason: "conductor"`.
+3. Si no se va a retomar, detenerla con `POST .../stop` y `reason: "conductor"`
+   (o, sin protocolo, terminarla con `POST .../finish`).
    Una sesión abandonada sigue `in_progress` hasta que se detiene en el
    aplicativo o en la web.
 
@@ -702,7 +728,7 @@ Columna «Nulo»: **sí** si el campo puede ser `null` (siempre viene). Tipos:
 | `min_app_version` | string | no | `x.y.z` |
 | `server_time` | datetime | no | UTC |
 | `services.login` | boolean | no | |
-| `services.participant_sessions` | boolean | no | |
+| `services.sessions` | boolean | no | |
 
 ### `Tokens`
 
@@ -731,32 +757,28 @@ Columna «Nulo»: **sí** si el campo puede ser `null` (siempre viene). Tipos:
 | `user` | [`User`](#user) | no | |
 | `date` | date | no | Día consultado |
 | `today_sessions` | lista de [`SessionSummary`](#sessionsummary) | no | Puede estar vacía |
-| `participants` | lista de [`ParticipantSummary`](#participantsummary) | no | Puede estar vacía |
+| `recent_sessions` | lista de [`SessionSummary`](#sessionsummary) | no | Las `limit` más recientes. Puede estar vacía |
+| `protocols` | lista de [`Protocol`](#protocol) | no | Puede estar vacía |
+| `audiences` | lista de [`Audience`](#audience) | no | Siempre las tres opciones, en orden |
 
 ### `SessionSummary`
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
 | `id` | string | no | |
+| `code` | string | sí | Código de la sesión (`S-` y 6 caracteres). `null` solo en sesiones anteriores a la revisión 3 |
 | `started_at` | datetime | no | |
 | `state` | string | no | [`state`](#valores-enumerados) |
-| `guided_phase` | string | sí | [`phase`](#valores-enumerados); `null` si no es una sesión guiada |
-| `participant_id` | string | sí | `null` en sesiones propias |
-| `participant_code` | string | sí | `null` en sesiones propias |
+| `audience` | string | no | [`audience`](#valores-enumerados) |
+| `guided_phase` | string | sí | [`phase`](#valores-enumerados); `null` si la sesión no se condujo por fases (por ejemplo, una actividad de la web) |
 | `protocol_name` | string | sí | `null` sin protocolo |
 
-### `ParticipantSummary`
+### `Audience`
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
-| `id` | string | no | |
-| `code` | string | no | Código aleatorio, por ejemplo `P-RGNYTB` |
-| `kind` | string | no | `adult` o `child` |
-| `age_years` | int | sí | `null` si se registró sin edad (no puede tener sesiones) |
-| `ready` | boolean | no | `true` si se puede iniciar una sesión |
-| `missing` | lista de string | no | [`missing`](#valores-enumerados); vacía si `ready` |
-| `warnings` | lista de string | no | Texto de cada elemento de `missing`, en el mismo orden |
-| `last_session` | [`SessionSummary`](#sessionsummary) | sí | La más reciente de esta cuenta con ese participante |
+| `value` | string | no | [`audience`](#valores-enumerados): el `session_type` que se envía |
+| `confirmation` | string | no | Texto de la casilla de confirmación |
 
 ### `Protocol`
 
@@ -766,45 +788,40 @@ Columna «Nulo»: **sí** si el campo puede ser `null` (siempre viene). Tipos:
 | `name` | string | no | |
 | `version` | int | no | Versión vigente |
 | `for_children` | boolean | no | |
+| `audience` | string | no | `adulto` o `infantil` |
 | `step_count` | int | no | Número de estímulos |
 | `has_pre_questionnaire` | boolean | no | |
 | `has_post_questionnaire` | boolean | no | |
+| `confirmation` | string | no | Texto de la casilla de confirmación para este protocolo |
 
 ### `StartedSession`
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
 | `session_id` | string | no | |
-| `phase` | string | no | Siempre `confirmation` |
-| `participant.id` | string | no | |
-| `participant.code` | string | no | |
-| `participant.kind` | string | no | `adult` o `child` |
-| `confirmation` | [`Confirmation`](#confirmation) | no | |
-
-### `Confirmation`
-
-| Campo | Tipo | Nulo | Notas |
-| --- | --- | --- | --- |
+| `code` | string | no | Código de la sesión. Se muestra al empezar |
+| `phase` | string | no | Primera fase |
+| `audience` | string | no | [`audience`](#valores-enumerados) |
+| `has_protocol` | boolean | no | `false`: sesión sin protocolo (calibración y `live`) |
 | `reminder` | string | no | Recordatorio del compromiso, para mostrar |
-| `required` | lista de string | no | Casillas que deben ir en `true` en `POST .../confirm` |
 
 ### `SessionStep`
 
-Respuesta de `GET .../next` y de `POST .../confirm`.
+Respuesta de `GET .../next`.
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
 | `session_id` | string | no | |
+| `code` | string | sí | Código de la sesión |
 | `phase` | string | no | [`phase`](#valores-enumerados) |
 | `stop_reason` | string | sí | Solo en `stopped` |
-| `send_frames` | boolean | no | `true` solo en `calibration` con `state: "calibrating"` y en `stimuli` |
+| `send_frames` | boolean | no | `true` solo en `calibration` con `state: "calibrating"`, en `stimuli` y en `live` |
 | `frame_interval_ms` | int | no | Hoy 500 |
 | `capture_status` | lista de string | no | [`capture_status`](#valores-enumerados); vacía si no hay problemas |
 | `questionnaire` | [`Questionnaire`](#questionnaire) | sí | Solo en `pre_questionnaire` y `post_questionnaire` |
 | `calibration` | [`Calibration`](#calibration) | sí | Solo en `calibration` |
 | `stimulus` | [`Stimulus`](#stimulus) | sí | Solo en `before_analyzer` y `stimuli` |
-| `confirmation` | [`Confirmation`](#confirmation) | sí | Solo en `confirmation` |
-| `step_count` | int | no | Número de estímulos del protocolo |
+| `step_count` | int | no | Número de estímulos del protocolo (`0` sin protocolo) |
 
 ### `Questionnaire`
 
@@ -844,14 +861,14 @@ Respuesta de `GET .../next` y de `POST .../confirm`.
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
 | `step_index` | int | no | Desde 0, en el orden del protocolo |
-| `title` | string | no | Para quien conduce. **No se muestra al participante** |
+| `title` | string | no | Para quien conduce. **No se muestra a la persona evaluada** |
 | `kind` | string | no | `emotional` o `abstract` |
 | `exposure_seconds` | number | no | Duración total del estímulo |
 | `remaining_seconds` | number | no | Lo que falta según el reloj del servidor |
 | `image_url` | string | no | Ruta firmada, válida 120 segundos |
 | `image_expires_at` | datetime | no | Vencimiento de `image_url` |
 | `abstract_notice` | string | sí | Con `kind: "abstract"`: aviso fijo que se muestra junto a la imagen |
-| `records_verbal_response` | boolean | no | `true`: quien conduce registra **en la web** lo que el participante dice ver. El aplicativo no lo envía |
+| `records_verbal_response` | boolean | no | `true`: quien conduce registra **en la web** lo que la persona dice ver. El aplicativo no lo envía |
 
 ### `PhaseResult`
 
@@ -875,16 +892,15 @@ aplicativo debe tolerar valores desconocidos (ver
 | Enumeración | Valores | Abierta |
 | --- | --- | --- |
 | `role` | `student` (Usuario), `psychologist` (Docente) | No |
-| `kind` (participante) | `adult`, `child` | No |
-| `missing` | `participation` (autorización de participación), `camera` (uso de la cámara), `child_assent` (asentimiento del niño), `revoked` (se retiró una autorización: no hay sesiones nuevas), `age` (registrado sin edad) | Sí |
+| `audience` | `propia` (Conmigo), `adulto` (Un adulto), `infantil` (Un niño o niña) | No |
 | `state` (sesión) | `in_progress`, `completed`, `cancelled`; `created` y `recognized` solo en sesiones propias de la web | Sí |
-| `phase` | `confirmation`, `pre_questionnaire`, `before_analyzer`, `calibration`, `stimuli`, `post_questionnaire`, `finished`, `stopped` | Sí |
-| `stop_reason` | `participant` (el participante pidió parar), `guardian` (lo pidió su tutor), `conductor` (quien conduce terminó) | No |
+| `phase` | `pre_questionnaire`, `before_analyzer`, `calibration`, `stimuli`, `post_questionnaire`, `live`, `finished`, `stopped` | Sí |
+| `stop_reason` | `participant` (la persona pidió parar), `guardian` (lo pidió su tutor), `conductor` (quien conduce terminó) | No |
 | `capture_status` | `no_face`, `off_center`, `too_small`, `too_dark`, `too_bright`, `tilted`, `no_frame` | Sí |
 | `calibration.state` | `none`, `calibrating`, `calibrated` | No |
 | `kind` (estímulo) | `emotional`, `abstract` | Sí |
 | `kind` (pregunta) | `faces`, `scale`, `single_choice`, `multiple_choice`, `short_text` | Sí |
-| `entry_mode` | `participant`, `conductor` | No |
+| `entry_mode` | `participant` (respondió la persona), `conductor` (anotó quien conduce) | No |
 | `moment` | `pre`, `post` | No |
 
 ## Reintentos e idempotencia
@@ -893,7 +909,7 @@ aplicativo debe tolerar valores desconocidos (ver
 | --- | --- |
 | Sin respuesta en una lectura (`status`, `summary`, `protocols`, `next`, imagen) | Reintentar con espera creciente (1, 2, 4… hasta 30 segundos) |
 | Sin respuesta en `POST /mobile/sessions` | No reintentar: consultar `GET /mobile/summary` y retomar o detener la sesión que se haya creado |
-| Sin respuesta en `confirm`, cuestionario, `advance` o `stop` | Reintentar: si la acción ya se aplicó, la respuesta es `409 conflict` (o `200` en `stop`); luego pedir `next` |
+| Sin respuesta en cuestionario, `advance`, `finish` o `stop` | Reintentar: si la acción ya se aplicó, la respuesta es `409 conflict` (o `200` en `stop`); luego pedir `next` |
 | Sin respuesta en un cuadro | Descartarlo. No se reenvía: se envía el siguiente cuadro nuevo |
 | Sin respuesta en `skip` | No reintentar: pedir `next` y decidir de nuevo |
 | Sin respuesta en `refresh` | Ver [respuesta perdida](#autenticación-y-tokens) |
@@ -909,19 +925,22 @@ Tiempos de espera sugeridos: 10 segundos para JSON y 5 segundos para cuadros
 El servidor hace cumplir el acceso; estas obligaciones son del aplicativo, porque
 el servidor no las puede comprobar:
 
-- Ningún cuadro, imagen de estímulo ni dato de participante se guarda en disco,
+- Ningún cuadro, imagen de estímulo ni dato de la sesión se guarda en disco,
   galería, caché ni registros. Los cuadros viven en memoria, se envían una vez y
   se descartan.
 - Solo se guardan el token de renovación (cifrado con el Android Keystore) y lo
   propio del dispositivo (por ejemplo, el hash del PIN). Al cerrar sesión se borra
   todo.
-- Ningún token, respuesta, código de participante ni cuerpo de petición aparece
-  en los registros.
-- No se muestran el nombre ni datos de un participante: solo código, tipo y edad.
-- El participante no ve resultados, `capture_status` como juicio, ni el `title`
-  del estímulo.
-- Lo que el participante dice ver de una imagen abstracta lo registra quien
-  conduce en la web.
+- Ningún token, respuesta, código de sesión ni cuerpo de petición aparece en los
+  registros.
+- No se pide ni se muestra el nombre, el DNI ni una foto de nadie: la sesión se
+  identifica solo por su código.
+- La casilla de confirmación empieza sin marcar y se muestra antes de crear la
+  sesión; sin marcarla no se envía `POST /mobile/sessions`.
+- La persona evaluada no ve resultados, `capture_status` como juicio, ni el
+  `title` del estímulo.
+- Lo que la persona dice ver de una imagen abstracta lo registra quien conduce en
+  la web.
 
 ## Configuración del servidor
 
@@ -940,5 +959,6 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 3 | 2026-10-26 | **Incompatible**: se quitan los participantes. `POST /mobile/sessions` recibe `protocol_id` o `session_type` (propia, adulto, infantil) y `authorization_confirmed`; ya no recibe `participant_id`. Se quita `POST .../confirm` y la fase `confirmation`. `GET /mobile/protocols` no lleva parámetros y trae `audience` y `confirmation`. `Summary` cambia `participants` por `recent_sessions`, `protocols` y `audiences`; `SessionSummary` cambia `participant_id`/`participant_code` por `code` y `audience`. `services.participant_sessions` pasa a `services.sessions`. Nueva fase `live` y `POST .../finish` para sesiones sin protocolo. `next` y `StartedSession` traen el `code` de la sesión. Nuevo error `428 child_notice_required` |
 | 2 | 2026-10-24 | Solo documentación; la API no cambió. Se agregan: convenciones (nulos, fechas, campos de más), reglas de compatibilidad y enumeraciones abiertas, acción del aplicativo para cada error, renovación serializada y respuesta perdida, tabla de reintentos e idempotencia, tipos de cada objeto con nulabilidad, máquina de fases, detalles de calibración y capturas, cómo retomar una sesión, `stop` idempotente, `404` de imágenes y obligaciones de privacidad del aplicativo |
 | 1 | 2026-10-23 | Primera versión del contrato con la API móvil |

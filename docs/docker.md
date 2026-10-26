@@ -228,7 +228,7 @@ La restauración **reemplaza toda la base actual**: pide escribir `RESTAURAR`,
 detiene la API mientras restaura y la vuelve a iniciar. La carpeta `backups/`
 no se sube al repositorio. Guarda los respaldos en un lugar seguro: contienen
 datos personales. Un respaldo conserva los datos que la aplicación ya eliminó:
-elimina los respaldos con más antigüedad que `PARTICIPANT_RETENTION_MONTHS`
+elimina los respaldos con más antigüedad que `SESSION_RETENTION_MONTHS`
 (12 meses por defecto) y, si contienen datos de voluntarios, a los 30 días.
 
 ## 11. Borrar todo, incluidos los datos

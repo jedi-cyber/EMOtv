@@ -2,7 +2,7 @@
 
 Los textos viven en emotv/resources con su versión en el encabezado. Usuarios y
 docentes aceptan el compromiso en su primer ingreso y cada vez que cambia la
-versión; sin aceptarlo no registran participantes ni inician sesiones.
+versión; sin aceptarlo no inician sesiones.
 """
 from __future__ import annotations
 

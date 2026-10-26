@@ -18,8 +18,8 @@ vi.mock("../src/api/http", async (original) => ({ ...await original<typeof impor
 const ESTIMATES = "Las expresiones de este reporte son estimaciones de apoyo de un modelo automático sobre el rostro visible. No son una evaluación ni indican lo que la persona sentía.";
 const base: SessionReport = {
   id: "r1", version: 1, status: "draft", current: true, narrative: "", created_at: "2026-10-22T10:00:00Z", updated_at: "2026-10-22T10:00:00Z",
-  approved_at: null, session: { id: "s1", started_at: "2026-10-22T09:00:00Z", session_type: "participante_adulto", emotion_model_id: "hsemotion_enet_b0_8_best_afew", emotion_model_version: "1" },
-  participant_code: "P-ABC234", estimates_notice: ESTIMATES, abstract_notice: null,
+  approved_at: null, session: { id: "s1", code: "S-ABC234", started_at: "2026-10-22T09:00:00Z", session_type: "adulto", emotion_model_id: "hsemotion_enet_b0_8_best_afew", emotion_model_version: "1" },
+  session_code: "S-ABC234", estimates_notice: ESTIMATES, abstract_notice: null,
   timeline: { session_id: "s1", started_at: "2026-10-22T09:00:00Z", duration_seconds: 10, lanes: { questionnaires: [], stimuli: [], captures: [], said: [], markers: [], heart_rate: [] } },
   metrics: { session_id: "s1", emotional: [], abstract: [], totals: { emotional_stimuli: 0, counted: 0, matched: 0, excluded_captures: 0, sentence: "Ningún estímulo emocional tuvo una captura de buena calidad para comparar." }, abstract_notice: null },
   authored_by_me: true, requires_review: true, can_edit: true, can_review: false, can_new_version: false, comments: [], history: [], versions: [],
@@ -40,7 +40,7 @@ describe("reporte de sesión", () => {
   it("quien condujo la sesión redacta y envía a revisión; el aviso y el modelo siempre están", async () => {
     report("student", base);
     expect(await screen.findByText(ESTIMATES)).toBeInTheDocument();
-    expect(screen.getByText("P-ABC234")).toBeInTheDocument();
+    expect(screen.getByText("S-ABC234")).toBeInTheDocument();
     expect(screen.getByText(/HSEmotion/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Texto"), "Observó con atención.");
     expect(screen.getByRole("button", { name: "Enviar a revisión" })).toBeDisabled();  // primero se guarda
@@ -79,7 +79,7 @@ describe("reporte de sesión", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Imprimir reporte" }));
     expect(apiRequest).toHaveBeenCalledWith("/reports/r1/print", expect.objectContaining({ method: "POST" }));
     await waitFor(() => expect(print).toHaveBeenCalled());
-    expect(screen.getByText("P-ABC234")).toBeInTheDocument();
+    expect(screen.getByText("S-ABC234")).toBeInTheDocument();
     expect(screen.getByText(ESTIMATES)).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/nombre del participante|DNI/i);
     print.mockRestore();

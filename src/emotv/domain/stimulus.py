@@ -31,7 +31,7 @@ MAX_STIMULUS_AGE = 99
 
 @dataclass(frozen=True, slots=True)
 class Stimulus:
-    """Imagen del banco de estímulos. Nunca es una foto de un participante.
+    """Imagen del banco de estímulos. Nunca es una foto de una persona evaluada.
 
     Solo se muestra y se registra: el sistema no relaciona una imagen abstracta
     con ninguna condición. expected_expression existe solo en los emocionales.
@@ -88,7 +88,8 @@ class Stimulus:
     def approved(self) -> bool:
         return self.approved_at is not None
 
-    def suitable_for_child(self, age_years: int | None) -> bool:
-        """Con niños solo estímulos leves, aprobados, vigentes y adecuados a la edad."""
-        return (self.active and self.approved and self.intensity is StimulusIntensity.MILD
-                and age_years is not None and self.min_age <= age_years)
+    @property
+    def suitable_for_children(self) -> bool:
+        """Con niños solo estímulos leves, aprobados y vigentes. La edad de la
+        persona no se registra, así que min_age no se usa para filtrar."""
+        return self.active and self.approved and self.intensity is StimulusIntensity.MILD

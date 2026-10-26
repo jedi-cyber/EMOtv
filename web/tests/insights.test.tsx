@@ -1,9 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { ParticipantTrends, SessionMetrics, SessionTimeline as Timeline } from "../src/api/types";
+import type { SessionMetrics, SessionTimeline as Timeline } from "../src/api/types";
 import { SessionTimeline } from "../src/insights/SessionTimeline";
 import { StimulusMetrics } from "../src/insights/StimulusMetrics";
-import { TrendChart } from "../src/insights/TrendChart";
 
 const NOTICE = "Registro descriptivo. Una sesión breve no permite sacar conclusiones a partir de una imagen.";
 const labels: Record<string, string> = { happiness: "Felicidad", sadness: "Tristeza", neutral: "Neutral" };
@@ -67,29 +66,6 @@ describe("línea de tiempo y métricas", () => {
     const abstract = screen.getByText("Forma").closest("li") as HTMLElement;
     expect(abstract).toHaveTextContent("Dijo ver: «Una nube»");
     expect(abstract.textContent).not.toMatch(/coincid|esperada/i);
-    expect(document.body.textContent).not.toMatch(VALUATIONS);
-  });
-
-  it("con una sola sesión lo indica en lugar de dibujar una tendencia", () => {
-    const group: ParticipantTrends["protocols"][number] = { protocol_family_id: "f", protocol_name: "Secuencia", comparable: false,
-      message: "Hace falta al menos dos sesiones con el mismo protocolo para mostrar cómo cambian las coincidencias.",
-      sessions: [{ session_id: "s1", started_at: "2026-10-01T10:00:00Z", protocol_version: 1, matched: 3, counted: 5, sentence: "En 3 de 5 estímulos la expresión estimada coincidió con la esperada." }] };
-    const { container } = render(<TrendChart group={group} />);
-    expect(screen.getByText(/al menos dos sesiones/)).toBeInTheDocument();
-    expect(container.querySelector("svg")).toBeNull();
-  });
-
-  it("con dos sesiones dibuja cuántos estímulos coincidieron en cada una", () => {
-    const group: ParticipantTrends["protocols"][number] = { protocol_family_id: "f", protocol_name: "Secuencia", comparable: true,
-      message: "En la primera sesión comparable coincidieron 2 de 5 estímulos; en la última, 4 de 5.",
-      sessions: [
-        { session_id: "s1", started_at: "2026-10-01T10:00:00Z", protocol_version: 1, matched: 2, counted: 5, sentence: "En 2 de 5 estímulos la expresión estimada coincidió con la esperada." },
-        { session_id: "s2", started_at: "2026-10-08T10:00:00Z", protocol_version: 1, matched: 4, counted: 5, sentence: "En 4 de 5 estímulos la expresión estimada coincidió con la esperada." },
-      ] };
-    const { container } = render(<TrendChart group={group} />);
-    expect(container.querySelectorAll("circle")).toHaveLength(2);
-    expect(screen.getByText("2 de 5")).toBeInTheDocument();
-    expect(screen.getByText("4 de 5")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(VALUATIONS);
   });
 });

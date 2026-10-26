@@ -31,8 +31,11 @@ class FakeSessionRepository:
     def list_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         return tuple(session for session in self.sessions.values() if session.owner_user_id == owner_user_id)
 
-    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
-        return tuple(session for session in self.sessions.values() if session.participant_id == participant_id)
+    def code_exists(self, code: str) -> bool:
+        return any(session.code == code for session in self.sessions.values())
+
+    def list_started_before(self, cutoff) -> tuple[EmotionalSession, ...]:
+        return tuple(session for session in self.sessions.values() if session.started_at < cutoff)
 
 
 class SessionRepositoryContractTests(unittest.TestCase):

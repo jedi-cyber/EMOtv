@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { StatusChip, toneForSession } from "../components/StatusChip";
 import { ApiError, apiRequest } from "../api/http";
-import type { Activity, EmotionalSession, GuidedState, QuestionnaireAnswers, SessionMetrics, SessionTimeline as Timeline, Student } from "../api/types";
+import type { Activity, DeletionCertificate, EmotionalSession, GuidedState, QuestionnaireAnswers, SessionMetrics, SessionTimeline as Timeline, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { PageState } from "../components/PageState";
 import { Callout } from "../components/Callout";
@@ -22,6 +22,7 @@ const dateTime = (value: string) => new Date(value).toLocaleString("es-PE", { da
 export function SessionDetailPage() {
   const { sessionId = "" } = useParams();
   const { token, user } = useAuth();
+  const navigate = useNavigate();
   const isStudent = user?.role === "student";
   const { label: expressionLabel } = useExpressionCatalog();
   const query = useApiQuery<EmotionalSession>(`/sessions/${encodeURIComponent(sessionId)}`);
@@ -40,8 +41,15 @@ export function SessionDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [deleting, setDeleting] = useState<"request" | "delete" | null>(null);
+  const [deletionBusy, setDeletionBusy] = useState(false);
   // Solo quien conduce la sesión la cancela: el docente no interrumpe el análisis de otra cuenta.
   const conductedByMe = session?.owner_user_id ? session.owner_user_id === user?.id : isStudent;
+  const terminal = session?.state === "completed" || session?.state === "cancelled";
+  // Quien conduce pide la eliminación; el docente la ejecuta (a pedido o por iniciativa propia).
+  // El servidor aplica las mismas reglas.
+  const canRequestDeletion = conductedByMe && isStudent && !session?.deletion_requested_at;
+  const canDelete = user?.role === "psychologist" && terminal;
   const canCancel = conductedByMe && (session?.state === "created" || session?.state === "in_progress" || session?.state === "recognized");
   // Con expresión registrada, cancelar conserva el registro y solo cancela la actividad.
   const recognitionKept = Boolean(session?.recognized_at);
@@ -61,14 +69,38 @@ export function SessionDetailPage() {
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo cancelar la sesión"); setConfirming(false); }
     finally { setCancelling(false); }
   }
+  async function requestDeletion() {
+    if (!session) return;
+    setDeletionBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest<EmotionalSession>(`/sessions/${encodeURIComponent(session.id)}/deletion-request`, { method: "POST", token });
+      setDeleting(null); setMessage("Pediste eliminar esta sesión. Tu docente la elimina y genera el acta."); await query.reload();
+    } catch (reason) { setDeleting(null); setError(reason instanceof Error ? reason.message : "No se pudo pedir la eliminación."); }
+    finally { setDeletionBusy(false); }
+  }
+
+  async function deleteSession() {
+    if (!session) return;
+    setDeletionBusy(true); setError(""); setMessage("");
+    try {
+      const certificate = await apiRequest<DeletionCertificate>(`/sessions/${encodeURIComponent(session.id)}/delete`, { method: "POST", token });
+      navigate(paths.deletionCertificate(certificate.id));
+    } catch (reason) { setDeleting(null); setError(reason instanceof Error ? reason.message : "No se pudo eliminar la sesión."); }
+    finally { setDeletionBusy(false); }
+  }
+
   return <section><ButtonLink variant="ghost" className="back-link" to={paths.sessions}>← Volver a sesiones</ButtonLink><PageState {...query} onRetry={query.reload} />{session && <>
     <PageHeader title="Detalle de sesión" description={`Sesión iniciada el ${dateTime(session.started_at)}.`}
       actions={canCancel ? <Button variant="danger" onClick={() => setConfirming(true)}>Cancelar sesión</Button>
         : isStudent ? <ButtonLink variant="secondary" to={paths.analysis}>Nuevo análisis</ButtonLink> : undefined} />
     {message && <Callout variant="success">{message}</Callout>}{error && <Callout variant="error">{error}</Callout>}
+    {session.deletion_requested_at && <Callout variant="info" role="note">
+      Se pidió eliminar esta sesión el {dateTime(session.deletion_requested_at)}.{canDelete ? " Puedes eliminarla y generar el acta." : " La elimina el docente."}
+    </Callout>}
     <dl className="detail-grid">
+      <div><dt>Código de la sesión</dt><dd><strong>{session.code ?? "Sin código"}</strong></dd></div>
       <div><dt>Estado</dt><dd><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></dd></div>
-      <div><dt>Tipo de sesión</dt><dd>{sessionTypeName(session.session_type)}</dd></div>
+      <div><dt>Con quién</dt><dd>{sessionTypeName(session.session_type)}</dd></div>
       <div><dt>Inicio</dt><dd>{dateTime(session.started_at)}</dd></div>
       <div><dt>Finalización</dt><dd>{session.completed_at ? dateTime(session.completed_at) : "—"}</dd></div>
       {!isStudent && <div><dt>Conducida por</dt><dd>{session.student_id ? studentCode : "Tú"}</dd></div>}
@@ -83,19 +115,19 @@ export function SessionDetailPage() {
     </dl>
     <p className="muted">La expresión registrada es una estimación del modelo sobre el rostro visible; no indica lo que sentías.</p>
     {guided && <section className="card">
-      <h2>Sesión guiada</h2>
-      {session.participant_id && ["completed", "cancelled"].includes(session.state) &&
+      <h2>Sesión con protocolo</h2>
+      {terminal &&
         <ButtonLink variant="secondary" to={paths.sessionReport(session.id)}>Reporte de la sesión</ButtonLink>}
       {guided.abstract_notice && !metricsQuery.data && <Callout variant="info" role="note">{guided.abstract_notice}</Callout>}
       {conductedByMe && !["finished", "stopped"].includes(guided.phase) &&
-        <ButtonLink variant="secondary" to={paths.guidedSession(session.id)}>Continuar la sesión guiada</ButtonLink>}
+        <ButtonLink variant="secondary" to={paths.guidedSession(session.id)}>Continuar la sesión</ButtonLink>}
       <p className="muted">El sistema describe lo registrado; no interpreta. Las expresiones son estimaciones del modelo; no indican lo que la persona sentía.</p>
       {timelineQuery.data && <>
         <h3>Línea de tiempo</h3>
         <SessionTimeline timeline={timelineQuery.data} expressionLabel={expressionLabel} />
       </>}
       {metricsQuery.data && <>
-        <h3>Métricas por estímulo</h3>
+        <h3>Métricas por imagen</h3>
         <StimulusMetrics metrics={metricsQuery.data} expressionLabel={expressionLabel} />
       </>}
     </section>}
@@ -104,7 +136,7 @@ export function SessionDetailPage() {
       <p className="muted">Las respuestas se muestran tal como se dieron; no se suman ni se interpretan.</p>
       {responses.map((item) => <div key={item.id} className="session-answers">
         <h3>{item.moment === "pre" ? "Antes del análisis" : "Después del análisis"}: {item.questionnaire.title} (versión {item.questionnaire.version})</h3>
-        <p className="muted">{item.entry_mode === "participant" ? "Respondió quien participa" : "Registradas a mano por quien condujo la sesión"} · {dateTime(item.submitted_at)}</p>
+        <p className="muted">{item.entry_mode === "participant" ? "Respondió la persona" : "Registradas a mano por quien condujo la sesión"} · {dateTime(item.submitted_at)}</p>
         <AnswerList questionnaire={item.questionnaire} answers={item.answers} />
       </div>)}
       {conductedByMe && session.post_questionnaire_id && !responses.some((item) => item.moment === "post") &&
@@ -113,6 +145,19 @@ export function SessionDetailPage() {
         <ButtonLink variant="secondary" to={paths.sessionQuestionnaire(session.id, "pre")}>Responder el cuestionario previo</ButtonLink>}
       <QuestionnaireNote />
     </section>}
+    {(canRequestDeletion || canDelete) && <section className="card">
+      <h2>Eliminar la sesión</h2>
+      <p className="muted">Las sesiones se eliminan solas al cumplirse el plazo de conservación. Antes de eso, quien la condujo puede pedir que se elimine y el docente la elimina con un acta imprimible.</p>
+      <div className="inline-actions">
+        {canRequestDeletion && <Button variant="secondary" onClick={() => setDeleting("request")}>Pedir que se elimine</Button>}
+        {canDelete && <Button variant="danger" onClick={() => setDeleting("delete")}>Eliminar la sesión</Button>}
+      </div>
+    </section>}
+    <ConfirmDialog open={deleting === "request"} title="Pedir que se elimine" confirming={deletionBusy} confirmLabel="Pedir la eliminación"
+      message="Tu docente recibirá el pedido y eliminará la sesión con todos sus registros." onCancel={() => setDeleting(null)} onConfirm={requestDeletion} />
+    <ConfirmDialog open={deleting === "delete"} title="Eliminar la sesión" confirming={deletionBusy} confirmLabel="Eliminar y generar el acta"
+      message={`Se borrarán la sesión ${session.code ?? ""} y todos sus registros (capturas, respuestas, marcadores y reportes). No se puede deshacer.`}
+      onCancel={() => setDeleting(null)} onConfirm={deleteSession} />
     <ConfirmDialog open={confirming} title="Cancelar sesión" message={recognitionKept ? "La expresión ya quedó registrada y se conserva; solo se cancelará la actividad." : "La sesión quedará cerrada y no podrá reanudarse."} confirming={cancelling} confirmLabel="Cancelar sesión" onCancel={() => setConfirming(false)} onConfirm={cancelSession} />
   </>}</section>;
 }

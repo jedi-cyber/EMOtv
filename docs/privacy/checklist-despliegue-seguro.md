@@ -1,7 +1,7 @@
 # Checklist de despliegue seguro
 
 Para el responsable técnico (`[4: RESPONSABLE TÉCNICO DE LA PLATAFORMA]`) antes
-de usar EMOtv con participantes reales y después, de forma periódica. Cada punto
+de usar EMOtv con personas reales y después, de forma periódica. Cada punto
 indica dónde lo aplica el sistema. Guía de instalación: [../docker.md](../docker.md).
 
 Fecha de la revisión: ……………… · Revisó: ……………… · Versión de EMOtv (commit): ………………
@@ -27,7 +27,8 @@ repositorio, en mensajes ni en capturas.
 
 - [ ] `SENSITIVE_DATA_KEY`: clave Fernet propia de este servidor
       (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
-      Sin ella, el módulo de participantes no se activa (`503`).
+      Sin ella, las sesiones con protocolo, los cuestionarios, los reportes y la
+      eliminación de sesiones no se activan (`503`).
 - [ ] `BACKUP_KEY`: otra clave Fernet, **distinta** de `SENSITIVE_DATA_KEY` (el
       script de respaldo se niega si son iguales). Se usa solo en el anfitrión; no
       se pasa a la API.
@@ -60,7 +61,7 @@ repositorio, en mensajes ni en capturas.
 ## 4. Consentimiento y textos aprobados
 
 - [ ] `CONSENT_MODE=production` con una política de consentimiento aprobada y
-      activa (`development` y `demo` no son para participantes reales).
+      activa (`development` y `demo` no son para personas reales).
 - [ ] Compromiso de confidencialidad aprobado: versión actualizada y sin
       `provisional: true` en `src/emotv/resources/confidentiality_commitment.md`
       y `child_data_notice.md`.
@@ -75,7 +76,7 @@ repositorio, en mensajes ni en capturas.
 - [ ] Probada una restauración (`scripts/docker/restore_db.py`) en un equipo de
       prueba.
 - [ ] Se eliminan los respaldos con más antigüedad que
-      `PARTICIPANT_RETENTION_MONTHS` y, si contienen voluntarios, a los 30 días.
+      `SESSION_RETENTION_MONTHS` y, si contienen voluntarios, a los 30 días.
       Esta eliminación **no es automática**.
 
 ## 6. Registros (logs) y auditoría
@@ -83,7 +84,7 @@ repositorio, en mensajes ni en capturas.
 - [ ] **Configurar la rotación de los logs de Docker**: `docker-compose.yml` no
       define `logging`, así que los logs crecen sin límite. Los logs de `api` y
       `web` registran la IP, la ruta y el código de cada petición (incluido el
-      enlace temporal de la vista del participante). Definir un tamaño y un
+      enlace temporal de la pantalla de la persona). Definir un tamaño y un
       plazo de conservación: ……………… `[Verificar con asesoría legal el plazo.]`
 - [ ] Revisar la **auditoría** de forma periódica (frecuencia: ………………):
       accesos denegados, impresiones, eliminaciones, restablecimientos de
@@ -106,8 +107,8 @@ repositorio, en mensajes ni en capturas.
 
 ## 8. Retención
 
-- [ ] `PARTICIPANT_RETENTION_MONTHS` igual al plazo aprobado (`[9]`; por defecto 12,
-      contados como 360 días desde el registro del participante). La tarea corre
+- [ ] `SESSION_RETENTION_MONTHS` igual al plazo aprobado (`[9]`; por defecto 12,
+      contados como 360 días desde el inicio de cada sesión). La tarea corre
       al arrancar la API y una vez al día.
 - [ ] `AUDIT_RETENTION_MONTHS` (24 por defecto) aprobado.
 - [ ] `CHAT_RETENTION_DAYS` (90 por defecto) aprobado.

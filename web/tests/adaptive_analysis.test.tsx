@@ -8,8 +8,8 @@ import { apiRequest } from "../src/api/http";
 import { AssistantProvider } from "../src/components/AssistantContext";
 import { AssistantWidget } from "../src/components/AssistantWidget";
 
-const { admissions } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[], is_default: true as boolean }] } }));
-vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
+const { admissions, protocols } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[], is_default: true as boolean }] }, protocols: { value: [] as unknown[] } }));
+vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : path === "/protocols" ? protocols.value : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
 class Socket {
@@ -73,8 +73,13 @@ function liveReading(overrides: Record<string, unknown> = {}) {
 /** La cámara es un requisito: se prueba primero y el botón se habilita cuando se cumplen los tres. */
 async function startAnalysis() {
   await userEvent.click(screen.getAllByRole("button", { name: "Probar cámara" })[0]);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeEnabled());
-  await userEvent.click(screen.getByRole("button", { name: "Reconocer mi expresión" }));
+  // Sin protocolo se elige con quién es la sesión y se confirma una sola vez.
+  await userEvent.click(screen.getByRole("radio", { name: /Conmigo/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Empezar el análisis" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "Empezar el análisis" }));
+  const dialog = await screen.findByRole("dialog", { name: "Antes de empezar" });
+  await userEvent.click(within(dialog).getByRole("checkbox", { name: /Es una sesión mía/ }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Empezar la sesión" }));
 }
 
 async function openLive(withAssistant = false) {
@@ -90,6 +95,7 @@ async function openLive(withAssistant = false) {
 
 beforeEach(() => {
   admissions.value = [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [], is_default: true }];
+  protocols.value = [];
   Socket.instances = [];
   vi.stubGlobal("WebSocket", Socket);
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
@@ -98,12 +104,31 @@ beforeEach(() => {
     if (path === "/consent-policy") return { id: "EMOTV-CONSENT-DEMO-001:v0.1", version: "v0.1", mode: "demo", available: true } as never;
     if (path === "/students") return [{ id: "student-1" }] as never;
     if (path.endsWith("/consents/active")) return { id: "consent-1", policy_version: "EMOTV-CONSENT-DEMO-001:v0.1" } as never;
-    if (path === "/sessions") return { id: "session-1", state: "in_progress" } as never;
+    if (path === "/sessions") return { id: "session-1", state: "in_progress", code: "S-4F7K2Q" } as never;
     return {} as never;
   });
 });
 
 describe("analizador emoción → recomendación → postura", () => {
+  it("sin protocolo pregunta con quién es la sesión; con protocolo, decide su público y no pregunta", async () => {
+    protocols.value = [{ id: "p1", name: "Paisajes", for_children: true, owned_by_me: true, steps: [{}, {}],
+      pre_questionnaire_id: null, post_questionnaire_id: null }];
+    page();
+    expect(screen.getByLabelText("Protocolo")).toHaveValue("");
+    const question = screen.getByRole("group", { name: "¿Con quién es la sesión?" });
+    expect(within(question).getAllByRole("radio").map((item) => item.closest("label")?.querySelector("strong")?.textContent))
+      .toEqual(["Conmigo", "Un adulto", "Un niño o niña"]);
+    expect(screen.getByRole("button", { name: "Empezar el análisis" })).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p1");
+    expect(screen.queryByRole("group", { name: "¿Con quién es la sesión?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeInTheDocument();
+  });
+
+  it("sin protocolos ofrece crear uno", () => {
+    page();
+    expect(screen.getByRole("link", { name: "Crear un protocolo" })).toHaveAttribute("href", "/protocols");
+  });
+
   it("prueba la cámara local sin iniciar sesión ni enviar frames", async () => {
     const stop = vi.fn(); const getUserMedia = camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
     page();
@@ -183,7 +208,7 @@ describe("analizador emoción → recomendación → postura", () => {
     const requirements = await screen.findByRole("list", { name: "Requisitos para empezar" });
     expect(await within(requirements).findByRole("link", { name: "Revisar consentimiento" })).toHaveAttribute("href", "/consent");
     expect(within(requirements).getAllByText("Pendiente").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Empezar el análisis" })).toBeDisabled();
     expect(screen.getByText(/Para empezar falta: .*consentimiento vigente/)).toBeInTheDocument();
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(Socket.instances).toHaveLength(0);
@@ -216,8 +241,8 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.queryByLabelText("Modelo facial")).not.toBeInTheDocument();
     await startAnalysis();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
-    // La sesión se guarda como propia: quien inicia sesión se analiza a sí mismo.
-    expect(apiRequest).toHaveBeenCalledWith("/sessions", expect.objectContaining({ body: JSON.stringify({ session_type: "propia" }) }));
+    // «Conmigo»: la sesión se guarda como propia, con la confirmación.
+    expect(apiRequest).toHaveBeenCalledWith("/sessions", expect.objectContaining({ body: JSON.stringify({ session_type: "propia", authorization_confirmed: true }) }));
     act(() => Socket.instances[0].onopen?.());
     // Sin elección, el servidor usa el predeterminado (o su respaldo) e informa si está bloqueado.
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
@@ -267,9 +292,13 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByRole("progressbar", { name: "Progreso de la actividad" })).toHaveAttribute("aria-valuenow", "50");
     expect(screen.getByText(/cancelar solo detiene la actividad/)).toBeInTheDocument();
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", activity, message: "Completada", progress: 1, exercise_result: "completed" }) }));
-    expect(screen.getByRole("link", { name: "Ver resultado" })).toHaveAttribute("href", "/sessions/session-1");
+    expect(screen.getByRole("link", { name: "Ver la sesión S-4F7K2Q" })).toHaveAttribute("href", "/sessions/session-1");
     expect(stop).toHaveBeenCalledOnce();
     await userEvent.click(screen.getByRole("button", { name: "Analizar otra expresión" }));
+    // Cada sesión nueva tiene su propia confirmación.
+    const dialog = await screen.findByRole("dialog", { name: "Antes de empezar" });
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /Es una sesión mía/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Empezar la sesión" }));
     await waitFor(() => expect(Socket.instances).toHaveLength(2));
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(vi.mocked(apiRequest).mock.calls.filter(([path]) => path === "/sessions")).toHaveLength(2);

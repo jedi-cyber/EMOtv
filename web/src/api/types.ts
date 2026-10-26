@@ -26,7 +26,8 @@ export interface AssignedStudent extends Student {
 
 export type SessionState = "created" | "in_progress" | "recognized" | "completed" | "cancelled";
 export type ActivityOutcome = "completed" | "skipped" | "cancelled";
-export type SessionType = "propia" | "participante_adulto" | "participante_infantil";
+/** Con quién es la sesión: conmigo, con una persona adulta o con un niño o niña. */
+export type SessionType = "propia" | "adulto" | "infantil";
 
 export interface EmotionalSession {
   id: string;
@@ -48,11 +49,14 @@ export interface EmotionalSession {
   session_type?: SessionType;
   /** Cuenta que conduce la sesión; solo ella puede cancelarla. */
   owner_user_id?: string | null;
-  participant_id?: string | null;
   protocol_id?: string | null;
   /** Versiones exactas de los cuestionarios previo y posterior. */
   pre_questionnaire_id?: string | null;
   post_questionnaire_id?: string | null;
+  /** Código aleatorio (S-XXXXXX) que se anota en el formato firmado. */
+  code?: string | null;
+  authorization_confirmed_at?: string | null;
+  deletion_requested_at?: string | null;
 }
 
 /** Modelo local que puede probar quien conduce la sesión (GET /analysis/models). */
@@ -63,45 +67,10 @@ export interface LocalModelOption {
   reasons?: string[];
 }
 
-export type ParticipantKind = "adult" | "child";
-
-/** Participante sin cuenta, nombre ni foto: solo un código. */
-export interface Participant {
-  id: string;
-  code: string;
-  kind: ParticipantKind;
-  created_at: string;
-  expires_at: string;
-  notes: string | null;
-  registered_by_me: boolean;
-  deletion_requested_at: string | null;
-  age_years: number | null;
-  authorization_status: AuthorizationStatus;
-  authorization_revoked_at: string | null;
-}
-
-/** ready: puede iniciar sesiones; revoked: se retiró una autorización. */
-export type AuthorizationStatus = "ready" | "missing" | "revoked" | "no_age";
-
-/** Formato firmado en papel: sin nombres ni datos de quien firma. */
-export interface ParticipantAuthorization {
-  id: string;
-  form_version: string;
-  signed_on: string;
-  grantor: "participant" | "guardian";
-  participation: boolean;
-  camera: boolean;
-  child_assent: boolean | null;
-  recorded_at: string;
-  revoked_at: string | null;
-  revoked_party: "participant" | "guardian" | null;
-  revoked_scope: "participation" | "camera" | "assent" | null;
-}
-
 export type StimulusKind = "emotional" | "abstract";
 export type StimulusIntensity = "mild" | "moderate";
 
-/** Imagen del banco de estímulos; nunca una foto de un participante. */
+/** Imagen del banco de estímulos; nunca una foto de una persona evaluada. */
 export interface Stimulus {
   id: string;
   title: string;
@@ -139,17 +108,14 @@ export interface Protocol {
   post_questionnaire_id: string | null;
   steps: ProtocolStep[];
   created_at: string;
-  approved: boolean;
-  approved_at: string | null;
   owned_by_me: boolean;
-  can_approve: boolean;
   used: boolean;
 }
 
-/** Acta de eliminación: sin datos personales. */
+/** Acta de eliminación de una sesión: sin datos personales. */
 export interface DeletionCertificate {
   id: string;
-  participant_code: string;
+  session_code: string;
   deleted_at: string;
   counts: Record<string, number>;
   verified: boolean;
@@ -207,8 +173,8 @@ export interface QuestionnaireAnswers {
   answers: Answers;
 }
 
-export type GuidedPhase = "confirmation" | "pre_questionnaire" | "before_analyzer" | "calibration" | "stimuli"
-  | "post_questionnaire" | "finished" | "stopped";
+export type GuidedPhase = "pre_questionnaire" | "before_analyzer" | "calibration" | "stimuli"
+  | "post_questionnaire" | "live" | "finished" | "stopped";
 export type MarkerKind = "distracted" | "laughed" | "asked_to_stop" | "cried" | "note";
 
 export interface GuidedStep {
@@ -226,7 +192,7 @@ export interface GuidedCapture {
   id: string;
   captured_at: string;
   step_index: number;
-  stimulus_id: string;
+  stimulus_id: string | null;
   seconds_since_stimulus: number;
   emotion: string | null;
   confidence: number | null;
@@ -236,11 +202,14 @@ export interface GuidedCapture {
   emotion_model_id: string;
 }
 
-/** Estado para quien conduce la sesión guiada (nunca llega a la vista del participante). */
+/** Estado para quien conduce la sesión (nunca llega a la pantalla de la persona). */
 export interface GuidedState {
   session_id: string;
+  /** Código para anotar en el formato firmado. */
+  session_code: string | null;
   phase: GuidedPhase;
-  participant_kind: "adult" | "child" | null;
+  audience: SessionType;
+  has_protocol: boolean;
   stop_reason: "participant" | "guardian" | "conductor" | null;
   step_index: number | null;
   step_count: number;
@@ -257,7 +226,7 @@ export interface GuidedState {
   verbal_responses: { step_index: number; stimulus_id: string; text: string; recorded_at: string }[];
 }
 
-/** Lo único que recibe la vista del participante. */
+/** Lo único que recibe la pantalla de la persona evaluada. */
 export interface ParticipantViewState {
   phase: GuidedPhase;
   message: string | null;
@@ -271,6 +240,7 @@ export interface ParticipantViewState {
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
 export interface SessionTimeline {
   session_id: string;
+  session_code?: string | null;
   started_at: string;
   duration_seconds: number;
   lanes: {
@@ -306,17 +276,10 @@ export interface SessionMetrics {
   abstract_notice: string | null;
 }
 
-export interface ParticipantTrends {
-  participant_id: string;
-  code: string;
-  protocols: { protocol_family_id: string; protocol_name: string; comparable: boolean; message: string;
-    sessions: { session_id: string; started_at: string; protocol_version: number; matched: number; counted: number; sentence: string }[] }[];
-}
-
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
 export type ReportSection = "timeline" | "metrics" | "questionnaires" | "narrative" | "general";
 
-/** Reporte de una sesión con participante: redacta quien la condujo, revisa su docente. */
+/** Reporte de una sesión: redacta quien la condujo, revisa su docente. */
 export interface SessionReport {
   id: string;
   version: number;
@@ -326,8 +289,9 @@ export interface SessionReport {
   created_at: string;
   updated_at: string;
   approved_at: string | null;
-  session: { id: string; started_at: string; session_type: SessionType; emotion_model_id: string | null; emotion_model_version: string | null };
-  participant_code: string;
+  session: { id: string; code: string | null; started_at: string; session_type: SessionType; emotion_model_id: string | null; emotion_model_version: string | null };
+  /** Código de la sesión, para cruzarlo con el formato firmado. */
+  session_code: string | null;
   estimates_notice: string;
   abstract_notice: string | null;
   timeline: SessionTimeline;

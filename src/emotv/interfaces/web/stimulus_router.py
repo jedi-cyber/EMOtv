@@ -2,7 +2,7 @@
 
 Los estímulos los crean los docentes (para su grupo) y el administrador (para
 la institución); los usuarios los usan en sus protocolos. La imagen de un
-estímulo es la única imagen que sirve la API y nunca es la de un participante.
+estímulo es la única imagen que sirve la API y nunca es la de una persona evaluada.
 """
 from __future__ import annotations
 
@@ -58,7 +58,8 @@ class ProtocolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
-    for_children: bool = False
+    # Primera pregunta obligatoria: ¿para adultos o para niños?
+    for_children: bool
     pre_questionnaire_id: str | None = Field(default=None, max_length=36)
     post_questionnaire_id: str | None = Field(default=None, max_length=36)
     steps: list[StepModel] = Field(min_length=1, max_length=MAX_STEPS)
@@ -75,10 +76,7 @@ class ProtocolResponse(BaseModel):
     post_questionnaire_id: str | None
     steps: list[StepModel]
     created_at: datetime
-    approved: bool
-    approved_at: datetime | None
     owned_by_me: bool
-    can_approve: bool
     used: bool
 
 
@@ -129,9 +127,7 @@ def create_stimulus_router(
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer) for step in item.steps],
-            created_at=item.created_at, approved=item.approved, approved_at=item.approved_at,
-            owned_by_me=item.owner_user_id == user.id, can_approve=service.can_approve(user, item),
-            used=service.is_used(item))
+            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
@@ -147,10 +143,10 @@ def create_stimulus_router(
     # --- Estímulos -------------------------------------------------------------
 
     @router.get("/stimuli", response_model=list[StimulusResponse])
-    def list_stimuli(child_age: int | None = None, user: User = Depends(current_user)):
-        """Con child_age, solo los que se ofrecen a un niño de esa edad."""
+    def list_stimuli(for_children: bool = False, user: User = Depends(current_user)):
+        """Con for_children, solo los que admite un protocolo para niños."""
         return [stimulus_response(item, user)
-                for item in guarded(lambda: stimulus_service().list_for(user, child_age))]
+                for item in guarded(lambda: stimulus_service().list_for(user, for_children))]
 
     @router.post("/stimuli", response_model=StimulusResponse, status_code=201)
     async def create_stimulus(
@@ -180,7 +176,7 @@ def create_stimulus_router(
 
     @router.get("/stimuli/{stimulus_id}/file", response_class=Response)
     def stimulus_file(stimulus_id: str, user: User = Depends(current_user)):
-        """La imagen del estímulo (nunca la de un participante)."""
+        """La imagen del estímulo (nunca la de una persona evaluada)."""
         content_type, data = guarded(lambda: stimulus_service().image(user, stimulus_id))
         return Response(content=data, media_type=content_type)
 
@@ -211,9 +207,5 @@ def create_stimulus_router(
     def edit_protocol(protocol_id: str, request: ProtocolRequest, user: User = Depends(current_user)):
         """Si la versión ya se usó en una sesión, responde con la versión nueva."""
         return protocol_response(guarded(lambda: protocol_service().edit(user, protocol_id, draft(request))), user)
-
-    @router.post("/protocols/{protocol_id}/approve", response_model=ProtocolResponse)
-    def approve_protocol(protocol_id: str, user: User = Depends(current_user)):
-        return protocol_response(guarded(lambda: protocol_service().approve(user, protocol_id)), user)
 
     return router

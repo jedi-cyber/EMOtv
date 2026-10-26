@@ -11,7 +11,7 @@ export function StudentsPage() {
   const query = useApiQuery<Student[]>("/students");
   const students = query.data ?? [];
   return <section>
-    <PageHeader title="Mi grupo" description="Usuarios de tu grupo. Ves sus sesiones y los resultados de sus participantes." />
+    <PageHeader title="Mi grupo" description="Usuarios de tu grupo. Ves sus sesiones y sus reportes." />
     <PageState {...query} empty={!query.loading && !query.error && students.length === 0}
       emptyMessage="Aún no tienes usuarios en tu grupo. El administrador asigna los usuarios a cada docente." onRetry={query.reload} />
     {students.length > 0 && <div className="card-list">{students.map((student) =>

@@ -126,14 +126,13 @@ class PostgresQuestionnaireResponseRepository:
         return QuestionnaireResponse(
             id=row.id, session_id=row.session_id, questionnaire_id=row.questionnaire_id, moment=row.moment,
             answers=json.loads(self._cipher.decrypt(row.answers_encrypted) or "{}"), entry_mode=row.entry_mode,
-            recorded_by_user_id=row.recorded_by_user_id, submitted_at=_aware(row.submitted_at),
-            participant_id=row.participant_id)
+            recorded_by_user_id=row.recorded_by_user_id, submitted_at=_aware(row.submitted_at))
 
     def add(self, response: QuestionnaireResponse) -> QuestionnaireResponse:
         with self._factory.begin() as db:
             db.add(QuestionnaireResponseRecord(
                 id=response.id, session_id=response.session_id, questionnaire_id=response.questionnaire_id,
-                participant_id=response.participant_id, moment=response.moment.value,
+                moment=response.moment.value,
                 answers_encrypted=self._cipher.encrypt(json.dumps(response.answers, ensure_ascii=False)),
                 entry_mode=response.entry_mode.value, recorded_by_user_id=response.recorded_by_user_id,
                 submitted_at=response.submitted_at))

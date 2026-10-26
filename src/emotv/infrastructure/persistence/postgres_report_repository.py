@@ -25,7 +25,7 @@ class PostgresReportRepository:
     def _report(self, row: SessionReportRecord) -> SessionReport:
         return SessionReport(
             id=row.id, family_id=row.family_id, version=row.version, session_id=row.session_id,
-            participant_id=row.participant_id, author_user_id=row.author_user_id, status=row.status,
+            author_user_id=row.author_user_id, status=row.status,
             narrative=self._cipher.decrypt(row.narrative_encrypted) or "", created_at=_aware(row.created_at),
             updated_at=_aware(row.updated_at), approved_at=_aware(row.approved_at),
             approved_by_user_id=row.approved_by_user_id, superseded_at=_aware(row.superseded_at))
@@ -34,7 +34,6 @@ class PostgresReportRepository:
         row.family_id = report.family_id
         row.version = report.version
         row.session_id = report.session_id
-        row.participant_id = report.participant_id
         row.author_user_id = report.author_user_id
         row.status = report.status.value
         row.narrative_encrypted = self._cipher.encrypt(report.narrative or None)
@@ -53,7 +52,7 @@ class PostgresReportRepository:
                 db.add(row)
             self._fill(row, report)
             db.flush()
-            self._add_event(db, event, report.participant_id)
+            self._add_event(db, event)
         return report
 
     def add_version(self, previous: SessionReport, report: SessionReport, event: ReportEvent) -> SessionReport:
@@ -66,18 +65,18 @@ class PostgresReportRepository:
             self._fill(row, report)
             db.add(row)
             db.flush()
-            self._add_event(db, event, report.participant_id)
+            self._add_event(db, event)
         return report
 
     @staticmethod
-    def _add_event(db: Session, event: ReportEvent, participant_id: str) -> None:
-        db.add(ReportEventRecord(id=event.id, report_id=event.report_id, participant_id=participant_id,
+    def _add_event(db: Session, event: ReportEvent) -> None:
+        db.add(ReportEventRecord(id=event.id, report_id=event.report_id,
                                  action=event.action.value, actor_user_id=event.actor_user_id,
                                  occurred_at=event.occurred_at))
 
-    def add_event(self, event: ReportEvent, participant_id: str) -> None:
+    def add_event(self, event: ReportEvent) -> None:
         with self._factory.begin() as db:
-            self._add_event(db, event, participant_id)
+            self._add_event(db, event)
 
     def get(self, report_id: str) -> SessionReport | None:
         with self._factory() as db:
@@ -90,13 +89,13 @@ class PostgresReportRepository:
                               .order_by(SessionReportRecord.version)).all()
             return tuple(self._report(row) for row in rows)
 
-    def add_comment(self, comment: ReportComment, participant_id: str, event: ReportEvent) -> ReportComment:
+    def add_comment(self, comment: ReportComment, event: ReportEvent) -> ReportComment:
         with self._factory.begin() as db:
-            db.add(ReportCommentRecord(id=comment.id, report_id=comment.report_id, participant_id=participant_id,
+            db.add(ReportCommentRecord(id=comment.id, report_id=comment.report_id,
                                        section=comment.section.value, text_encrypted=self._cipher.encrypt(comment.text),
                                        author_user_id=comment.author_user_id, created_at=comment.created_at))
             db.flush()
-            self._add_event(db, event, participant_id)
+            self._add_event(db, event)
         return comment
 
     def list_comments(self, report_id: str) -> tuple[ReportComment, ...]:

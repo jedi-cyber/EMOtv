@@ -1,11 +1,11 @@
 """Emi: conversaciones, límites de uso y filtros de riesgo e identificadores antes de llamar a n8n.
 
-Emi es para usuarios y docentes; los participantes no tienen cuenta. FastAPI es
+Emi es para usuarios y docentes; las personas evaluadas no tienen cuenta. FastAPI es
 responsable de la autenticación, los límites, los filtros, el historial y la
 retención; n8n clasifica el alcance y genera la respuesta. Al webhook solo
 llegan la pregunta tal como la escribió la persona (sin identificadores
 detectables), el historial de esa conversación dentro de alcance y
-``knowledge`` (conocimiento general de EMOtv): nunca datos de participantes,
+``knowledge`` (conocimiento general de EMOtv): nunca datos de las personas evaluadas,
 sesiones, reportes, resultados, nombres, correos ni el id del usuario.
 """
 from __future__ import annotations

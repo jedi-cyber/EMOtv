@@ -11,10 +11,10 @@ import { paths } from "../routes/paths";
 
 /** Nombres de los tipos de registro; la clave técnica nunca se muestra. */
 const recordNames: Record<string, string> = {
-  participants: "Participante", sessions: "Sesiones", authorizations: "Autorizaciones registradas",
+  sessions: "Sesión",
   questionnaire_responses: "Respuestas de cuestionarios", expression_captures: "Capturas de expresión estimada",
   session_markers: "Marcadores", verbal_responses: "Lo que dijo ver en imágenes abstractas",
-  guided_runs: "Sesiones guiadas", session_reports: "Reportes", report_comments: "Comentarios de reportes",
+  guided_runs: "Avance del protocolo", session_reports: "Reportes", report_comments: "Comentarios de reportes",
   report_events: "Historial de reportes",
 };
 const when = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
@@ -23,7 +23,7 @@ const when = (value: string) => new Date(value).toLocaleString("es-PE", { dateSt
 export function DeletionCertificatePage() {
   const { certificateId = "" } = useParams();
   const { token } = useAuth();
-  const query = useApiQuery<DeletionCertificate>(`/participant-deletions/${encodeURIComponent(certificateId)}`);
+  const query = useApiQuery<DeletionCertificate>(`/session-deletions/${encodeURIComponent(certificateId)}`);
   const [error, setError] = useState("");
   const certificate = query.data;
 
@@ -31,28 +31,28 @@ export function DeletionCertificatePage() {
     setError("");
     try {
       // La impresión queda en la auditoría antes de abrir el diálogo del navegador.
-      await apiRequest(`/participant-deletions/${encodeURIComponent(certificateId)}/print`, { method: "POST", token });
+      await apiRequest(`/session-deletions/${encodeURIComponent(certificateId)}/print`, { method: "POST", token });
       window.print();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo registrar la impresión."); }
   }
 
   return <section>
     <div className="inline-actions no-print">
-      <ButtonLink variant="ghost" to={paths.participants}>← Volver a participantes</ButtonLink>
+      <ButtonLink variant="ghost" to={paths.sessions}>← Volver a sesiones</ButtonLink>
       {certificate && <Button variant="primary" onClick={() => { void print(); }}>Imprimir acta</Button>}
     </div>
     {error && <Callout variant="error">{error}</Callout>}
     <PageState {...query} onRetry={query.reload} />
     {certificate && <article className="card">
-      <h1>Acta de eliminación de datos de participante</h1>
+      <h1>Acta de eliminación de una sesión</h1>
       <dl className="detail-grid">
-        <div><dt>Código del participante</dt><dd>{certificate.participant_code}</dd></div>
+        <div><dt>Código de la sesión</dt><dd>{certificate.session_code}</dd></div>
         <div><dt>Fecha y hora</dt><dd>{when(certificate.deleted_at)}</dd></div>
         <div><dt>Verificación</dt><dd>{certificate.verified ? "Correcta: no quedó ningún registro asociado" : "Fallida"}</dd></div>
       </dl>
       <h2>Registros eliminados por tipo</h2>
       <ul>{Object.entries(certificate.counts).map(([key, value]) => <li key={key}>{recordNames[key] ?? "Otros registros"}: {value}</li>)}</ul>
-      <p className="muted">El acta no contiene datos personales. EMOtv no guarda imágenes de participantes.</p>
+      <p className="muted">El acta no contiene datos personales. EMOtv no guarda imágenes de las personas evaluadas.</p>
       <p>Responsable: ______________________________ Firma: ______________</p>
     </article>}
   </section>;

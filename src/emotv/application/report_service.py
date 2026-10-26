@@ -1,10 +1,10 @@
-"""Reporte de sesión con participante: lo redacta quien condujo la sesión y lo
-revisa su docente asignado.
+"""Reporte de una sesión: lo redacta quien la condujo y lo revisa su docente
+asignado.
 
 Estados: borrador, enviado a revisión, con observaciones y aprobado. Si quien
 condujo es un docente, al cerrar el reporte queda aprobado sin revisión. Un
 reporte aprobado no se edita: se crea una versión nueva que vuelve a revisión.
-Todo acceso pasa por can_access_participant y queda en la auditoría. El texto y
+Todo acceso pasa por can_access_session y queda en la auditoría. El texto y
 los comentarios se guardan cifrados.
 """
 from __future__ import annotations
@@ -18,7 +18,6 @@ from uuid import uuid4
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.participant import Participant
 from emotv.domain.report import (
     EDITABLE,
     ESTIMATES_NOTICE,
@@ -50,7 +49,6 @@ class ReportService:
         self,
         repository,                                   # PostgresReportRepository
         sessions,                                     # SessionService
-        participants: Callable[[str], Participant | None],
         authorization: AuthorizationService,
         docente_of: Callable[[str], str | None],
         insights,                                     # SessionInsightsService
@@ -59,7 +57,6 @@ class ReportService:
     ) -> None:
         self.repository = repository
         self.sessions = sessions
-        self.participants = participants
         self.authorization = authorization
         self.docente_of = docente_of
         self.insights = insights
@@ -68,24 +65,20 @@ class ReportService:
 
     # --- Acceso -----------------------------------------------------------------------
 
-    def _participant_session(self, user: User, session_id: str) -> tuple[EmotionalSession, Participant]:
+    def _session(self, user: User, session_id: str) -> EmotionalSession:
         session = self.sessions.get_session(session_id)
-        if session is None or session.participant_id is None:
+        if session is None or session.owner_user_id is None:
             raise ReportNotFound(session_id)
-        participant = self.participants(session.participant_id)
-        if participant is None:
-            raise ReportNotFound(session_id)
-        if not self.authorization.can_access_participant(user, participant):
+        if not self.authorization.can_access_session(user, session):
             self.audit.record(user, AuditAction.VIEW, RESOURCE, session.id, AuditResult.DENIED)
             raise PermissionError("No tienes acceso a este reporte")
-        return session, participant
+        return session
 
-    def _report(self, user: User, report_id: str) -> tuple[SessionReport, EmotionalSession, Participant]:
+    def _report(self, user: User, report_id: str) -> tuple[SessionReport, EmotionalSession]:
         report = self.repository.get(report_id)
         if report is None:
             raise ReportNotFound(report_id)
-        session, participant = self._participant_session(user, report.session_id)
-        return report, session, participant
+        return report, self._session(user, report.session_id)
 
     def _event(self, report: SessionReport, action: ReportAction, user: User) -> ReportEvent:
         return ReportEvent(id=str(uuid4()), report_id=report.id, action=action, actor_user_id=user.id,
@@ -111,7 +104,7 @@ class ReportService:
     # --- Redacción y revisión ---------------------------------------------------------------
 
     def create(self, user: User, session_id: str) -> SessionReport:
-        session, participant = self._participant_session(user, session_id)
+        session = self._session(user, session_id)
         if session.owner_user_id != user.id:
             raise PermissionError("Solo quien condujo la sesión redacta su reporte")
         if session.state not in (SessionState.COMPLETED, SessionState.CANCELLED):
@@ -121,14 +114,14 @@ class ReportService:
         now = self.clock()
         report_id = str(uuid4())
         report = SessionReport(id=report_id, family_id=report_id, version=1, session_id=session.id,
-                               participant_id=participant.id, author_user_id=user.id, status=ReportStatus.DRAFT,
+                               author_user_id=user.id, status=ReportStatus.DRAFT,
                                narrative="", created_at=now, updated_at=now)
         self.repository.save(report, self._event(report, ReportAction.CREATED, user))
         self.audit.record(user, AuditAction.CREATE, RESOURCE, report.id)
         return report
 
     def edit(self, user: User, report_id: str, narrative: str) -> SessionReport:
-        report, _, _ = self._report(user, report_id)
+        report, _ = self._report(user, report_id)
         self._require_author(user, report)
         self._require_current(report)
         if report.status is ReportStatus.APPROVED:
@@ -142,7 +135,7 @@ class ReportService:
 
     def submit(self, user: User, report_id: str) -> SessionReport:
         """Envía a revisión; si quien condujo es docente, el reporte queda aprobado."""
-        report, _, _ = self._report(user, report_id)
+        report, _ = self._report(user, report_id)
         self._require_author(user, report)
         self._require_current(report)
         if report.status not in EDITABLE:
@@ -164,18 +157,18 @@ class ReportService:
         return updated
 
     def comment(self, user: User, report_id: str, section: ReportSection | str, text: str) -> ReportComment:
-        report, _, _ = self._report(user, report_id)
+        report, _ = self._report(user, report_id)
         self._require_reviewer(user, report)
         if report.status is not ReportStatus.SUBMITTED:
             raise ReportConflict("Se comenta un reporte enviado a revisión")
         comment = ReportComment(id=str(uuid4()), report_id=report.id, section=section, text=text,
                                 author_user_id=user.id, created_at=self.clock())
-        self.repository.add_comment(comment, report.participant_id, self._event(report, ReportAction.COMMENTED, user))
+        self.repository.add_comment(comment, self._event(report, ReportAction.COMMENTED, user))
         self.audit.record(user, AuditAction.CREATE, "report_comment", comment.id)
         return comment
 
     def _review(self, user: User, report_id: str, approve: bool) -> SessionReport:
-        report, _, _ = self._report(user, report_id)
+        report, _ = self._report(user, report_id)
         self._require_reviewer(user, report)
         if report.status is not ReportStatus.SUBMITTED:
             raise ReportConflict("Solo se revisa un reporte enviado a revisión")
@@ -199,15 +192,14 @@ class ReportService:
 
     def new_version(self, user: User, report_id: str) -> SessionReport:
         """Para corregir un reporte aprobado: copia el texto y vuelve a borrador."""
-        report, _, _ = self._report(user, report_id)
+        report, _ = self._report(user, report_id)
         self._require_author(user, report)
         self._require_current(report)
         if report.status is not ReportStatus.APPROVED:
             raise ReportConflict("Solo un reporte aprobado necesita una versión nueva; este se puede editar")
         now = self.clock()
         version = SessionReport(id=str(uuid4()), family_id=report.family_id, version=report.version + 1,
-                                session_id=report.session_id, participant_id=report.participant_id,
-                                author_user_id=report.author_user_id, status=ReportStatus.DRAFT,
+                                session_id=report.session_id, author_user_id=report.author_user_id, status=ReportStatus.DRAFT,
                                 narrative=report.narrative, created_at=now, updated_at=now)
         self.repository.add_version(replace(report, superseded_at=now), version,
                                     self._event(version, ReportAction.NEW_VERSION, user))
@@ -216,7 +208,7 @@ class ReportService:
 
     # --- Consulta e impresión -----------------------------------------------------------
 
-    def _view(self, user: User, report: SessionReport, session: EmotionalSession, participant: Participant,
+    def _view(self, user: User, report: SessionReport, session: EmotionalSession,
               *, printing: bool = False) -> dict[str, Any]:
         versions = self.repository.list_for_session(session.id)
         metrics = self.insights.session_metrics(session)
@@ -225,12 +217,12 @@ class ReportService:
             "current": report.current, "narrative": report.narrative,
             "created_at": report.created_at.isoformat(), "updated_at": report.updated_at.isoformat(),
             "approved_at": report.approved_at.isoformat() if report.approved_at else None,
-            "session": {"id": session.id, "started_at": session.started_at.isoformat(),
+            "session": {"id": session.id, "code": session.code, "started_at": session.started_at.isoformat(),
                         "session_type": session.session_type.value,
                         "emotion_model_id": session.emotion_model_id,
                         "emotion_model_version": session.emotion_model_version},
-            # Solo el código: el sistema no conoce el nombre del participante.
-            "participant_code": participant.code,
+            # Solo el código de la sesión: el sistema no registra a la persona.
+            "session_code": session.code,
             "estimates_notice": ESTIMATES_NOTICE,
             "abstract_notice": metrics.get("abstract_notice"),
             "timeline": self.insights.session_timeline(session),
@@ -259,26 +251,26 @@ class ReportService:
 
     def for_session(self, user: User, session_id: str) -> dict[str, Any]:
         """El reporte vigente de la sesión."""
-        session, participant = self._participant_session(user, session_id)
+        session = self._session(user, session_id)
         versions = self.repository.list_for_session(session.id)
         if not versions:
             self.audit.record(user, AuditAction.VIEW, RESOURCE, session.id)
             raise ReportNotFound(session_id)
         report = next((item for item in versions if item.current), versions[-1])
         self.audit.record(user, AuditAction.VIEW, RESOURCE, report.id)
-        return self._view(user, report, session, participant)
+        return self._view(user, report, session)
 
     def get(self, user: User, report_id: str) -> dict[str, Any]:
-        report, session, participant = self._report(user, report_id)
+        report, session = self._report(user, report_id)
         self.audit.record(user, AuditAction.VIEW, RESOURCE, report.id)
-        return self._view(user, report, session, participant)
+        return self._view(user, report, session)
 
     def print_view(self, user: User, report_id: str) -> dict[str, Any]:
         """Vista imprimible del reporte aprobado; cada impresión queda en la auditoría.
         No se genera ningún archivo en el servidor: imprime el navegador."""
-        report, session, participant = self._report(user, report_id)
+        report, session = self._report(user, report_id)
         if report.status is not ReportStatus.APPROVED:
             raise ReportConflict("Solo se imprime un reporte aprobado")
-        self.repository.add_event(self._event(report, ReportAction.PRINTED, user), report.participant_id)
+        self.repository.add_event(self._event(report, ReportAction.PRINTED, user))
         self.audit.record(user, AuditAction.PRINT, RESOURCE, report.id)
-        return self._view(user, report, session, participant, printing=True)
+        return self._view(user, report, session, printing=True)

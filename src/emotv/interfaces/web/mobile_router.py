@@ -1,11 +1,12 @@
 """API del aplicativo Android (contrato en docs/mobile-api.md).
 
 No tiene lógica propia de negocio: llama a los mismos servicios que la web
-(AuthenticationService y LoginThrottle, ParticipantService con
-can_access_participant, ProtocolService, QuestionnaireService, el iniciador de
-sesiones y GuidedSessionService). En el aplicativo, quien conduce y la cámara
-están en el mismo dispositivo, que también ve el participante: por eso ninguna
-respuesta incluye expresiones estimadas ni probabilidades.
+(AuthenticationService y LoginThrottle, ProtocolService, QuestionnaireService,
+el iniciador de sesiones y GuidedSessionService, con can_access_session). No se
+registra a las personas evaluadas: cada sesión lleva un código aleatorio. En el
+aplicativo, quien conduce y la cámara están en el mismo dispositivo, que también
+ve la persona evaluada: por eso ninguna respuesta incluye expresiones estimadas
+ni probabilidades.
 
 Todos los errores tienen la forma ``{"detail": {"code": ..., "message": ...}}``.
 En producción se rechazan las peticiones que no llegan por HTTPS.
@@ -29,19 +30,17 @@ from emotv.application.guided_session_service import (
     GuidedSessionService,
 )
 from emotv.application.mobile_auth_service import MobileAuthService, MobileLoginError, MobileTokens
-from emotv.application.participant_service import ParticipantNotFound, ParticipantService
 from emotv.application.ports import UserRepository
 from emotv.application.protocol_service import ProtocolNotFound, ProtocolService, ProtocolUnavailable
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.session_service import SessionService
 from emotv.application.signed_urls import StimulusUrlSigner
-from emotv.domain import User
+from emotv.domain import SessionType, User
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import ABSTRACT_NOTICE
-from emotv.domain.participant import Participant, ParticipantKind
 from emotv.interfaces.web.auth_router import client_ip
 from emotv.interfaces.web.guided_router import MAX_FRAME_BYTES
-from emotv.interfaces.web.session_router import CreateSessionRequest
+from emotv.interfaces.web.session_router import CONFIRMATIONS, REQUIRED_HEADER, CreateSessionRequest
 
 CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
          413: "too_large", 415: "unsupported_media_type", 422: "invalid", 428: "commitment_required",
@@ -49,15 +48,6 @@ CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_fo
 ROLE_NAMES = {"student": "Usuario", "psychologist": "Docente"}
 COMMITMENT_REMINDER = ("Recuerda tu compromiso de confidencialidad: los datos de la sesión son solo para tu práctica "
                        "y la de tu docente.")
-GAP_MESSAGES = {
-    "participation": "Falta la autorización de participación",
-    "camera": "Falta la autorización de uso de la cámara",
-    "child_assent": "Falta el asentimiento del niño o la niña",
-    "revoked": "Se retiró una autorización: no se inician sesiones nuevas",
-    "age": "Falta la edad: regístralo de nuevo con su edad",
-}
-
-
 def fail(status: int, message: str, code: str | None = None, headers: dict[str, str] | None = None) -> HTTPException:
     return HTTPException(status, {"code": code or CODES.get(status, "error"), "message": message}, headers=headers)
 
@@ -77,22 +67,20 @@ class RefreshRequest(BaseModel):
 
 class StartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    participant_id: str = Field(min_length=1, max_length=64)
-    protocol_id: str = Field(min_length=1, max_length=64)
-
-
-class ConfirmRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    commitment_reminder: bool = False
+    # Con protocolo, su público decide y no se pregunta nada más.
+    protocol_id: str | None = Field(default=None, min_length=1, max_length=64)
+    # Sin protocolo: ¿con quién es la sesión? (propia, adulto o infantil).
+    session_type: Literal["propia", "adulto", "infantil"] | None = None
+    # La única confirmación, según el público (GET /mobile/protocols la devuelve).
     authorization_confirmed: bool = False
-    guardian_present: bool = False
-    child_assent: bool = False
+    # Versión del aviso sobre datos de menores, la primera vez con un niño o una niña.
+    child_notice_version: str | None = Field(default=None, max_length=32)
 
 
 class AnswersRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answers: dict[str, Any]
-    # El participante responde en el dispositivo, o quien conduce anota lo que dijo.
+    # La persona responde en el dispositivo, o quien conduce anota lo que dijo.
     entry_mode: Literal["participant", "conductor"] = "participant"
 
 
@@ -108,7 +96,6 @@ def create_mobile_router(
     audit: AuditService | None = None,
     sessions: SessionService | None = None,
     start_session: Callable[[User, CreateSessionRequest], Any] | None = None,
-    participants: ParticipantService | None = None,
     protocols: ProtocolService | None = None,
     questionnaires: QuestionnaireService | None = None,
     guided: GuidedSessionService | None = None,
@@ -147,8 +134,8 @@ def create_mobile_router(
         return found[0]
 
     def guided_service() -> GuidedSessionService:
-        if guided is None or participants is None or start_session is None or sessions is None:
-            raise fail(503, "Las sesiones con participante no están disponibles en este servidor")
+        if guided is None or start_session is None or sessions is None:
+            raise fail(503, "Las sesiones no están disponibles en este servidor")
         return guided
 
     def guarded(operation):
@@ -158,8 +145,9 @@ def create_mobile_router(
         except HTTPException as error:
             if isinstance(error.detail, dict):
                 raise
-            raise fail(error.status_code, str(error.detail)) from error
-        except (GuidedNotFound, ParticipantNotFound, ProtocolNotFound, QuestionnaireNotFound) as error:
+            code = "child_notice_required" if (error.headers or {}).get(REQUIRED_HEADER) == "child_notice" else None
+            raise fail(error.status_code, str(error.detail), code) from error
+        except (GuidedNotFound, ProtocolNotFound, QuestionnaireNotFound) as error:
             raise fail(404, "No encontrado") from error
         except PermissionError as error:
             raise fail(403, str(error)) from error
@@ -181,7 +169,7 @@ def create_mobile_router(
         """Pantalla de carga: no requiere sesión ni devuelve datos personales."""
         return {"status": "ok", "api_version": api_version, "min_app_version": min_app_version,
                 "server_time": now().isoformat(),
-                "services": {"login": mobile_auth is not None, "participant_sessions": guided is not None}}
+                "services": {"login": mobile_auth is not None, "sessions": guided is not None}}
 
     @router.post("/auth/login")
     def login(body: LoginRequest, request: Request) -> dict[str, Any]:
@@ -212,118 +200,100 @@ def create_mobile_router(
         start = datetime(local_day.year, local_day.month, local_day.day, tzinfo=zone)
         return local_day, start, start + timedelta(days=1)
 
-    def session_item(session, codes: dict[str, str]) -> dict[str, Any]:
+    def session_item(session) -> dict[str, Any]:
         run = guided.repository.get_run(session.id) if guided is not None else None
         protocol = protocols.repository.get(session.protocol_id) if protocols and session.protocol_id else None
-        return {"id": session.id, "started_at": session.started_at.isoformat(), "state": session.state.value,
+        return {"id": session.id, "code": session.code, "started_at": session.started_at.isoformat(),
+                "state": session.state.value, "audience": SessionType(session.session_type).value,
                 "guided_phase": run.phase.value if run else None,
-                "participant_id": session.participant_id,
-                "participant_code": codes.get(session.participant_id or ""),
                 "protocol_name": protocol.name if protocol else None}
+
+    def protocol_item(item) -> dict[str, Any]:
+        audience = SessionType.CHILD.value if item.for_children else SessionType.ADULT.value
+        return {"id": item.id, "name": item.name, "version": item.version,
+                "for_children": item.for_children, "audience": audience, "step_count": len(item.steps),
+                "has_pre_questionnaire": item.pre_questionnaire_id is not None,
+                "has_post_questionnaire": item.post_questionnaire_id is not None,
+                "confirmation": CONFIRMATIONS[audience]}
+
+    def usable_for(user: User) -> list[dict[str, Any]]:
+        if protocols is None:
+            return []
+        usable = []
+        for item in guarded(lambda: protocols.list_for(user)):
+            try:
+                protocols.require_usable(user, item.id)
+            except (PermissionError, ProtocolUnavailable, ProtocolNotFound, ValueError):
+                continue
+            usable.append(protocol_item(item))
+        return usable
 
     @router.get("/summary")
     def summary(day: date | None = Query(default=None, alias="date"),
                 utc_offset_minutes: int = Query(default=-300, ge=-720, le=840),
+                limit: int = Query(default=10, ge=1, le=50),
                 user: User = Depends(current_user)) -> dict[str, Any]:
-        """Solo lo de la cuenta que inició sesión: sus participantes y sus sesiones,
-        aunque sea docente (los de su grupo se revisan en la web)."""
+        """Solo lo de la cuenta que inició sesión: sus sesiones recientes y los
+        protocolos que puede aplicar, aunque sea docente (lo de su grupo se
+        revisa en la web)."""
         guided_service()
         local_day, start, end = day_window(day, utc_offset_minutes)
-        mine = tuple(item for item in guarded(lambda: participants.list_for(user))
-                     if item.registered_by_user_id == user.id)
-        codes = {item.id: item.code for item in mine}
-        owned = sorted((item for item in sessions.list_sessions_by_owner(user.id)
-                        if item.participant_id is None or item.participant_id in codes),
-                       key=lambda item: item.started_at, reverse=True)
-        last: dict[str, Any] = {}
-        for item in owned:
-            if item.participant_id and item.participant_id not in last:
-                last[item.participant_id] = item
-
-        def participant_item(item: Participant) -> dict[str, Any]:
-            gaps = participants.authorization_gaps(item)
-            latest = last.get(item.id)
-            return {"id": item.id, "code": item.code, "kind": item.kind.value, "age_years": item.age_years,
-                    "ready": not gaps, "missing": list(gaps),
-                    "warnings": [GAP_MESSAGES[gap] for gap in gaps],
-                    "last_session": session_item(latest, codes) if latest else None}
-
+        owned = sorted(sessions.list_sessions_by_owner(user.id), key=lambda item: item.started_at, reverse=True)
         if audit is not None:
             audit.record(user, AuditAction.VIEW, "mobile_summary", None)
         return {
             "user": {"id": user.id, "email": user.email, "role": user.role.value,
                      "role_name": ROLE_NAMES.get(user.role.value, "")},
             "date": local_day.isoformat(),
-            "today_sessions": [session_item(item, codes) for item in owned if start <= item.started_at < end],
-            "participants": [participant_item(item) for item in mine],
+            "today_sessions": [session_item(item) for item in owned if start <= item.started_at < end],
+            "recent_sessions": [session_item(item) for item in owned[:limit]],
+            "protocols": usable_for(user),
+            # Sin protocolo se pregunta con quién es la sesión; cada público tiene su confirmación.
+            "audiences": [{"value": value, "confirmation": text} for value, text in CONFIRMATIONS.items()],
         }
 
     # --- Sesión desde el móvil ---------------------------------------------------------
 
     @router.get("/protocols")
-    def usable_protocols(participant_id: str, user: User = Depends(current_user)) -> list[dict[str, Any]]:
-        """Protocolos que quien inició sesión puede aplicar a ese participante."""
+    def usable_protocols(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        """Protocolos que quien inició sesión puede aplicar, con su público y su confirmación."""
         guided_service()
-        participant = guarded(lambda: participants.get(user, participant_id))
         if protocols is None:
             raise fail(503, "Los protocolos no están configurados")
-        usable = []
-        for item in guarded(lambda: protocols.list_for(user)):
-            try:
-                protocols.require_usable(user, item.id, participant)
-            except (PermissionError, ProtocolUnavailable, ProtocolNotFound, ValueError):
-                continue
-            usable.append({"id": item.id, "name": item.name, "version": item.version,
-                           "for_children": item.for_children, "step_count": len(item.steps),
-                           "has_pre_questionnaire": item.pre_questionnaire_id is not None,
-                           "has_post_questionnaire": item.post_questionnaire_id is not None})
-        return usable
-
-    def confirmation_fields(kind: str | None) -> list[str]:
-        if kind == ParticipantKind.CHILD.value:
-            return ["commitment_reminder", "guardian_present", "child_assent"]
-        return ["commitment_reminder", "authorization_confirmed"]
+        return usable_for(user)
 
     @router.post("/sessions", status_code=201)
     def start(body: StartRequest, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Inicia la sesión con la confirmación según el público. Con protocolo sigue
+        sus pasos; sin protocolo, calibración y lectura en vivo hasta /finish."""
         service = guided_service()
-        participant = guarded(lambda: participants.get(user, body.participant_id))
-        session_type = ("participante_infantil" if participant.kind is ParticipantKind.CHILD
-                        else "participante_adulto")
-        request = CreateSessionRequest(session_type=session_type, participant_id=participant.id,
-                                       protocol_id=body.protocol_id)
+        request = CreateSessionRequest(protocol_id=body.protocol_id, session_type=body.session_type,
+                                       authorization_confirmed=body.authorization_confirmed,
+                                       child_notice_version=body.child_notice_version)
         session = guarded(lambda: start_session(user, request))
         try:
-            # El enlace de la vista del participante no se usa: este dispositivo muestra los estímulos.
+            # El enlace de la pantalla de la persona no se usa: este dispositivo muestra los estímulos.
             run, _ = service.create(user, session.id)
         except Exception:
             sessions.cancel_session(session.id)
             raise
-        return {"session_id": session.id, "phase": run.phase.value,
-                "participant": {"id": participant.id, "code": participant.code, "kind": participant.kind.value},
-                "confirmation": {"reminder": COMMITMENT_REMINDER,
-                                 "required": confirmation_fields(participant.kind.value)}}
-
-    @router.post("/sessions/{session_id}/confirm")
-    def confirm(session_id: str, body: ConfirmRequest, user: User = Depends(current_user)) -> dict[str, Any]:
-        run = guarded(lambda: guided_service().confirm(user, session_id, **body.model_dump()))
-        return next_step(session_id, user) | {"phase": run.phase.value}
+        return {"session_id": session.id, "code": session.code, "phase": run.phase.value,
+                "audience": SessionType(session.session_type).value, "has_protocol": session.protocol_id is not None,
+                "reminder": COMMITMENT_REMINDER}
 
     @router.get("/sessions/{session_id}/next")
     def next_step(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        """Qué mostrar ahora: confirmación, cuestionario, calibración, estímulo o fin."""
+        """Qué mostrar ahora: cuestionario, calibración, estímulo, lectura en vivo o fin."""
         service = guided_service()
         state = guarded(lambda: service.conductor_state(user, session_id))
         phase = state["phase"]
-        body: dict[str, Any] = {"session_id": session_id, "phase": phase, "stop_reason": state["stop_reason"],
+        body: dict[str, Any] = {"session_id": session_id, "code": state["session_code"], "phase": phase,
+                                "stop_reason": state["stop_reason"],
                                 "send_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
                                 "capture_status": state["capture_status"], "questionnaire": None,
-                                "calibration": None, "stimulus": None, "confirmation": None,
+                                "calibration": None, "stimulus": None,
                                 "step_count": state["step_count"]}
-        if phase == "confirmation":
-            body["confirmation"] = {"reminder": COMMITMENT_REMINDER,
-                                    "required": confirmation_fields(state["participant_kind"])}
-        elif phase in ("pre_questionnaire", "post_questionnaire"):
+        if phase in ("pre_questionnaire", "post_questionnaire"):
             moment = phase.split("_")[0]
             item = guarded(lambda: questionnaires.pending_for(user, session_id, moment))
             body["questionnaire"] = {
@@ -333,6 +303,9 @@ def create_mobile_router(
         elif phase == "calibration":
             body["calibration"] = state["calibration"]
             body["send_frames"] = state["calibration"]["state"] == "calibrating"
+        elif phase == "live":
+            # Sin protocolo: solo la lectura de la expresión, hasta que quien conduce termina.
+            body["send_frames"] = True
         elif phase in ("before_analyzer", "stimuli"):
             step = state["steps"][state["step_index"]]
             expires, signature = signer.sign(user.id, session_id, step["stimulus_id"])
@@ -385,9 +358,16 @@ def create_mobile_router(
     def skip(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         return {"phase": guarded(lambda: guided_service().skip(user, session_id)).phase.value}
 
+    @router.post("/sessions/{session_id}/finish")
+    def finish(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Termina una sesión sin protocolo (fase live) y devuelve su código."""
+        run = guarded(lambda: guided_service().finish_live(user, session_id))
+        session = sessions.get_session(session_id)
+        return {"phase": run.phase.value, "code": session.code if session else None}
+
     @router.post("/sessions/{session_id}/stop")
     def stop(session_id: str, body: StopRequest, user: User = Depends(current_user)) -> dict[str, Any]:
-        """Interrumpe la sesión: el participante, su tutor o quien conduce lo pidió."""
+        """Interrumpe la sesión: la persona, su tutor o quien conduce lo pidió."""
         return {"phase": guarded(lambda: guided_service().stop(user, session_id, body.reason)).phase.value}
 
     # --- Imágenes de estímulos (URL firmada) ----------------------------------------------

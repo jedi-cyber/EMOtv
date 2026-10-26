@@ -84,7 +84,7 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
       </Button>
     </>}>
     <div className="form-stack">
-      <p>El docente verá los participantes y resultados de los usuarios de su grupo. Si eliges un usuario que ya tiene otro docente, pasará a este grupo.</p>
+      <p>El docente verá las sesiones y los resultados de los usuarios de su grupo. Si eliges un usuario que ya tiene otro docente, pasará a este grupo.</p>
       {error && <Callout variant="error">{error}</Callout>}
       <h3>En el grupo</h3>
       <PageState {...assignedQuery} empty={!assignedQuery.loading && !assignedQuery.error && assigned.length === 0}

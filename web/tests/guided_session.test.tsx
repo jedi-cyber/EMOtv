@@ -14,7 +14,7 @@ vi.mock("../src/api/http", async (original) => ({
 
 const NOTICE = "Registro descriptivo. Una sesión breve no permite sacar conclusiones a partir de una imagen.";
 const baseState: GuidedState = {
-  session_id: "s1", phase: "confirmation", participant_kind: "adult", stop_reason: null, step_index: null, step_count: 2,
+  session_id: "s1", session_code: "S-4F7K2Q", phase: "calibration", audience: "adulto", has_protocol: true, stop_reason: null, step_index: null, step_count: 2,
   steps: [
     { index: 0, stimulus_id: "e1", title: "Paisaje", kind: "emotional", exposure_seconds: 6, capture_after_seconds: 2, record_verbal_response: false, shown_before_analyzer: false },
     { index: 1, stimulus_id: "a1", title: "Forma", kind: "abstract", exposure_seconds: 8, capture_after_seconds: 2, record_verbal_response: true, shown_before_analyzer: false },
@@ -39,27 +39,21 @@ function participant(view: ParticipantViewState) {
 
 beforeEach(() => { vi.mocked(apiRequest).mockReset(); sessionStorage.clear(); });
 
-describe("sesión guiada", () => {
-  it("no empieza sin la confirmación y muestra el recordatorio del compromiso", async () => {
+describe("sesión con protocolo", () => {
+  it("no vuelve a pedir confirmación: se confirmó una vez en el Analizador, y muestra el código", async () => {
     conductor(baseState);
-    const start = await screen.findByRole("button", { name: "Confirmar y empezar" });
-    expect(screen.getByText(/Recuerda tu compromiso de confidencialidad/)).toBeInTheDocument();
-    expect(start).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: /recordatorio del compromiso/ }));
-    expect(start).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: /dio su autorización firmada/ }));
-    expect(start).toBeEnabled();
-    await userEvent.click(start);
-    expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/confirm", expect.objectContaining({ method: "POST",
-      body: JSON.stringify({ commitment_reminder: true, authorization_confirmed: true, guardian_present: false, child_assent: false }) }));
+    expect(await screen.findByText("S-4F7K2Q")).toBeInTheDocument();
+    expect(screen.getByText(/Anótalo en el formato firmado/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Confirmar/ })).not.toBeInTheDocument();
+    expect(apiRequest).not.toHaveBeenCalledWith("/guided-sessions/s1/confirm", expect.anything());
+    expect(screen.queryByRole("button", { name: "El tutor pidió parar" })).not.toBeInTheDocument();
   });
 
-  it("con un niño pide la presencia del tutor y el asentimiento", async () => {
-    conductor({ ...baseState, participant_kind: "child" });
-    await screen.findByRole("button", { name: "Confirmar y empezar" });
-    expect(screen.getByRole("checkbox", { name: /tutor está presente/ })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: /dio su asentimiento/ })).not.toBeChecked();
-    expect(screen.queryByRole("checkbox", { name: /dio su autorización firmada/ })).not.toBeInTheDocument();
+  it("con un niño ofrece que el tutor pida parar", async () => {
+    conductor({ ...baseState, audience: "infantil" });
+    expect(await screen.findByRole("button", { name: "El tutor pidió parar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "La persona pidió parar" })).toBeInTheDocument();
   });
 
   it("registra marcadores con teclas rápidas y recuerda no escribir datos que identifiquen", async () => {
@@ -67,7 +61,7 @@ describe("sesión guiada", () => {
     expect(await screen.findByText("Forma")).toBeInTheDocument();
     expect(screen.getByText(NOTICE)).toBeInTheDocument();
     expect(screen.getAllByText(/No escribas nombres ni datos que identifiquen a la persona/).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Lo que el participante dice ver")).toBeInTheDocument();
+    expect(screen.getByLabelText("Lo que la persona dice ver")).toBeInTheDocument();
     await userEvent.keyboard("d");
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/markers", expect.objectContaining({ body: JSON.stringify({ kind: "distracted" }) })));
     await userEvent.click(screen.getByRole("button", { name: /Lloró/ }));
@@ -78,7 +72,7 @@ describe("sesión guiada", () => {
     expect(apiRequest).not.toHaveBeenCalledWith("/guided-sessions/s1/markers", expect.anything());
   });
 
-  it("la vista del participante no muestra resultados y tiene un botón visible para parar", async () => {
+  it("la pantalla de la persona no muestra resultados y tiene un botón visible para parar", async () => {
     participant({ phase: "stimuli", message: null, stimulus: null, remaining_seconds: 4, capture_frames: false,
       frame_interval_ms: 500, abstract_notice: NOTICE });
     const stop = await screen.findByRole("button", { name: "Quiero parar" });

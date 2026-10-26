@@ -2,7 +2,7 @@
 grupo) y el administrador (para toda la institución). Los usuarios los usan,
 pero no los crean.
 
-Un estímulo nunca es una foto de un participante. Las imágenes abstractas son
+Un estímulo nunca es una foto de una persona evaluada. Las imágenes abstractas son
 de creación propia o con una licencia que lo permita; no se incluyen láminas de
 pruebas proyectivas publicadas. El sistema solo muestra y registra: no
 relaciona ninguna imagen con una condición.
@@ -93,13 +93,13 @@ class StimulusService:
 
     # --- Consulta ------------------------------------------------------------
 
-    def list_for(self, user: User, child_age: int | None = None) -> tuple[Stimulus, ...]:
-        """Estímulos visibles. Con child_age, solo los que se ofrecen a un niño
-        de esa edad: leves, aprobados, vigentes y con edad mínima adecuada."""
+    def list_for(self, user: User, for_children: bool = False) -> tuple[Stimulus, ...]:
+        """Estímulos visibles. Con for_children, solo los que admite un protocolo
+        para niños: leves, aprobados y vigentes."""
         items = tuple(item for item in self.repository.list_visible(self._group_owners(user))
                       if self.can_view(user, item))
-        if child_age is not None:
-            items = tuple(item for item in items if item.suitable_for_child(child_age))
+        if for_children:
+            items = tuple(item for item in items if item.suitable_for_children)
         return items
 
     def get(self, user: User, stimulus_id: str) -> Stimulus:
@@ -125,7 +125,7 @@ class StimulusService:
         else:
             raise PermissionError("Los estímulos los crean los docentes y el administrador")
         if not draft.not_a_participant_photo:
-            raise ValueError("Confirma que la imagen no es una fotografía de un participante")
+            raise ValueError("Confirma que la imagen no es una fotografía de una persona")
         kind = StimulusKind(draft.kind)
         if kind is StimulusKind.ABSTRACT and not draft.not_a_projective_test:
             raise ValueError("Confirma que la imagen abstracta es de creación propia o con licencia que lo "

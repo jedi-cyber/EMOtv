@@ -18,9 +18,9 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   const sessions = role === "student" ? "Mis sesiones" : "Sesiones";
   if (parts[0] === "activities") return [home, { label: "Actividades", ...(parts[1] ? { to: paths.activities } : {}) }, ...(parts[1] ? [{ label: "Detalle de actividad" }] : [])];
   if (parts[0] === "analysis") return [home, { label: "Actividades", to: paths.activities }, { label: "Analizador" }];
+  if (parts[0] === "sessions" && parts[1] === "deletions") return [home, { label: sessions, to: paths.sessions }, { label: "Acta de eliminación" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
   if (parts[0] === "students") return [home, { label: "Mi grupo", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del usuario" }] : [])];
-  if (parts[0] === "participants") return [home, { label: "Participantes", ...(parts[1] ? { to: paths.participants } : {}) }, ...(parts[1] ? [{ label: "Acta de eliminación" }] : [])];
   if (parts[0] === "admin" && parts[1] === "activities") return [home, { label: "Administrar actividades" }];
   if (parts[0] === "admin" && parts[1] === "models") return [home, { label: "Modelos" }];
   if (parts[0] === "admin" && parts[1] === "expressions") return [home, { label: "Catálogo de expresiones" }];
@@ -86,7 +86,10 @@ export function AppLayout() {
     menuButtonRef.current?.focus();
   }
   const items = user ? navigationByRole[user.role] : [];
-  const mainItems = items.filter((item) => item.placement !== "footer");
+  const mainItems = items.filter((item) => item.placement !== "footer" && !item.group);
+  // Secciones plegables ("Mi material"): cerradas salvo que la página actual esté dentro.
+  const groups = [...new Set(items.filter((item) => item.group).map((item) => item.group as string))]
+    .map((name) => ({ name, items: items.filter((item) => item.group === name) }));
   const footerItems = items.filter((item) => item.placement === "footer");
   const trail = user ? breadcrumbs(pathname, user.role) : [];
   const showBreadcrumbs = /^\/(activities|sessions)\/[^/]+\/?$/.test(pathname)
@@ -110,6 +113,11 @@ export function AppLayout() {
         <nav id="main-navigation" aria-label="Navegación principal" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
           <div className="sidebar-group">
             {mainItems.map(navLink)}
+            {groups.map((group) => <details key={`${group.name}-${pathname}`} className="sidebar-section"
+              open={group.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`))}>
+              <summary>{group.name}</summary>
+              <div className="sidebar-section-items">{group.items.map(navLink)}</div>
+            </details>)}
             {user?.role === "student" && activeSession && <Link className="active-session-link" to={activeSessionPath}><span className="active-session-dot" aria-hidden="true" />Sesión activa · Volver al análisis</Link>}
           </div>
           {footerItems.length > 0 && <div className="sidebar-group sidebar-footer-group">{footerItems.map(navLink)}</div>}

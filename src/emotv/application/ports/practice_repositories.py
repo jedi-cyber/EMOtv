@@ -4,23 +4,8 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol as Interface
 
-from emotv.domain.participant_authorization import ParticipantAuthorization
 from emotv.domain.protocol import Protocol
 from emotv.domain.stimulus import Stimulus
-
-
-class AuthorizationRepository(Interface):
-    def add(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization: ...
-
-    def get(self, authorization_id: str) -> ParticipantAuthorization | None: ...
-
-    def list_for(self, participant_id: str) -> tuple[ParticipantAuthorization, ...]:
-        """Del más reciente al más antiguo."""
-        ...
-
-    def revoke(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization:
-        """Guarda el retiro y marca al participante en la misma transacción."""
-        ...
 
 
 class StimulusRepository(Interface):

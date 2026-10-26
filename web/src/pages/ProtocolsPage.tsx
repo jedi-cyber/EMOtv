@@ -4,31 +4,37 @@ import { apiRequest } from "../api/http";
 import type { Protocol, ProtocolStep, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
-import { Button } from "../components/Button";
+import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
+import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
+import { paths } from "../routes/paths";
 import { stimulusSummary } from "../stimuli/labels";
 
 interface Draft {
   name: string;
   description: string;
-  for_children: boolean;
+  /** null hasta que se responde «¿Para adultos o para niños?»: es obligatorio. */
+  for_children: boolean | null;
   steps: ProtocolStep[];
   pre_questionnaire_id: string;
   post_questionnaire_id: string;
 }
 
-const emptyDraft: Draft = { name: "", description: "", for_children: false, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
+type Moment = "pre" | "post";
 
+const emptyDraft: Draft = { name: "", description: "", for_children: null, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
+
+/** Con niños solo imágenes leves y aprobadas (el servidor aplica la misma regla). */
 function suitableForChildren(item: Stimulus) {
   return item.active && item.approved && item.intensity === "mild";
 }
 
-/** Protocolos: secuencias de estímulos. Con niños se usan solo con la aprobación del docente. */
+/** Protocolos: recetas guardadas que el Analizador aplica en una sesión. */
 export function ProtocolsPage() {
   const { token, user } = useAuth();
   const isDocente = user?.role === "psychologist";
@@ -42,11 +48,17 @@ export function ProtocolsPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editing, setEditing] = useState<Protocol | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  // Cuestionario nuevo creado sin salir del protocolo: se elige como previo o posterior.
+  const [questionnaireFor, setQuestionnaireFor] = useState<Moment | null>(null);
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const offered = stimuli.filter((item) => item.active && (!draft.for_children || suitableForChildren(item)));
+  const unsuitableSteps = draft.for_children
+    ? draft.steps.filter((step) => { const stimulus = byId.get(step.stimulus_id); return stimulus != null && !suitableForChildren(stimulus); }).length
+    : 0;
+  const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0;
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -63,16 +75,16 @@ export function ProtocolsPage() {
     update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
-  function startEditing(item: Protocol) {
-    setEditing(item); setEditorOpen(true);
-    setDraft({ name: item.name, description: item.description, for_children: item.for_children, steps: item.steps,
-      pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" });
-    setMessage(""); setError("");
+  function openEditor(item: Protocol | null) {
+    setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
+    setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children, steps: item.steps,
+      pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
   }
-  function reset() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
+  function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!ready) return;
     setBusy(true); setError(""); setMessage("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
@@ -81,38 +93,37 @@ export function ProtocolsPage() {
       });
       setMessage(editing && saved.id !== editing.id
         ? `Se creó la versión ${saved.version}: la anterior ya se usó en una sesión y se conserva sin cambios.`
-        : editing ? "Protocolo actualizado." : "Protocolo creado.");
-      if (saved.for_children && !saved.approved) setMessage((text) => `${text} Para usarlo con niños, tu docente debe aprobarlo.`);
-      reset();
+        : editing ? "Protocolo actualizado." : "Protocolo guardado. Úsalo cuando quieras desde el Analizador.");
+      close();
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo guardar el protocolo."); }
     finally { setBusy(false); }
   }
 
-  async function approve(item: Protocol) {
-    setBusy(true); setError(""); setMessage("");
-    try {
-      await apiRequest(`/protocols/${encodeURIComponent(item.id)}/approve`, { method: "POST", token });
-      setMessage(`Aprobaste «${item.name}» para usarlo con niños.`);
-      await query.reload();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo aprobar el protocolo."); }
-    finally { setBusy(false); }
+  function questionnaireSelect(moment: Moment) {
+    const field = moment === "pre" ? "pre_questionnaire_id" : "post_questionnaire_id";
+    return <div className="inline-actions">
+      <label>{moment === "pre" ? "Cuestionario previo (opcional)" : "Cuestionario posterior (opcional)"}
+        <select value={draft[field]} onChange={(event) => update({ [field]: event.target.value })}>
+          <option value="">Sin cuestionario</option>
+          {questionnaires.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select></label>
+      <Button size="sm" variant="ghost" onClick={() => setQuestionnaireFor(moment)}>Crear cuestionario</Button>
+    </div>;
   }
 
   return <section>
     <PageHeader title="Protocolos"
-      description={isDocente
-        ? "Secuencias de estímulos para tus sesiones. Aquí apruebas las de tu grupo que se usarán con niños."
-        : "Secuencias de estímulos para tus sesiones. Con niños se usan solo cuando tu docente las aprueba."}
-      actions={<Button variant="primary" onClick={() => { reset(); setMessage(""); setError(""); setEditorOpen(true); }}>Nuevo protocolo</Button>} />
+      description="Un protocolo es una receta guardada: qué aplicar en una sesión, para usarla cuando quieras."
+      actions={<Button variant="primary" onClick={() => openEditor(null)}>Nuevo protocolo</Button>} />
     {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}
 
-    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={reset} busy={busy}
+    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy}
       footer={<>
-        <Button disabled={busy} onClick={reset}>Cancelar</Button>
-        <Button variant="primary" type="submit" form="protocol-editor" disabled={busy || draft.steps.length === 0 || !draft.name.trim()}>
-          {busy ? "Guardando…" : editing ? "Guardar cambios" : "Crear protocolo"}
+        <Button disabled={busy} onClick={close}>Cancelar</Button>
+        <Button variant="primary" type="submit" form="protocol-editor" disabled={busy || !ready}>
+          {busy ? "Guardando…" : editing ? "Guardar cambios" : "Guardar protocolo"}
         </Button>
       </>}>
     <form id="protocol-editor" className="form-stack" onSubmit={(event) => { void submit(event); }}>
@@ -120,78 +131,95 @@ export function ProtocolsPage() {
       {editing?.used && <Callout variant="info" role="note">
         Este protocolo ya se usó en una sesión: al guardar se crea la versión {editing.version + 1} y la actual se conserva.
       </Callout>}
-      <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
-      <label>Descripción<textarea rows={2} maxLength={2000} value={draft.description}
-        onChange={(event) => update({ description: event.target.value })} /></label>
-      <Checkbox checked={draft.for_children} onChange={(event) => update({ for_children: event.target.checked })}>
-        Para usar con niños (solo estímulos leves y aprobados; requiere la aprobación del docente)
-      </Checkbox>
-      <div className="inline-actions">
-        <label>Cuestionario previo (opcional)<select value={draft.pre_questionnaire_id} onChange={(event) => update({ pre_questionnaire_id: event.target.value })}>
-          <option value="">Sin cuestionario</option>
-          {questionnaires.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select></label>
-        <label>Cuestionario posterior (opcional)<select value={draft.post_questionnaire_id} onChange={(event) => update({ post_questionnaire_id: event.target.value })}>
-          <option value="">Sin cuestionario</option>
-          {questionnaires.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select></label>
-      </div>
-      <p className="muted">El previo se responde antes de iniciar el analizador; el posterior, al terminar. Se aplica la versión vigente de cada cuestionario.</p>
+      <fieldset className="audience-choice">
+        <legend>¿Para adultos o para niños?</legend>
+        <label className={`audience-option${draft.for_children === false ? " is-selected" : ""}`}>
+          <input type="radio" name="protocol-audience" checked={draft.for_children === false} required
+            onChange={() => update({ for_children: false })} />
+          <strong>Para adultos</strong>
+          <span>Para sesiones propias o con una persona adulta.</span>
+        </label>
+        <label className={`audience-option${draft.for_children === true ? " is-selected" : ""}`}>
+          <input type="radio" name="protocol-audience" checked={draft.for_children === true}
+            onChange={() => update({ for_children: true })} />
+          <strong>Para niños</strong>
+          <span>Solo imágenes leves y aprobadas.</span>
+        </label>
+      </fieldset>
 
-      <h3>Estímulos en orden</h3>
-      {draft.steps.length === 0 && <p className="muted">Agrega al menos un estímulo.</p>}
-      <ol className="card-list">{draft.steps.map((step, index) => {
-        const stimulus = byId.get(step.stimulus_id);
-        const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
-        return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
-          <div>
-            <strong>{index + 1}. {stimulus?.title ?? "Estímulo no disponible"}</strong>
-            {stimulus && <span>{stimulusSummary(stimulus)}</span>}
-            {unsuitable && <span>No se puede usar con niños: elige uno leve y aprobado.</span>}
-          </div>
-          <div className="inline-actions">
-            <label>Exposición (s)<input type="number" min={1} max={120} value={step.exposure_seconds}
-              onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-            <label>Captura a los (s)<input type="number" min={0} max={step.exposure_seconds} value={step.capture_after_seconds}
-              onChange={(event) => updateStep(index, { capture_after_seconds: Number(event.target.value) })} /></label>
-            {stimulus?.kind === "abstract" && <Checkbox checked={step.record_verbal_response}
-              onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
-            {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
-              onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
-            <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
-            <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
-            <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
-          </div>
-        </li>;
-      })}</ol>
-      <div className="inline-actions">
-        <label>Estímulo<select value={choice} onChange={(event) => setChoice(event.target.value)}>
-          <option value="">Elige un estímulo</option>
-          {offered.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
-        </select></label>
-        <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
-      </div>
+      {draft.for_children !== null && <>
+        <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
+        <label>Descripción (opcional)<textarea rows={2} maxLength={2000} value={draft.description}
+          onChange={(event) => update({ description: event.target.value })} /></label>
+        {questionnaireSelect("pre")}
+        <p className="muted">El previo se responde antes de la calibración; el posterior, al terminar. Se aplica la versión vigente de cada cuestionario.</p>
+
+        <h3>Imágenes en orden</h3>
+        {draft.steps.length === 0 && <p className="muted">Agrega al menos una imagen.</p>}
+        <ol className="card-list">{draft.steps.map((step, index) => {
+          const stimulus = byId.get(step.stimulus_id);
+          const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+          return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
+            <div>
+              <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
+              {stimulus && <span>{stimulusSummary(stimulus)}</span>}
+              {unsuitable && <span>No se puede usar con niños: quítala o elige una leve y aprobada.</span>}
+            </div>
+            <div className="inline-actions">
+              <label>Segundos en pantalla<input type="number" min={1} max={120} value={step.exposure_seconds}
+                onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+              <label>Captura a los (s)<input type="number" min={0} max={step.exposure_seconds} value={step.capture_after_seconds}
+                onChange={(event) => updateStep(index, { capture_after_seconds: Number(event.target.value) })} /></label>
+              {stimulus?.kind === "abstract" && <Checkbox checked={step.record_verbal_response}
+                onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
+              {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
+                onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
+              <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
+              <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
+              <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
+            </div>
+          </li>;
+        })}</ol>
+        {offered.length > 0 ? <div className="inline-actions">
+          <label>Imagen<select value={choice} onChange={(event) => setChoice(event.target.value)}>
+            <option value="">Elige una imagen</option>
+            {offered.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
+          </select></label>
+          <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
+        </div> : !stimuliQuery.loading && <div className="empty-state">
+          <p>{draft.for_children ? "No hay imágenes leves y aprobadas para niños." : "No hay imágenes disponibles."}
+            {isDocente ? " Sube una en Estímulos." : " Las imágenes las agrega tu docente o la Facultad; pídele que suba alguna."}</p>
+          {isDocente && <div className="inline-actions"><ButtonLink variant="secondary" to={paths.stimuli}>Ir a Estímulos</ButtonLink></div>}
+        </div>}
+
+        {questionnaireSelect("post")}
+      </>}
     </form>
     </Modal>
 
+    <QuestionnaireEditor open={questionnaireFor !== null} onClose={() => setQuestionnaireFor(null)}
+      onSaved={(saved) => {
+        update(questionnaireFor === "post" ? { post_questionnaire_id: saved.id } : { pre_questionnaire_id: saved.id });
+        setQuestionnaireFor(null);
+        void questionnairesQuery.reload();
+      }} />
+
     <PageState {...query} empty={!query.loading && !query.error && protocols.length === 0}
-      emptyMessage="Todavía no hay protocolos." onRetry={query.reload} />
+      emptyMessage="Todavía no tienes protocolos. Sin protocolo también puedes analizar en el Analizador."
+      emptyAction={<Button variant="primary" onClick={() => openEditor(null)}>Nuevo protocolo</Button>} onRetry={query.reload} />
     {protocols.length > 0 && <ul className="card-list">{protocols.map((item) => <li key={item.id} className="card row-card">
       <div>
         <strong>{item.name}</strong>
-        <span>Versión {item.version} · {item.steps.length} {item.steps.length === 1 ? "estímulo" : "estímulos"}
+        <span>Versión {item.version} · {item.steps.length} {item.steps.length === 1 ? "imagen" : "imágenes"}
           {isDocente && !item.owned_by_me ? " · De un usuario de tu grupo" : ""}</span>
         <span className="inline-actions">
-          {item.for_children
-            ? item.approved ? <StatusChip tone="success">Aprobado para niños</StatusChip> : <StatusChip tone="progress">Pendiente de aprobación</StatusChip>
-            : <StatusChip tone="neutral">Para adultos</StatusChip>}
+          {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}
           {item.used && <StatusChip tone="neutral">Usado en sesiones</StatusChip>}
         </span>
       </div>
       <div className="inline-actions">
-        {item.owned_by_me && <Button onClick={() => startEditing(item)}>Editar</Button>}
-        {item.can_approve && item.for_children && !item.approved &&
-          <Button disabled={busy} onClick={() => { void approve(item); }}>Aprobar para niños</Button>}
+        {item.owned_by_me && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
+        {item.owned_by_me && <Button onClick={() => openEditor(item)}>Editar</Button>}
       </div>
     </li>)}</ul>}
   </section>;

@@ -19,7 +19,7 @@ const actionNames: Record<string, string> = {
   logout: "Cierre de sesión en el aplicativo",
 };
 const resourceNames: Record<string, string> = {
-  participant: "Participante", participant_list: "Lista de participantes", mobile_session: "Sesión del aplicativo",
+  session: "Sesión", participant: "Participante (registro anterior)", participant_list: "Lista de participantes (registro anterior)", mobile_session: "Sesión del aplicativo",
   mobile_summary: "Resumen del aplicativo", stimulus_image: "Imagen de estímulo", deletion_certificate: "Acta de eliminación",
   user: "Cuenta", student: "Usuario", commitment: "Compromiso", child_notice: "Aviso sobre menores",
 };

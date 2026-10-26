@@ -16,7 +16,7 @@ frente a ella o el workflow de Emi publicado. Las pruebas automáticas están en
 - `CONSENT_MODE=demo`. Cada voluntario acepta el consentimiento en la
   aplicación antes de usar la cámara.
 - No se toman fotografías ni videos de la prueba. EMOtv tampoco los guarda.
-- Recuerda a cada participante que el resultado estima la expresión visible:
+- Recuerda a cada persona que el resultado estima la expresión visible:
   no dice lo que siente, no es un diagnóstico y la actividad no es terapia.
 - Los datos de las cuentas se eliminan como máximo a los 30 días, con acta
   (protocolo, secciones 6 a 8).

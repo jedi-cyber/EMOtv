@@ -1,5 +1,5 @@
-"""Reporte de una sesión con participante, redactado por quien la condujo y
-revisado por su docente.
+"""Reporte de una sesión, redactado por quien la condujo y revisado por su
+docente.
 
 Las expresiones del reporte son estimaciones de apoyo, no una evaluación. El
 texto y los comentarios se guardan cifrados; el historial no guarda contenido.
@@ -62,7 +62,6 @@ class SessionReport:
     family_id: str
     version: int
     session_id: str
-    participant_id: str
     author_user_id: str
     status: ReportStatus | str
     narrative: str

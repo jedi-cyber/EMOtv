@@ -23,9 +23,16 @@ const emotionModelNames: Record<string, string> = {
 };
 
 const sessionTypeNames: Record<SessionType, string> = {
-  propia: "Propia",
-  participante_adulto: "Participante adulto",
-  participante_infantil: "Participante infantil",
+  propia: "Conmigo",
+  adulto: "Un adulto",
+  infantil: "Un niño o niña",
+};
+
+/** La única confirmación de cada sesión, según con quién es. */
+export const confirmationTexts: Record<SessionType, string> = {
+  propia: "Es una sesión mía o cuento con la autorización firmada de la persona adulta",
+  adulto: "Es una sesión mía o cuento con la autorización firmada de la persona adulta",
+  infantil: "Su tutor autorizó por escrito, está presente y el niño aceptó participar",
 };
 
 export function sessionTypeName(type: string | null | undefined): string {

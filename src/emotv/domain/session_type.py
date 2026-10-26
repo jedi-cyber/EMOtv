@@ -2,9 +2,11 @@ from enum import Enum
 
 
 class SessionType(str, Enum):
-    """A quién se analiza en la sesión; se guarda con ella."""
+    """Público de la sesión; lo fija el protocolo o, sin protocolo, quien la conduce."""
 
-    # Quien inicia sesión se analiza a sí mismo; no hay participante.
+    # Quien inicia sesión se analiza a sí mismo.
     OWN = "propia"
-    ADULT_PARTICIPANT = "participante_adulto"
-    CHILD_PARTICIPANT = "participante_infantil"
+    # Con una persona adulta que firmó su autorización.
+    ADULT = "adulto"
+    # Con un niño o niña: su tutor autorizó por escrito y está presente.
+    CHILD = "infantil"

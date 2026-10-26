@@ -1,3 +1,11 @@
+"""Sesiones: inicio, consulta, cancelación y eliminación con acta.
+
+Una sesión aplica un protocolo (una receta guardada) o ninguno. No se registra a
+la persona evaluada: la sesión lleva un código aleatorio que quien conduce anota
+en el formato firmado. Se inicia con una sola confirmación de la autorización,
+según el público: el del protocolo o, sin protocolo, el que elige quien conduce.
+Todo acceso pasa por can_access_session.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -5,41 +13,49 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
+from emotv.application.audit_service import AuditService
 from emotv.application.ports import StudentRepository, UserRepository
 from emotv.application.ports.assignment_repository import AssignmentRepository
+from emotv.application.ports.privacy_repositories import DeletionCertificate, ErasureVerificationError
+from emotv.application.session_privacy_service import DeletionConflict, SessionNotFound, SessionPrivacyService
 from emotv.domain import AccessAction, EmotionalSession, Role, SessionType, User
+from emotv.domain.audit import AuditAction
 from emotv.interfaces.web.auth_router import create_current_user_dependency
-from emotv.application.commitment_service import CommitmentRequired, CommitmentService
-from emotv.application.participant_service import ParticipantNotFound, ParticipantService, SessionNotAllowed
+from emotv.application.commitment_service import CHILD_NOTICE, CommitmentRequired, CommitmentService
 from emotv.application.protocol_service import ProtocolNotFound, ProtocolService, ProtocolUnavailable
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
-from emotv.domain import ParticipantKind
 
 
-SessionTypeValue = Literal["propia", "participante_adulto", "participante_infantil"]
-PARTICIPANT_KIND_BY_TYPE = {
-    SessionType.ADULT_PARTICIPANT.value: ParticipantKind.ADULT,
-    SessionType.CHILD_PARTICIPANT.value: ParticipantKind.CHILD,
+SessionTypeValue = Literal["propia", "adulto", "infantil"]
+SESSION_RESOURCE = "session"
+# Qué falta aceptar en un 428: el compromiso o el aviso sobre datos de menores.
+REQUIRED_HEADER = "X-EMOtv-Required"
+CONFIRMATIONS = {
+    SessionType.OWN.value: "Es una sesión mía o cuento con la autorización firmada de la persona adulta",
+    SessionType.ADULT.value: "Es una sesión mía o cuento con la autorización firmada de la persona adulta",
+    SessionType.CHILD.value: "Su tutor autorizó por escrito, está presente y el niño aceptó participar",
 }
-PARTICIPANTS_UNAVAILABLE = ("Las sesiones con participante no están disponibles: el servidor no tiene configurada "
-                            "la clave de cifrado de datos sensibles.")
+
+
+class ChildNoticeRequired(PermissionError):
+    """Falta aceptar el aviso sobre datos de menores antes de la primera sesión con un niño."""
 
 
 class CreateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     student_id: str | None = None
     activity_id: str | None = None
-    session_type: SessionTypeValue = SessionType.OWN.value
-    # Obligatorio en una sesión con participante; no se admite en una propia.
-    participant_id: str | None = None
-    # Versión del protocolo que se aplica, si lo hay.
+    # Versión del protocolo que se aplica. Con protocolo, su público decide.
     protocol_id: str | None = None
-    # Sin protocolo, quien conduce elige un cuestionario previo (o lo salta) y,
-    # si quiere, uno posterior. Con protocolo rigen los del protocolo.
-    pre_questionnaire_id: str | None = None
-    post_questionnaire_id: str | None = None
+    # Sin protocolo, ¿con quién es la sesión? Conmigo, un adulto o un niño o niña.
+    session_type: SessionTypeValue | None = None
+    # La única confirmación de la sesión, según el público (CONFIRMATIONS).
+    authorization_confirmed: bool = False
+    # Versión del aviso sobre datos de menores, la primera vez que se hace una sesión con un niño.
+    child_notice_version: str | None = Field(default=None, max_length=32)
 
 
 class SessionResponse(BaseModel):
@@ -62,10 +78,13 @@ class SessionResponse(BaseModel):
     session_type: SessionTypeValue = SessionType.OWN.value
     # Cuenta que conduce la sesión: solo ella puede cancelarla.
     owner_user_id: str | None = None
-    participant_id: str | None = None
     protocol_id: str | None = None
     pre_questionnaire_id: str | None = None
     post_questionnaire_id: str | None = None
+    # Código que se anota en el formato firmado.
+    code: str | None = None
+    authorization_confirmed_at: datetime | None = None
+    deletion_requested_at: datetime | None = None
 
     @classmethod
     def from_domain(cls, session: EmotionalSession) -> "SessionResponse":
@@ -85,10 +104,25 @@ class SessionResponse(BaseModel):
                    exercise_repetitions=session.exercise_repetitions,
                    session_type=SessionType(session.session_type).value,
                    owner_user_id=session.owner_user_id,
-                   participant_id=session.participant_id,
                    protocol_id=session.protocol_id,
                    pre_questionnaire_id=session.pre_questionnaire_id,
-                   post_questionnaire_id=session.post_questionnaire_id)
+                   post_questionnaire_id=session.post_questionnaire_id,
+                   code=session.code,
+                   authorization_confirmed_at=session.authorization_confirmed_at,
+                   deletion_requested_at=session.deletion_requested_at)
+
+
+class DeletionCertificateResponse(BaseModel):
+    id: str
+    session_code: str
+    deleted_at: datetime
+    counts: dict[str, int]
+    verified: bool
+
+    @classmethod
+    def from_domain(cls, item: DeletionCertificate) -> "DeletionCertificateResponse":
+        return cls(id=item.id, session_code=item.session_code, deleted_at=item.deleted_at, counts=item.counts,
+                   verified=item.verified)
 
 
 def create_session_starter(
@@ -97,13 +131,14 @@ def create_session_starter(
     policy: AuthorizationService,
     activities: ActivityCatalog | None = None,
     commitments: CommitmentService | None = None,
-    participants: ParticipantService | None = None,
     protocols: ProtocolService | None = None,
     questionnaires: QuestionnaireService | None = None,
+    audit: AuditService | None = None,
 ) -> Callable[[User, CreateSessionRequest], EmotionalSession]:
     """Inicia una sesión con las mismas reglas para la web y el aplicativo móvil:
-    compromiso, can_access_participant, autorizaciones, protocolo utilizable y
-    cuestionarios vigentes. Lanza HTTPException con el código del contrato."""
+    compromiso, una sola confirmación según el público, aviso sobre menores la
+    primera vez, protocolo utilizable y cuestionarios vigentes. Lanza
+    HTTPException con el código del contrato."""
 
     def services() -> tuple[SessionService, StudentRepository]:
         if sessions is None or students is None:
@@ -112,11 +147,6 @@ def create_session_starter(
 
     def start(user: User, request: CreateSessionRequest) -> EmotionalSession:
         service, student_repository = services()
-        expected_kind = PARTICIPANT_KIND_BY_TYPE.get(request.session_type)
-        if expected_kind is None and request.participant_id is not None:
-            raise HTTPException(status_code=422, detail="Una sesión propia no tiene participante")
-        if expected_kind is not None and request.participant_id is None:
-            raise HTTPException(status_code=422, detail="Elige el participante de la sesión")
         if user.role is Role.STUDENT:
             actor = student_repository.get_by_user_id(user.id)
             if actor is None:
@@ -134,22 +164,30 @@ def create_session_starter(
                            resource_student_id=resource_id, actor_student_id=actor_id)
             if commitments is not None:
                 commitments.require(user)
-            participant = None
-            if expected_kind is not None:
-                if participants is None:
-                    raise HTTPException(status_code=503, detail=PARTICIPANTS_UNAVAILABLE)
-                # can_access_participant, autorizaciones (a) y (b) y, en niños, asentimiento.
-                participant = participants.require_session(user, request.participant_id)
-                if participant.kind is not expected_kind:
-                    raise HTTPException(status_code=422, detail="El tipo de sesión no coincide con la edad del participante")
-            questionnaire_ids = (request.pre_questionnaire_id, request.post_questionnaire_id)
+            questionnaire_ids: tuple[str | None, str | None] = (None, None)
             if request.protocol_id is not None:
                 if protocols is None:
                     raise HTTPException(status_code=503, detail="Los protocolos no están configurados")
-                if any(questionnaire_ids):
-                    raise HTTPException(status_code=422, detail="Con protocolo rigen sus cuestionarios")
-                protocol = protocols.require_usable(user, request.protocol_id, participant)
+                protocol = protocols.require_usable(user, request.protocol_id)
+                # Con protocolo no se pregunta nada más: el público es el del protocolo.
+                audience = SessionType.CHILD if protocol.for_children else SessionType.ADULT
+                chosen = SessionType(request.session_type) if request.session_type else audience
+                if (chosen is SessionType.CHILD) != (audience is SessionType.CHILD):
+                    raise HTTPException(status_code=422, detail="Con protocolo, el público es el del protocolo")
+                # Un protocolo para adultos también sirve para una sesión propia.
+                audience = chosen
                 questionnaire_ids = (protocol.pre_questionnaire_id, protocol.post_questionnaire_id)
+            elif request.session_type is None:
+                raise HTTPException(status_code=422, detail="Elige con quién es la sesión o un protocolo")
+            else:
+                audience = SessionType(request.session_type)
+            if not request.authorization_confirmed:
+                raise HTTPException(status_code=422, detail=f"Confirma: {CONFIRMATIONS[audience.value]}")
+            if audience is SessionType.CHILD and commitments is not None                     and not commitments.has_accepted(user, CHILD_NOTICE):
+                if request.child_notice_version is None:
+                    raise ChildNoticeRequired("Lee y acepta el aviso sobre datos de menores antes de la primera "
+                                              "sesión con un niño o una niña")
+                commitments.accept(user, request.child_notice_version, CHILD_NOTICE)
             if any(questionnaire_ids):
                 if questionnaires is None or questionnaires.responses is None:
                     raise HTTPException(status_code=503, detail="Los cuestionarios no están disponibles: falta la "
@@ -160,20 +198,23 @@ def create_session_starter(
             session = service.start_session(
                 student_id=resource_id,
                 activity_id=request.activity_id,
-                session_type=request.session_type,
+                session_type=audience,
                 owner_user_id=user.id,
-                participant_id=participant.id if participant else None,
                 protocol_id=request.protocol_id,
                 pre_questionnaire_id=questionnaire_ids[0],
                 post_questionnaire_id=questionnaire_ids[1],
+                authorization_confirmed=True,
             )
-            if participant is not None and participants is not None:
-                participants.record_session_start(user, session.id)
+            if audit is not None:
+                audit.record(user, AuditAction.CREATE, SESSION_RESOURCE, session.id)
         except CommitmentRequired as error:
             raise HTTPException(status_code=428, detail=str(error)) from error
-        except (ParticipantNotFound, ProtocolNotFound, QuestionnaireNotFound) as error:
-            raise HTTPException(status_code=404, detail="Participante, protocolo o cuestionario no encontrado") from error
-        except (SessionNotAllowed, ProtocolUnavailable) as error:
+        except ChildNoticeRequired as error:
+            raise HTTPException(status_code=428, detail=str(error),
+                                headers={REQUIRED_HEADER: "child_notice"}) from error
+        except (ProtocolNotFound, QuestionnaireNotFound) as error:
+            raise HTTPException(status_code=404, detail="Protocolo o cuestionario no encontrado") from error
+        except ProtocolUnavailable as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error.args[0])) from error
@@ -195,15 +236,16 @@ def create_session_router(
     activities: ActivityCatalog | None = None,
     assignments: AssignmentRepository | None = None,
     commitments: CommitmentService | None = None,
-    participants: ParticipantService | None = None,
     protocols: ProtocolService | None = None,
     questionnaires: QuestionnaireService | None = None,
+    privacy: SessionPrivacyService | None = None,
+    audit: AuditService | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/sessions", tags=["sessions"])
+    router = APIRouter(tags=["sessions"])
     policy = authorization or AuthorizationService()
     current_user = create_current_user_dependency(authentication, users)
-    starter = create_session_starter(sessions, students, policy, activities, commitments, participants,
-                                     protocols, questionnaires)
+    starter = create_session_starter(sessions, students, policy, activities, commitments, protocols,
+                                     questionnaires, audit)
 
     def services() -> tuple[SessionService, StudentRepository]:
         if sessions is None or students is None:
@@ -220,11 +262,11 @@ def create_session_router(
         if not policy.can_access_session(user, session, actor_student_id=actor_student_id(user)):
             raise HTTPException(status_code=403, detail="No tienes acceso a esta sesión")
 
-    @router.post("", response_model=SessionResponse, status_code=201)
+    @router.post("/sessions", response_model=SessionResponse, status_code=201)
     def start(request: CreateSessionRequest, user: User = Depends(current_user)) -> SessionResponse:
         return SessionResponse.from_domain(starter(user, request))
 
-    @router.post("/{session_id}/cancel", response_model=SessionResponse)
+    @router.post("/sessions/{session_id}/cancel", response_model=SessionResponse)
     def cancel(session_id: str, user: User = Depends(current_user)) -> SessionResponse:
         service, _ = services()
         session = service.get_session(session_id)
@@ -240,7 +282,7 @@ def create_session_router(
             raise HTTPException(status_code=409, detail=str(error)) from error
         return SessionResponse.from_domain(cancelled)
 
-    @router.get("/{session_id}", response_model=SessionResponse)
+    @router.get("/sessions/{session_id}", response_model=SessionResponse)
     def get_by_id(session_id: str, user: User = Depends(current_user)) -> SessionResponse:
         service, _ = services()
         session = service.get_session(session_id)
@@ -249,7 +291,7 @@ def create_session_router(
         require_session_access(user, session)
         return SessionResponse.from_domain(session)
 
-    @router.get("", response_model=list[SessionResponse])
+    @router.get("/sessions", response_model=list[SessionResponse])
     def list_sessions(
         student_id: str | None = None,
         user: User = Depends(current_user),
@@ -278,5 +320,53 @@ def create_session_router(
         visible = [item for item in found.values()
                    if policy.can_access_session(user, item, actor_student_id=actor_id)]
         return [SessionResponse.from_domain(item) for item in sorted(visible, key=lambda item: (item.started_at, item.id))]
+
+    # --- Eliminación por sesión, con acta ---------------------------------------------
+
+    def privacy_service() -> SessionPrivacyService:
+        if privacy is None:
+            raise HTTPException(status_code=503, detail="La eliminación de sesiones no está configurada")
+        return privacy
+
+    def guarded(operation):
+        try:
+            return operation()
+        except SessionNotFound as error:
+            raise HTTPException(status_code=404, detail="Sesión o acta no encontrada") from error
+        except PermissionError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except DeletionConflict as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except ErasureVerificationError as error:
+            raise HTTPException(status_code=500, detail="La verificación de la eliminación falló; no se borró nada") \
+                from error
+
+    @router.post("/sessions/{session_id}/deletion-request", response_model=SessionResponse)
+    def request_deletion(session_id: str, user: User = Depends(current_user)) -> SessionResponse:
+        """Quien condujo la sesión pide eliminarla; la ejecuta su docente."""
+        return SessionResponse.from_domain(guarded(
+            lambda: privacy_service().request_deletion(user, session_id, actor_student_id(user))))
+
+    @router.post("/sessions/{session_id}/delete", response_model=DeletionCertificateResponse)
+    def delete_session(session_id: str, user: User = Depends(current_user)) -> DeletionCertificateResponse:
+        """El docente elimina la sesión con todos sus registros y recibe el acta."""
+        return DeletionCertificateResponse.from_domain(guarded(
+            lambda: privacy_service().delete(user, session_id, actor_student_id(user))))
+
+    @router.get("/session-deletions", response_model=list[DeletionCertificateResponse])
+    def list_certificates(user: User = Depends(current_user)) -> list[DeletionCertificateResponse]:
+        return [DeletionCertificateResponse.from_domain(item)
+                for item in guarded(lambda: privacy_service().certificates_for(user))]
+
+    @router.get("/session-deletions/{certificate_id}", response_model=DeletionCertificateResponse)
+    def get_certificate(certificate_id: str, user: User = Depends(current_user)) -> DeletionCertificateResponse:
+        return DeletionCertificateResponse.from_domain(guarded(
+            lambda: privacy_service().certificate(user, certificate_id)))
+
+    @router.post("/session-deletions/{certificate_id}/print", response_model=DeletionCertificateResponse)
+    def print_certificate(certificate_id: str, user: User = Depends(current_user)) -> DeletionCertificateResponse:
+        """Registra la impresión del acta en la auditoría y devuelve su contenido."""
+        return DeletionCertificateResponse.from_domain(guarded(
+            lambda: privacy_service().certificate(user, certificate_id, printing=True)))
 
     return router

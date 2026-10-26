@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 
-from emotv.application.session_metrics import NOT_ENOUGH_SESSIONS, SessionPoint, stimulus_metrics, trend
+from emotv.application.session_metrics import stimulus_metrics
 from emotv.domain.guided_session import ABSTRACT_NOTICE, ExpressionCapture, VerbalResponse
 from emotv.domain.protocol import ProtocolStep
 from emotv.domain.stimulus import Stimulus
@@ -77,21 +77,3 @@ def test_no_good_capture_is_described_as_such():
                                [capture(0, None, 2, issues=("no_face",))])
     assert metrics["totals"]["counted"] == 0
     assert metrics["totals"]["sentence"] == "Ningún estímulo emocional tuvo una captura de buena calidad para comparar."
-
-
-def test_a_single_session_is_not_drawn_as_a_trend():
-    single = trend([SessionPoint("s1", "2026-10-01T10:00:00+00:00", 1, 3, 5)])
-    assert single["comparable"] is False and single["message"] == NOT_ENOUGH_SESSIONS
-    assert single["sessions"][0]["sentence"] == "En 3 de 5 estímulos la expresión estimada coincidió con la esperada."
-    # Una sesión sin capturas válidas no es comparable.
-    assert trend([SessionPoint("s1", "2026-10-01", 1, 3, 5), SessionPoint("s2", "2026-10-02", 1, 0, 0)])["comparable"] is False
-
-
-def test_two_sessions_with_the_same_protocol_show_how_coincidences_change():
-    result = trend([SessionPoint("s2", "2026-10-08T10:00:00+00:00", 2, 4, 5),
-                    SessionPoint("s1", "2026-10-01T10:00:00+00:00", 1, 2, 5)])
-    assert result["comparable"] is True
-    assert [item["session_id"] for item in result["sessions"]] == ["s1", "s2"]
-    assert result["message"] == ("En la primera sesión comparable coincidieron 2 de 5 estímulos; "
-                                 "en la última, 4 de 5.")
-    assert not VALUATIONS.search(json.dumps(result, ensure_ascii=False))

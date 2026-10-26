@@ -1,4 +1,4 @@
-"""Persistencia de autorizaciones de participantes, estímulos y protocolos."""
+"""Persistencia de estímulos y protocolos."""
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,12 +9,9 @@ from uuid import uuid4
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from emotv.domain.participant_authorization import ParticipantAuthorization
 from emotv.domain.protocol import Protocol, ProtocolStep
 from emotv.domain.stimulus import Stimulus, StimulusScope
 from emotv.infrastructure.persistence.models import (
-    ParticipantAuthorizationRecord,
-    ParticipantRecord,
     ProtocolRecord,
     ProtocolStepRecord,
     SessionRecord,
@@ -30,68 +27,6 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _enum_value(value):
     return getattr(value, "value", value)
-
-
-class PostgresAuthorizationRepository:
-    def __init__(self, factory: sessionmaker[Session]) -> None:
-        self._factory = factory
-
-    @staticmethod
-    def _fill(row: ParticipantAuthorizationRecord, item: ParticipantAuthorization) -> None:
-        row.participant_id = item.participant_id
-        row.form_version = item.form_version
-        row.signed_on = item.signed_on
-        row.grantor = _enum_value(item.grantor)
-        row.participation = item.participation
-        row.camera = item.camera
-        row.child_assent = item.child_assent
-        row.recorded_by_user_id = item.recorded_by_user_id
-        row.recorded_at = item.recorded_at
-        row.revoked_at = item.revoked_at
-        row.revoked_by_user_id = item.revoked_by_user_id
-        row.revoked_party = _enum_value(item.revoked_party)
-        row.revoked_scope = _enum_value(item.revoked_scope)
-
-    @staticmethod
-    def _domain(row: ParticipantAuthorizationRecord) -> ParticipantAuthorization:
-        return ParticipantAuthorization(
-            id=row.id, participant_id=row.participant_id, form_version=row.form_version, signed_on=row.signed_on,
-            grantor=row.grantor, participation=row.participation, camera=row.camera,
-            child_assent=row.child_assent, recorded_by_user_id=row.recorded_by_user_id,
-            recorded_at=_aware(row.recorded_at), revoked_at=_aware(row.revoked_at),
-            revoked_by_user_id=row.revoked_by_user_id, revoked_party=row.revoked_party,
-            revoked_scope=row.revoked_scope)
-
-    def add(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization:
-        with self._factory.begin() as db:
-            row = ParticipantAuthorizationRecord(id=authorization.id)
-            self._fill(row, authorization)
-            db.add(row)
-        return authorization
-
-    def get(self, authorization_id: str) -> ParticipantAuthorization | None:
-        with self._factory() as db:
-            row = db.get(ParticipantAuthorizationRecord, authorization_id)
-            return None if row is None else self._domain(row)
-
-    def list_for(self, participant_id: str) -> tuple[ParticipantAuthorization, ...]:
-        with self._factory() as db:
-            rows = db.scalars(select(ParticipantAuthorizationRecord)
-                              .where(ParticipantAuthorizationRecord.participant_id == participant_id)
-                              .order_by(ParticipantAuthorizationRecord.recorded_at.desc(),
-                                        ParticipantAuthorizationRecord.id)).all()
-            return tuple(self._domain(row) for row in rows)
-
-    def revoke(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization:
-        with self._factory.begin() as db:
-            row = db.get(ParticipantAuthorizationRecord, authorization.id)
-            if row is None:
-                raise LookupError(authorization.id)
-            self._fill(row, authorization)
-            participant = db.get(ParticipantRecord, authorization.participant_id)
-            if participant is not None and participant.authorization_revoked_at is None:
-                participant.authorization_revoked_at = authorization.revoked_at
-        return authorization
 
 
 class PostgresStimulusRepository:

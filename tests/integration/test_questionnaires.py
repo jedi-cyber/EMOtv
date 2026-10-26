@@ -1,5 +1,6 @@
 """Cuestionarios creados por quien conduce la sesión: versiones, plantillas,
-aplicación antes del analizador y respuestas cifradas (SQLite en memoria)."""
+aplicación con un protocolo antes del analizador y respuestas cifradas (SQLite
+en memoria)."""
 from __future__ import annotations
 
 import json
@@ -11,14 +12,12 @@ from sqlalchemy import select
 from emotv.application.ports.privacy_repositories import AuditFilter
 from emotv.infrastructure.persistence.models import QuestionnaireResponseRecord
 from emotv.shared.security.field_encryption import FieldCipher, FieldEncryptionError
-from tests.integration.test_participant_practices import (
+from tests.integration.test_protocols_and_stimuli import (
     approve,
-    authorize,
-    create_protocol,
     protocol_body,
     upload_stimulus,
 )
-from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers, register  # noqa: F401
+from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers  # noqa: F401
 
 SCORE_WORDS = re.compile(r"(score|puntaje|puntuaci|total|suma|promedio|average|interpret|diagn|resultado|nivel)", re.I)
 
@@ -42,11 +41,24 @@ def create(env, user, title="Antes de empezar", items=None):  # noqa: F811
     return response.json()
 
 
+def protocol_with(env, user, questionnaire):  # noqa: F811
+    """Un protocolo de la cuenta con ese cuestionario previo (se arma una sola vez)."""
+    saved = env.__dict__.setdefault("questionnaire_protocols", {})
+    if questionnaire["id"] not in saved:
+        stimulus = approve(env, env.docente_a, upload_stimulus(env, env.docente_a))
+        response = env.client.post("/protocols", headers=headers(env, user),
+                                   json={**protocol_body(stimulus), "pre_questionnaire_id": questionnaire["id"]})
+        assert response.status_code == 201, response.text
+        saved[questionnaire["id"]] = response.json()
+    return saved[questionnaire["id"]]
+
+
 def own_session(env, user, questionnaire=None):  # noqa: F811
+    """Sesión propia: con cuestionario, mediante un protocolo; sin él, solo analizar."""
     accept_commitment(env, user)
-    body = {"session_type": "propia"}
+    body = {"session_type": "propia", "authorization_confirmed": True}
     if questionnaire is not None:
-        body["pre_questionnaire_id"] = questionnaire["id"]
+        body["protocol_id"] = protocol_with(env, user, questionnaire)["id"]
     response = env.client.post("/sessions", headers=headers(env, user), json=body)
     assert response.status_code == 201, response.text
     return response.json()
@@ -97,7 +109,7 @@ def test_the_pre_questionnaire_is_answered_before_calibration(env):  # noqa: F81
     assert after.get("code") != 4428
 
 
-def test_an_own_session_can_skip_the_questionnaire(env):  # noqa: F811
+def test_a_session_without_a_protocol_has_no_questionnaire(env):  # noqa: F811
     session = own_session(env, env.user_1)
     assert session["pre_questionnaire_id"] is None
     assert first_socket_message(env, env.user_1, session).get("code") != 4428
@@ -195,33 +207,31 @@ def test_starter_template_and_docente_templates_shared_with_the_group(env):  # n
                           json={"title": "Copia modificada", "questions": questions()[:2]}).status_code == 200
 
 
-# --- Protocolos y participantes -------------------------------------------------
+# --- Protocolos -------------------------------------------------------------------
 
-def test_a_protocol_indicates_pre_and_post_questionnaires_for_a_participant(env):  # noqa: F811
+def test_a_protocol_indicates_pre_and_post_questionnaires(env):  # noqa: F811
     stimulus = approve(env, env.docente_a, upload_stimulus(env, env.docente_a))
     pre, post = create(env, env.user_1, "Previo"), create(env, env.user_1, "Posterior", questions()[2:])
     protocol = env.client.post("/protocols", headers=headers(env, env.user_1),
                                json={**protocol_body(stimulus), "pre_questionnaire_id": pre["id"],
                                      "post_questionnaire_id": post["id"]})
     assert protocol.status_code == 201, protocol.text
-    participant = register(env, env.user_1)
-    authorize(env, env.user_1, participant)
-    session = env.client.post("/sessions", headers=headers(env, env.user_1),
-                              json={"session_type": "participante_adulto", "participant_id": participant["id"],
-                                    "protocol_id": protocol.json()["id"]}).json()
+    accept_commitment(env, env.user_1)
+    body = {"protocol_id": protocol.json()["id"], "authorization_confirmed": True}
+    session = env.client.post("/sessions", headers=headers(env, env.user_1), json=body).json()
     assert (session["pre_questionnaire_id"], session["post_questionnaire_id"]) == (pre["id"], post["id"])
-    # Con protocolo no se eligen otros cuestionarios.
+    # Con protocolo no se eligen otros cuestionarios, y sin protocolo no hay cuestionarios.
     assert env.client.post("/sessions", headers=headers(env, env.user_1),
-                           json={"session_type": "participante_adulto", "participant_id": participant["id"],
-                                 "protocol_id": protocol.json()["id"], "pre_questionnaire_id": post["id"]}).status_code == 422
+                           json={**body, "pre_questionnaire_id": post["id"]}).status_code == 422
     assert first_socket_message(env, env.user_1, session)["code"] == 4428
     assert answer(env, env.user_1, session, FULL, entry_mode="participant").status_code == 201
     # El posterior es opcional en sus preguntas y lo puede registrar a mano quien conduce.
     assert answer(env, env.user_1, session, {}, moment="post", entry_mode="conductor").status_code == 201
     listed = env.client.get(f"/sessions/{session['id']}/questionnaire-responses", headers=headers(env, env.docente_a)).json()
     assert [(item["moment"], item["entry_mode"]) for item in listed] == [("pre", "participant"), ("post", "conductor")]
-    # La eliminación del participante incluye sus respuestas.
-    certificate = env.client.post(f"/participants/{participant['id']}/delete", headers=headers(env, env.docente_a)).json()
+    # La eliminación de la sesión incluye sus respuestas.
+    env.client.post(f"/sessions/{session['id']}/cancel", headers=headers(env, env.user_1))
+    certificate = env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.docente_a)).json()
     assert certificate["counts"]["questionnaire_responses"] == 2 and certificate["verified"]
 
 

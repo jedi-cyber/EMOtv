@@ -1,6 +1,6 @@
-"""Sesión guiada: rutas de quien conduce la sesión y de la vista del participante.
+"""Sesión con protocolo: rutas de quien conduce y de la pantalla de la persona.
 
-La vista del participante usa un enlace propio (sin cuenta) y solo recibe lo
+La pantalla de la persona evaluada usa un enlace propio (sin cuenta) y solo recibe lo
 que debe mostrar: nunca expresiones, probabilidades, calidad ni notas. Los
 cuadros de su cámara se analizan en memoria y se descartan.
 """
@@ -22,14 +22,6 @@ from emotv.interfaces.web.auth_router import create_current_user_dependency
 MAX_FRAME_BYTES = 1_000_000
 
 
-class ConfirmRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    commitment_reminder: bool = False
-    authorization_confirmed: bool = False
-    guardian_present: bool = False
-    child_assent: bool = False
-
-
 class StopRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: Literal["participant", "guardian", "conductor"]
@@ -48,7 +40,7 @@ class VerbalRequest(BaseModel):
 
 
 class ParticipantView(BaseModel):
-    """Lo único que recibe la vista del participante."""
+    """Lo único que recibe la pantalla de la persona evaluada."""
 
     phase: str
     message: str | None
@@ -98,7 +90,7 @@ def create_guided_router(
     @router.post("/guided-sessions/{session_id}", status_code=201)
     def create(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         run, token = guarded(lambda: service().create(user, session_id))
-        # El enlace de la vista del participante se entrega solo aquí.
+        # El enlace de la pantalla de la persona se entrega solo aquí.
         return {"session_id": run.session_id, "phase": run.phase.value, "view_token": token}
 
     @router.post("/guided-sessions/{session_id}/view-link")
@@ -108,11 +100,6 @@ def create_guided_router(
     @router.get("/guided-sessions/{session_id}")
     def state(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
         return conductor(guarded(lambda: service().conductor_state(user, session_id)))
-
-    @router.post("/guided-sessions/{session_id}/confirm")
-    def confirm(session_id: str, request: ConfirmRequest, user: User = Depends(current_user)) -> dict[str, str]:
-        run = guarded(lambda: service().confirm(user, session_id, **request.model_dump()))
-        return {"phase": run.phase.value}
 
     @router.post("/guided-sessions/{session_id}/advance")
     def advance(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
@@ -145,7 +132,7 @@ def create_guided_router(
         """Capturas, marcadores y respuestas: quien condujo y su docente."""
         return conductor(guarded(lambda: service().results(user, session_id)))
 
-    # --- Vista del participante (enlace propio) ----------------------------------------
+    # --- Pantalla de la persona evaluada (enlace propio) ----------------------------------------
 
     @router.get("/participant-view/{token}", response_model=ParticipantView)
     def participant_view(token: str) -> ParticipantView:
@@ -154,7 +141,7 @@ def create_guided_router(
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
-        """La imagen del estímulo que se muestra ahora (nunca la de un participante)."""
+        """La imagen del estímulo que se muestra ahora (nunca la de una persona evaluada)."""
         stimulus_id = guarded(lambda: service().participant_stimulus(token))
         found = stimulus_image(stimulus_id) if stimulus_image else None
         if found is None:
@@ -174,7 +161,7 @@ def create_guided_router(
 
     @router.post("/participant-view/{token}/stop")
     def participant_stop(token: str) -> dict[str, bool]:
-        """El participante pide parar: la sesión termina de inmediato."""
+        """La persona pide parar: la sesión termina de inmediato."""
         guarded(lambda: service().participant_stop(token))
         return {"stopped": True}
 

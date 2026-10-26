@@ -8,13 +8,13 @@ en `docs/consent-demo.md`; no cuenta como aprobación universitaria.
 
 | `CONSENT_MODE` | Uso | Regla para iniciar análisis |
 | --- | --- | --- |
-| `development` | Pruebas técnicas sin participantes reales | No exige aceptación |
+| `development` | Pruebas técnicas sin personas reales | No exige aceptación |
 | `demo` | Demostración informada | Política demo activa y aceptación vigente |
 | `production` | Solo tras aprobación institucional | Política no demo, aprobada y vigente; aceptación de esa versión |
 
 Si `ENVIRONMENT=production`, EMOtv rechaza `CONSENT_MODE=development` o `demo`.
 El valor local por defecto es `demo`. El modo `development` jamás debe usarse
-con estudiantes o participantes reales.
+con estudiantes o personas reales.
 
 ## Preparación y transición
 

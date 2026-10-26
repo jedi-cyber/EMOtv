@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
+import secrets
 from uuid import uuid4
 
 from emotv.application.ports.session_repository import SessionRepository
@@ -16,6 +17,12 @@ from emotv.domain.session_type import SessionType
 
 Clock = Callable[[], datetime]
 IdFactory = Callable[[], str]
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # sin 0/O ni 1/I/L
+
+
+def random_session_code() -> str:
+    """Código que quien conduce anota en el formato firmado, p. ej. S-4F7K2Q."""
+    return "S-" + "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
 
 
 class SessionService:
@@ -29,8 +36,10 @@ class SessionService:
         consent_repository: ConsentRepository | None = None,
         required_policy_version: str | None = None,
         consent_policy_service: ConsentPolicyService | None = None,
+        code_factory: IdFactory = random_session_code,
     ) -> None:
         self.repository = repository
+        self.code_factory = code_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_factory = id_factory or (lambda: str(uuid4()))
         self.consent_repository = consent_repository
@@ -54,6 +63,7 @@ class SessionService:
             activity_id=activity_id,
             session_type=session_type,
             owner_user_id=owner_user_id,
+            code=self._next_code(),
         )
         return self.repository.save(session)
 
@@ -64,15 +74,16 @@ class SessionService:
         activity_id: str | None = None,
         session_type: SessionType | str = SessionType.OWN,
         owner_user_id: str | None = None,
-        participant_id: str | None = None,
         protocol_id: str | None = None,
         pre_questionnaire_id: str | None = None,
         post_questionnaire_id: str | None = None,
+        authorization_confirmed: bool = False,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada.
 
-        participant_id y protocol_id solo se indican en una sesión nueva; quien
-        llama ya comprobó las autorizaciones del participante y el protocolo."""
+        protocol_id y authorization_confirmed solo se indican en una sesión
+        nueva; quien llama ya comprobó la confirmación y el protocolo. Cada
+        sesión nueva recibe un código aleatorio."""
 
         if session_id is None:
             self._require_active_consent(student_id)
@@ -84,10 +95,11 @@ class SessionService:
                 activity_id=activity_id,
                 session_type=session_type,
                 owner_user_id=owner_user_id,
-                participant_id=participant_id,
                 protocol_id=protocol_id,
                 pre_questionnaire_id=pre_questionnaire_id,
                 post_questionnaire_id=post_questionnaire_id,
+                code=self._next_code(),
+                authorization_confirmed_at=self.clock() if authorization_confirmed else None,
             )
         else:
             current = self._get_required(session_id)
@@ -348,8 +360,16 @@ class SessionService:
 
         return self.repository.list_by_student(student_id)
 
-    def list_sessions_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
-        return self.repository.list_by_participant(participant_id)
+    def list_started_before(self, cutoff: datetime) -> tuple[EmotionalSession, ...]:
+        return self.repository.list_started_before(cutoff)
+
+    def request_deletion(self, session_id: str, user_id: str) -> EmotionalSession:
+        """Marca la solicitud de eliminación (idempotente)."""
+        current = self._get_required(session_id)
+        if current.deletion_requested_at is not None:
+            return current
+        return self.repository.save(replace(current, deletion_requested_at=self.clock(),
+                                            deletion_requested_by_user_id=user_id))
 
     def list_sessions_by_owner(self, owner_user_id: str) -> tuple[EmotionalSession, ...]:
         return self.repository.list_by_owner(owner_user_id)
@@ -373,6 +393,14 @@ class SessionService:
             raise RuntimeError(
                 f"No se puede {operation} una sesión en estado {session.state.value}"
             )
+
+    def _next_code(self) -> str:
+        exists = getattr(self.repository, "code_exists", None)
+        for _ in range(100):
+            code = self.code_factory()
+            if exists is None or not exists(code):
+                return code
+        raise RuntimeError("No se pudo generar un código de sesión único")
 
     def _next_unique_id(self) -> str:
         for _ in range(100):

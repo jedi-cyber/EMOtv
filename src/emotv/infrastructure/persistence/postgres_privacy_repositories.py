@@ -1,4 +1,4 @@
-"""Persistencia de auditoría, aceptaciones del compromiso y participantes."""
+"""Persistencia de auditoría, aceptaciones del compromiso y eliminación de sesiones."""
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -13,39 +13,31 @@ from emotv.application.ports.privacy_repositories import (
     ErasureVerificationError,
 )
 from emotv.domain.audit import AuditEntry
-from emotv.domain.participant import Participant
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     CommitmentAcceptanceRecord,
     ExpressionCaptureRecord,
     GuidedRunRecord,
-    ParticipantAuthorizationRecord,
-    ParticipantDeletionRecord,
-    ParticipantRecord,
     QuestionnaireResponseRecord,
     ReportCommentRecord,
     ReportEventRecord,
+    SessionDeletionRecord,
     SessionMarkerRecord,
     SessionReportRecord,
     SessionRecord,
     VerbalResponseRecord,
 )
-from emotv.shared.security.field_encryption import FieldCipher
 
-# Registros vinculados a un participante, en orden de borrado. Cada tabla nueva
-# con datos de participantes (autorizaciones, capturas, respuestas, marcadores,
-# reportes) se agrega aquí para que la retención y la eliminación la incluyan.
-PARTICIPANT_LINKED_RECORDS = (
-    ("authorizations", ParticipantAuthorizationRecord, ParticipantAuthorizationRecord.participant_id),
-    ("questionnaire_responses", QuestionnaireResponseRecord, QuestionnaireResponseRecord.participant_id),
-    ("expression_captures", ExpressionCaptureRecord, ExpressionCaptureRecord.participant_id),
-    ("session_markers", SessionMarkerRecord, SessionMarkerRecord.participant_id),
-    ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.participant_id),
-    ("guided_runs", GuidedRunRecord, GuidedRunRecord.participant_id),
-    ("report_comments", ReportCommentRecord, ReportCommentRecord.participant_id),
-    ("report_events", ReportEventRecord, ReportEventRecord.participant_id),
-    ("session_reports", SessionReportRecord, SessionReportRecord.participant_id),
-    ("sessions", SessionRecord, SessionRecord.participant_id),
+# Registros de una sesión con session_id, en orden de borrado. Cada tabla nueva
+# con datos de una sesión se agrega aquí (o, como los comentarios y el historial
+# del reporte, en remaining y _erase) para que la retención y la eliminación la
+# incluyan.
+SESSION_LINKED_RECORDS = (
+    ("questionnaire_responses", QuestionnaireResponseRecord, QuestionnaireResponseRecord.session_id),
+    ("expression_captures", ExpressionCaptureRecord, ExpressionCaptureRecord.session_id),
+    ("session_markers", SessionMarkerRecord, SessionMarkerRecord.session_id),
+    ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.session_id),
+    ("guided_runs", GuidedRunRecord, GuidedRunRecord.session_id),
 )
 
 
@@ -108,121 +100,81 @@ class PostgresCommitmentRepository:
                                               accepted_at=accepted_at))
 
 
-class PostgresParticipantRepository:
-    """Las notas se cifran antes de llegar a la base y se descifran al leer."""
+class PostgresSessionErasureRepository:
+    """Borra una sesión con todos sus registros y guarda el acta."""
 
-    def __init__(self, factory: sessionmaker[Session], cipher: FieldCipher) -> None:
+    def __init__(self, factory: sessionmaker[Session]) -> None:
         self._factory = factory
-        self._cipher = cipher
-
-    def save(self, participant: Participant) -> Participant:
-        with self._factory.begin() as db:
-            row = db.get(ParticipantRecord, participant.id)
-            if row is None:
-                row = ParticipantRecord(id=participant.id)
-                db.add(row)
-            row.code = participant.code
-            row.kind = participant.kind.value
-            row.registered_by_user_id = participant.registered_by_user_id
-            row.created_at = participant.created_at
-            row.notes_encrypted = self._cipher.encrypt(participant.notes)
-            row.deletion_requested_at = participant.deletion_requested_at
-            row.deletion_requested_by_user_id = participant.deletion_requested_by_user_id
-            row.age_years = participant.age_years
-            row.authorization_revoked_at = participant.authorization_revoked_at
-        return participant
-
-    def _domain(self, row: ParticipantRecord) -> Participant:
-        return Participant(id=row.id, code=row.code, kind=row.kind, registered_by_user_id=row.registered_by_user_id,
-                           created_at=_aware(row.created_at), notes=self._cipher.decrypt(row.notes_encrypted),
-                           deletion_requested_at=_aware(row.deletion_requested_at),
-                           deletion_requested_by_user_id=row.deletion_requested_by_user_id,
-                           age_years=row.age_years,
-                           authorization_revoked_at=_aware(row.authorization_revoked_at))
-
-    def get_by_id(self, participant_id: str) -> Participant | None:
-        with self._factory() as db:
-            row = db.get(ParticipantRecord, participant_id)
-            return None if row is None else self._domain(row)
-
-    def code_exists(self, code: str) -> bool:
-        with self._factory() as db:
-            return db.scalar(select(func.count()).select_from(ParticipantRecord)
-                             .where(ParticipantRecord.code == code)) > 0
-
-    def list_by_registrants(self, user_ids: Iterable[str]) -> tuple[Participant, ...]:
-        ids = tuple(user_ids)
-        if not ids:
-            return ()
-        with self._factory() as db:
-            rows = db.scalars(select(ParticipantRecord).where(ParticipantRecord.registered_by_user_id.in_(ids))
-                              .order_by(ParticipantRecord.created_at, ParticipantRecord.id)).all()
-            return tuple(self._domain(row) for row in rows)
-
-    def list_created_before(self, cutoff: datetime) -> tuple[Participant, ...]:
-        with self._factory() as db:
-            rows = db.scalars(select(ParticipantRecord).where(ParticipantRecord.created_at < cutoff)).all()
-            return tuple(self._domain(row) for row in rows)
 
     @staticmethod
-    def remaining(db: Session, participant_id: str) -> dict[str, int]:
-        """Registros que siguen asociados al participante (debe dar todo cero)."""
-        counts = {name: db.scalar(select(func.count()).select_from(model).where(column == participant_id))
-                  for name, model, column in PARTICIPANT_LINKED_RECORDS}
-        counts["participants"] = db.scalar(select(func.count()).select_from(ParticipantRecord)
-                                           .where(ParticipantRecord.id == participant_id))
+    def remaining(db: Session, session_id: str) -> dict[str, int]:
+        """Registros que siguen asociados a la sesión (debe dar todo cero)."""
+        report_ids = select(SessionReportRecord.id).where(SessionReportRecord.session_id == session_id)
+        counts = {name: db.scalar(select(func.count()).select_from(model).where(column == session_id))
+                  for name, model, column in SESSION_LINKED_RECORDS}
+        for name, model in (("report_comments", ReportCommentRecord), ("report_events", ReportEventRecord)):
+            counts[name] = db.scalar(select(func.count()).select_from(model).where(model.report_id.in_(report_ids)))
+        counts["session_reports"] = db.scalar(select(func.count()).select_from(SessionReportRecord)
+                                              .where(SessionReportRecord.session_id == session_id))
+        counts["sessions"] = db.scalar(select(func.count()).select_from(SessionRecord)
+                                       .where(SessionRecord.id == session_id))
         return counts
 
-    def _erase(self, db: Session, participant_id: str) -> tuple[ParticipantRecord, dict[str, int]]:
-        row = db.get(ParticipantRecord, participant_id)
+    def _erase(self, db: Session, session_id: str) -> tuple[str | None, dict[str, int]]:
+        row = db.get(SessionRecord, session_id)
         if row is None:
-            raise LookupError(participant_id)
-        counts = self.remaining(db, participant_id)
-        for _, model, column in PARTICIPANT_LINKED_RECORDS:
-            db.execute(delete(model).where(column == participant_id))
-        db.execute(delete(ParticipantRecord).where(ParticipantRecord.id == participant_id))
+            raise LookupError(session_id)
+        code = row.code
+        counts = self.remaining(db, session_id)
+        report_ids = select(SessionReportRecord.id).where(SessionReportRecord.session_id == session_id)
+        db.execute(delete(ReportCommentRecord).where(ReportCommentRecord.report_id.in_(report_ids)))
+        db.execute(delete(ReportEventRecord).where(ReportEventRecord.report_id.in_(report_ids)))
+        db.execute(delete(SessionReportRecord).where(SessionReportRecord.session_id == session_id))
+        for _, model, column in SESSION_LINKED_RECORDS:
+            db.execute(delete(model).where(column == session_id))
+        db.execute(delete(SessionRecord).where(SessionRecord.id == session_id))
         db.flush()
-        if any(self.remaining(db, participant_id).values()):
+        if any(self.remaining(db, session_id).values()):
             # La excepción revierte toda la transacción.
-            raise ErasureVerificationError("Quedaron registros asociados al participante")
-        return row, counts
+            raise ErasureVerificationError("Quedaron registros asociados a la sesión")
+        return code, counts
 
-    def erase(self, participant_id: str) -> dict[str, int]:
+    def erase(self, session_id: str) -> dict[str, int]:
         with self._factory.begin() as db:
-            _, counts = self._erase(db, participant_id)
+            _, counts = self._erase(db, session_id)
             return counts
 
-    def erase_with_certificate(self, participant_id: str, certificate_id: str, deleted_at: datetime,
+    def erase_with_certificate(self, session_id: str, certificate_id: str, deleted_at: datetime,
                                executed_by_user_id: str, requested_by_user_id: str | None) -> DeletionCertificate:
         with self._factory.begin() as db:
-            row, counts = self._erase(db, participant_id)
+            code, counts = self._erase(db, session_id)
             certificate = DeletionCertificate(
-                id=certificate_id, participant_code=row.code, deleted_at=deleted_at,
+                id=certificate_id, session_code=code or "", deleted_at=deleted_at,
                 executed_by_user_id=executed_by_user_id, requested_by_user_id=requested_by_user_id,
                 counts=counts, verified=True)
-            db.add(ParticipantDeletionRecord(
-                id=certificate.id, participant_code=certificate.participant_code, deleted_at=deleted_at,
+            db.add(SessionDeletionRecord(
+                id=certificate.id, session_code=certificate.session_code, deleted_at=deleted_at,
                 executed_by_user_id=executed_by_user_id, requested_by_user_id=requested_by_user_id,
                 counts=counts, verified=True))
         return certificate
 
     @staticmethod
-    def _certificate(row: ParticipantDeletionRecord) -> DeletionCertificate:
-        return DeletionCertificate(id=row.id, participant_code=row.participant_code, deleted_at=_aware(row.deleted_at),
+    def _certificate(row: SessionDeletionRecord) -> DeletionCertificate:
+        return DeletionCertificate(id=row.id, session_code=row.session_code, deleted_at=_aware(row.deleted_at),
                                    executed_by_user_id=row.executed_by_user_id,
                                    requested_by_user_id=row.requested_by_user_id,
                                    counts=dict(row.counts), verified=row.verified)
 
     def get_certificate(self, certificate_id: str) -> DeletionCertificate | None:
         with self._factory() as db:
-            row = db.get(ParticipantDeletionRecord, certificate_id)
+            row = db.get(SessionDeletionRecord, certificate_id)
             return None if row is None else self._certificate(row)
 
     def list_certificates_by(self, user_ids: Iterable[str]) -> tuple[DeletionCertificate, ...]:
         ids = tuple(user_ids)
         with self._factory() as db:
-            rows = db.scalars(select(ParticipantDeletionRecord).where(
-                ParticipantDeletionRecord.executed_by_user_id.in_(ids)
-                | ParticipantDeletionRecord.requested_by_user_id.in_(ids))
-                .order_by(ParticipantDeletionRecord.deleted_at.desc())).all()
+            rows = db.scalars(select(SessionDeletionRecord).where(
+                SessionDeletionRecord.executed_by_user_id.in_(ids)
+                | SessionDeletionRecord.requested_by_user_id.in_(ids))
+                .order_by(SessionDeletionRecord.deleted_at.desc())).all()
             return tuple(self._certificate(row) for row in rows)

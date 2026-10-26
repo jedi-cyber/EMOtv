@@ -1,4 +1,4 @@
-"""Métricas descriptivas por estímulo y tendencias entre sesiones.
+"""Métricas descriptivas por estímulo de una sesión.
 
 El sistema describe; no interpreta. Los textos dicen lo que ocurrió ("en 3 de 5
 estímulos la expresión estimada coincidió con la esperada") y nunca valoran a la
@@ -8,16 +8,11 @@ totales. Las imágenes abstractas no tienen métricas de coincidencia.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
 from typing import Any
 
 from emotv.domain.guided_session import ABSTRACT_NOTICE, CaptureQuality, ExpressionCapture, VerbalResponse
 from emotv.domain.protocol import ProtocolStep
 from emotv.domain.stimulus import Stimulus, StimulusKind
-
-MIN_TREND_SESSIONS = 2
-NOT_ENOUGH_SESSIONS = ("Hace falta al menos dos sesiones con el mismo protocolo para mostrar cómo cambian las "
-                       "coincidencias.")
 
 
 def _capture(item: ExpressionCapture, expected: str | None) -> dict[str, Any]:
@@ -91,32 +86,4 @@ def stimulus_metrics(
             "sentence": coincidence_sentence(matched, len(counted)),
         },
         "abstract_notice": ABSTRACT_NOTICE if abstract else None,
-    }
-
-
-@dataclass(frozen=True, slots=True)
-class SessionPoint:
-    session_id: str
-    started_at: str
-    protocol_version: int
-    matched: int
-    counted: int
-
-
-def trend(points: Sequence[SessionPoint]) -> dict[str, Any]:
-    """Cómo cambian las coincidencias entre sesiones con el mismo protocolo.
-    Con menos de dos sesiones comparables no hay tendencia que mostrar."""
-    ordered = sorted(points, key=lambda item: item.started_at)
-    comparable = [item for item in ordered if item.counted > 0]
-    sessions = [{"session_id": item.session_id, "started_at": item.started_at, "protocol_version": item.protocol_version,
-                 "matched": item.matched, "counted": item.counted,
-                 "sentence": coincidence_sentence(item.matched, item.counted)} for item in ordered]
-    if len(comparable) < MIN_TREND_SESSIONS:
-        return {"comparable": False, "message": NOT_ENOUGH_SESSIONS, "sessions": sessions}
-    first, last = comparable[0], comparable[-1]
-    return {
-        "comparable": True,
-        "message": (f"En la primera sesión comparable coincidieron {first.matched} de {first.counted} estímulos; "
-                    f"en la última, {last.matched} de {last.counted}."),
-        "sessions": sessions,
     }

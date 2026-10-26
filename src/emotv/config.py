@@ -173,16 +173,14 @@ def get_server_load_settings(environ: Mapping[str, str] | None = None) -> Server
 
 @dataclass(frozen=True)
 class PrivacySettings:
-    """Cuentas de administración, retención de datos y avisos de vencimiento."""
+    """Cuentas de administración y retención de datos."""
 
     # Cuentas de administrador activas a la vez (por defecto, una persona).
     max_admin_accounts: int = 1
     # Meses que se conserva la auditoría de accesos.
     audit_retention_months: int = 24
-    # Meses que se conservan los participantes y todos sus registros.
-    participant_retention_months: int = 12
-    # Días antes del vencimiento en que el docente ve al participante en la lista.
-    expiry_notice_days: int = 30
+    # Meses que se conserva cada sesión con todos sus registros.
+    session_retention_months: int = 12
 
 
 def get_privacy_settings(environ: Mapping[str, str] | None = None) -> PrivacySettings:
@@ -192,7 +190,7 @@ def get_privacy_settings(environ: Mapping[str, str] | None = None) -> PrivacySet
     for field_name, name, minimum, maximum in (
         ("max_admin_accounts", "MAX_ADMIN_ACCOUNTS", 1, 10),
         ("audit_retention_months", "AUDIT_RETENTION_MONTHS", 1, 120),
-        ("participant_retention_months", "PARTICIPANT_RETENTION_MONTHS", 1, 120),
+        ("session_retention_months", "SESSION_RETENTION_MONTHS", 1, 120),
     ):
         raw = source.get(name, "").strip()
         try:
@@ -209,7 +207,7 @@ def get_sensitive_data_keys(environ: Mapping[str, str] | None = None) -> tuple[s
     """Claves Fernet de SENSITIVE_DATA_KEY, separadas por comas.
 
     La primera cifra; todas descifran (rotación). Vacía: sin cifrado disponible
-    y el módulo de participantes no se activa. Nunca se escribe en logs.
+    y las sesiones con protocolo no se activan. Nunca se escribe en logs.
     """
 
     source = os.environ if environ is None else environ

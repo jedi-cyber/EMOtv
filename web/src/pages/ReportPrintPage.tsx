@@ -13,7 +13,7 @@ import { paths } from "../routes/paths";
 
 /**
  * Vista imprimible del reporte aprobado. Imprime el navegador: el servidor no
- * genera archivos. Si el participante adulto o el tutor de un niño piden una
+ * genera archivos. Si la persona adulta o el tutor de un niño piden una
  * copia, el docente la imprime y se la entrega. Cada impresión queda en la auditoría.
  */
 export function ReportPrintPage() {

@@ -4,6 +4,7 @@ import { Spinner } from "../components/Spinner";
 import { ConnectionErrorPage } from "../pages/ConnectionErrorPage";
 import { paths } from "../routes/paths";
 import { CommitmentProvider, useCommitment } from "../commitment/CommitmentContext";
+import { CommitmentModal } from "../commitment/CommitmentModal";
 
 export function ProtectedRoute() {
   const { user, loading, connectionError } = useAuth();
@@ -22,14 +23,11 @@ export function ProtectedRoute() {
 }
 
 /**
- * Usuarios y docentes aceptan el compromiso vigente antes de seguir. Mientras
- * se consulta no se bloquea la navegación: el servidor rechaza igual registrar
- * participantes o iniciar sesiones sin la aceptación.
+ * Usuarios y docentes aceptan una vez el compromiso vigente, en una ventana al
+ * entrar. Mientras se consulta no se bloquea la navegación: el servidor rechaza
+ * igual iniciar sesiones sin la aceptación.
  */
 function CommitmentGate() {
   const { state } = useCommitment();
-  const location = useLocation();
-  if (state === "required" && location.pathname !== paths.commitment)
-    return <Navigate to={paths.commitment} replace state={{ from: location }} />;
-  return <Outlet />;
+  return <><Outlet />{state === "required" && <CommitmentModal />}</>;
 }

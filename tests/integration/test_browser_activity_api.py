@@ -189,7 +189,7 @@ def _recognize(socket, **extra):
 
 def _student_session(client, auth, user):
     headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
-    response = client.post("/sessions", headers=headers, json={})
+    response = client.post("/sessions", headers=headers, json={"session_type": "propia", "authorization_confirmed": True})
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -350,7 +350,7 @@ def test_session_without_confirmation_is_still_cancelled(flow):
 def test_start_complete_and_reject_cancel_of_completed_session(flow):
     client, auth, user, _, student, sessions, _, processors, _ = flow
     headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
-    response = client.post("/sessions", headers=headers, json={"activity_id": "arms_up_5s"})
+    response = client.post("/sessions", headers=headers, json={"activity_id": "arms_up_5s", "session_type": "propia", "authorization_confirmed": True})
     assert response.status_code == 201
     session_id = response.json()["id"]
     with client.websocket_connect("/ws/activity") as socket:
@@ -416,7 +416,7 @@ def test_conductor_selected_local_model_reaches_processor(flow, model_id):
 def test_recommended_sequence_uses_same_session_and_exposes_every_step(flow):
     client, auth, user, _, _, sessions, _, processors, _ = flow
     headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
-    session_id = client.post("/sessions", headers=headers, json={}).json()["id"]
+    session_id = client.post("/sessions", headers=headers, json={"session_type": "propia", "authorization_confirmed": True}).json()["id"]
     jpeg = np.frombuffer(JPEG, dtype=np.uint8)
 
     with client.websocket_connect("/ws/activity") as socket:

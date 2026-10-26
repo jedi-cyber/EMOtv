@@ -11,8 +11,8 @@ por `[6: ÓRGANO QUE APRUEBA]`.
 ## ¿Qué es EMOtv?
 
 EMOtv es una herramienta de la Facultad de Psicología de la UNHEVAL. La usan
-personas de la Facultad (usuarios y docentes) en sesiones con participantes
-adultos, niños y niñas. Durante una sesión se muestran imágenes, se pueden
+personas de la Facultad (usuarios y docentes) en sesiones propias o con
+personas adultas, niños y niñas. Durante una sesión se muestran imágenes, se pueden
 responder preguntas y una cámara **estima la expresión de la cara**.
 
 EMOtv **no diagnostica**, no dice lo que una persona siente ni sustituye a un
@@ -44,7 +44,7 @@ Se guarda:
 **Ninguna imagen tuya se guarda ni sale del servidor.** La cámara envía cada
 imagen al servidor de EMOtv, que la analiza en ese instante y la descarta. Las
 únicas imágenes guardadas son las que se te muestran (estímulos), que suben los
-docentes o la administración; nunca son fotos de participantes.
+docentes o la administración; nunca son fotos de las personas evaluadas.
 
 ## ¿Para qué se usan?
 

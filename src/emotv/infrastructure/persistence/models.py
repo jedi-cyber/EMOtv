@@ -80,8 +80,13 @@ class SessionRecord(Base):
             name="ck_sessions_exercise_progress",
         ),
         CheckConstraint(
-            "session_type IN ('propia', 'participante_adulto', 'participante_infantil')",
+            "session_type IN ('propia', 'adulto', 'infantil')",
             name="ck_sessions_session_type",
+        ),
+        CheckConstraint(
+            "(deletion_requested_at IS NULL AND deletion_requested_by_user_id IS NULL) OR "
+            "(deletion_requested_at IS NOT NULL AND deletion_requested_by_user_id IS NOT NULL)",
+            name="ck_sessions_deletion_request",
         ),
     )
 
@@ -115,11 +120,9 @@ class SessionRecord(Base):
     exercise_repetitions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     session_type: Mapped[str] = mapped_column(String(32), nullable=False, default="propia",
                                               server_default="propia")
-    # Cuenta que conduce la sesión y participante analizado (nulo en una sesión propia).
+    # Cuenta que conduce la sesión.
     owner_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     # Versión del protocolo aplicado; un protocolo usado no se borra ni se edita.
     protocol_id: Mapped[str | None] = mapped_column(
         ForeignKey("protocols.id", ondelete="RESTRICT"), nullable=True, index=True)
@@ -128,6 +131,11 @@ class SessionRecord(Base):
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True, index=True)
     post_questionnaire_id: Mapped[str | None] = mapped_column(
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # Código aleatorio que quien conduce anota en el formato firmado (S-XXXXXX).
+    code: Mapped[str | None] = mapped_column(String(16), unique=True, nullable=True)
+    authorization_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deletion_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class UserRecord(Base):
@@ -269,74 +277,8 @@ class ExpressionInfoRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class ParticipantRecord(Base):
-    """Participante sin cuenta, nombre, DNI ni foto: solo un código aleatorio.
-
-    notes_encrypted guarda las notas libres cifradas con SENSITIVE_DATA_KEY.
-    """
-
-    __tablename__ = "participants"
-    __table_args__ = (
-        CheckConstraint("kind IN ('adult', 'child')", name="ck_participants_kind"),
-        CheckConstraint(
-            "(deletion_requested_at IS NULL AND deletion_requested_by_user_id IS NULL) OR "
-            "(deletion_requested_at IS NOT NULL AND deletion_requested_by_user_id IS NOT NULL)",
-            name="ck_participants_deletion_request",
-        ),
-        CheckConstraint(
-            "age_years IS NULL OR (kind = 'adult' AND age_years BETWEEN 18 AND 120) OR "
-            "(kind = 'child' AND age_years BETWEEN 1 AND 17)",
-            name="ck_participants_age_matches_kind",
-        ),
-    )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
-    kind: Mapped[str] = mapped_column(String(8), nullable=False)
-    registered_by_user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    notes_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
-    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    deletion_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    age_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    authorization_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class ParticipantAuthorizationRecord(Base):
-    """Formato firmado en papel: versión, fecha y lo que autoriza. Sin nombres
-    ni datos de quien firma."""
-
-    __tablename__ = "participant_authorizations"
-    __table_args__ = (
-        CheckConstraint("grantor IN ('participant', 'guardian')", name="ck_participant_authorizations_grantor"),
-        CheckConstraint(
-            "(revoked_at IS NULL AND revoked_by_user_id IS NULL AND revoked_party IS NULL "
-            "AND revoked_scope IS NULL) OR "
-            "(revoked_at IS NOT NULL AND revoked_by_user_id IS NOT NULL "
-            "AND revoked_party IN ('participant', 'guardian') "
-            "AND revoked_scope IN ('participation', 'camera', 'assent'))",
-            name="ck_participant_authorizations_revocation",
-        ),
-    )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    participant_id: Mapped[str] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
-    form_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    signed_on: Mapped[date] = mapped_column(Date, nullable=False)
-    grantor: Mapped[str] = mapped_column(String(16), nullable=False)
-    participation: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    camera: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    child_assent: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    revoked_party: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    revoked_scope: Mapped[str | None] = mapped_column(String(16), nullable=True)
-
-
 class StimulusRecord(Base):
-    """Imagen del banco de estímulos, nunca una foto de un participante. La
+    """Imagen del banco de estímulos, nunca una foto de una persona evaluada. La
     imagen se guarda reescrita, sin metadatos."""
 
     __tablename__ = "stimuli"
@@ -410,8 +352,8 @@ class ProtocolRecord(Base):
 
 class QuestionnaireRecord(Base):
     """Una versión de un cuestionario; las de uno mismo comparten family_id.
-    questions guarda las preguntas en orden (JSON); no es contenido de
-    participantes y no se cifra."""
+    questions guarda las preguntas en orden (JSON); no es contenido de una
+    sesión y no se cifra."""
 
     __tablename__ = "questionnaires"
     __table_args__ = (
@@ -433,9 +375,8 @@ class QuestionnaireRecord(Base):
 
 
 class QuestionnaireResponseRecord(Base):
-    """Respuestas de una sesión, cifradas con SENSITIVE_DATA_KEY. participant_id
-    las vincula al participante para que la retención y la eliminación las
-    incluyan."""
+    """Respuestas de una sesión, cifradas con SENSITIVE_DATA_KEY. La retención y
+    la eliminación de la sesión las incluyen."""
 
     __tablename__ = "questionnaire_responses"
     __table_args__ = (
@@ -448,8 +389,6 @@ class QuestionnaireResponseRecord(Base):
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     questionnaire_id: Mapped[str] = mapped_column(
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=False, index=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     moment: Mapped[str] = mapped_column(String(8), nullable=False)
     answers_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     entry_mode: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -483,15 +422,13 @@ class GuidedRunRecord(Base):
 
     __tablename__ = "guided_runs"
     __table_args__ = (
-        CheckConstraint("phase IN ('confirmation', 'pre_questionnaire', 'before_analyzer', 'calibration', "
-                        "'stimuli', 'post_questionnaire', 'finished', 'stopped')", name="ck_guided_runs_phase"),
+        CheckConstraint("phase IN ('pre_questionnaire', 'before_analyzer', 'calibration', "
+                        "'stimuli', 'post_questionnaire', 'live', 'finished', 'stopped')", name="ck_guided_runs_phase"),
         CheckConstraint("(phase = 'stopped') = (stop_reason IS NOT NULL)", name="ck_guided_runs_stop_reason"),
         CheckConstraint("stop_reason IS NULL OR stop_reason IN ('participant', 'guardian', 'conductor')",
                         name="ck_guided_runs_stop_reason_value"),
     )
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     phase: Mapped[str] = mapped_column(String(24), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -507,8 +444,8 @@ class GuidedRunRecord(Base):
 
 
 class ExpressionCaptureRecord(Base):
-    """Captura del protocolo: expresión estimada, distribución y calidad. Nunca
-    la imagen ni datos de identidad."""
+    """Captura: expresión estimada, distribución y calidad. Nunca la imagen ni
+    datos de identidad. stimulus_id es nulo en el registro sin protocolo."""
 
     __tablename__ = "expression_captures"
     __table_args__ = (
@@ -520,8 +457,6 @@ class ExpressionCaptureRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     emotion_model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     emotion_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -532,7 +467,8 @@ class ExpressionCaptureRecord(Base):
     quality: Mapped[str] = mapped_column(String(16), nullable=False)
     quality_issues: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     step_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    stimulus_id: Mapped[str] = mapped_column(ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False, index=True)
+    stimulus_id: Mapped[str | None] = mapped_column(ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=True,
+                                                    index=True)
     seconds_since_stimulus: Mapped[float] = mapped_column(Float, nullable=False)
 
 
@@ -547,8 +483,6 @@ class SessionMarkerRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     note_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -557,15 +491,13 @@ class SessionMarkerRecord(Base):
 
 
 class VerbalResponseRecord(Base):
-    """Lo que el participante dice ver en una imagen abstracta, cifrado."""
+    """Lo que la persona dice ver en una imagen abstracta, cifrado."""
 
     __tablename__ = "verbal_responses"
     __table_args__ = (UniqueConstraint("session_id", "step_index", name="uq_verbal_responses_session_step"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str | None] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=True, index=True)
     step_index: Mapped[int] = mapped_column(Integer, nullable=False)
     stimulus_id: Mapped[str] = mapped_column(ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False)
     text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
@@ -587,8 +519,6 @@ class SessionReportRecord(Base):
     family_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     author_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     narrative_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -610,8 +540,6 @@ class ReportCommentRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     report_id: Mapped[str] = mapped_column(
         ForeignKey("session_reports.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     section: Mapped[str] = mapped_column(String(24), nullable=False)
     text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     author_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -629,8 +557,6 @@ class ReportEventRecord(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     report_id: Mapped[str] = mapped_column(
         ForeignKey("session_reports.id", ondelete="CASCADE"), nullable=False, index=True)
-    participant_id: Mapped[str] = mapped_column(
-        ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(16), nullable=False)
     actor_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -671,15 +597,14 @@ class AccessAuditRecord(Base):
     result: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
-class ParticipantDeletionRecord(Base):
-    """Acta de eliminación a pedido: código, fecha, cantidades y verificación.
+class SessionDeletionRecord(Base):
+    """Acta de eliminación de una sesión: código de la sesión, fecha, registros
+    por tipo y verificación. Sin datos personales. counts es
+    {"sessions": 1, "expression_captures": n, ...}."""
 
-    Sin datos personales. counts es {"participants": n, "sessions": n, ...}.
-    """
-
-    __tablename__ = "participant_deletion_records"
+    __tablename__ = "session_deletion_records"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    participant_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    session_code: Mapped[str] = mapped_column(String(16), nullable=False)
     deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     executed_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

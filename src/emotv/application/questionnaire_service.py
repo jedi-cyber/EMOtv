@@ -230,7 +230,7 @@ class QuestionnaireService:
         response = store.add(QuestionnaireResponse(
             id=str(uuid4()), session_id=session.id, questionnaire_id=questionnaire.id, moment=moment,
             answers=questionnaire.normalize_answers(answers), entry_mode=entry_mode,
-            recorded_by_user_id=user.id, submitted_at=self.clock(), participant_id=session.participant_id))
+            recorded_by_user_id=user.id, submitted_at=self.clock()))
         self.audit.record(user, AuditAction.CREATE, RESPONSE, response.id)
         return response
 

@@ -1,29 +1,32 @@
 # Formato de autorización (modelo)
 
 > **Modelo sujeto a revisión y aprobación de la Facultad.** No usar con
-> participantes hasta que se apruebe y se le asigne una versión
-> (`[7: VERSIÓN DEL FORMATO DE AUTORIZACIÓN]`). Esa versión es la que se registra
-> en EMOtv (`form_version`) junto con la fecha de la firma y las casillas
-> marcadas. `[Verificar con asesoría legal: requisitos del consentimiento y del
+> personas reales hasta que se apruebe y se le asigne una versión
+> (`[7: VERSIÓN DEL FORMATO DE AUTORIZACIÓN]`). EMOtv no registra el formato:
+> al empezar cada sesión, quien conduce confirma una vez que cuenta con él, y el
+> sistema guarda solo la fecha y hora de esa confirmación. `[Verificar con asesoría legal: requisitos del consentimiento y del
 > consentimiento de menores según la Ley N.° 29733 y el D.S. 016-2024-JUS.]`
 
 Cómo se usa:
 
 - Se imprime y se firma **en papel**. EMOtv no guarda nombres, DNI, firmas ni
-  datos de quien firma: solo la versión del formato, la fecha y qué casillas
-  están marcadas.
+  datos de quien firma, ni copia el formato.
 - **Ninguna casilla viene marcada.** La persona marca cada una por sí misma.
 - Las dos autorizaciones (participar y usar la cámara) son **independientes**:
-  sin las dos, el sistema no permite iniciar la sesión.
-- La ficha con el código del participante se archiva junto con este formato en
+  sin las dos no se confirma la sesión en EMOtv y, sin confirmarla, el sistema
+  no permite iniciarla.
+- EMOtv muestra el **código de la sesión** (`S-` y seis caracteres) al empezar y
+  al terminar: se anota en el formato. Si la misma persona tiene varias
+  sesiones, se anota el código de cada una.
+- El formato se archiva en
   `[10: LUGAR DE CUSTODIA DE LAS FICHAS Y FORMATOS EN PAPEL]`.
 - Se entrega una copia a la persona que firma.
 
 ---
 
-## Formato A — Participante adulto
+## Formato A — Persona adulta
 
-**EMOtv · Facultad de Psicología · UNHEVAL** · Versión `[7]` · Código del participante: `P-______`
+**EMOtv · Facultad de Psicología · UNHEVAL** · Versión `[7]` · Código de la sesión: `S-______`
 
 ### Qué es y qué harás
 
@@ -69,7 +72,7 @@ la eliminación de tus datos. Puedes pedir ver, corregir o borrar tus datos con
 
 Fecha: ….. / ….. / ……….
 
-Firma del participante: ______________________ Nombre: ______________________
+Firma de la persona: ______________________ Nombre: ______________________
 
 Firma de quien conduce: ______________________
 
@@ -77,7 +80,7 @@ Firma de quien conduce: ______________________
 
 ## Formato B — Padre, madre o tutor de un niño o una niña
 
-**EMOtv · Facultad de Psicología · UNHEVAL** · Versión `[7]` · Código del participante: `P-______`
+**EMOtv · Facultad de Psicología · UNHEVAL** · Versión `[7]` · Código de la sesión: `S-______`
 
 ### Qué es y qué hará su hijo o hija
 
@@ -165,13 +168,13 @@ Fecha: ….. / ….. / ………. · Firma de quien conduce: ___________________
 
 | Campo | Se completa |
 | --- | --- |
-| Código del participante | `P-______` |
-| Quién retira | ☐ El participante adulto ☐ El padre, madre o tutor ☐ El niño o la niña (retira su asentimiento) |
+| Código de la sesión (uno por línea si son varias) | `S-______` |
+| Quién retira | ☐ La persona adulta ☐ El padre, madre o tutor ☐ El niño o la niña (retira su asentimiento) |
 | Qué retira | ☐ Participación ☐ Cámara ☐ Asentimiento |
 | Fecha | ….. / ….. / ………. |
 | ¿Pide además borrar sus datos? | ☐ Sí ☐ No (el docente decide su eliminación según el procedimiento) |
 
-Quien conduce lo registra en EMOtv el mismo día (**Participantes → Autorizaciones
-→ Registrar retiro → Confirmar retiro**). Desde ese momento el sistema no permite sesiones nuevas con ese
-código ni registrar nuevas autorizaciones, y el participante queda marcado para
-que el docente decida su eliminación ([procedimiento-derechos.md](procedimiento-derechos.md)).
+Quien conduce no inicia sesiones nuevas con esa persona y, el mismo día, abre
+en EMOtv cada sesión anotada (**Mis sesiones →** el código **→ Pedir que se
+elimine**). El docente la elimina con un acta imprimible
+([procedimiento-derechos.md](procedimiento-derechos.md)).

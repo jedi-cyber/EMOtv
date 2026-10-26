@@ -76,7 +76,7 @@ interface QuestionnaireFormProps {
   /** Sin onSubmit, es una vista previa que no envía nada. */
   onSubmit?: (answers: Answers) => Promise<void> | void;
   submitLabel?: string;
-  /** Vista de participante: letra y caritas más grandes, sin datos de la sesión. */
+  /** Pantalla de la persona: letra y caritas más grandes, sin datos de la sesión. */
   large?: boolean;
   busy?: boolean;
   footer?: ReactNode;

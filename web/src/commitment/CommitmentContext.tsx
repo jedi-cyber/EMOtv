@@ -27,7 +27,7 @@ const CommitmentContext = createContext<CommitmentValue | null>(null);
 
 /**
  * Compromiso de confidencialidad de usuarios y docentes. Sin aceptar la versión
- * vigente no pueden registrar participantes ni iniciar sesiones (el servidor
+ * vigente no pueden iniciar sesiones con personas (el servidor
  * también lo exige). El administrador y el superadministrador no lo aceptan.
  */
 export function CommitmentProvider({ children }: PropsWithChildren) {
