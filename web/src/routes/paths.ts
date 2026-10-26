@@ -16,6 +16,7 @@ export const paths = {
   stimuli: "/stimuli",
   images: "/images",
   imageReview: "/images/review",
+  statistics: "/statistics",
   protocols: "/protocols",
   sessions: "/sessions",
   session: (id: string) => `/sessions/${encodeURIComponent(id)}`,

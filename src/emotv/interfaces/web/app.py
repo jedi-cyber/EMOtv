@@ -88,6 +88,8 @@ from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, dec
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.session_statistics_service import SessionStatisticsService
+from emotv.interfaces.web.statistics_router import create_statistics_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
@@ -300,6 +302,16 @@ if DATABASE_URL and JWT_SECRET_KEY:
             questionnaires=questionnaire_service.repository.get, authorization=authorization_service,
             actor_student_id=actor_student_id, audit=audit_service)
     app.include_router(create_insights_router(insights_service, authentication_service, user_repository))
+    # Estadísticas agregadas: cuentan sesiones, no personas.
+    statistics_service = None
+    if insights_service is not None:
+        def email_of(user_id: str) -> str | None:
+            found = user_repository.get_by_id(user_id)
+            return found.email if found else None
+
+        statistics_service = SessionStatisticsService(session_service, insights_service, authorization_service,
+                                                      actor_student_id, group_user_ids, email_of, audit_service)
+    app.include_router(create_statistics_router(statistics_service, authentication_service, user_repository))
     report_service = None
     if insights_service is not None:
         report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
@@ -384,6 +396,7 @@ else:
     app.include_router(create_questionnaire_router(None, None, None))
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
+    app.include_router(create_statistics_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
 
 

@@ -23,6 +23,7 @@ const resourceNames: Record<string, string> = {
   mobile_summary: "Resumen del aplicativo", stimulus_image: "Imagen de estímulo", deletion_certificate: "Acta de eliminación",
   user: "Cuenta", student: "Usuario", commitment: "Compromiso", child_notice: "Aviso sobre menores",
   stimulus: "Estímulo", protocol: "Protocolo", user_image: "Imagen propia", image_batch: "Lote de imágenes",
+  session_statistics: "Estadísticas de sesiones",
 };
 const resultNames = { success: "Correcto", denied: "Denegado", failure: "Fallido" } as const;
 

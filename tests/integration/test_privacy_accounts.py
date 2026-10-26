@@ -50,6 +50,8 @@ from emotv.infrastructure.persistence.postgres_guided_repositories import Postgr
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.session_statistics_service import SessionStatisticsService
+from emotv.interfaces.web.statistics_router import create_statistics_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
@@ -197,6 +199,12 @@ def env():
                                        if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
         audit=audit)
     app.include_router(create_insights_router(insights, auth, users))
+    e.statistics = SessionStatisticsService(
+        sessions, insights, authorization,
+        lambda user: (students.get_by_user_id(user.id).id
+                      if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
+        group_user_ids, lambda user_id: users.get_by_id(user_id).email if users.get_by_id(user_id) else None, audit)
+    app.include_router(create_statistics_router(e.statistics, auth, users))
     e.reports = ReportService(PostgresReportRepository(factory, FieldCipher([KEY])), sessions,
                               authorization, docente_of, insights, audit, clock)
     app.include_router(create_report_router(e.reports, auth, users))

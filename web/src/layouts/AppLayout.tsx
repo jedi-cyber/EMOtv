@@ -27,7 +27,7 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   if (parts[0] === "admin" && parts[1] === "expressions") return [home, { label: "Catálogo de expresiones" }];
   const labels: Record<string, string> = {
     users: role === "superadmin" ? "Cuenta de administrador" : "Cuentas y grupos", audit: "Auditoría",
-    commitment: "Compromiso de confidencialidad", consent: "Consentimiento",
+    commitment: "Compromiso de confidencialidad", consent: "Consentimiento", statistics: "Estadísticas",
     unauthorized: "Acceso denegado", "connection-error": "Error de conexión",
   };
   return [home, { label: labels[parts[0]] ?? "Página no encontrada" }];

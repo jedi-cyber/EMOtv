@@ -380,6 +380,20 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .audience-option.is-selected, .audience-option:has(input:checked) { border: 2px solid var(--color-primary); background: var(--color-primary-soft); }
 .audience-option:has(input:focus-visible) { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
 
+/* Estadísticas: barras en SVG, un solo color para todas las expresiones */
+.stat-scope { max-width: 420px; margin-top: var(--space-lg); }
+.stat-heading { margin: var(--space-xl) 0 var(--space-sm); font-size: var(--text-section-title); }
+.stat-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
+.stat-value { display: inline-flex; align-items: center; gap: var(--space-sm); font-variant-numeric: tabular-nums; }
+.stat-bar { width: 120px; height: 8px; flex: none; }
+.stat-bar-track { fill: var(--color-neutral-soft); }
+.stat-bar-fill { fill: var(--color-primary); }
+.stat-question { margin-top: var(--space-md); }
+.stat-question h3 { margin: 0 0 var(--space-xxs); font-size: var(--text-card-title); }
+.stat-counts { border-collapse: collapse; }
+.stat-counts th { padding: var(--space-xxs) var(--space-md) var(--space-xxs) 0; color: var(--color-charcoal); font-weight: var(--weight-semibold); text-align: left; }
+.stat-counts td { padding: var(--space-xxs) 0; }
+
 /* Imágenes propias y su revisión */
 .nav-counter { margin-left: auto; min-width: 22px; padding: 0 var(--space-xs); border-radius: var(--radius-full); background: var(--color-primary); color: var(--color-on-primary); font-size: var(--text-caption); line-height: 20px; text-align: center; }
 .notice-item { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }

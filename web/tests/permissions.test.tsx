@@ -41,13 +41,16 @@ describe("rutas y navegación por rol", () => {
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md): toda sesión empieza en el Analizador; Cuestionarios y
     // Protocolos van en el grupo «Mi material»; Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/activities", "/questionnaires", "/protocols", "/images", "/consent"]);
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/activities", "/questionnaires", "/protocols", "/images", "/consent"]);
     expect(navigationByRole.student.filter((item) => item.group).map((item) => item.to)).toEqual(["/questionnaires", "/protocols", "/images"]);
     // El usuario sube sus imágenes; su docente las revisa (con contador en el menú).
     expect(navigationByRole.student.some((item) => item.to === "/images/review")).toBe(false);
     expect(navigationByRole.psychologist.find((item) => item.to === "/images/review")?.counter).toBe("imageReview");
     expect(navigationByRole.psychologist.some((item) => item.to === "/images")).toBe(false);
     expect([...navigationByRole.admin, ...navigationByRole.superadmin].some((item) => item.to.startsWith("/images"))).toBe(false);
+    // Estadísticas: usuarios y docentes; la administración nunca ve sesiones.
+    expect(navigationByRole.psychologist.some((item) => item.to === "/statistics")).toBe(true);
+    expect([...navigationByRole.admin, ...navigationByRole.superadmin].some((item) => item.to === "/statistics")).toBe(false);
     expect(Object.values(navigationByRole).every((items) => items.every((item) => !["/guided", "/participants"].includes(item.to)))).toBe(true);
     // Los usuarios usan estímulos en sus protocolos, pero no los gestionan.
     expect(navigationByRole.student.some((item) => item.to === "/stimuli")).toBe(false);

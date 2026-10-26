@@ -76,6 +76,11 @@ servidor (FastAPI); ocultar un botón en la interfaz nunca es la única protecci
   conduce lo anota en el formato firmado que custodia el docente; el sistema no
   puede recuperar la relación código–persona. No hay seguimiento ni
   estadísticas por persona.
+- **Estadísticas** (`GET /statistics`): cuentan sesiones, no personas. Se
+  calculan en el servidor solo con las sesiones a las que la cuenta ya tiene
+  acceso; el docente ve además los totales por usuario de su grupo (correo y
+  cantidad de sesiones). Las respuestas de texto no se muestran, solo cuántas
+  hubo. Cada consulta se audita sin contenido y no se generan archivos.
 - La cuenta de superadministrador se crea con `scripts/security/create_admin.py`
   y su contraseña se recupera con `scripts/security/reset_admin_password.py`
   (solo en el servidor).

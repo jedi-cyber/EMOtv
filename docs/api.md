@@ -209,6 +209,37 @@ también las denegadas, queda en la auditoría (`session_timeline`,
 Los textos describen: "En 3 de 5 estímulos la expresión estimada coincidió con
 la esperada". Nunca valoran a la persona.
 
+## Estadísticas agregadas
+
+`GET /statistics` cuenta sesiones, no personas. Se calcula en el servidor solo
+con las sesiones a las que la cuenta tiene acceso (`can_access_session`); cada
+consulta, también las denegadas, se audita sin contenido (`session_statistics`).
+No se generan archivos: la interfaz copia la tabla al portapapeles.
+
+| Parámetro | Valores |
+| --- | --- |
+| `scope` | `mine` (sesiones que condujo la cuenta) o `group` (solo docentes: las de los usuarios de su grupo). La administración recibe `403` |
+| `date_from`, `date_to` | Fechas `AAAA-MM-DD` de inicio de la sesión (UTC), inclusive |
+| `protocol` | Familia del protocolo (todas sus versiones) o `none` (sin protocolo) |
+| `audience` | `propia`, `adulto` o `infantil` |
+| `questionnaire_id` | Versión exacta de un cuestionario de la lista `questionnaires` |
+
+Responde:
+- `sessions`: total, completadas, interrumpidas (canceladas o detenidas) y
+  duración promedio de las completadas.
+- `expressions`: por cada una de las 8 expresiones, el porcentaje de las
+  capturas de buena calidad, con la cantidad de capturas y de sesiones. Las de
+  mala calidad no cuentan (`excluded_captures`).
+- `coincidence`: estímulos emocionales comparados y en cuántos coincidió la
+  expresión estimada con la esperada (la primera captura de buena calidad de
+  cada uno decide).
+- `by_user` (solo `group`): sesiones, completadas e interrumpidas por correo
+  del usuario; nada más de cada sesión.
+- `questionnaire`: por pregunta, cuántas veces se eligió cada opción o punto, y
+  cuántas quedaron sin responder. No se suman ni se interpretan. En las de
+  texto, `counts` es nulo: solo se informa cuántas respuestas hubo.
+- `notice` (fijo) y, con menos de 5 sesiones, `few_sessions_notice`.
+
 ## Reporte de sesión
 
 Lo redacta quien condujo una sesión con protocolo, cuando terminó, y lo revisa

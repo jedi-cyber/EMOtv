@@ -347,3 +347,38 @@ export interface SessionReport {
   history?: { action: string; occurred_at: string; version: number | null; by: "author" | "docente" }[];
   versions?: { id: string; version: number; status: ReportStatus }[];
 }
+
+/** Estadísticas agregadas: cuentan sesiones, no personas (GET /statistics). */
+export interface CountRow {
+  label: string;
+  count: number;
+}
+
+export interface QuestionStatistics {
+  text: string;
+  kind: "scale" | "single_choice" | "multiple_choice" | "short_text" | "faces";
+  answered: number;
+  unanswered: number;
+  /** Nulo en las preguntas de texto: solo se informa cuántas respuestas hubo. */
+  counts: CountRow[] | null;
+  min_label?: string | null;
+  max_label?: string | null;
+}
+
+export interface SessionStatistics {
+  scope: "mine" | "group";
+  notice: string;
+  few_sessions: boolean;
+  few_sessions_notice: string | null;
+  sessions: { total: number; completed: number; interrupted: number; average_duration_seconds: number | null };
+  expressions: {
+    counted_captures: number;
+    excluded_captures: number;
+    rows: { expression: string; captures: number; percent: number; sessions: number }[];
+  };
+  coincidence: { compared: number; matched: number };
+  protocols: { family_id: string; name: string }[];
+  questionnaires: { id: string; title: string; version: number; responses: number }[];
+  questionnaire: { id: string; title: string; version: number; responses: number; questions: QuestionStatistics[] } | null;
+  by_user?: { email: string; sessions: number; completed: number; interrupted: number }[];
+}
