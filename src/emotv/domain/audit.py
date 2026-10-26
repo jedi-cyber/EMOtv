@@ -27,6 +27,8 @@ class AuditAction(str, Enum):
     # Inicio y cierre de sesión en el aplicativo móvil.
     LOGIN = "login"
     LOGOUT = "logout"
+    # Imagen subida que la detección automática rechazó (no se guarda).
+    REJECT = "reject"
 
 
 class AuditResult(str, Enum):

@@ -1,7 +1,8 @@
 """Banco de estímulos y protocolos.
 
 Los estímulos los crean los docentes (para su grupo) y el administrador (para
-la institución); los usuarios los usan en sus protocolos. La imagen de un
+la institución); los usuarios los usan en sus protocolos, junto con sus
+imágenes propias ya aprobadas por su docente (ver user_image_router). La imagen de un
 estímulo es la única imagen que sirve la API y nunca es la de una persona evaluada.
 """
 from __future__ import annotations
@@ -33,6 +34,8 @@ class StimulusResponse(BaseModel):
     origin: str
     license: str
     scope: str
+    # «Para niños» (leve) sirve con niños y adultos; «Para adultos», solo con adultos.
+    audience: Literal["children", "adults"]
     created_at: datetime
     approved: bool
     active: bool
@@ -78,6 +81,8 @@ class ProtocolResponse(BaseModel):
     created_at: datetime
     owned_by_me: bool
     used: bool
+    # Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla.
+    needs_image: bool
 
 
 def create_stimulus_router(
@@ -113,7 +118,8 @@ def create_stimulus_router(
         return StimulusResponse(
             id=item.id, title=item.title, kind=item.kind.value, category=item.category,
             expected_expression=item.expected_expression, intensity=item.intensity.value, min_age=item.min_age,
-            origin=item.origin, license=item.license, scope=item.scope.value, created_at=item.created_at,
+            origin=item.origin, license=item.license, scope=item.scope.value, audience=item.audience.value,
+            created_at=item.created_at,
             approved=item.approved, active=item.active, can_manage=stimulus_service().can_manage(user, item))
 
     def protocol_response(item: Protocol, user: User) -> ProtocolResponse:
@@ -127,7 +133,8 @@ def create_stimulus_router(
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer) for step in item.steps],
-            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item))
+            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
+            needs_image=service.needs_image(item))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:

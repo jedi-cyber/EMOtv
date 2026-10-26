@@ -119,13 +119,21 @@ describe("protocolos", () => {
     expect(screen.getByLabelText("Cuestionario previo (opcional)")).toHaveValue("q-new");
   });
 
-  it("sin imágenes leves y aprobadas para niños lo dice y el docente tiene el botón para resolverlo", async () => {
-    state.data["/stimuli"] = [{ id: "s1", title: "Tormenta", kind: "emotional", intensity: "moderate", approved: true, active: true, category: "Clima", min_age: 6 }];
+  it("sin imágenes «Para niños» aprobadas lo dice y el docente tiene el botón para resolverlo", async () => {
+    state.data["/stimuli"] = [{ id: "s1", title: "Tormenta", kind: "emotional", intensity: "moderate", audience: "adults", approved: true, active: true, category: "Clima", min_age: 6 }];
     withUser("psychologist", <ProtocolsPage />);
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
-    expect(screen.getByText(/No hay imágenes leves y aprobadas para niños/)).toBeInTheDocument();
+    expect(screen.getByText(/No hay imágenes «Para niños» aprobadas/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ir a Estímulos" })).toHaveAttribute("href", "/stimuli");
+  });
+
+  it("el usuario sin imágenes va a Imágenes a subir las suyas", async () => {
+    withUser("student", <ProtocolsPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
+    await userEvent.click(screen.getByRole("radio", { name: /Para adultos/ }));
+    expect(screen.getByText(/Sube las tuyas en Imágenes/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ir a Imágenes" })).toHaveAttribute("href", "/images");
   });
 });
 

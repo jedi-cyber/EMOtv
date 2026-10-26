@@ -69,6 +69,8 @@ export interface LocalModelOption {
 
 export type StimulusKind = "emotional" | "abstract";
 export type StimulusIntensity = "mild" | "moderate";
+/** «Para niños» sirve con niños y con adultos; «Para adultos», solo con adultos. */
+export type ImageAudience = "children" | "adults";
 
 /** Imagen del banco de estímulos; nunca una foto de una persona evaluada. */
 export interface Stimulus {
@@ -81,7 +83,8 @@ export interface Stimulus {
   min_age: number;
   origin: string;
   license: string;
-  scope: "group" | "institution";
+  scope: "group" | "institution" | "user";
+  audience: ImageAudience;
   created_at: string;
   approved: boolean;
   active: boolean;
@@ -110,6 +113,45 @@ export interface Protocol {
   created_at: string;
   owned_by_me: boolean;
   used: boolean;
+  /** Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla. */
+  needs_image: boolean;
+}
+
+/** Imagen propia de un usuario: pendiente («En revisión») hasta que su docente la revisa. */
+export interface UserImage {
+  id: string;
+  title: string;
+  origin: string;
+  audience: ImageAudience;
+  status: "pending" | "approved";
+  possible_person: boolean;
+  batch_id: string | null;
+  created_at: string;
+  expires_at: string | null;
+  uploaded_by: string | null;
+}
+
+export interface ImageUploadResult {
+  batch_id: string;
+  results: { title: string; accepted: boolean; message: string | null; image: UserImage | null }[];
+}
+
+export interface ImageReviewBatch {
+  batch_id: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  images: UserImage[];
+}
+
+export interface ImageReview {
+  pending: ImageReviewBatch[];
+  approved: UserImage[];
+}
+
+export interface UserNotice {
+  id: string;
+  message: string;
+  created_at: string;
 }
 
 /** Acta de eliminación de una sesión: sin datos personales. */

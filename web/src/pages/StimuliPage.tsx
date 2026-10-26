@@ -56,7 +56,7 @@ export function StimuliPage() {
     body.append("not_a_projective_test", String(abstract && notProjective));
     try {
       const created = await apiRequest<Stimulus>("/stimuli", { method: "POST", body, token });
-      setMessage(`Se agregó «${created.title}». Apruébalo cuando lo hayas revisado: con niños solo se ofrecen estímulos aprobados.`);
+      setMessage(`Se agregó «${created.title}». Las imágenes que agregas no pasan por revisión.`);
       setForm(emptyForm); setFile(null); setFileKey((key) => key + 1);
       setNotParticipantPhoto(false); setNotProjective(false); setAdding(false);
       await query.reload();

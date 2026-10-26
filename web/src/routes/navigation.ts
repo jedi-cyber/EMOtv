@@ -10,6 +10,8 @@ export interface NavigationItem {
   placement?: "main" | "footer";
   /** Sección plegable del menú a la que pertenece (por ejemplo, "Mi material"). */
   group?: string;
+  /** Contador junto al nombre: imágenes pendientes de revisión del docente. */
+  counter?: "imageReview";
 }
 
 /** Cuestionarios y protocolos: lo que cada cuenta prepara para usar en el Analizador. */
@@ -26,6 +28,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
     ...material,
+    { to: paths.images, label: "Imágenes", icon: "document", group: "Mi material" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
   ],
   // El docente conduce sesiones propias y revisa las de su grupo.
@@ -36,6 +39,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.stimuli, label: "Estímulos", icon: "manage" },
+    { to: paths.imageReview, label: "Imágenes por revisar", icon: "shield", counter: "imageReview" },
     ...material,
   ],
   // Cuentas, grupos, estímulos institucionales y auditoría; nunca sesiones ni resultados.

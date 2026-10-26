@@ -14,6 +14,7 @@ import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
 import { stimulusSummary } from "../stimuli/labels";
+import { NoticeList } from "../components/NoticeList";
 
 interface Draft {
   name: string;
@@ -29,9 +30,9 @@ type Moment = "pre" | "post";
 
 const emptyDraft: Draft = { name: "", description: "", for_children: null, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
 
-/** Con niños solo imágenes leves y aprobadas (el servidor aplica la misma regla). */
+/** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
-  return item.active && item.approved && item.intensity === "mild";
+  return item.active && item.approved && item.audience === "children";
 }
 
 /** Protocolos: recetas guardadas que el Analizador aplica en una sesión. */
@@ -58,7 +59,10 @@ export function ProtocolsPage() {
   const unsuitableSteps = draft.for_children
     ? draft.steps.filter((step) => { const stimulus = byId.get(step.stimulus_id); return stimulus != null && !suitableForChildren(stimulus); }).length
     : 0;
-  const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0;
+  // Una imagen eliminada por el docente ya no aparece: hay que quitarla y elegir otra.
+  const missingSteps = stimuliQuery.loading ? 0 : draft.steps.filter((step) => !byId.has(step.stimulus_id)).length;
+  const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
+    && missingSteps === 0;
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -116,6 +120,7 @@ export function ProtocolsPage() {
     <PageHeader title="Protocolos"
       description="Un protocolo es una receta guardada: qué aplicar en una sesión, para usarla cuando quieras."
       actions={<Button variant="primary" onClick={() => openEditor(null)}>Nuevo protocolo</Button>} />
+    <NoticeList />
     {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}
 
@@ -143,7 +148,7 @@ export function ProtocolsPage() {
           <input type="radio" name="protocol-audience" checked={draft.for_children === true}
             onChange={() => update({ for_children: true })} />
           <strong>Para niños</strong>
-          <span>Solo imágenes leves y aprobadas.</span>
+          <span>Solo imágenes «Para niños» aprobadas.</span>
         </label>
       </fieldset>
 
@@ -163,7 +168,8 @@ export function ProtocolsPage() {
             <div>
               <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
               {stimulus && <span>{stimulusSummary(stimulus)}</span>}
-              {unsuitable && <span>No se puede usar con niños: quítala o elige una leve y aprobada.</span>}
+              {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+              {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
             </div>
             <div className="inline-actions">
               <label>Segundos en pantalla<input type="number" min={1} max={120} value={step.exposure_seconds}
@@ -187,9 +193,10 @@ export function ProtocolsPage() {
           </select></label>
           <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
         </div> : !stimuliQuery.loading && <div className="empty-state">
-          <p>{draft.for_children ? "No hay imágenes leves y aprobadas para niños." : "No hay imágenes disponibles."}
-            {isDocente ? " Sube una en Estímulos." : " Las imágenes las agrega tu docente o la Facultad; pídele que suba alguna."}</p>
-          {isDocente && <div className="inline-actions"><ButtonLink variant="secondary" to={paths.stimuli}>Ir a Estímulos</ButtonLink></div>}
+          <p>{draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."}
+            {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
+          <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>
+            {isDocente ? "Ir a Estímulos" : "Ir a Imágenes"}</ButtonLink></div>
         </div>}
 
         {questionnaireSelect("post")}
@@ -215,10 +222,11 @@ export function ProtocolsPage() {
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}
           {item.used && <StatusChip tone="neutral">Usado en sesiones</StatusChip>}
+          {item.needs_image && <StatusChip tone="error">Necesita una imagen</StatusChip>}
         </span>
       </div>
       <div className="inline-actions">
-        {item.owned_by_me && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
+        {item.owned_by_me && !item.needs_image && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
         {item.owned_by_me && <Button onClick={() => openEditor(item)}>Editar</Button>}
       </div>
     </li>)}</ul>}

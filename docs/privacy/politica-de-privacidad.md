@@ -44,7 +44,9 @@ Se guarda:
 **Ninguna imagen tuya se guarda ni sale del servidor.** La cámara envía cada
 imagen al servidor de EMOtv, que la analiza en ese instante y la descarta. Las
 únicas imágenes guardadas son las que se te muestran (estímulos), que suben los
-docentes o la administración; nunca son fotos de las personas evaluadas.
+docentes, la administración o los usuarios para sus protocolos; nunca son fotos
+de las personas evaluadas. Las que suben los usuarios pasan por una detección
+automática de personas, que no es infalible, y por la revisión del docente.
 
 ## ¿Para qué se usan?
 

@@ -1,6 +1,7 @@
 """Banco de estímulos: lo gestionan los docentes (para los usuarios de su
-grupo) y el administrador (para toda la institución). Los usuarios los usan,
-pero no los crean.
+grupo) y el administrador (para toda la institución); sus imágenes no pasan por
+revisión. Los usuarios usan el banco y sus imágenes propias, que suben desde
+«Imágenes» y solo se usan cuando su docente las aprueba (UserImageService).
 
 Un estímulo nunca es una foto de una persona evaluada. Las imágenes abstractas son
 de creación propia o con una licencia que lo permita; no se incluyen láminas de
@@ -74,13 +75,21 @@ class StimulusService:
         raise PermissionError("El banco de estímulos es para docentes, usuarios y el administrador")
 
     def can_manage(self, user: User, stimulus: Stimulus) -> bool:
-        if not user.is_active:
+        if not user.is_active or stimulus.deleted_at is not None:
             return False
+        if stimulus.scope is StimulusScope.USER:
+            return False  # las imágenes propias se revisan en UserImageService
         if stimulus.scope is StimulusScope.INSTITUTION:
             return user.role is Role.ADMIN
         return user.role is Role.PSYCHOLOGIST and stimulus.owner_user_id == user.id
 
     def can_view(self, user: User, stimulus: Stimulus) -> bool:
+        if not user.is_active or stimulus.deleted_at is not None:
+            return False
+        if stimulus.scope is StimulusScope.USER:
+            # Solo quien la subió y su docente.
+            return stimulus.owner_user_id == user.id or (
+                user.role is Role.PSYCHOLOGIST and self.docente_of(stimulus.owner_user_id) == user.id)
         if self.can_manage(user, stimulus):
             return True
         try:
@@ -94,9 +103,11 @@ class StimulusService:
     # --- Consulta ------------------------------------------------------------
 
     def list_for(self, user: User, for_children: bool = False) -> tuple[Stimulus, ...]:
-        """Estímulos visibles. Con for_children, solo los que admite un protocolo
-        para niños: leves, aprobados y vigentes."""
-        items = tuple(item for item in self.repository.list_visible(self._group_owners(user))
+        """Estímulos visibles y, para un usuario, sus imágenes propias aprobadas
+        (nunca las pendientes). Con for_children, solo los que admite un
+        protocolo para niños: «Para niños» (leves), aprobados y vigentes."""
+        own = user.id if user.role is Role.STUDENT else None
+        items = tuple(item for item in self.repository.list_visible(self._group_owners(user), own)
                       if self.can_view(user, item))
         if for_children:
             items = tuple(item for item in items if item.suitable_for_children)
@@ -131,11 +142,13 @@ class StimulusService:
             raise ValueError("Confirma que la imagen abstracta es de creación propia o con licencia que lo "
                              "permita, y que no es una lámina de una prueba proyectiva publicada")
         content_type, data = self.sanitize(image)
+        now = self.clock()
+        # Las imágenes de docentes y del administrador no pasan por revisión.
         stimulus = Stimulus(
             id=str(uuid4()), title=draft.title, kind=kind, category=draft.category,
             expected_expression=draft.expected_expression, intensity=draft.intensity, min_age=draft.min_age,
             origin=draft.origin, license=draft.license, scope=scope, owner_user_id=user.id,
-            content_type=content_type, created_at=self.clock())
+            content_type=content_type, created_at=now, approved_at=now, approved_by_user_id=user.id)
         self.repository.add(stimulus, data)
         self.audit.record(user, AuditAction.CREATE, RESOURCE, stimulus.id)
         return stimulus

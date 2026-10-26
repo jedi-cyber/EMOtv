@@ -285,10 +285,10 @@ class StimulusRecord(Base):
     __table_args__ = (
         CheckConstraint("kind IN ('emotional', 'abstract')", name="ck_stimuli_kind"),
         CheckConstraint("intensity IN ('mild', 'moderate')", name="ck_stimuli_intensity"),
-        CheckConstraint("scope IN ('group', 'institution')", name="ck_stimuli_scope"),
+        CheckConstraint("scope IN ('group', 'institution', 'user')", name="ck_stimuli_scope"),
         CheckConstraint("min_age BETWEEN 1 AND 99", name="ck_stimuli_min_age"),
         CheckConstraint(
-            "(kind = 'emotional' AND expected_expression IS NOT NULL) OR "
+            "(kind = 'emotional' AND (expected_expression IS NOT NULL OR scope = 'user')) OR "
             "(kind = 'abstract' AND expected_expression IS NULL)",
             name="ck_stimuli_expected_expression",
         ),
@@ -316,6 +316,23 @@ class StimulusRecord(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    possible_person: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                  server_default=text("false"))
+    upload_batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    expiry_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserNoticeRecord(Base):
+    """Avisos para una cuenta (imágenes eliminadas o por vencer, protocolos que
+    necesitan una imagen). Se borran con la cuenta."""
+
+    __tablename__ = "user_notices"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(String(800), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ProtocolRecord(Base):

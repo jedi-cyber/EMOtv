@@ -1,7 +1,7 @@
 # Registro de tratamiento de datos personales
 
 > Derivado del código (`src/emotv/infrastructure/persistence/models.py`), de las
-> migraciones (`migrations/versions/`, hasta `20261027_24`) y de los servicios que
+> migraciones (`migrations/versions/`, hasta `20261028_25`) y de los servicios que
 > aplican la retención. Si el código cambia, este registro debe actualizarse: la
 > fuente de verdad son el código y las migraciones.
 > Sujeto a revisión de la Facultad. Las bases de legitimación marcadas deben
@@ -98,8 +98,16 @@ política aprobada).
 `stimuli`, `protocols`, `protocol_steps`, `questionnaires` (preguntas, no
 respuestas), `local_model_settings` y `chat_rejection_counts` (solo un contador
 por categoría). Algunas guardan el id de la cuenta que creó, aprobó o revisó el
-contenido. `stimuli` guarda imágenes subidas por docentes o el administrador,
-reescritas sin metadatos; quien sube declara que no son fotos de personas evaluadas.
+contenido. `stimuli` guarda imágenes subidas por docentes, el administrador o
+usuarios (alcance `user`), reescritas sin metadatos; quien sube declara que no
+son fotos de personas evaluadas. Las de los usuarios pasan antes por la
+detección automática de personas en memoria (se rechazan las de confianza alta)
+y quedan pendientes hasta la revisión del docente; `possible_person` marca las
+dudosas. Las pendientes se eliminan a los `IMAGE_REVIEW_DAYS` días.
+
+`user_notices` guarda avisos para una cuenta (imagen eliminada con el motivo
+del docente, imagen por vencer, protocolo que necesita una imagen). No contiene
+datos de sesiones ni de personas evaluadas y se borra con la cuenta.
 
 ## D. Fuera de la base de datos
 

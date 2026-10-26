@@ -34,6 +34,8 @@ import { ReportPrintPage } from "./pages/ReportPrintPage";
 import { SessionReportPage } from "./pages/SessionReportPage";
 import { SessionQuestionnairePage } from "./pages/SessionQuestionnairePage";
 import { StimuliPage } from "./pages/StimuliPage";
+import { ImagesPage } from "./pages/ImagesPage";
+import { ImageReviewPage } from "./pages/ImageReviewPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
 
@@ -58,6 +60,8 @@ export function App() {
           <Route path={paths.sessionQuestionnairePattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionQuestionnairePage /></RoleRoute>} />
           <Route path={paths.protocols} element={<RoleRoute allowed={["student", "psychologist"]}><ProtocolsPage /></RoleRoute>} />
           <Route path={paths.stimuli} element={<RoleRoute allowed={["psychologist", "admin"]}><StimuliPage /></RoleRoute>} />
+          <Route path={paths.images} element={<RoleRoute allowed={["student"]}><ImagesPage /></RoleRoute>} />
+          <Route path={paths.imageReview} element={<RoleRoute allowed={["psychologist"]}><ImageReviewPage /></RoleRoute>} />
           <Route path={paths.deletionCertificatePattern} element={<RoleRoute allowed={["student", "psychologist"]}><DeletionCertificatePage /></RoleRoute>} />
           <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
           <Route path={paths.activities} element={<ActivitiesPage />} />

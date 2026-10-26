@@ -4,6 +4,7 @@ servicios externos)."""
 from __future__ import annotations
 
 import zlib
+from dataclasses import replace
 
 import cv2
 import numpy as np
@@ -193,7 +194,10 @@ def test_only_mild_and_approved_stimuli_are_offered_for_children(env):  # noqa: 
     mild = approve(env, env.docente_a, upload_stimulus(env, env.docente_a, title="Leve"))
     moderate = approve(env, env.docente_a, upload_stimulus(env, env.docente_a, title="Moderado", intensity="moderate"))
     older = approve(env, env.docente_a, upload_stimulus(env, env.docente_a, title="Mayores", min_age=12))
+    # Las imágenes del docente quedan aprobadas al subirlas; esta es una anterior, sin aprobar.
     unapproved = upload_stimulus(env, env.docente_a, title="Sin aprobar")
+    legacy = env.stimuli.repository.get(unapproved["id"])
+    env.stimuli.repository.save(replace(legacy, approved_at=None, approved_by_user_id=None))
     # Sin persona registrada no hay edad: no se filtra por edad, solo leves y aprobados.
     offered = {item["title"] for item in
                env.client.get("/stimuli?for_children=true", headers=headers(env, env.user_1)).json()}

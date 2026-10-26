@@ -119,8 +119,8 @@ sesión puede enviar su cámara o cancelarla.
 ## Banco de estímulos y protocolos
 
 - Los estímulos los crean los docentes (para los usuarios de su grupo) y el
-  administrador (para toda la institución); los usuarios los usan en sus
-  protocolos, pero no los crean. Cada uno tiene tipo (emocional o abstracta),
+  administrador (para toda la institución), sin revisión; los usuarios los usan
+  en sus protocolos junto con sus **imágenes propias** (ver abajo). Cada uno tiene tipo (emocional o abstracta),
   categoría, expresión que se espera provocar (solo en los emocionales),
   intensidad (leve o moderada), edad mínima, y origen y licencia obligatorios.
 - **Nunca son fotos de personas evaluadas**: quien sube la imagen lo declara. Las
@@ -131,6 +131,47 @@ sesión puede enviar su cámara o cancelarla.
   hasta 5 MB y 4096 px de lado.
 - El sistema solo muestra y registra: no relaciona ninguna imagen con una
   condición ni interpreta lo que la persona dice ver.
+
+### Imágenes propias de los usuarios
+
+- Un usuario sube imágenes para sus protocolos desde **Mi material → Imágenes**,
+  por lote. Cada una indica de dónde es, para quién es («Para niños» o «Para
+  adultos») y lleva la casilla obligatoria «No es una foto de una persona que
+  pueda identificarse, y tengo derecho a usarla». Hay un máximo por usuario
+  (`IMAGE_UPLOAD_LIMIT_PER_USER`).
+- **Detección automática de personas, en memoria.** Antes de guardar, el
+  servidor decodifica la imagen, la reduce a 1280 px por lado y busca rostros
+  (YuNet) y cuerpos (MediaPipe Pose), los mismos modelos que ya usa EMOtv. Solo
+  obtiene una confianza: no reconoce a nadie, no compara rostros y no guarda
+  plantillas, recortes ni la imagen analizada. Con confianza igual o mayor que
+  `IMAGE_PERSON_REJECT_CONFIDENCE` la imagen se rechaza y no se guarda nada;
+  desde `IMAGE_PERSON_REVIEW_CONFIDENCE` se guarda marcada «Revisar: posible
+  persona». Si los modelos no están instalados, no se acepta ninguna imagen
+  (`503`).
+- **La detección no es infalible.** Puede no ver a una persona (de espaldas,
+  pequeña, dibujada con realismo, parcialmente tapada) y puede marcar imágenes
+  sin personas. Por eso **el docente revisa todas las imágenes** antes de que se
+  usen, y la pantalla de revisión le recuerda: «Si ves a una persona, elimina la
+  imagen». Las imágenes con personas las agrega el docente al banco.
+- Una imagen aceptada se guarda reescrita, sin metadatos, **pendiente**: la ven
+  solo quien la subió («En revisión») y su docente, y no se puede elegir en
+  ningún protocolo ni sesión.
+- El docente revisa en **Imágenes por revisar** (con contador en el menú) los
+  lotes de su grupo, con el correo de quien subió y la fecha. Para cada imagen
+  elige «Para niños», «Para adultos» o «Eliminar», también para varias a la vez;
+  la respuesta del usuario viene preseleccionada. «Eliminar» borra el archivo y
+  el registro, con un motivo opcional que el usuario ve como aviso. Si una sesión
+  o un protocolo ya nombran la imagen, se borra el archivo y queda solo un
+  registro sin imagen, para no alterar el historial.
+- «Para niños» sirve en protocolos para niños y para adultos; «Para adultos»,
+  solo en protocolos para adultos. Si el docente elimina una imagen usada o la
+  cambia a «Para adultos», los protocolos afectados quedan «Necesita una imagen»
+  y su dueño recibe un aviso.
+- Una imagen que nadie revisa se elimina a los `IMAGE_REVIEW_DAYS` días (30 por
+  defecto), con un aviso al usuario siete días antes.
+- La auditoría registra, sin contenido, cada lote subido, cada rechazo
+  automático, cada decisión del docente, cada eliminación y cada apertura de la
+  vista ampliada.
 - Un **protocolo** es una receta guardada: qué aplicar en una sesión
   (cuestionario previo opcional, imágenes en orden con sus segundos y
   cuestionario posterior opcional). Su primera pregunta, obligatoria, es «¿Para
@@ -213,9 +254,11 @@ Ningún endpoint, pantalla ni exportación devuelve imágenes de personas evalua
 los cuadros de la cámara se procesan en memoria y se descartan. La prueba
 `tests/integration/test_no_participant_images.py` revisa el esquema de la API y
 recorre cada ruta GET con los cuatro papeles para comprobarlo. Las únicas
-imágenes guardadas son estímulos subidos por docentes o por el administrador,
-nunca fotos de personas evaluadas; `GET /stimuli/{id}/file` es la única ruta que
-sirve una imagen y la prueba la trata como excepción explícita.
+imágenes guardadas son estímulos subidos por docentes, por el administrador o por
+usuarios (estos, tras la detección automática de personas y con la revisión del
+docente), nunca fotos de personas evaluadas. `GET /stimuli/{id}/file` y
+`GET /own-stimuli/{id}/file` son las únicas rutas que sirven una imagen y la
+prueba las trata como excepciones explícitas.
 
 ## Compromiso de confidencialidad
 

@@ -60,6 +60,11 @@ from emotv.infrastructure.persistence.postgres_practice_repositories import (
 )
 from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
 from emotv.interfaces.web.stimulus_router import create_stimulus_router
+from emotv.application.user_image_service import UserImageService
+from emotv.config import UserImageSettings
+from emotv.infrastructure.persistence.postgres_practice_repositories import PostgresNoticeRepository
+from emotv.infrastructure.vision.person_detection import ImagePersonDetector
+from emotv.interfaces.web.user_image_router import create_user_image_router
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     PsychologistAssignmentRecord,
@@ -151,6 +156,20 @@ def env():
                                              protocols=protocols, questionnaires=questionnaires,
                                              privacy=privacy, audit=audit))
     app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
+    # Detectores falsos de rostros y cuerpos (sin pesos): cada prueba fija su confianza.
+    e.face_confidence, e.body_confidence, e.detected_shapes = 0.0, 0.0, []
+
+    def fake_face(frame):
+        e.detected_shapes.append(frame.shape)
+        return e.face_confidence
+
+    e.images = UserImageService(
+        stimuli.repository, PostgresNoticeRepository(factory), audit, docente_of, group_user_ids,
+        sanitize_stimulus_image, ImagePersonDetector(fake_face, lambda frame: e.body_confidence),
+        UserImageSettings(person_reject_confidence=0.8, person_review_confidence=0.4, upload_limit_per_user=6,
+                          review_days=30, expiry_notice_days=7),
+        protocols_using=protocols.repository.list_current_using, clock=clock)
+    app.include_router(create_user_image_router(e.images, auth, users))
     app.include_router(create_questionnaire_router(questionnaires, auth, users))
     # Analizador falso: cada prueba fija el resultado del próximo cuadro (sin modelos ni imágenes).
     e.frame_result = FrameAssessment((), "happiness", 0.8, {"happiness": 0.8, "neutral": 0.2})

@@ -56,8 +56,8 @@ formato firmado en papel.
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `GET` | `/stimuli` | Usuarios (institucionales y los de su docente), docentes (los suyos e institucionales) y administrador (institucionales). `?for_children=true`: solo los que admite un protocolo para niños (leves, aprobados y vigentes; la edad no se registra, así que no se filtra por edad mínima) |
-| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` (no es una foto de una persona evaluada) y, en abstractas, `not_a_projective_test`. Los usuarios reciben `403` |
+| `GET` | `/stimuli` | Usuarios (institucionales, los de su docente y sus imágenes propias aprobadas; nunca las pendientes), docentes (los suyos e institucionales) y administrador (institucionales). `?for_children=true`: solo los que admite un protocolo para niños (leves, aprobados y vigentes; la edad no se registra, así que no se filtra por edad mínima) |
+| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` (no es una foto de una persona evaluada) y, en abstractas, `not_a_projective_test`. Queda aprobado al subirlo (no pasa por revisión). Los usuarios reciben `403`: suben sus imágenes en `/own-stimuli` |
 | `GET` | `/stimuli/{id}`, `/stimuli/{id}/file` | Quien puede verlo; `/file` es la única ruta que sirve una imagen, siempre un estímulo reescrito sin metadatos |
 | `POST` | `/stimuli/{id}/approve` | Quien lo gestiona |
 | `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
@@ -66,8 +66,31 @@ formato firmado en papel.
 
 Un protocolo es una receta guardada: qué aplicar en una sesión. Se guarda sin
 ejecutarlo y no necesita la aprobación del docente. Uno para niños solo admite
-estímulos leves y aprobados (`422` al guardarlo y `409` al usarlo si alguno dejó
-de serlo). Un protocolo puede indicar `pre_questionnaire_id` y `post_questionnaire_id`
+estímulos «Para niños» (`audience: "children"`, leves) y aprobados; uno para
+adultos admite los dos. Una imagen propia pendiente no se admite en ninguno
+(`422` al guardarlo y `409` al usarlo si alguno dejó de servir). `needs_image`
+indica que el docente eliminó o reclasificó una imagen del protocolo: hay que
+reemplazarla.
+
+### Imágenes propias
+
+En la API son estímulos de alcance `user` (`/own-stimuli`): ninguna ruta de
+consulta se llama como una imagen.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `POST` | `/own-stimuli` | Usuario con docente asignado. `multipart/form-data` con listas paralelas `files`, `titles`, `origins` («¿De dónde es esta imagen?»), `audiences` (`children` o `adults`) y `rights_confirmed` (debe ser `true`). Hasta 20 por lote y `IMAGE_UPLOAD_LIMIT_PER_USER` en total. Cada imagen se reescribe sin metadatos y pasa por la detección de personas en memoria: `results[i].accepted=false` con el mensaje de rechazo si la confianza llega a `IMAGE_PERSON_REJECT_CONFIDENCE` (no se guarda); si no, queda `pending`, con `possible_person` desde `IMAGE_PERSON_REVIEW_CONFIDENCE`. `503` si los modelos de detección no están instalados. Docentes y administración reciben `403` |
+| `GET` | `/own-stimuli` | El usuario: sus imágenes, con `status` (`pending` o `approved`) y, si está pendiente, `expires_at` |
+| `GET` | `/own-stimuli/{id}/file` | Quien la subió y su docente. `?preview=true`: vista ampliada del docente (se audita) |
+| `GET` | `/own-stimuli/review` | Docente: pendientes de su grupo agrupadas por lote (`uploaded_by` con el correo, `uploaded_at`) y las aprobadas |
+| `GET` | `/own-stimuli/review/count` | Docente: `{pending}` para el contador del menú |
+| `POST` | `/own-stimuli/review` | Docente del usuario: `{image_ids, decision: "children" \| "adults" \| "delete", reason?}`. Aprueba o reclasifica, o elimina (archivo y registro; si una sesión o un protocolo la nombran, queda solo un registro sin imagen). El motivo llega al usuario como aviso |
+| `GET` | `/notices` | La propia cuenta: avisos sin leer (imagen eliminada o por vencer, protocolo que necesita una imagen) |
+| `POST` | `/notices/{id}/read` | La propia cuenta: marca un aviso como leído (`204`) |
+
+La detección de personas no es infalible: el docente revisa todas las imágenes.
+Las pendientes se eliminan a los `IMAGE_REVIEW_DAYS` días (aviso siete días
+antes). Un protocolo puede indicar `pre_questionnaire_id` y `post_questionnaire_id`
 (cuestionarios propios o la plantilla que el docente comparte); al iniciar la
 sesión se aplica la versión vigente de cada uno.
 

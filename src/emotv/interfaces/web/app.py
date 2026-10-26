@@ -21,7 +21,8 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_server_load_settings,
-                          get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version)
+                          get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
+                          get_user_image_settings)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -63,12 +64,16 @@ from emotv.application.commitment_service import CommitmentService
 from emotv.application.session_privacy_service import SessionPrivacyService
 from emotv.interfaces.web.privacy_router import create_privacy_router
 from emotv.interfaces.web.stimulus_router import create_stimulus_router
+from emotv.interfaces.web.user_image_router import create_user_image_router
 from emotv.application.protocol_service import ProtocolService
 from emotv.application.stimulus_service import StimulusService
+from emotv.application.user_image_service import UserImageService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresProtocolRepository,
+    PostgresNoticeRepository,
     PostgresStimulusRepository,
 )
+from emotv.infrastructure.vision.person_detection import create_person_detector
 from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
 from emotv.application.questionnaire_service import QuestionnaireService
 from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
@@ -119,6 +124,8 @@ chat_service: ChatService | None = None
 privacy_settings = get_privacy_settings()
 audit_service: AuditService | None = None
 session_privacy_service: SessionPrivacyService | None = None
+user_image_service: UserImageService | None = None
+user_image_settings = get_user_image_settings()
 RETENTION_INTERVAL_SECONDS = 24 * 60 * 60
 retention_task: asyncio.Task | None = None
 logger = logging.getLogger("emotv.api")
@@ -202,6 +209,13 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
     app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
                                               user_repository))
+    # Imágenes propias: detección de personas en memoria y revisión del docente.
+    user_image_service = UserImageService(
+        stimulus_service.repository, PostgresNoticeRepository(database_sessions), audit_service, docente_of,
+        group_user_ids, sanitize_stimulus_image,
+        create_person_detector(user_image_settings.person_review_confidence), user_image_settings,
+        protocols_using=protocol_service.repository.list_current_using)
+    app.include_router(create_user_image_router(user_image_service, authentication_service, user_repository))
     app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
                                              user_repository))
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
@@ -366,6 +380,7 @@ else:
     app.include_router(create_model_admin_router(None, None, None))
     app.include_router(create_privacy_router(None, None, None, None))
     app.include_router(create_stimulus_router(None, None, None, None))
+    app.include_router(create_user_image_router(None, None, None))
     app.include_router(create_questionnaire_router(None, None, None))
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
@@ -373,13 +388,19 @@ else:
 
 
 def run_retention() -> None:
-    """Elimina sesiones vencidas (SESSION_RETENTION_MONTHS) y auditoría antigua
-    (AUDIT_RETENTION_MONTHS). La auditoría registra solo la cantidad."""
+    """Elimina sesiones vencidas (SESSION_RETENTION_MONTHS), imágenes propias que
+    nadie revisó (IMAGE_REVIEW_DAYS, con aviso previo) y auditoría antigua
+    (AUDIT_RETENTION_MONTHS). La auditoría no guarda contenido."""
     if session_privacy_service is not None:
         try:
             session_privacy_service.purge_expired()
         except SQLAlchemyError:
             logger.exception("No se pudo aplicar la retención de sesiones")
+    if user_image_service is not None:
+        try:
+            user_image_service.expire_pending()  # IMAGE_REVIEW_DAYS sin revisión
+        except SQLAlchemyError:
+            logger.exception("No se pudo aplicar el vencimiento de imágenes sin revisar")
     if audit_service is not None:
         try:
             audit_service.purge_expired(privacy_settings.audit_retention_months)
@@ -403,7 +424,7 @@ async def startup_event():
         except SQLAlchemyError:
             logger.exception("No se pudo aplicar la retención del historial de Emi")
     global retention_task
-    if session_privacy_service is not None or audit_service is not None:
+    if session_privacy_service is not None or audit_service is not None or user_image_service is not None:
         # Al arrancar y luego una vez al día.
         await asyncio.to_thread(run_retention)
         retention_task = asyncio.create_task(_retention_loop())

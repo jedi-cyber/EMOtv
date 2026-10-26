@@ -22,7 +22,10 @@ from emotv.domain.pose_result import PoseResult
 class PoseDetector:
     """Detecta una pose corporal con MediaPipe Pose Landmarker."""
 
-    def __init__(self, model_path: str | Path = POSE_MODEL_PATH) -> None:
+    def __init__(self, model_path: str | Path = POSE_MODEL_PATH,
+                 min_detection_confidence: float | None = None) -> None:
+        """min_detection_confidence reemplaza al de la configuración (por
+        ejemplo, más bajo para revisar imágenes subidas)."""
         self.model_path = Path(model_path)
         if not self.model_path.is_file():
             raise FileNotFoundError(
@@ -34,8 +37,10 @@ class PoseDetector:
             base_options=mp.tasks.BaseOptions(model_asset_path=str(self.model_path)),
             running_mode=mp.tasks.vision.RunningMode.VIDEO,
             num_poses=1,
-            min_pose_detection_confidence=POSE_MIN_DETECTION_CONFIDENCE,
-            min_pose_presence_confidence=POSE_MIN_PRESENCE_CONFIDENCE,
+            min_pose_detection_confidence=(POSE_MIN_DETECTION_CONFIDENCE if min_detection_confidence is None
+                                           else min_detection_confidence),
+            min_pose_presence_confidence=(POSE_MIN_PRESENCE_CONFIDENCE if min_detection_confidence is None
+                                          else min(POSE_MIN_PRESENCE_CONFIDENCE, min_detection_confidence)),
             min_tracking_confidence=POSE_MIN_TRACKING_CONFIDENCE,
             output_segmentation_masks=False,
         )

@@ -7,7 +7,7 @@ import { useActiveSession } from "../analysis/ActiveSessionContext";
 import { paths } from "../routes/paths";
 import { navigationByRole, type NavigationItem } from "../routes/navigation";
 import type { UserRole } from "../auth/types";
-import { API_RECOVERED_EVENT, API_UNAVAILABLE_EVENT } from "../api/http";
+import { API_RECOVERED_EVENT, API_UNAVAILABLE_EVENT, apiRequest } from "../api/http";
 
 type Crumb = { label: string; to?: string };
 
@@ -21,6 +21,7 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   if (parts[0] === "sessions" && parts[1] === "deletions") return [home, { label: sessions, to: paths.sessions }, { label: "Acta de eliminación" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
   if (parts[0] === "students") return [home, { label: "Mi grupo", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del usuario" }] : [])];
+  if (parts[0] === "images") return [home, { label: parts[1] === "review" ? "Imágenes por revisar" : "Imágenes" }];
   if (parts[0] === "admin" && parts[1] === "activities") return [home, { label: "Administrar actividades" }];
   if (parts[0] === "admin" && parts[1] === "models") return [home, { label: "Modelos" }];
   if (parts[0] === "admin" && parts[1] === "expressions") return [home, { label: "Catálogo de expresiones" }];
@@ -33,7 +34,8 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
 }
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
+  const [reviewCount, setReviewCount] = useState(0);
   const { activeSession } = useActiveSession();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,6 +49,15 @@ export function AppLayout() {
     if (previousPathRef.current !== pathname) mainRef.current?.focus();
     previousPathRef.current = pathname;
   }, [pathname]);
+  // Imágenes por revisar del docente: se actualiza al cambiar de página.
+  useEffect(() => {
+    if (user?.role !== "psychologist") return;
+    let cancelled = false;
+    apiRequest<{ pending: number }>("/own-stimuli/review/count", { token })
+      .then((result) => { if (!cancelled) setReviewCount(result.pending); })
+      .catch(() => { if (!cancelled) setReviewCount(0); });
+    return () => { cancelled = true; };
+  }, [user?.role, token, pathname]);
   useEffect(() => {
     const unavailable = () => setBackendUnavailable(true);
     const recovered = () => setBackendUnavailable(false);
@@ -95,8 +106,9 @@ export function AppLayout() {
   const showBreadcrumbs = /^\/(activities|sessions)\/[^/]+\/?$/.test(pathname)
     || /^\/students\/[^/]+\/sessions\/?$/.test(pathname);
   const section = sectionName(pathname, items) ?? trail.at(-1)?.label ?? "Inicio";
-  const navLink = ({ to, label, icon }: NavigationItem) => <NavLink key={to} to={to} end={to === paths.dashboard}
-    className={({ isActive }) => isActive ? "active" : undefined}><NavIcon name={icon} /><span>{label}</span></NavLink>;
+  const navLink = ({ to, label, icon, counter }: NavigationItem) => <NavLink key={to} to={to} end={to === paths.dashboard}
+    className={({ isActive }) => isActive ? "active" : undefined}><NavIcon name={icon} /><span>{label}</span>
+    {counter === "imageReview" && reviewCount > 0 && <span className="nav-counter" aria-label={`${reviewCount} por revisar`}>{reviewCount}</span>}</NavLink>;
   const activeSessionPath = activeSession?.activityId ? paths.analysisForActivity(activeSession.activityId) : paths.analysis;
 
   return (

@@ -1,6 +1,7 @@
 """Ninguna ruta de la API entrega imágenes de personas evaluadas: las capturas de la
 cámara se procesan en memoria y se descartan. La única imagen que sirve la API
-es la de un estímulo del banco, subido por un docente o el administrador."""
+es la de un estímulo: del banco (docente o administrador) o propio de un usuario,
+que pasó la detección automática de personas y solo ven él y su docente."""
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ IMAGE_FIELDS = re.compile(r"(image|imagen|frame|cuadro|photo|foto|capture|captur
 # Únicas excepciones: la imagen de un estímulo del banco (nunca de una persona evaluada),
 # en la web y en el aplicativo móvil (URL firmada; ver tests/integration/test_mobile_api.py).
 STIMULUS_FILE = "/stimuli/{stimulus_id}/file"
+OWN_STIMULUS_FILE = "/own-stimuli/{stimulus_id}/file"
 MOBILE_STIMULUS_FILE = "/mobile/stimulus-images/{session_id}/{stimulus_id}"
 
 
@@ -55,6 +57,10 @@ def test_every_get_route_answers_without_images_for_every_role(env):  # noqa: F8
     env.client.post(f"/sessions/{other['id']}/cancel", headers=headers(env, env.docente_a))
     certificate = env.client.post(f"/sessions/{other['id']}/delete", headers=headers(env, env.docente_a)).json()
     stimulus = upload_stimulus(env, env.docente_a, png_bytes())
+    own = env.client.post("/own-stimuli", headers=headers(env, env.user_1),
+                          data={"titles": ["Dibujo"], "origins": ["Propio"], "audiences": ["children"],
+                                "rights_confirmed": ["true"]},
+                          files=[("files", ("dibujo.png", png_bytes(), "image/png"))]).json()["results"][0]["image"]
     values = {"session_id": session["id"], "certificate_id": certificate["id"],
               "user_id": env.user_1.id, "student_id": env.student_1.id, "stimulus_id": stimulus["id"]}
     spec = env.client.app.openapi()
@@ -63,11 +69,14 @@ def test_every_get_route_answers_without_images_for_every_role(env):  # noqa: F8
         if "get" not in operations:
             continue
         url = re.sub(r"\{(\w+)\}", lambda match: values.get(match.group(1), "x"), path)
+        if path == OWN_STIMULUS_FILE:
+            url = url.replace(stimulus["id"], own["id"])
         for user in (env.superadmin, env.admin, env.docente_a, env.user_1):
             response = env.client.get(url, headers=headers(env, user))
             content_type = response.headers.get("content-type", "")
-            if path == STIMULUS_FILE:
-                # Solo el estímulo, y solo para quien puede verlo (docente A y su grupo).
+            if path in (STIMULUS_FILE, OWN_STIMULUS_FILE):
+                # Solo el estímulo, y solo para quien puede verlo (docente A y su grupo;
+                # la imagen propia, quien la subió y su docente).
                 assert response.status_code == (200 if user in (env.docente_a, env.user_1) else 404), user.role
                 checked += 1
                 continue

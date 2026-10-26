@@ -52,8 +52,11 @@ en la auditoría sin contenido. No hay seguimiento ni estadísticas por persona.
 | Comentar, aprobar o devolver un reporte | — | — | Reportes de su grupo | — |
 | Imprimir un reporte aprobado | — | — | De sesiones propias y del grupo | De sesiones propias |
 | **Material de sesión** | | | | |
-| Crear estímulos | — | Para toda la institución | Para su grupo | — |
-| Usar estímulos | — | Los institucionales | Institucionales y suyos | Institucionales y de su docente, si están activos |
+| Crear estímulos (sin revisión) | — | Para toda la institución | Para su grupo | — |
+| Subir imágenes propias (detección automática de personas; quedan pendientes) | — | — | — | ✓ |
+| Ver una imagen propia pendiente | — | — | Las de su grupo | Las suyas |
+| Revisar imágenes propias: «Para niños», «Para adultos» o «Eliminar» | — | — | Las de su grupo | — |
+| Usar estímulos | — | Los institucionales | Institucionales y suyos | Institucionales, de su docente y sus imágenes propias aprobadas, si están activos |
 | Crear protocolos y cuestionarios | — | — | ✓ | ✓ |
 | Compartir un cuestionario con el grupo | — | — | ✓ | — |
 | **Actividades** | | | | |
@@ -87,6 +90,7 @@ Notas:
 | --- | --- |
 | `tests/integration/test_privacy_accounts.py` | Administrador, superadministrador y otro usuario nunca acceden a una sesión; el docente ve solo su grupo; el acceso sigue al cambiar de grupo; un usuario no tiene dos docentes; solo el superadministrador crea el administrador; la gestión nunca llega a sesiones; compromiso y aviso de menores obligatorios; cifrado; auditoría sin contenido e inmodificable; una sola confirmación por sesión; código único; retención y eliminación por sesión con acta |
 | `tests/integration/test_protocols_and_stimuli.py` | Público de cada protocolo, confirmación según el público, estímulos y protocolos por papel |
+| `tests/integration/test_user_images.py` | Detección de personas con detectores falsos (rechazo sin guardar, marca de revisión), imagen pendiente sin uso, revisión solo del docente del usuario, «Para adultos» fuera de protocolos para niños, protocolos que necesitan una imagen, vencimiento y auditoría |
 | `tests/integration/test_questionnaires.py` | Cuestionarios y respuestas cifradas, solo para quien condujo y su docente |
 | `tests/integration/test_guided_sessions.py` | La pantalla de la persona no recibe resultados; solo quien conduce controla la sesión |
 | `tests/integration/test_session_insights.py` y `test_session_reports.py` | Línea de tiempo, métricas y reportes por papel |

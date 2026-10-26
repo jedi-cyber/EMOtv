@@ -16,12 +16,13 @@ const actionNames: Record<string, string> = {
   group_change: "Cambio de grupo", account_create: "Creación de cuenta", account_deactivate: "Desactivación de cuenta",
   account_reactivate: "Reactivación de cuenta", commitment_accept: "Aceptación del compromiso",
   child_notice_accept: "Aviso sobre menores aceptado", login: "Inicio de sesión en el aplicativo",
-  logout: "Cierre de sesión en el aplicativo",
+  logout: "Cierre de sesión en el aplicativo", update: "Actualización", reject: "Rechazo automático",
 };
 const resourceNames: Record<string, string> = {
   session: "Sesión", participant: "Participante (registro anterior)", participant_list: "Lista de participantes (registro anterior)", mobile_session: "Sesión del aplicativo",
   mobile_summary: "Resumen del aplicativo", stimulus_image: "Imagen de estímulo", deletion_certificate: "Acta de eliminación",
   user: "Cuenta", student: "Usuario", commitment: "Compromiso", child_notice: "Aviso sobre menores",
+  stimulus: "Estímulo", protocol: "Protocolo", user_image: "Imagen propia", image_batch: "Lote de imágenes",
 };
 const resultNames = { success: "Correcto", denied: "Denegado", failure: "Fallido" } as const;
 

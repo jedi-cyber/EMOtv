@@ -14,6 +14,8 @@ export const paths = {
   deletionCertificate: (id: string) => `/sessions/deletions/${encodeURIComponent(id)}`,
   deletionCertificatePattern: "/sessions/deletions/:certificateId",
   stimuli: "/stimuli",
+  images: "/images",
+  imageReview: "/images/review",
   protocols: "/protocols",
   sessions: "/sessions",
   session: (id: string) => `/sessions/${encodeURIComponent(id)}`,

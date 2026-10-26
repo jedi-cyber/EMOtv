@@ -203,6 +203,46 @@ def get_privacy_settings(environ: Mapping[str, str] | None = None) -> PrivacySet
     return PrivacySettings(**values)
 
 
+@dataclass(frozen=True)
+class UserImageSettings:
+    """Imágenes propias de los usuarios: detección de personas y revisión."""
+
+    # Con esta confianza o más (rostro o cuerpo) la imagen se rechaza y no se guarda.
+    person_reject_confidence: float = 0.8
+    # Desde esta confianza, se acepta marcada «Revisar: posible persona».
+    person_review_confidence: float = 0.4
+    # Imágenes propias (pendientes y aprobadas) que puede tener cada usuario.
+    upload_limit_per_user: int = 60
+    # Días que una imagen espera la revisión del docente antes de eliminarse.
+    review_days: int = 30
+    # Días antes del vencimiento en que se avisa al usuario.
+    expiry_notice_days: int = 7
+
+
+def get_user_image_settings(environ: Mapping[str, str] | None = None) -> UserImageSettings:
+    source = os.environ if environ is None else environ
+    defaults = UserImageSettings()
+    values: dict[str, float | int] = {}
+    for field_name, name, kind, minimum, maximum in (
+        ("person_reject_confidence", "IMAGE_PERSON_REJECT_CONFIDENCE", float, 0.05, 1.0),
+        ("person_review_confidence", "IMAGE_PERSON_REVIEW_CONFIDENCE", float, 0.05, 1.0),
+        ("upload_limit_per_user", "IMAGE_UPLOAD_LIMIT_PER_USER", int, 1, 1000),
+        ("review_days", "IMAGE_REVIEW_DAYS", int, 2, 365),
+    ):
+        raw = source.get(name, "").strip()
+        try:
+            value = kind(raw) if raw else getattr(defaults, field_name)
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número") from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre {minimum} y {maximum}")
+        values[field_name] = value
+    if values["person_review_confidence"] > values["person_reject_confidence"]:
+        raise ValueError("IMAGE_PERSON_REVIEW_CONFIDENCE no puede ser mayor que IMAGE_PERSON_REJECT_CONFIDENCE")
+    values["expiry_notice_days"] = min(defaults.expiry_notice_days, int(values["review_days"]) - 1)
+    return UserImageSettings(**values)
+
+
 def get_sensitive_data_keys(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """Claves Fernet de SENSITIVE_DATA_KEY, separadas por comas.
 
