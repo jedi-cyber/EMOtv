@@ -37,6 +37,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
+    { to: paths.exams, label: "Exámenes", icon: "guided" },
     { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
     { to: paths.activities, label: "Actividades", icon: "activity" },

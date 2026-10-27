@@ -216,7 +216,7 @@ export interface QuestionnaireAnswers {
 }
 
 export type GuidedPhase = "pre_questionnaire" | "before_analyzer" | "calibration" | "stimuli"
-  | "post_questionnaire" | "live" | "finished" | "stopped";
+  | "post_questionnaire" | "live" | "waiting" | "ready" | "exam" | "finished" | "stopped";
 export type MarkerKind = "distracted" | "laughed" | "asked_to_stop" | "cried" | "note";
 
 export interface GuidedStep {
@@ -381,4 +381,38 @@ export interface SessionStatistics {
   questionnaires: { id: string; title: string; version: number; responses: number }[];
   questionnaire: { id: string; title: string; version: number; responses: number; questions: QuestionStatistics[] } | null;
   by_user?: { email: string; sessions: number; completed: number; interrupted: number }[];
+}
+
+/** Examen simulado: lo crea un docente; cada estación es una sesión con su código. */
+export type ExamState = "open" | "in_progress" | "closed";
+
+/** Solo el estado de la estación: nunca imágenes ni expresiones. */
+export interface ExamStation {
+  code: string;
+  joined_at: string;
+  consent_confirmed: boolean;
+  phase: GuidedPhase | null;
+  finished: boolean;
+}
+
+export interface ExamSummary {
+  id: string;
+  join_code: string;
+  state: ExamState;
+  created_at: string;
+  consent_confirmed_at: string | null;
+  started_at: string | null;
+  closed_at: string | null;
+  station_count: number;
+  waiting_consent: number;
+}
+
+export interface ExamDetail extends ExamSummary {
+  stations: ExamStation[];
+}
+
+/** Lo que recibe una estación al unirse con el código del examen. */
+export interface ExamStationJoin {
+  view_token: string;
+  session_code: string;
 }

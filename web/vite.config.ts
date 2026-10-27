@@ -13,7 +13,7 @@ const apiPrefixes = [
   "/auth", "/sessions", "/students", "/users", "/activities", "/analysis", "/expressions", "/recommendations",
   "/chat", "/consent-policy", "/consent-policies", "/health", "/commitment", "/audit", "/admin",
   "/session-deletions", "/stimuli", "/protocols", "/questionnaires", "/guided-sessions", "/participant-view",
-  "/reports", "/mobile",
+  "/reports", "/mobile", "/exams", "/exam-stations",
 ];
 
 export default defineConfig({

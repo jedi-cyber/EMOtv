@@ -186,6 +186,24 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-notice { margin: var(--space-sm) 0; color: var(--color-slate); font-size: var(--text-body-sm); text-align: center; }
 .participant-actions { display: flex; justify-content: center; gap: var(--space-md); }
 .participant-camera { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Examen simulado: el código grande que escriben las estaciones y la pantalla oscura de la estación. */
+.exam-join { display: grid; gap: var(--space-xs); justify-items: start; margin-bottom: var(--space-lg); }
+.exam-join p { margin: 0; overflow-wrap: anywhere; }
+.exam-code { color: var(--color-ink); font-size: var(--text-readout-lg); font-weight: var(--weight-bold); letter-spacing: .12em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.exam-join-hint, .exam-step-hint { color: var(--color-slate); font-size: var(--text-body-sm); }
+.exam-step-hint { margin: var(--space-sm) 0 0; }
+.exam-code-inline { letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.exam-stations-title { margin-top: var(--space-xl); }
+.station-view { display: grid; grid-template-rows: 1fr auto; min-height: 100dvh; padding: var(--space-lg) var(--space-md); background: var(--color-navy); color: var(--color-on-dark); }
+.station-view h1, .station-view label { color: var(--color-on-dark); }
+.station-join { display: grid; gap: var(--space-md); align-self: center; justify-self: center; width: min(100%, 22rem); }
+.station-code-input { min-height: 56px; border-color: var(--color-frame-on-dark); background: var(--color-navy-mid); color: var(--color-on-dark); font-size: var(--text-section-title); letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+.station-stage { display: grid; place-content: center; gap: var(--space-lg); text-align: center; }
+.station-session-code { display: grid; gap: var(--space-xs); margin: 0; font-size: var(--text-body-md); }
+.station-session-code strong { font-size: var(--text-readout-lg); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.station-message { max-width: 32rem; margin: 0 auto; font-size: var(--text-section-title); line-height: var(--leading-section-title); }
+.station-error { margin: 0; padding: var(--space-sm); border: 1px solid currentColor; border-radius: var(--radius-md); font-size: var(--text-body-sm); }
+.station-view .participant-actions { padding-top: var(--space-md); }
 kbd { margin-left: var(--space-xs); padding: 0 4px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm, 4px); font-size: var(--text-caption); }
 .readout-md { font-size: var(--text-section-title); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; }
 .timeline, .trend { margin: 0; display: grid; gap: var(--space-sm); }

@@ -20,6 +20,10 @@ const phaseNames: Record<GuidedPhase, string> = {
   stimuli: "Imágenes",
   post_questionnaire: "Cuestionario posterior",
   live: "Lectura en vivo",
+  // Fases de una estación de examen; el conductor no abre esas sesiones mientras corren.
+  waiting: "Espera el consentimiento",
+  ready: "Lista para el examen",
+  exam: "Examen en curso",
   finished: "Sesión terminada",
   stopped: "Sesión detenida",
 };
