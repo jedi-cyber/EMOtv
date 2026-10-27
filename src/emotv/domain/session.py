@@ -52,6 +52,8 @@ class EmotionalSession:
     # Solicitud de eliminación de quien condujo; la ejecuta su docente.
     deletion_requested_at: datetime | None = None
     deletion_requested_by_user_id: str | None = None
+    # Examen simulado al que pertenece la sesión (una por estación).
+    exam_id: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -155,7 +157,7 @@ class EmotionalSession:
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "session_type", session_type)
         for name in ("owner_user_id", "protocol_id", "pre_questionnaire_id", "post_questionnaire_id", "code",
-                     "deletion_requested_by_user_id"):
+                     "deletion_requested_by_user_id", "exam_id"):
             value = getattr(self, name)
             if value is not None:
                 if not isinstance(value, str) or not value.strip():

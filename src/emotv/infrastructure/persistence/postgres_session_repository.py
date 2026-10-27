@@ -106,6 +106,7 @@ class PostgresSessionRepository:
             authorization_confirmed_at=session.authorization_confirmed_at,
             deletion_requested_at=session.deletion_requested_at,
             deletion_requested_by_user_id=session.deletion_requested_by_user_id,
+            exam_id=session.exam_id,
         )
 
     @staticmethod
@@ -137,6 +138,7 @@ class PostgresSessionRepository:
         record.authorization_confirmed_at = session.authorization_confirmed_at
         record.deletion_requested_at = session.deletion_requested_at
         record.deletion_requested_by_user_id = session.deletion_requested_by_user_id
+        record.exam_id = session.exam_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -174,6 +176,7 @@ class PostgresSessionRepository:
             authorization_confirmed_at=cls._maybe_aware(record.authorization_confirmed_at),
             deletion_requested_at=cls._maybe_aware(record.deletion_requested_at),
             deletion_requested_by_user_id=record.deletion_requested_by_user_id,
+            exam_id=record.exam_id,
         )
 
     @classmethod

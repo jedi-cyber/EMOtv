@@ -166,6 +166,7 @@ class PostgresProtocolRepository:
         row.approved_at = item.approved_at
         row.approved_by_user_id = item.approved_by_user_id
         row.superseded_at = item.superseded_at
+        row.kind = item.kind.value
         db.add(row)
         db.flush()  # la versión existe antes que sus pasos
         db.execute(delete(ProtocolStepRecord).where(ProtocolStepRecord.protocol_id == item.id))
@@ -185,7 +186,7 @@ class PostgresProtocolRepository:
             created_at=_aware(row.created_at), pre_questionnaire_id=row.pre_questionnaire_id,
             post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
-            superseded_at=_aware(row.superseded_at),
+            superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                      step.record_verbal_response, step.shown_before_analyzer) for step in steps))
 

@@ -136,6 +136,9 @@ class SessionRecord(Base):
     authorization_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deletion_requested_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Examen simulado al que pertenece la sesión; un examen con sesiones no se borra.
+    exam_id: Mapped[str | None] = mapped_column(
+        ForeignKey("exams.id", ondelete="RESTRICT"), nullable=True, index=True)
 
 
 class UserRecord(Base):
@@ -347,6 +350,7 @@ class ProtocolRecord(Base):
             "(approved_at IS NOT NULL AND approved_by_user_id IS NOT NULL)",
             name="ck_protocols_approval",
         ),
+        CheckConstraint("kind IN ('practice', 'exam')", name="ck_protocols_kind"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     family_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -365,6 +369,34 @@ class ProtocolRecord(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Práctica (estímulos y cuestionarios) o examen simulado (sin pasos).
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="practice",
+                                      server_default="practice")
+
+
+class ExamRecord(Base):
+    """Examen simulado: agrupa una sesión por estación. No guarda personas."""
+
+    __tablename__ = "exams"
+    __table_args__ = (
+        UniqueConstraint("join_code", name="uq_exams_join_code"),
+        CheckConstraint("state IN ('open', 'in_progress', 'closed')", name="ck_exams_state"),
+        CheckConstraint("state <> 'in_progress' OR started_at IS NOT NULL", name="ck_exams_in_progress_started"),
+        CheckConstraint("state <> 'open' OR started_at IS NULL", name="ck_exams_open_not_started"),
+        CheckConstraint("(state = 'closed') = (closed_at IS NOT NULL)", name="ck_exams_closed"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    protocol_id: Mapped[str] = mapped_column(
+        ForeignKey("protocols.id", ondelete="RESTRICT"), nullable=False, index=True)
+    # Código que cada estación escribe para unirse.
+    join_code: Mapped[str] = mapped_column(String(8), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consent_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class QuestionnaireRecord(Base):
