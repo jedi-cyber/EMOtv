@@ -3,7 +3,10 @@
 # Publica PostgreSQL solo en 127.0.0.1. Puerto 5433 por defecto para no chocar
 # con un PostgreSQL instalado en Windows; cámbialo con POSTGRES_HOST_PORT.
 # DATABASE_URL del .env local:
-#   postgresql+psycopg://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5433/<POSTGRES_DB>
+#   postgresql+psycopg://<POSTGRES_USER>:<POSTGRES_PASSWORD>@127.0.0.1:5433/<POSTGRES_DB>
+# Usa 127.0.0.1, no localhost: Windows resuelve localhost primero a IPv6 (::1),
+# donde este puerto no está publicado, y cada conexión espera a que ese intento
+# falle antes de probar IPv4.
 
 services:
   db:
