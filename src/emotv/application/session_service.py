@@ -78,6 +78,7 @@ class SessionService:
         pre_questionnaire_id: str | None = None,
         post_questionnaire_id: str | None = None,
         authorization_confirmed: bool = False,
+        exam_id: str | None = None,
     ) -> EmotionalSession:
         """Inicia una sesión nueva o una sesión previamente creada.
 
@@ -100,6 +101,7 @@ class SessionService:
                 post_questionnaire_id=post_questionnaire_id,
                 code=self._next_code(),
                 authorization_confirmed_at=self.clock() if authorization_confirmed else None,
+                exam_id=exam_id,
             )
         else:
             current = self._get_required(session_id)

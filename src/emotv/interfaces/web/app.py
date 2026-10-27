@@ -261,10 +261,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         privacy=session_privacy_service,
         audit=audit_service,
     ))
-    # Examen simulado: el docente crea, confirma consentimientos, inicia y termina.
-    exam_service = ExamService(PostgresExamRepository(database_sessions), protocol_service.repository,
-                               session_service, audit_service, commitment_service)
-    app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
+    exam_repository = PostgresExamRepository(database_sessions)
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
     local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
                                      model_admission.evaluate)
@@ -290,10 +287,16 @@ if DATABASE_URL and JWT_SECRET_KEY:
                 EmotionFrameAnalyzer(classifier=classifiers.get(model_id))).assess,
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
-            calibration_min_increase=live_expression.calibration_min_increase)
+            calibration_min_increase=live_expression.calibration_min_increase,
+            exam_of=exam_repository.get)
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
                                             decode_frame=decode_frame))
+    # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
+    # cada estación se une con el código y usa la pantalla de la persona.
+    exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
+                               commitment_service, stations=guided_service)
+    app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
 
     def actor_student_id(user) -> str | None:
         student = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None

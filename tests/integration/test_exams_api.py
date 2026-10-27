@@ -135,7 +135,7 @@ def test_el_docente_ve_estados_nunca_expresiones(env):  # noqa: F811
     exam["owner"] = env.docente_a.id
     join(env, exam)
     station = env.client.get(f"/exams/{exam['id']}", headers=headers(env, env.docente_a)).json()["stations"][0]
-    assert set(station) == {"code", "joined_at", "consent_confirmed", "finished"}
+    assert set(station) == {"code", "joined_at", "consent_confirmed", "phase", "finished"}
 
 
 def test_el_protocolo_de_examen_no_se_usa_en_practicas(env):  # noqa: F811

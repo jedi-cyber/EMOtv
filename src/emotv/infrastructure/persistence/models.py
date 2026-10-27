@@ -472,7 +472,8 @@ class GuidedRunRecord(Base):
     __tablename__ = "guided_runs"
     __table_args__ = (
         CheckConstraint("phase IN ('pre_questionnaire', 'before_analyzer', 'calibration', "
-                        "'stimuli', 'post_questionnaire', 'live', 'finished', 'stopped')", name="ck_guided_runs_phase"),
+                        "'stimuli', 'post_questionnaire', 'live', 'waiting', 'ready', 'exam', 'finished', 'stopped')",
+                        name="ck_guided_runs_phase"),
         CheckConstraint("(phase = 'stopped') = (stop_reason IS NOT NULL)", name="ck_guided_runs_stop_reason"),
         CheckConstraint("stop_reason IS NULL OR stop_reason IN ('participant', 'guardian', 'conductor')",
                         name="ck_guided_runs_stop_reason_value"),

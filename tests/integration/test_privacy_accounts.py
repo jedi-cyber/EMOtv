@@ -184,13 +184,14 @@ def env():
         e.frames_assessed += 1
         return e.frame_result
 
+    exam_repository = PostgresExamRepository(factory)
     guided = GuidedSessionService(
         PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
         protocols=protocols.repository.get, stimuli=stimuli.repository.get,
         questionnaire_answered=questionnaires.answered,
         resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
         assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
-        calibration_seconds=3.0, clock=clock)
+        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get)
     app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
                                             decode_frame=lambda data: data or None))
     e.guided = guided
@@ -214,7 +215,8 @@ def env():
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
-    e.exams = ExamService(PostgresExamRepository(factory), protocols.repository, sessions, audit, commitments, clock)
+    e.exams = ExamService(exam_repository, protocols.repository, sessions, audit, commitments, clock,
+                          stations=guided)
     app.include_router(create_exam_router(e.exams, auth, users))
     e.audit, e.commitments, e.sessions, e.privacy, e.erasure = audit, commitments, sessions, privacy, erasure
     e.authorization = authorization

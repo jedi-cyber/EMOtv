@@ -7,6 +7,9 @@ sesión individual del examen; el consentimiento se registra en cada una. Una
 estación que se une después de la confirmación espera una nueva. El docente
 solo ve el estado de cada estación por su código, nunca imágenes ni
 expresiones en vivo.
+
+Una estación se une con el código del examen, sin cuenta: recibe el enlace de
+su pantalla y el código de su sesión, que se anota en el consentimiento firmado.
 """
 from __future__ import annotations
 
@@ -14,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 import secrets
-from typing import Any
+from typing import Any, Protocol as Interface
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
@@ -27,10 +30,21 @@ from emotv.domain.exam import JOIN_CODE_LENGTH, Exam, ExamState
 from emotv.domain.protocol import Protocol, ProtocolKind
 from emotv.domain.role import Role
 from emotv.domain.session import EmotionalSession
+from emotv.domain.session_type import SessionType
 from emotv.domain.user import User
 
 RESOURCE = "exam"
+STATION_RESOURCE = "exam_station"
 EXAM_PROTOCOL_NAME = "Examen simulado"
+MAX_STATIONS = 40   # el piloto usa entre cuatro y ocho; el límite frena uniones masivas
+
+
+class StationRuns(Interface):
+    """La pantalla de cada estación (GuidedSessionService)."""
+
+    def create_station(self, session: EmotionalSession) -> str: ...
+    def station_phase(self, session_id: str) -> str | None: ...
+    def close_station(self, session_id: str) -> None: ...
 
 
 def random_exam_code() -> str:
@@ -56,6 +70,7 @@ class ExamService:
         commitments: CommitmentService | None = None,
         clock: Callable[[], datetime] | None = None,
         code_factory: Callable[[], str] = random_exam_code,
+        stations: StationRuns | None = None,
     ) -> None:
         self.repository = repository
         self.protocols = protocols
@@ -64,6 +79,8 @@ class ExamService:
         self.commitments = commitments
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.code_factory = code_factory
+        # Sin la sesión guiada (falta la clave de cifrado) las estaciones no se unen.
+        self.stations = stations
 
     # --- Acceso --------------------------------------------------------------
 
@@ -121,15 +138,34 @@ class ExamService:
         stations = self.repository.list_sessions(exam.id)
         return {**self._summary(exam, stations), "stations": [self._station(item) for item in stations]}
 
-    @staticmethod
-    def _station(session: EmotionalSession) -> dict[str, Any]:
+    def _station(self, session: EmotionalSession) -> dict[str, Any]:
         """Solo el estado de la estación: ni imágenes ni expresiones."""
         return {
             "code": session.code,
             "joined_at": session.started_at.isoformat(),
             "consent_confirmed": session.authorization_confirmed_at is not None,
+            "phase": self.stations.station_phase(session.id) if self.stations else None,
             "finished": session.is_terminal,
         }
+
+    # --- Estación ------------------------------------------------------------
+
+    def join(self, join_code: str) -> dict[str, str]:
+        """Una estación se une con el código del examen (sin cuenta). Espera el
+        consentimiento: hasta entonces no se analiza ningún cuadro."""
+        if self.stations is None:
+            raise RuntimeError("Las estaciones no están disponibles: falta la clave de cifrado de datos sensibles")
+        exam = self.repository.get_by_join_code(join_code)
+        if exam is None or not exam.accepts_stations:
+            raise ExamNotFound("join")
+        if len(self.repository.list_sessions(exam.id)) >= MAX_STATIONS:
+            raise ExamConflict(f"El examen ya tiene {MAX_STATIONS} estaciones")
+        session = self.sessions.start_session(
+            session_type=SessionType.ADULT, owner_user_id=exam.owner_user_id, protocol_id=exam.protocol_id,
+            exam_id=exam.id)
+        token = self.stations.create_station(session)
+        self.audit.record(None, AuditAction.CREATE, STATION_RESOURCE, session.id)
+        return {"view_token": token, "session_code": session.code}
 
     @staticmethod
     def _iso(value: datetime | None) -> str | None:
@@ -184,5 +220,9 @@ class ExamService:
         if exam.state is ExamState.CLOSED:
             raise ExamConflict("El examen ya terminó")
         closed = self.repository.save(replace(exam, state=ExamState.CLOSED, closed_at=self.clock()))
+        # Cada estación termina y muestra el debriefing.
+        if self.stations is not None:
+            for session in self.repository.list_sessions(exam.id):
+                self.stations.close_station(session.id)
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, exam.id)
         return closed
