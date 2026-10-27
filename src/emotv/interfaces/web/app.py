@@ -90,6 +90,9 @@ from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
 from emotv.application.session_statistics_service import SessionStatisticsService
 from emotv.interfaces.web.statistics_router import create_statistics_router
+from emotv.application.exam_service import ExamService
+from emotv.infrastructure.persistence.postgres_exam_repository import PostgresExamRepository
+from emotv.interfaces.web.exam_router import create_exam_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
@@ -258,6 +261,10 @@ if DATABASE_URL and JWT_SECRET_KEY:
         privacy=session_privacy_service,
         audit=audit_service,
     ))
+    # Examen simulado: el docente crea, confirma consentimientos, inicia y termina.
+    exam_service = ExamService(PostgresExamRepository(database_sessions), protocol_service.repository,
+                               session_service, audit_service, commitment_service)
+    app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
     local_models = LocalModelService(PostgresLocalModelSettingsRepository(database_sessions),
                                      model_admission.evaluate)
@@ -397,6 +404,7 @@ else:
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
     app.include_router(create_statistics_router(None, None, None))
+    app.include_router(create_exam_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
 
 

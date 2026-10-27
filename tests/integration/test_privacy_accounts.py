@@ -75,6 +75,9 @@ from emotv.infrastructure.persistence.models import (
 )
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.identity_router import create_identity_router
+from emotv.application.exam_service import ExamService
+from emotv.infrastructure.persistence.postgres_exam_repository import PostgresExamRepository
+from emotv.interfaces.web.exam_router import create_exam_router
 from emotv.interfaces.web.privacy_router import create_privacy_router
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.shared.security.field_encryption import FieldCipher, FieldEncryptionError
@@ -211,6 +214,8 @@ def env():
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
+    e.exams = ExamService(PostgresExamRepository(factory), protocols.repository, sessions, audit, commitments, clock)
+    app.include_router(create_exam_router(e.exams, auth, users))
     e.audit, e.commitments, e.sessions, e.privacy, e.erasure = audit, commitments, sessions, privacy, erasure
     e.authorization = authorization
     e.stimuli, e.protocols, e.questionnaires = stimuli, protocols, questionnaires

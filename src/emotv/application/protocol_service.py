@@ -8,6 +8,9 @@ admite las dos. Una imagen propia pendiente de revisión no se usa en ningún
 protocolo. Una versión usada en una sesión no se edita: editarla crea una
 versión nueva. Si el docente elimina o reclasifica una imagen que un protocolo
 usa, el protocolo queda «Necesita una imagen» hasta que se reemplace.
+
+Los protocolos de examen simulado no pasan por aquí: no se listan, no se editan
+ni se aplican desde el Analizador. Los gestiona ExamService.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
-from emotv.domain.protocol import Protocol, ProtocolStep
+from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
@@ -77,8 +80,10 @@ class ProtocolService:
             raise PermissionError("Los protocolos los arman usuarios y docentes")
 
     def can_view(self, user: User, protocol: Protocol) -> bool:
-        """Quien lo armó y el docente de esa cuenta."""
+        """Quien lo armó y el docente de esa cuenta. Un examen no es un protocolo de práctica."""
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
+            return False
+        if protocol.kind is not ProtocolKind.PRACTICE:
             return False
         if protocol.owner_user_id == user.id:
             return True

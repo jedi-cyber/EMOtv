@@ -317,6 +317,16 @@ class SessionService:
         self._require_state(current, SessionState.IN_PROGRESS, "completar")
         return self.repository.save(replace(current, state=SessionState.COMPLETED, completed_at=self.clock()))
 
+    def confirm_authorization(self, session_id: str) -> EmotionalSession:
+        """Registra que quien conduce recibió el consentimiento firmado de una
+        sesión que lo esperaba (la estación de un examen)."""
+        current = self._get_required(session_id)
+        if current.authorization_confirmed_at is not None:
+            raise RuntimeError("La sesión ya tiene el consentimiento confirmado")
+        if current.is_terminal:
+            raise RuntimeError("La sesión ya terminó")
+        return self.repository.save(replace(current, authorization_confirmed_at=self.clock()))
+
     def finish_without_activity(self, session_id: str) -> EmotionalSession:
         """Cierra una sesión reconocida sin actividad, conservando la expresión."""
         current = self._get_required(session_id)
