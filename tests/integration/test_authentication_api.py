@@ -24,6 +24,10 @@ from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.session_router import create_session_router
 
 
+# Sesión propia sin protocolo: el público y su única confirmación.
+OWN_SESSION = {"session_type": "propia", "authorization_confirmed": True}
+
+
 @pytest.mark.integration
 class AuthenticationApiIntegrationTests(unittest.TestCase):
     engine: Engine
@@ -173,7 +177,7 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
         token = self._login(self.student.email, self.student_password)
         headers = {"Authorization": f"Bearer {token}"}
 
-        created = self.client.post("/sessions", json={}, headers=headers)
+        created = self.client.post("/sessions", json=OWN_SESSION, headers=headers)
         self.assertEqual(created.status_code, 201, created.text)
         self.assertEqual(created.json()["state"], "in_progress")
         self.assertEqual(created.json()["student_id"], self.student_profile.id)
@@ -198,7 +202,7 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
     def test_student_gets_session_by_id_and_lists_only_own_sessions(self) -> None:
         token = self._login(self.student.email, self.student_password)
         headers = {"Authorization": f"Bearer {token}"}
-        created = self.client.post("/sessions", json={}, headers=headers)
+        created = self.client.post("/sessions", json=OWN_SESSION, headers=headers)
         self.assertEqual(created.status_code, 201, created.text)
         session_id = created.json()["id"]
 

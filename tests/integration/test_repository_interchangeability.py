@@ -31,6 +31,8 @@ def complete_same_session(
         repository,
         clock=lambda: next(times),
         id_factory=lambda: session_id,
+        # El código de la sesión es aleatorio; aquí se fija como el reloj y el id.
+        code_factory=lambda: "S-INTERC",
     )
     started = service.start_session()
     return service.complete_session(
