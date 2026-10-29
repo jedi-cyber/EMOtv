@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import type { SessionStatistics } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
+import { BarChart } from "../components/BarChart";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
@@ -34,15 +35,6 @@ function duration(seconds: number | null) {
 
 function percentText(value: number) {
   return `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} %`;
-}
-
-/** Barra horizontal en SVG: un solo color para todas las expresiones (DESIGN.md: no se colorean). */
-function Bar({ value, max = 100 }: { value: number; max?: number }) {
-  const width = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  return <svg className="stat-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-    <rect className="stat-bar-track" width="100" height="8" rx="2" />
-    <rect className="stat-bar-fill" width={width} height="8" rx="2" />
-  </svg>;
 }
 
 function query(filters: Filters, questionnaireId: string) {
@@ -123,8 +115,6 @@ export function StatisticsPage() {
     }
   }
 
-  const maxCount = (counts: { count: number }[]) => Math.max(1, ...counts.map((item) => item.count));
-
   return <section>
     <PageHeader title="Estadísticas"
       description={isDocente ? "Resumen de tus sesiones o de las de tu grupo." : "Resumen de las sesiones que condujiste."}
@@ -168,21 +158,41 @@ export function StatisticsPage() {
         <div><dt>Interrumpidas</dt><dd>{data.sessions.interrupted}</dd></div>
         <div><dt>Duración promedio de las completadas</dt><dd>{duration(data.sessions.average_duration_seconds)}</dd></div>
       </dl>
+      {data.sessions.total > 0 && <BarChart label="Sesiones completadas e interrumpidas" max={data.sessions.total} rows={[
+        { key: "completed", label: "Completadas", value: data.sessions.completed, valueText: String(data.sessions.completed),
+          detail: `${data.sessions.completed} de ${data.sessions.total} sesiones` },
+        { key: "interrupted", label: "Interrumpidas", value: data.sessions.interrupted, valueText: String(data.sessions.interrupted),
+          detail: `${data.sessions.interrupted} de ${data.sessions.total} sesiones` },
+      ]} />}
 
       <h2 className="stat-heading">Expresiones estimadas</h2>
       <p className="muted">
         Porcentaje de las {data.expressions.counted_captures} capturas de buena calidad. No cuentan {data.expressions.excluded_captures} capturas
         de mala calidad.
       </p>
-      <div className="table-wrap"><table className="data-table stat-table">
+      {data.expressions.counted_captures > 0 && <BarChart label="Porcentaje de capturas por expresión estimada" max={100}
+        rows={[...data.expressions.rows].sort((a, b) => b.percent - a.percent).map((row) => ({
+          key: row.expression, label: expectedExpressionNames[row.expression] ?? row.expression, value: row.percent,
+          valueText: percentText(row.percent),
+          detail: `${row.captures} ${row.captures === 1 ? "captura" : "capturas"} en ${row.sessions} ${row.sessions === 1 ? "sesión" : "sesiones"}`,
+        }))} />}
+      <details className="stat-table-view">
+        <summary>Ver como tabla</summary>
+        <div className="table-wrap"><table className="data-table stat-table">
         <thead><tr><th>Expresión estimada</th><th>Porcentaje</th><th>Capturas</th><th>Sesiones</th></tr></thead>
         <tbody>{data.expressions.rows.map((row) => <tr key={row.expression}>
           <td data-label="Expresión estimada">{expectedExpressionNames[row.expression] ?? row.expression}</td>
-          <td data-label="Porcentaje"><span className="stat-value"><Bar value={row.percent} />{percentText(row.percent)}</span></td>
+          <td data-label="Porcentaje" className="stat-number">{percentText(row.percent)}</td>
           <td data-label="Capturas">{row.captures}</td>
           <td data-label="Sesiones">{row.sessions}</td>
         </tr>)}</tbody>
-      </table></div>
+        </table></div>
+      </details>
+
+      <h2 className="stat-heading">Coincidencia con la expresión esperada</h2>
+      {data.coincidence.compared > 0 && <BarChart label="Estímulos emocionales en los que coincidió la expresión" max={data.coincidence.compared} rows={[
+        { key: "matched", label: "Coincidió", value: data.coincidence.matched, valueText: `${data.coincidence.matched} de ${data.coincidence.compared}` },
+      ]} />}
       <p>
         {data.coincidence.compared === 0
           ? "Ningún estímulo emocional tuvo una captura de buena calidad para comparar."
@@ -216,10 +226,9 @@ export function StatisticsPage() {
           <h3>{question.text}</h3>
           <p className="muted">{kindNames[question.kind]} · {question.answered} {question.answered === 1 ? "respuesta" : "respuestas"} · {question.unanswered} sin responder
             {question.min_label && question.max_label ? ` · 1 = ${question.min_label}, ${question.counts?.length} = ${question.max_label}` : ""}</p>
-          {question.counts ? <table className="stat-counts"><tbody>{question.counts.map((item) => <tr key={item.label}>
-            <th scope="row">{item.label}</th>
-            <td><span className="stat-value"><Bar value={item.count} max={maxCount(question.counts ?? [])} />{item.count}</span></td>
-          </tr>)}</tbody></table>
+          {question.counts ? <BarChart label={`Respuestas a «${question.text}»`} rows={question.counts.map((item) => ({
+            key: item.label, label: item.label, value: item.count, valueText: String(item.count),
+          }))} />
             : <p>Hubo {question.answered} {question.answered === 1 ? "respuesta de texto" : "respuestas de texto"}; su contenido no se muestra aquí.</p>}
         </article>)}
       </>}

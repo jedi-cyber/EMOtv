@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,10 +49,23 @@ describe("estadísticas", () => {
     expect(screen.getByText(/cuentan sesiones, no personas, y son estimaciones\. No permiten sacar conclusiones sobre ninguna persona/)).toBeInTheDocument();
     expect(screen.queryByText("Hay pocas sesiones para sacar conclusiones.")).not.toBeInTheDocument();
     expect(screen.getByText("12 min 30 s")).toBeInTheDocument();
-    expect(screen.getByText("75 %")).toBeInTheDocument();
+    // Gráfico de una sola serie, ordenado de mayor a menor; la tabla queda como vista accesible.
+    const chart = screen.getByRole("list", { name: "Porcentaje de capturas por expresión estimada" });
+    const bars = within(chart).getAllByRole("listitem");
+    expect(bars[0]).toHaveAccessibleName("Felicidad: 75 %, 3 capturas en 2 sesiones");
+    expect(bars[1]).toHaveAccessibleName("Neutral: 25 %, 1 captura en 0 sesiones");
+    expect(screen.getByRole("list", { name: "Sesiones completadas e interrumpidas" })).toBeInTheDocument();
+    expect(screen.getByRole("table")).toHaveTextContent("75 %");
     expect(screen.getByText(/En 3 de 4 estímulos emocionales/)).toBeInTheDocument();
     // El usuario no elige el grupo ni ve totales por usuario.
     expect(screen.queryByRole("radio", { name: "Mi grupo" })).not.toBeInTheDocument();
+  });
+
+  it("sin capturas de buena calidad no dibuja el gráfico de expresiones", () => {
+    state.data["/statistics"] = stats({ expressions: { counted_captures: 0, excluded_captures: 2, rows: [] }, coincidence: { compared: 0, matched: 0 } });
+    withUser("student");
+    expect(screen.queryByRole("list", { name: "Porcentaje de capturas por expresión estimada" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Ningún estímulo emocional tuvo una captura/)).toBeInTheDocument();
   });
 
   it("con menos de 5 sesiones avisa que son pocas", () => {
@@ -65,6 +78,8 @@ describe("estadísticas", () => {
     state.data["/statistics"] = stats();
     withUser("student");
     expect(screen.getByText(/Hubo 2 respuestas de texto; su contenido no se muestra/)).toBeInTheDocument();
+    const answers = screen.getByRole("list", { name: "Respuestas a «¿Dormiste bien?»" });
+    expect(within(answers).getAllByRole("listitem").map((item) => item.getAttribute("aria-label"))).toEqual(["Sí: 2", "No: 1"]);
   });
 
   it("el docente elige su grupo y ve los totales por usuario", async () => {
