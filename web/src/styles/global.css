@@ -423,7 +423,7 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .bar-chart-fill { position: absolute; inset: 0 auto 0 0; min-width: 4px; border-radius: 0 4px 4px 0; background: var(--color-primary); }
 .bar-chart-value { color: var(--color-ink); font-size: var(--text-body-sm); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; text-align: right; }
 .bar-chart-tip {
-  position: absolute; z-index: 2; right: 0; bottom: calc(100% + 4px); padding: var(--space-xxs) var(--space-xs);
+  position: absolute; z-index: 2; left: 50%; bottom: calc(100% + 4px); transform: translateX(-50%); padding: var(--space-xxs) var(--space-xs);
   border-radius: 6px; background: var(--color-navy); color: var(--color-on-dark); font-size: var(--text-caption);
   white-space: nowrap; pointer-events: none; opacity: 0; visibility: hidden;
 }
