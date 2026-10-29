@@ -49,10 +49,9 @@ from emotv.interfaces.web.security import configure_web_security, load_web_setti
 from emotv.interfaces.web.activity_router import create_activity_router
 from emotv.interfaces.web.analysis_capacity import AnalysisCapacity
 from emotv.interfaces.web.analysis_router import create_analysis_router
-from emotv.interfaces.web.session_router import create_session_router, create_session_starter
+from emotv.interfaces.web.session_router import create_session_router, create_visible_sessions
 from emotv.interfaces.web.mobile_router import create_mobile_router
 from emotv.application.mobile_auth_service import MobileAuthService
-from emotv.application.signed_urls import StimulusUrlSigner
 from emotv.infrastructure.persistence import PostgresMobileSessionRepository
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
@@ -327,22 +326,18 @@ if DATABASE_URL and JWT_SECRET_KEY:
         report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
                                        authorization_service, docente_of, insights_service, audit_service)
     app.include_router(create_report_router(report_service, authentication_service, user_repository))
-    # Aplicativo Android: mismos servicios y reglas que la web (docs/mobile-api.md).
+    # Aplicativo Android: consulta sesiones, reportes y estadísticas con los mismos
+    # servicios y reglas que la web; no conduce sesiones (docs/mobile-api.md).
     app.include_router(create_mobile_router(
         MobileAuthService(PostgresMobileSessionRepository(database_sessions), authentication_service,
                           user_repository, audit_service, login_throttle),
         user_repository,
         audit=audit_service,
-        sessions=session_service,
-        start_session=create_session_starter(session_service, student_repository, authorization_service,
-                                             activity_catalog, commitment_service, protocol_service,
-                                             questionnaire_service, audit_service),
-        protocols=protocol_service,
-        questionnaires=questionnaire_service,
-        guided=guided_service,
-        signer=StimulusUrlSigner(JWT_SECRET_KEY),
-        stimulus_image=stimulus_service.repository.get_image,
-        decode_frame=decode_frame,
+        visible_sessions=create_visible_sessions(session_service, student_repository, assignment_repository,
+                                                 authorization_service),
+        insights=insights_service,
+        reports=report_service,
+        statistics=statistics_service,
         production=web_settings.production,
         api_version=__version__,
         min_app_version=get_mobile_min_app_version(),

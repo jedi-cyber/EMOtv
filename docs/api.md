@@ -27,8 +27,9 @@ Authorization: Bearer <access_token>
 administrativo.
 
 El aplicativo Android usa sus propias rutas `/mobile` (tokens de acceso cortos y
-de renovación revocables, solo usuarios y docentes): contrato completo en
-[mobile-api.md](mobile-api.md). Un token del aplicativo no sirve en estas rutas
+de renovación revocables, solo usuarios y docentes). El aplicativo no conduce
+sesiones: consulta sesiones, reportes y estadísticas, y permite actuar sobre el
+reporte. Contrato completo en [mobile-api.md](mobile-api.md). Un token del aplicativo no sirve en estas rutas
 y uno de la web no sirve en `/mobile`.
 
 ## Papeles, compromiso y auditoría

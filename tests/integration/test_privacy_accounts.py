@@ -203,6 +203,7 @@ def env():
                                        if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
         audit=audit)
     app.include_router(create_insights_router(insights, auth, users))
+    e.insights = insights
     e.statistics = SessionStatisticsService(
         sessions, insights, authorization,
         lambda user: (students.get_by_user_id(user.id).id

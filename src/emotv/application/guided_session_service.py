@@ -730,16 +730,6 @@ class GuidedSessionService:
         return {"phase": run.phase.value,
                 "capture_status": [item.value for item in live.pending.issues] if live and live.pending else []}
 
-    def stimulus_in_active_session(self, user_id: str, session_id: str, stimulus_id: str) -> bool:
-        """El estímulo pertenece al protocolo de una sesión activa que conduce esa cuenta."""
-        run = self.repository.get_run(session_id)
-        if run is None or run.owner_user_id != user_id:
-            return False
-        run = self._tick(run)
-        if not run.active:
-            return False
-        return any(step.stimulus_id == stimulus_id for step in self._steps(self._session(session_id)))
-
     def _receive(self, run: GuidedRun, frame) -> None:
         """Analiza un cuadro en memoria (calibración o captura) y lo descarta."""
         if frame is None:

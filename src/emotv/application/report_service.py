@@ -208,6 +208,18 @@ class ReportService:
 
     # --- Consulta e impresión -----------------------------------------------------------
 
+    def current_for_sessions(self, session_ids: tuple[str, ...]) -> dict[str, SessionReport]:
+        """Reporte vigente de cada sesión, para mostrar su estado en una lista. Quien
+        llama ya filtró las sesiones con can_access_session; no expone el texto."""
+        return self.repository.current_for_sessions(session_ids)
+
+    def pending_review(self, user: User, session_ids: tuple[str, ...]) -> set[str]:
+        """Sesiones cuyo reporte vigente espera la revisión de este docente."""
+        if user.role is not Role.PSYCHOLOGIST:
+            return set()
+        return {session_id for session_id, report in self.current_for_sessions(session_ids).items()
+                if report.status is ReportStatus.SUBMITTED and self.reviewer_of(report) == user.id}
+
     def _view(self, user: User, report: SessionReport, session: EmotionalSession,
               *, printing: bool = False) -> dict[str, Any]:
         versions = self.repository.list_for_session(session.id)

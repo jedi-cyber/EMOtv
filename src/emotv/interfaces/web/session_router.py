@@ -227,6 +227,34 @@ def create_session_starter(
     return start
 
 
+def create_visible_sessions(
+    sessions: SessionService,
+    students: StudentRepository,
+    assignments: AssignmentRepository | None,
+    authorization: AuthorizationService,
+):
+    """Las sesiones que una cuenta puede ver: las propias y, del docente, las de su
+    grupo. El administrador y el superadministrador no ven ninguna."""
+
+    def visible(user: User) -> list[EmotionalSession]:
+        if user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
+            return []
+        actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
+        actor_id = actor.id if actor else None
+        if user.role is Role.STUDENT:
+            found = {item.id: item for item in sessions.list_sessions_by_student(actor_id)} if actor_id else {}
+        else:
+            assigned = assignments.list_by_psychologist(user.id) if assignments is not None else ()
+            found = {item.id: item for assignment in assigned
+                     for item in sessions.list_sessions_by_student(assignment.student_id)}
+        found.update({item.id: item for item in sessions.list_sessions_by_owner(user.id)})
+        return sorted((item for item in found.values()
+                       if authorization.can_access_session(user, item, actor_student_id=actor_id)),
+                      key=lambda item: (item.started_at, item.id))
+
+    return visible
+
+
 def create_session_router(
     sessions: SessionService | None,
     authentication: AuthenticationService | None,
@@ -305,19 +333,14 @@ def create_session_router(
                 raise HTTPException(status_code=403, detail="Tu cuenta de usuario no tiene perfil asociado")
             if student_id is not None and student_id != actor_id:
                 raise HTTPException(status_code=403, detail="Solo puedes ver tus sesiones")
-            found = {item.id: item for item in service.list_sessions_by_student(actor_id)}
-        elif student_id is not None:
-            if assignments is None or not assignments.is_assigned(user.id, student_id):
-                raise HTTPException(status_code=403, detail="Este usuario no pertenece a tu grupo")
-            found = {item.id: item for item in service.list_sessions_by_student(student_id)}
-        else:
-            # Sin filtro, el docente ve las sesiones de su grupo y las propias.
-            assigned = assignments.list_by_psychologist(user.id) if assignments is not None else ()
-            found = {item.id: item for assignment in assigned
-                     for item in service.list_sessions_by_student(assignment.student_id)}
+            student_id = None
         if student_id is None:
-            found.update({item.id: item for item in service.list_sessions_by_owner(user.id)})
-        visible = [item for item in found.values()
+            # Sin filtro, el docente ve las sesiones de su grupo y las propias.
+            return [SessionResponse.from_domain(item)
+                    for item in create_visible_sessions(service, students, assignments, policy)(user)]
+        if assignments is None or not assignments.is_assigned(user.id, student_id):
+            raise HTTPException(status_code=403, detail="Este usuario no pertenece a tu grupo")
+        visible = [item for item in service.list_sessions_by_student(student_id)
                    if policy.can_access_session(user, item, actor_student_id=actor_id)]
         return [SessionResponse.from_domain(item) for item in sorted(visible, key=lambda item: (item.started_at, item.id))]
 

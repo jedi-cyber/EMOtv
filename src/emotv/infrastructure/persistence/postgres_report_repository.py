@@ -89,6 +89,15 @@ class PostgresReportRepository:
                               .order_by(SessionReportRecord.version)).all()
             return tuple(self._report(row) for row in rows)
 
+    def current_for_sessions(self, session_ids: tuple[str, ...]) -> dict[str, SessionReport]:
+        """La versión vigente del reporte de cada sesión, en una sola consulta."""
+        if not session_ids:
+            return {}
+        with self._factory() as db:
+            rows = db.scalars(select(SessionReportRecord).where(SessionReportRecord.session_id.in_(session_ids),
+                                                                SessionReportRecord.superseded_at.is_(None))).all()
+            return {row.session_id: self._report(row) for row in rows}
+
     def add_comment(self, comment: ReportComment, event: ReportEvent) -> ReportComment:
         with self._factory.begin() as db:
             db.add(ReportCommentRecord(id=comment.id, report_id=comment.report_id,

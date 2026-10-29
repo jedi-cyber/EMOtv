@@ -1,68 +1,45 @@
-"""API del aplicativo móvil: inicio de sesión, tokens revocables, resumen, sesión
-con o sin protocolo desde el dispositivo (sin participantes), URLs firmadas e
-HTTPS (SQLite en memoria, analizador falso, sin modelos ni imágenes de personas)."""
+"""API del aplicativo móvil: inicio de sesión y tokens revocables; consulta de
+sesiones, reportes y estadísticas con los mismos permisos que la web, y
+revisión del reporte desde el teléfono. El aplicativo no conduce sesiones:
+ninguna ruta móvil recibe capturas (SQLite en memoria, analizador falso)."""
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 import logging
 from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect, select
 
 from emotv.application.login_throttle import LoginThrottle
 from emotv.application.mobile_auth_service import MobileAuthService
-from emotv.application.signed_urls import StimulusUrlSigner
 from emotv.config import LoginLimits
-from emotv.domain.guided_session import FrameAssessment, QualityIssue
 from emotv.infrastructure.persistence import PostgresLoginAttemptRepository, PostgresMobileSessionRepository
-from emotv.infrastructure.persistence.models import Base
 from emotv.interfaces.web.mobile_router import create_mobile_router
 from emotv.interfaces.web.security import configure_web_security, load_web_settings
-from emotv.interfaces.web.session_router import create_session_starter
-from emotv.application.commitment_service import load_text
-from tests.integration.test_guided_sessions import step, stimuli
+from emotv.interfaces.web.session_router import create_visible_sessions
 from tests.integration.test_privacy_accounts import KEY, accept_commitment, audit_actions, env, headers  # noqa: F401
-from tests.integration.test_questionnaires import create as create_questionnaire
+from tests.integration.test_session_insights import run_session, setup
 
 PASSWORDS = {"usuario1@example.com": "usuario-1-pass-123", "usuario2@example.com": "usuario-2-pass-123",
-             "docente.a@example.com": "docente-a-pass-123", "facultad@example.com": "admin-password-123",
-             "soporte@example.com": "superadmin-pass-123"}
-# Bytes reconocibles: si el cuadro se guardara en algún lado, la prueba lo encontraría.
-FRAME = b"\xff\xd8\xff\xe0MARCA-DEL-CUADRO-MOVIL\xff\xd9"
-# Nada de resultados: ni la expresión estimada (el analizador falso devuelve "happiness") ni sus campos.
-RESULT_WORDS = ("happiness", "neutral", "confidence", "distribution", "probab", "captures", "'emotion'")
-
-
-class Clock:
-    def __init__(self, now: datetime) -> None:
-        self.now = now
-
-    def __call__(self) -> datetime:
-        return self.now
+             "docente.a@example.com": "docente-a-pass-123", "docente.b@example.com": "docente-b-pass-123",
+             "facultad@example.com": "admin-password-123", "soporte@example.com": "superadmin-pass-123"}
+TEXT = "La persona observó las imágenes con atención y pidió una pausa breve."
 
 
 def build(env, *, production: bool = False, base_url: str = "http://testserver"):  # noqa: F811
-    signer_clock = Clock(datetime.now(timezone.utc))
-    signer = StimulusUrlSigner("firma-de-prueba-con-mas-de-32-caracteres", signer_clock)
     throttle = LoginThrottle(PostgresLoginAttemptRepository(env.factory), LoginLimits(3, 50, 15))
     service = MobileAuthService(PostgresMobileSessionRepository(env.factory), env.auth, env.users, env.audit,
                                 throttle, clock=env.clock)
     app = FastAPI()
     configure_web_security(app, load_web_settings({"ENVIRONMENT": "test"}))
     app.include_router(create_mobile_router(
-        service, env.users, audit=env.audit, sessions=env.sessions,
-        start_session=create_session_starter(env.sessions, env.students, env.authorization, None, env.commitments,
-                                             env.protocols, env.questionnaires, env.audit),
-        protocols=env.protocols, questionnaires=env.questionnaires,
-        guided=env.guided, signer=signer,
-        stimulus_image=env.stimuli.repository.get_image, decode_frame=lambda data: data or None,
+        service, env.users, audit=env.audit,
+        visible_sessions=create_visible_sessions(env.sessions, env.students, env.assignments, env.authorization),
+        insights=env.insights, reports=env.reports, statistics=env.statistics,
         production=production, api_version="1.0.0rc1", min_app_version="1.2.0", clock=env.clock))
-    return SimpleNamespace(client=TestClient(app, base_url=base_url), service=service, signer=signer,
-                           signer_clock=signer_clock)
+    return SimpleNamespace(client=TestClient(app, base_url=base_url), service=service)
 
 
 @pytest.fixture
@@ -95,7 +72,7 @@ def error_code(response):
 def test_status_reports_versions_without_login(mobile):
     body = mobile.client.get("/mobile/status").json()
     assert body["status"] == "ok" and body["api_version"] == "1.0.0rc1" and body["min_app_version"] == "1.2.0"
-    assert body["services"] == {"login": True, "sessions": True}
+    assert body["services"] == {"login": True, "sessions": True, "reports": True, "statistics": True}
 
 
 @pytest.mark.parametrize("email", ["facultad@example.com", "soporte@example.com"])
@@ -176,249 +153,127 @@ def test_login_does_not_log_the_request_body(mobile, caplog):
     assert "usuario-1-pass-123" not in caplog.text and "otra-clave-secreta-999" not in caplog.text
 
 
-# --- Resumen del dashboard --------------------------------------------------------------
+# --- Sesiones: solo consulta -------------------------------------------------------------
 
-CONFIRMED = {"authorization_confirmed": True}
-
-
-def start_without_protocol(mobile, tokens, session_type="adulto", **extra):
-    return mobile.client.post("/mobile/sessions", headers=bearer(tokens),
-                              json={"session_type": session_type, **CONFIRMED, **extra})
+def finished_session(env):  # noqa: F811
+    """Sesión conducida en la web por el usuario 1 (grupo del docente A)."""
+    return run_session(env, setup(env))
 
 
-def test_summary_has_only_the_signed_in_account_data(env, mobile):  # noqa: F811
-    emotional, _ = stimuli(env)
-    mine = env.client.post("/protocols", headers=headers(env, env.user_1), json={
-        "name": "Mío", "description": "", "for_children": True, "steps": [step(emotional)]}).json()
-    env.client.post("/protocols", headers=headers(env, env.user_2), json={
-        "name": "Ajeno", "description": "", "for_children": False, "steps": [step(emotional)]})
-    accept_commitment(env, env.user_1)
-    accept_commitment(env, env.user_2)
+def get(mobile, path, email, **params):
+    return mobile.client.get(path, headers=bearer(signed_in(mobile, email)), params=params)
+
+
+def test_the_mobile_api_does_not_conduct_sessions(mobile):
+    """Ninguna captura sale del teléfono: no existen rutas para iniciar ni conducir sesiones."""
+    routes = {(method, route.path) for route in mobile.client.app.routes for method in getattr(route, "methods", ())}
+    assert not [path for _, path in routes
+                if any(word in path for word in ("frame", "calibration", "stimulus-images", "protocols", "advance"))]
+    assert ("POST", "/mobile/sessions") not in routes
     tokens = signed_in(mobile, "usuario1@example.com")
-    own = start_without_protocol(mobile, tokens).json()
-    foreign = start_without_protocol(mobile, signed_in(mobile, "usuario2@example.com")).json()
-
-    body = mobile.client.get("/mobile/summary", headers=bearer(tokens)).json()
-    assert "participants" not in body
-    assert [item["code"] for item in body["recent_sessions"]] == [own["code"]]
-    assert [item["code"] for item in body["today_sessions"]] == [own["code"]]
-    assert body["recent_sessions"][0]["audience"] == "adulto"
-    assert [(item["id"], item["audience"]) for item in body["protocols"]] == [(mine["id"], "infantil")]
-    assert "tutor autorizó por escrito" in body["protocols"][0]["confirmation"]
-    assert {item["value"] for item in body["audiences"]} == {"propia", "adulto", "infantil"}
-    assert foreign["code"] not in str(body) and foreign["session_id"] not in str(body)
-
-    # El docente del grupo tampoco ve en el aplicativo las sesiones de su usuario.
-    docente = mobile.client.get("/mobile/summary", headers=bearer(signed_in(mobile, "docente.a@example.com"))).json()
-    assert docente["recent_sessions"] == [] and docente["today_sessions"] == []
-    assert ("view", "mobile_summary", "success") in audit_actions(env)
+    response = mobile.client.post("/mobile/sessions", headers=bearer(tokens), json={"session_type": "adulto"})
+    assert response.status_code == 405
 
 
-# --- Sesión desde el móvil --------------------------------------------------------------
+def test_summary_and_list_show_what_the_account_already_sees_on_the_web(env, mobile):  # noqa: F811
+    session_id = finished_session(env)
+    code = env.sessions.get_session(session_id).code
 
-def ready_session(env, mobile, for_children=False):  # noqa: F811
-    emotional, _ = stimuli(env)
-    questionnaire = create_questionnaire(env, env.user_1)
-    accept_commitment(env, env.user_1)
-    env.commitments.accept(env.user_1, load_text("child_notice").version, "child_notice")
-    body = {"name": "Secuencia móvil", "description": "", "for_children": for_children,
-            "steps": [step(emotional, exposure=6, capture=2)], "pre_questionnaire_id": questionnaire["id"],
-            "post_questionnaire_id": None}
-    protocol = env.client.post("/protocols", headers=headers(env, env.user_1), json=body).json()
-    tokens = signed_in(mobile, "usuario1@example.com")
-    return protocol, emotional, tokens
+    own = get(mobile, "/mobile/summary", "usuario1@example.com").json()
+    assert [item["code"] for item in own["recent_sessions"]] == [code]
+    assert own["recent_sessions"][0]["mine"] is True and own["recent_sessions"][0]["report_status"] is None
+    assert own["pending_reviews"] == 0 and "protocols" not in own and "audiences" not in own
 
-
-def start(mobile, tokens, protocol, confirmed=True):
-    return mobile.client.post("/mobile/sessions", headers=bearer(tokens),
-                              json={"protocol_id": protocol["id"], "authorization_confirmed": confirmed})
+    # El docente del grupo ve la sesión de su usuario, marcada como ajena.
+    group = get(mobile, "/mobile/sessions", "docente.a@example.com").json()
+    assert [(item["code"], item["mine"]) for item in group] == [(code, False)]
+    for email in ("usuario2@example.com", "docente.b@example.com"):
+        assert get(mobile, "/mobile/sessions", email).json() == []
+        assert code not in str(get(mobile, "/mobile/summary", email).json())
+    assert ("view", "mobile_sessions", "success") in audit_actions(env)
 
 
-def started_id(mobile, tokens, protocol):
-    response = start(mobile, tokens, protocol)
-    assert response.status_code == 201, response.text
-    return response.json()["session_id"]
+def test_session_detail_has_the_timeline_and_metrics_only_for_who_can_access(env, mobile):  # noqa: F811
+    session_id = finished_session(env)
+    detail = get(mobile, f"/mobile/sessions/{session_id}", "usuario1@example.com")
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["session"]["id"] == session_id
+    assert set(body["timeline"]["lanes"]) >= {"stimuli", "captures", "questionnaires"}
+    assert body["metrics"]["totals"]["emotional_stimuli"] == 2
+    assert get(mobile, f"/mobile/sessions/{session_id}", "docente.a@example.com").status_code == 200
+    for email in ("usuario2@example.com", "docente.b@example.com"):
+        denied = get(mobile, f"/mobile/sessions/{session_id}", email)
+        assert denied.status_code == 403 and error_code(denied) == "forbidden"
+    missing = get(mobile, "/mobile/sessions/no-existe", "usuario1@example.com")
+    assert missing.status_code == 404 and error_code(missing) == "not_found"
 
 
-def send_frame(mobile, tokens, session_id):
-    return mobile.client.post(f"/mobile/sessions/{session_id}/frames", content=FRAME,
-                              headers={**bearer(tokens), "Content-Type": "image/jpeg"})
+# --- Reporte desde el teléfono ------------------------------------------------------------
+
+def test_the_report_goes_through_the_docente_review_from_the_phone(env, mobile):  # noqa: F811
+    session_id = finished_session(env)
+    user = bearer(signed_in(mobile, "usuario1@example.com"))
+    docente = bearer(signed_in(mobile, "docente.a@example.com"))
+    created = mobile.client.post(f"/mobile/sessions/{session_id}/report", headers=user)
+    assert created.status_code == 201, created.text
+    report_id = created.json()["id"]
+    assert created.json()["status"] == "draft" and created.json()["can_edit"] is True
+
+    empty = mobile.client.post(f"/mobile/reports/{report_id}/submit", headers=user)
+    assert empty.status_code == 422 and error_code(empty) == "invalid"
+    mobile.client.put(f"/mobile/reports/{report_id}", headers=user, json={"narrative": TEXT})
+    sent = mobile.client.post(f"/mobile/reports/{report_id}/submit", headers=user).json()
+    assert sent["status"] == "submitted" and sent["can_edit"] is False
+
+    # Pendiente del docente asignado; el otro docente no lo ve ni lo revisa.
+    pending = mobile.client.get("/mobile/reviews", headers=docente).json()
+    assert [(item["id"], item["report_id"]) for item in pending] == [(session_id, report_id)]
+    assert get(mobile, "/mobile/summary", "docente.a@example.com").json()["pending_reviews"] == 1
+    assert get(mobile, "/mobile/reviews", "docente.b@example.com").json() == []
+    other = mobile.client.post(f"/mobile/reports/{report_id}/comments", json={"text": "Revisa"},
+                               headers=bearer(signed_in(mobile, "docente.b@example.com")))
+    assert other.status_code == 403
+    # El usuario no se aprueba a sí mismo.
+    assert mobile.client.post(f"/mobile/reports/{report_id}/approve", headers=user).status_code == 403
+
+    commented = mobile.client.post(f"/mobile/reports/{report_id}/comments", headers=docente,
+                                   json={"section": "narrative", "text": "Describe la pausa con más detalle."})
+    assert [item["text"] for item in commented.json()["comments"]] == ["Describe la pausa con más detalle."]
+    returned = mobile.client.post(f"/mobile/reports/{report_id}/return", headers=docente).json()
+    assert returned["status"] == "changes_requested"
+    assert mobile.client.get("/mobile/reviews", headers=docente).json() == []
+
+    # El usuario responde corrigiendo el texto y vuelve a enviarlo.
+    seen = mobile.client.get(f"/mobile/sessions/{session_id}/report", headers=user).json()
+    assert seen["comments"][0]["section"] == "narrative" and seen["can_edit"] is True
+    mobile.client.put(f"/mobile/reports/{report_id}", headers=user, json={"narrative": TEXT + " Duró un minuto."})
+    mobile.client.post(f"/mobile/reports/{report_id}/submit", headers=user)
+    approved = mobile.client.post(f"/mobile/reports/{report_id}/approve", headers=docente).json()
+    assert approved["status"] == "approved" and approved["can_review"] is False
+    again = mobile.client.post(f"/mobile/reports/{report_id}/approve", headers=docente)
+    assert again.status_code == 409 and error_code(again) == "conflict"
+    listed = get(mobile, "/mobile/sessions", "usuario1@example.com").json()
+    assert listed[0]["report_status"] == "approved"
 
 
-def calibrate(env, mobile, tokens, session_id):  # noqa: F811
-    assert mobile.client.post(f"/mobile/sessions/{session_id}/calibration", headers=bearer(tokens)).status_code == 200
-    for _ in range(6):
-        assert send_frame(mobile, tokens, session_id).status_code == 200
-        env.clock.now += timedelta(seconds=0.6)
+def test_reviews_are_only_for_the_docente(mobile):
+    response = get(mobile, "/mobile/reviews", "usuario1@example.com")
+    assert response.status_code == 403 and error_code(response) == "forbidden"
 
 
-def test_full_session_with_a_protocol_from_the_device(env, mobile):  # noqa: F811
-    protocol, emotional, tokens = ready_session(env, mobile)
-    options = mobile.client.get("/mobile/protocols", headers=bearer(tokens))
-    assert [item["id"] for item in options.json()] == [protocol["id"]]
-    assert options.json()[0]["audience"] == "adulto"
+# --- Estadísticas agregadas ---------------------------------------------------------------
 
-    # Sin la confirmación no hay sesión.
-    refused = start(mobile, tokens, protocol, confirmed=False)
-    assert refused.status_code == 422 and "persona adulta" in refused.json()["detail"]["message"]
-    started = start(mobile, tokens, protocol)
-    assert started.status_code == 201, started.text
-    session_id = started.json()["session_id"]
-    assert started.json()["code"].startswith("S-") and started.json()["audience"] == "adulto"
-    assert "view_token" not in started.text and "participant" not in started.text
-    # No hay un segundo paso de confirmación: empieza en el cuestionario previo.
-    assert mobile.client.post(f"/mobile/sessions/{session_id}/confirm", headers=bearer(tokens),
-                              json={}).status_code in (404, 405)
-    current = mobile.client.get(f"/mobile/sessions/{session_id}/next", headers=bearer(tokens)).json()
-    assert current["phase"] == "pre_questionnaire" and current["questionnaire"]["moment"] == "pre"
-    assert current["code"] == started.json()["code"]
-    assert {item["id"] for item in current["questionnaire"]["questions"]} >= {"animo", "energia"}
-
-    answered = mobile.client.post(f"/mobile/sessions/{session_id}/questionnaires/pre", headers=bearer(tokens),
-                                  json={"answers": {"animo": 3, "energia": 4}})
-    assert answered.status_code == 201 and answered.json()["phase"] == "calibration"
-    calibrate(env, mobile, tokens, session_id)
-
-    current = mobile.client.get(f"/mobile/sessions/{session_id}/next", headers=bearer(tokens)).json()
-    assert current["phase"] == "stimuli" and current["send_frames"] is True
-    assert current["stimulus"]["title"] == emotional["title"]
-    for word in RESULT_WORDS:
-        assert word not in str(current).lower()
-
-    image = mobile.client.get(current["stimulus"]["image_url"])
-    assert image.status_code == 200 and image.headers["content-type"].startswith("image/")
-
-    env.clock.now += timedelta(seconds=2)
-    assert send_frame(mobile, tokens, session_id).json() == {"phase": "stimuli", "capture_status": []}
-    captures = env.guided.repository.list_captures(session_id)
-    assert len(captures) == 1 and captures[0].quality.value == "good"
-
-    stopped = mobile.client.post(f"/mobile/sessions/{session_id}/stop", headers=bearer(tokens),
-                                 json={"reason": "participant"})
-    assert stopped.json() == {"phase": "stopped"}
-    # Con la sesión terminada, la imagen ya no se sirve aunque la URL no haya vencido.
-    assert mobile.client.get(current["stimulus"]["image_url"]).status_code == 403
-    actions = audit_actions(env)
-    assert ("view", "stimulus_image", "success") in actions and ("view", "stimulus_image", "denied") in actions
-    assert ("view", "guided_session", "success") in actions
-
-
-def test_the_mobile_api_works_without_a_protocol(env, mobile):  # noqa: F811
-    accept_commitment(env, env.user_1)
-    tokens = signed_in(mobile, "usuario1@example.com")
-    # Sin protocolo hay que decir con quién es la sesión y confirmar.
-    missing = mobile.client.post("/mobile/sessions", headers=bearer(tokens), json=CONFIRMED)
-    assert missing.status_code == 422
-    assert start_without_protocol(mobile, tokens, "propia", authorization_confirmed=False).status_code == 422
-    # participant_id ya no existe en el contrato.
-    legacy = mobile.client.post("/mobile/sessions", headers=bearer(tokens),
-                                json={"participant_id": "p-1", "protocol_id": "x"})
-    assert legacy.status_code == 422
-    started = start_without_protocol(mobile, tokens, "propia")
-    assert started.status_code == 201, started.text
-    body = started.json()
-    assert body["phase"] == "calibration" and body["has_protocol"] is False and body["audience"] == "propia"
-    session_id = body["session_id"]
-    calibrate(env, mobile, tokens, session_id)
-    current = mobile.client.get(f"/mobile/sessions/{session_id}/next", headers=bearer(tokens)).json()
-    assert current["phase"] == "live" and current["send_frames"] is True
-    assert current["stimulus"] is None and current["questionnaire"] is None
-    for _ in range(3):
-        env.clock.now += timedelta(seconds=3)
-        assert send_frame(mobile, tokens, session_id).status_code == 200
-    assert env.guided.repository.list_captures(session_id)
-    finished = mobile.client.post(f"/mobile/sessions/{session_id}/finish", headers=bearer(tokens))
-    assert finished.json() == {"phase": "finished", "code": body["code"]}
-    assert env.sessions.get_session(session_id).state.value == "completed"
-    # Solo se termina así una sesión sin protocolo.
-    assert mobile.client.post(f"/mobile/sessions/{session_id}/finish", headers=bearer(tokens)).status_code == 409
-
-
-def test_a_child_session_asks_for_the_tutor_and_the_notice_the_first_time(env, mobile):  # noqa: F811
-    accept_commitment(env, env.user_1)
-    tokens = signed_in(mobile, "usuario1@example.com")
-    unconfirmed = start_without_protocol(mobile, tokens, "infantil", authorization_confirmed=False)
-    assert unconfirmed.status_code == 422 and "tutor autorizó" in unconfirmed.json()["detail"]["message"]
-    notice = start_without_protocol(mobile, tokens, "infantil")
-    assert notice.status_code == 428 and error_code(notice) == "child_notice_required"
-    version = load_text("child_notice").version
-    started = start_without_protocol(mobile, tokens, "infantil", child_notice_version=version)
-    assert started.status_code == 201 and started.json()["audience"] == "infantil"
-    assert start_without_protocol(mobile, tokens, "infantil").status_code == 201
-
-
-def test_a_childrens_protocol_asks_for_the_tutor_confirmation(env, mobile):  # noqa: F811
-    protocol, _, tokens = ready_session(env, mobile, for_children=True)
-    refused = start(mobile, tokens, protocol, confirmed=False)
-    assert refused.status_code == 422 and "tutor autorizó" in refused.json()["detail"]["message"]
-    started = start(mobile, tokens, protocol)
-    assert started.status_code == 201 and started.json()["audience"] == "infantil"
-
-
-def test_another_account_cannot_drive_or_start_the_session(env, mobile):  # noqa: F811
-    protocol, _, tokens = ready_session(env, mobile)
-    session_id = started_id(mobile, tokens, protocol)
-    other = signed_in(mobile, "usuario2@example.com")
-    accept_commitment(env, env.user_2)
-    assert mobile.client.get(f"/mobile/sessions/{session_id}/next", headers=bearer(other)).status_code == 403
-    assert send_frame(mobile, other, session_id).status_code == 403
-    assert mobile.client.post(f"/mobile/sessions/{session_id}/finish", headers=bearer(other)).status_code == 403
-    foreign = start(mobile, other, protocol)
-    assert foreign.status_code == 404 and error_code(foreign) == "not_found"
-
-
-def test_an_expired_or_altered_stimulus_url_is_rejected(env, mobile):  # noqa: F811
-    protocol, emotional, tokens = ready_session(env, mobile)
-    session_id = started_id(mobile, tokens, protocol)
-    expires, signature = mobile.signer.sign(env.user_1.id, session_id, emotional["id"])
-    url = f"/mobile/stimulus-images/{session_id}/{emotional['id']}?expires={expires}&signature={signature}"
-    assert mobile.client.get(url).status_code == 200
-    assert mobile.client.get(url.replace(signature, "0" * 64)).status_code == 403
-    assert mobile.client.get(url.replace(f"expires={expires}", f"expires={expires + 60}")).status_code == 403
-    mobile.signer_clock.now += timedelta(seconds=121)
-    expired = mobile.client.get(url)
-    assert expired.status_code == 403 and error_code(expired) == "invalid_or_expired_url"
-
-
-def test_the_mobile_capture_never_stores_the_image(env, mobile):  # noqa: F811
-    protocol, _, tokens = ready_session(env, mobile)
-    session_id = started_id(mobile, tokens, protocol)
-    mobile.client.post(f"/mobile/sessions/{session_id}/questionnaires/pre", headers=bearer(tokens),
-                       json={"answers": {"animo": 3, "energia": 4}})
-    mobile.client.post(f"/mobile/sessions/{session_id}/calibration", headers=bearer(tokens))
-    for _ in range(12):
-        assert send_frame(mobile, tokens, session_id).status_code == 200
-        env.clock.now += timedelta(seconds=0.6)
-    assert env.frames_assessed >= 6 and env.guided.repository.list_captures(session_id)
-
-    marker = b"MARCA-DEL-CUADRO-MOVIL"
-    with env.engine.connect() as connection:
-        for table in Base.metadata.sorted_tables:
-            for row in connection.execute(select(table)):
-                for value in row:
-                    raw = value if isinstance(value, bytes) else str(value).encode("utf-8", "ignore")
-                    assert marker not in raw, f"{table.name} guardó el cuadro"
-    assert "frame" not in {column["name"] for column in inspect(env.engine).get_columns("expression_captures")}
-
-
-def test_a_frame_must_be_jpeg(env, mobile):  # noqa: F811
-    protocol, _, tokens = ready_session(env, mobile)
-    session_id = started_id(mobile, tokens, protocol)
-    wrong = mobile.client.post(f"/mobile/sessions/{session_id}/frames", content=FRAME,
-                               headers={**bearer(tokens), "Content-Type": "image/png"})
-    assert wrong.status_code == 415
-
-
-def test_a_flagged_capture_reports_only_the_quality_issue(env, mobile):  # noqa: F811
-    protocol, _, tokens = ready_session(env, mobile)
-    session_id = started_id(mobile, tokens, protocol)
-    mobile.client.post(f"/mobile/sessions/{session_id}/questionnaires/pre", headers=bearer(tokens),
-                       json={"answers": {"animo": 3, "energia": 4}})
-    calibrate(env, mobile, tokens, session_id)
-    env.clock.now += timedelta(seconds=2)
-    env.frame_result = FrameAssessment((QualityIssue.NO_FACE,))
-    body = send_frame(mobile, tokens, session_id).json()
-    assert body == {"phase": "stimuli", "capture_status": ["no_face"]}
+def test_statistics_count_sessions_and_never_list_people(env, mobile):  # noqa: F811
+    finished_session(env)
+    mine = get(mobile, "/mobile/statistics", "usuario1@example.com").json()
+    assert mine["scope"] == "mine" and mine["sessions"]["total"] == 1
+    group = get(mobile, "/mobile/statistics", "docente.a@example.com", scope="group").json()
+    assert group["sessions"]["total"] == 1
+    assert "by_user" not in group and "usuario1@example.com" not in str(group)
+    assert get(mobile, "/mobile/statistics", "usuario1@example.com", scope="group").status_code == 403
+    dates = get(mobile, "/mobile/statistics", "usuario1@example.com", date_from="2026-10-02", date_to="2026-10-01")
+    assert dates.status_code == 422
 
 
 # --- HTTPS y cabeceras ---------------------------------------------------------------------
