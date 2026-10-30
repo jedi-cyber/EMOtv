@@ -1,9 +1,8 @@
-"""Línea de tiempo, métricas por estímulo y tendencias del participante.
+"""Línea de tiempo y métricas por estímulo de una sesión.
 
-Las ven quien condujo la sesión y su docente: con participante, por
-can_access_participant; en una sesión propia, por can_access_session. Cada
+Las ven quien condujo la sesión y su docente (can_access_session). Cada
 consulta, también las denegadas, queda en la auditoría. El sistema describe; no
-interpreta.
+interpreta. No hay tendencias por persona: no se registra a nadie.
 """
 from __future__ import annotations
 
@@ -13,10 +12,9 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import SessionPoint, stimulus_metrics, trend
+from emotv.application.session_metrics import stimulus_metrics
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import GuidedPhase
-from emotv.domain.participant import Participant
 from emotv.domain.protocol import Protocol
 from emotv.domain.session import EmotionalSession
 from emotv.domain.stimulus import Stimulus
@@ -24,7 +22,6 @@ from emotv.domain.user import User
 
 TIMELINE = "session_timeline"
 METRICS = "session_metrics"
-TRENDS = "participant_trends"
 
 
 class InsightsNotFound(LookupError):
@@ -38,7 +35,6 @@ class SessionInsightsService:
         guided,                                       # repositorio de la sesión guiada
         protocols: Callable[[str], Protocol | None],
         stimuli: Callable[[str], Stimulus | None],
-        participants: Callable[[str], Participant | None],
         questionnaire_responses: Callable[[str], tuple] | None,
         questionnaires: Callable[[str], Any],
         authorization: AuthorizationService,
@@ -49,7 +45,6 @@ class SessionInsightsService:
         self.guided = guided
         self.protocols = protocols
         self.stimuli = stimuli
-        self.participants = participants
         self.questionnaire_responses = questionnaire_responses
         self.questionnaires = questionnaires
         self.authorization = authorization
@@ -62,11 +57,7 @@ class SessionInsightsService:
         session = self.sessions.get_session(session_id)
         if session is None:
             raise InsightsNotFound(session_id)
-        if session.participant_id is not None:
-            allowed = self.authorization.can_access_participant(user, self.participants(session.participant_id))
-        else:
-            allowed = self.authorization.can_access_session(user, session, actor_student_id=self.actor_student_id(user))
-        if not allowed:
+        if not self.authorization.can_access_session(user, session, actor_student_id=self.actor_student_id(user)):
             self.audit.record(user, AuditAction.VIEW, resource, session.id, AuditResult.DENIED)
             raise PermissionError("No tienes acceso a esta sesión")
         self.audit.record(user, AuditAction.VIEW, resource, session.id)
@@ -150,6 +141,7 @@ class SessionInsightsService:
             at(session.completed_at)) if value is not None]
         return {
             "session_id": session.id,
+            "session_code": session.code,
             "started_at": start.isoformat(),
             "duration_seconds": max(times, default=0.0),
             "lanes": {
@@ -161,32 +153,4 @@ class SessionInsightsService:
                 # Reservado: el ritmo cardíaco se agregará cuando exista el sensor.
                 "heart_rate": [],
             },
-        }
-
-    # --- Tendencias del participante ------------------------------------------------------
-
-    def trends(self, user: User, participant_id: str) -> dict[str, Any]:
-        participant = self.participants(participant_id)
-        if participant is None:
-            raise InsightsNotFound(participant_id)
-        if not self.authorization.can_access_participant(user, participant):
-            self.audit.record(user, AuditAction.VIEW, TRENDS, participant.id, AuditResult.DENIED)
-            raise PermissionError("No tienes acceso a este participante")
-        self.audit.record(user, AuditAction.VIEW, TRENDS, participant.id)
-        groups: dict[str, dict[str, Any]] = {}
-        for session in self.sessions.list_sessions_by_participant(participant.id):
-            protocol = self.protocols(session.protocol_id) if session.protocol_id else None
-            if protocol is None:
-                continue
-            # Las versiones de un mismo protocolo se comparan entre sí.
-            group = groups.setdefault(protocol.family_id, {"protocol_name": protocol.name, "points": []})
-            group["protocol_name"] = protocol.name
-            totals = self._session_metrics(session)["totals"]
-            group["points"].append(SessionPoint(session.id, session.started_at.isoformat(), protocol.version,
-                                                totals["matched"], totals["counted"]))
-        return {
-            "participant_id": participant.id,
-            "code": participant.code,
-            "protocols": [{"protocol_family_id": family, "protocol_name": data["protocol_name"], **trend(data["points"])}
-                          for family, data in groups.items()],
         }

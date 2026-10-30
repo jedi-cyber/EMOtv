@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { Activity, EmotionalSession, Student } from "../api/types";
+import type { Activity, DeletionCertificate, EmotionalSession, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
@@ -37,6 +37,8 @@ export function SessionsPage() {
   const activityNames = new Map((activitiesQuery.data ?? []).map((item) => [item.id, item.name]));
   const studentsQuery = useApiQuery<Student[]>(user?.role === "student" ? null : "/students");
   const studentCodes = new Map((studentsQuery.data ?? []).map((item) => [item.id, item.student_code]));
+  const certificatesQuery = useApiQuery<DeletionCertificate[]>("/session-deletions");
+  const certificates = certificatesQuery.data ?? [];
   const sessions = query.data ?? [];
   const hiddenCount = sessions.filter(isWithoutResult).length;
   const visible = showWithoutResult ? sessions : sessions.filter((session) => !isWithoutResult(session));
@@ -69,12 +71,14 @@ export function SessionsPage() {
           {!showWithoutResult && <span className="muted">{hiddenCount === 1 ? "1 sesión oculta" : `${hiddenCount} sesiones ocultas`}</span>}
         </div>}
         {visible.length === 0 ? <p className="empty-state">Todas las sesiones se cancelaron antes de registrar una expresión.</p>
-          : <div className="table-wrap"><table className="data-table"><thead><tr><th>Fecha</th><th>Estado</th>{!student && <th>Conducida por</th>}<th>Actividad</th><th>Resultado de la actividad</th><th>Expresión registrada</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
+          : <div className="table-wrap"><table className="data-table"><thead><tr><th>Código</th><th>Fecha</th><th>Estado</th>{!student && <th>Conducida por</th>}<th>Actividad</th><th>Resultado de la actividad</th><th>Expresión registrada</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
             {visible.map((session) => <tr key={session.id} className="clickable-row" onClick={(event) => {
               if (!(event.target as HTMLElement).closest("a")) navigate(paths.session(session.id));
             }}>
-              <td data-label="Fecha"><Link className="row-link" to={paths.session(session.id)}>{formatDate(session.started_at)}</Link></td>
-              <td data-label="Estado"><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip></td>
+              <td data-label="Código"><Link className="row-link" to={paths.session(session.id)}>{session.code ?? "Sin código"}</Link></td>
+              <td data-label="Fecha">{formatDate(session.started_at)}</td>
+              <td data-label="Estado"><span className="inline-actions"><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip>
+                {session.deletion_requested_at && <StatusChip tone="progress">Eliminación pedida</StatusChip>}</span></td>
               {!student && <td data-label="Conducida por">{session.student_id ? studentCodes.get(session.student_id) ?? "Usuario de tu grupo" : "Tú"}</td>}
               <td data-label="Actividad">{activityName(session.activity_id)}</td>
               <td data-label="Resultado de la actividad">{session.exercise_result ? activityOutcomeName(session.exercise_result) : EMPTY}</td>
@@ -84,6 +88,13 @@ export function SessionsPage() {
             </tr>)}
           </tbody></table></div>}
       </>}
+      {certificates.length > 0 && <section className="card">
+        <h2>Actas de eliminación</h2>
+        <ul className="card-list">{certificates.map((item) => <li key={item.id} className="row-card">
+          <div><strong>Sesión {item.session_code}</strong><span>Eliminada el {formatDate(item.deleted_at)}</span></div>
+          <ButtonLink variant="secondary" to={paths.deletionCertificate(item.id)}>Ver el acta</ButtonLink>
+        </li>)}</ul>
+      </section>}
     </section>
   );
 }

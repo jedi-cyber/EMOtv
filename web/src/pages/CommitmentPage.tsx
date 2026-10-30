@@ -36,7 +36,7 @@ export function CommitmentPage() {
 
   return <section>
     <PageHeader title="Compromiso de confidencialidad"
-      description={state === "accepted" ? "Ya aceptaste la versión vigente. Puedes volver a leerla cuando quieras." : "Léelo y acéptalo para registrar participantes e iniciar sesiones. Si cambia su versión, se te pedirá de nuevo."} />
+      description={state === "accepted" ? "Ya aceptaste la versión vigente. Puedes volver a leerla cuando quieras." : "Léelo y acéptalo para iniciar sesiones. Si cambia su versión, se te pedirá de nuevo."} />
     {text.provisional && <Callout variant="warning">Texto provisional: está pendiente de la revisión de la Facultad.</Callout>}
     {failure && <Callout variant="error">{failure}</Callout>}
     <article className="card"><PolicyDocument content={text.content} skipTitle /></article>

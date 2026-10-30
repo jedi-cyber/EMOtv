@@ -40,7 +40,7 @@ def create_chat_router(service: ChatService | None, authentication=None, users=N
     authenticated_user = create_current_user_dependency(authentication, users)
 
     def current_user(user: User = Depends(authenticated_user)) -> User:
-        # Emi es para usuarios y docentes; administración no la usa y los participantes no tienen cuenta.
+        # Emi es para usuarios y docentes; administración no la usa y las personas evaluadas no tienen cuenta.
         if user.role not in CONDUCTOR_ROLES:
             raise HTTPException(403, "Emi está disponible para usuarios y docentes")
         return user

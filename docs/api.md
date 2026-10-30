@@ -27,15 +27,16 @@ Authorization: Bearer <access_token>
 administrativo.
 
 El aplicativo Android usa sus propias rutas `/mobile` (tokens de acceso cortos y
-de renovación revocables, solo usuarios y docentes): contrato completo en
-[mobile-api.md](mobile-api.md). Un token del aplicativo no sirve en estas rutas
+de renovación revocables, solo usuarios y docentes). El aplicativo no conduce
+sesiones: consulta sesiones, reportes y estadísticas, y permite actuar sobre el
+reporte. Contrato completo en [mobile-api.md](mobile-api.md). Un token del aplicativo no sirve en estas rutas
 y uno de la web no sirve en `/mobile`.
 
-## Papeles, participantes, compromiso y auditoría
+## Papeles, compromiso y auditoría
 
 Papeles: `superadmin` (Superadministrador), `admin` (Administrador),
 `psychologist` (Docente) y `student` (Usuario). El administrador y el
-superadministrador nunca acceden a participantes, sesiones ni resultados. Ver
+superadministrador nunca acceden a sesiones ni resultados. Ver
 [privacidad](privacy/README.md).
 
 | Método | Ruta | Acceso |
@@ -46,33 +47,51 @@ superadministrador nunca acceden a participantes, sesiones ni resultados. Ver
 | `PUT`, `DELETE` | `/users/{docente}/assigned-students/{student_id}` | Administrador; asignar a otro docente mueve al usuario |
 | `GET` | `/commitment`, `/commitment/child-notice` | Texto versionado y si la cuenta debe aceptarlo |
 | `POST` | `/commitment/accept`, `/commitment/child-notice/accept` | Usuarios y docentes, con la versión vigente |
-| `GET`, `POST` | `/participants` | Usuarios y docentes (el docente ve también los de su grupo); `428` sin compromiso o, para el primer niño, sin el aviso. El registro pide `kind` y `age_years` (adulto: 18 o más) y rechaza cualquier otro dato de identidad (`422`) |
-| `GET` | `/participants/{id}` | `can_access_participant` |
-| `GET` | `/participants/expiring` | Docente: vencen en los próximos 30 días |
-| `GET`, `POST` | `/participants/{id}/authorizations` | `can_access_participant`; registra el formato firmado (`form_version`, `signed_on`, `participation`, `camera` y, en niños, `child_assent`) |
-| `POST` | `/participants/{id}/authorizations/{auth_id}/revoke` | `can_access_participant`; `party` y `scope`. Bloquea sesiones nuevas y marca al participante |
-| `POST` | `/participants/{id}/deletion-request` | Quien registró al participante |
-| `POST` | `/participants/{id}/delete` | Docente con acceso; devuelve el acta |
-| `GET` | `/participant-deletions`, `/participant-deletions/{id}` | Quien solicitó o ejecutó |
-| `POST` | `/participant-deletions/{id}/print` | Registra la impresión del acta |
 | `GET` | `/audit` | Administrador y superadministrador, con filtros; no hay operaciones de escritura |
 
-Sin `SENSITIVE_DATA_KEY`, las rutas de participantes responden `503`.
+Las personas evaluadas no se registran: no hay participantes ni cuentas para
+ellas. Cada sesión lleva un código aleatorio (`S-4F7K2Q`) que se anota en el
+formato firmado en papel.
 
 ## Estímulos y protocolos
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `GET` | `/stimuli` | Usuarios (institucionales y los de su docente), docentes (los suyos e institucionales) y administrador (institucionales). `?child_age=N`: solo leves, aprobados, vigentes y con edad mínima ≤ N |
-| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` y, en abstractas, `not_a_projective_test`. Los usuarios reciben `403` |
+| `GET` | `/stimuli` | Usuarios (institucionales, los de su docente y sus imágenes propias aprobadas; nunca las pendientes), docentes (los suyos e institucionales) y administrador (institucionales). `?for_children=true`: solo los que admite un protocolo para niños (leves, aprobados y vigentes; la edad no se registra, así que no se filtra por edad mínima) |
+| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` (no es una foto de una persona evaluada) y, en abstractas, `not_a_projective_test`. Queda aprobado al subirlo (no pasa por revisión). Los usuarios reciben `403`: suben sus imágenes en `/own-stimuli` |
 | `GET` | `/stimuli/{id}`, `/stimuli/{id}/file` | Quien puede verlo; `/file` es la única ruta que sirve una imagen, siempre un estímulo reescrito sin metadatos |
 | `POST` | `/stimuli/{id}/approve` | Quien lo gestiona |
 | `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
-| `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo |
-| `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) sin aprobación |
-| `POST` | `/protocols/{id}/approve` | Docente del autor (o el docente que lo armó); solo protocolos para niños |
+| `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo. `for_children` es obligatorio («¿Para adultos o para niños?») |
+| `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
 
-Un protocolo puede indicar `pre_questionnaire_id` y `post_questionnaire_id`
+Un protocolo es una receta guardada: qué aplicar en una sesión. Se guarda sin
+ejecutarlo y no necesita la aprobación del docente. Uno para niños solo admite
+estímulos «Para niños» (`audience: "children"`, leves) y aprobados; uno para
+adultos admite los dos. Una imagen propia pendiente no se admite en ninguno
+(`422` al guardarlo y `409` al usarlo si alguno dejó de servir). `needs_image`
+indica que el docente eliminó o reclasificó una imagen del protocolo: hay que
+reemplazarla.
+
+### Imágenes propias
+
+En la API son estímulos de alcance `user` (`/own-stimuli`): ninguna ruta de
+consulta se llama como una imagen.
+
+| Método | Ruta | Acceso |
+| --- | --- | --- |
+| `POST` | `/own-stimuli` | Usuario con docente asignado. `multipart/form-data` con listas paralelas `files`, `titles`, `origins` («¿De dónde es esta imagen?»), `audiences` (`children` o `adults`) y `rights_confirmed` (debe ser `true`). Hasta 20 por lote y `IMAGE_UPLOAD_LIMIT_PER_USER` en total. Cada imagen se reescribe sin metadatos y pasa por la detección de personas en memoria: `results[i].accepted=false` con el mensaje de rechazo si la confianza llega a `IMAGE_PERSON_REJECT_CONFIDENCE` (no se guarda); si no, queda `pending`, con `possible_person` desde `IMAGE_PERSON_REVIEW_CONFIDENCE`. `503` si los modelos de detección no están instalados. Docentes y administración reciben `403` |
+| `GET` | `/own-stimuli` | El usuario: sus imágenes, con `status` (`pending` o `approved`) y, si está pendiente, `expires_at` |
+| `GET` | `/own-stimuli/{id}/file` | Quien la subió y su docente. `?preview=true`: vista ampliada del docente (se audita) |
+| `GET` | `/own-stimuli/review` | Docente: pendientes de su grupo agrupadas por lote (`uploaded_by` con el correo, `uploaded_at`) y las aprobadas |
+| `GET` | `/own-stimuli/review/count` | Docente: `{pending}` para el contador del menú |
+| `POST` | `/own-stimuli/review` | Docente del usuario: `{image_ids, decision: "children" \| "adults" \| "delete", reason?}`. Aprueba o reclasifica, o elimina (archivo y registro; si una sesión o un protocolo la nombran, queda solo un registro sin imagen). El motivo llega al usuario como aviso |
+| `GET` | `/notices` | La propia cuenta: avisos sin leer (imagen eliminada o por vencer, protocolo que necesita una imagen) |
+| `POST` | `/notices/{id}/read` | La propia cuenta: marca un aviso como leído (`204`) |
+
+La detección de personas no es infalible: el docente revisa todas las imágenes.
+Las pendientes se eliminan a los `IMAGE_REVIEW_DAYS` días (aviso siete días
+antes). Un protocolo puede indicar `pre_questionnaire_id` y `post_questionnaire_id`
 (cuestionarios propios o la plantilla que el docente comparte); al iniciar la
 sesión se aplica la versión vigente de cada uno.
 
@@ -101,53 +120,70 @@ cuestionarios se pueden armar, pero una sesión no puede aplicar ninguno (`503`)
 | --- | --- | --- |
 | `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias); exige el compromiso aceptado (`428`) |
 | `POST` | `/sessions/{id}/cancel` | Solo quien conduce la sesión |
-| `GET` | `/sessions/{id}` | Quien la conduce o el docente de su grupo |
+| `GET` | `/sessions/{id}` | `can_access_session`: quien la condujo y el docente de ese usuario |
 | `GET` | `/sessions` | Propias (usuario) o las propias y las de su grupo (docente) |
 | `GET` | `/sessions?student_id={id}` | Sesiones de un usuario del grupo del docente |
+| `POST` | `/sessions/{id}/deletion-request` | Solo quien condujo la sesión |
+| `POST` | `/sessions/{id}/delete` | Docente: sus sesiones y las de su grupo, terminadas (`409` en curso). Borra todos los registros, verifica que no quede ninguno y devuelve el acta |
+| `GET` | `/session-deletions`, `/session-deletions/{id}` | Actas que la cuenta pidió o ejecutó |
+| `POST` | `/session-deletions/{id}/print` | Registra la impresión del acta en la auditoría |
 
 Para un usuario, el servidor fuerza el alcance al perfil propio y rechaza un
 `student_id` ajeno con `403`. El registro manual del resultado
 (`/sessions/{id}/complete`) ya no existe. Una sesión inexistente devuelve `404`. Iniciar una
-sesión asociada exige consentimiento activo.
+sesión asociada exige consentimiento activo. El administrador y el
+superadministrador nunca acceden a sesiones.
 
-Cada sesión guarda su `session_type`: `propia` (quien inicia sesión se analiza a
-sí mismo, sin participante), `participante_adulto` o `participante_infantil`.
-`POST /sessions` acepta `session_type` (por defecto `propia`), `participant_id`
-(obligatorio en los tipos con participante), `protocol_id` (opcional) y, sin
-protocolo, `pre_questionnaire_id` y `post_questionnaire_id` (opcionales; una
-sesión propia puede saltar el cuestionario). El WebSocket del analizador cierra
-con `4428` mientras falte el cuestionario previo de la sesión, así que no hay
-calibración ni análisis sin él. Con
-participante, solo quien lo registró inicia la sesión y el servidor exige la
-última autorización con participación (a), cámara (b) y, en niños,
-asentimiento; sin ellas, o tras un retiro, responde `409`. Un protocolo para
-niños se aplica solo aprobado y con estímulos adecuados a la edad (`409`).
+Toda sesión se inicia en el Analizador. `POST /sessions` acepta `protocol_id`
+(opcional), `session_type` (`propia`, `adulto` o `infantil`),
+`authorization_confirmed` y `child_notice_version`; otros campos responden
+`422`.
 
-## Sesión guiada
+- Con protocolo, el público lo decide el protocolo (`for_children`); no hace
+  falta `session_type`, y uno que lo contradiga responde `422` (con un
+  protocolo para adultos se admite `propia`). Se aplica la versión vigente de
+  sus cuestionarios.
+- Sin protocolo, `session_type` es obligatorio (`422`): la respuesta a «¿Con
+  quién es la sesión?». Una sesión infantil sin protocolo no muestra imágenes ni
+  cuestionarios.
+- `authorization_confirmed` debe ser `true` (`422`): la única confirmación de la
+  sesión, según su público. Se guarda la fecha y hora de la confirmación.
+- La primera sesión infantil exige el aviso sobre datos de menores: se acepta en
+  la misma petición con `child_notice_version`; si falta, `428` con la cabecera
+  `X-EMOtv-Required: child_notice`.
 
-Orden: confirmación, cuestionario previo, imágenes abstractas marcadas "antes del
-analizador" (sin capturas), calibración neutral, estímulos del protocolo con
-capturas y, si el protocolo lo indica, cuestionario posterior. El servidor lleva
-el tiempo de cada exposición, así quien conduce y el participante pueden usar
-dispositivos distintos.
+Cada sesión guarda un `code` aleatorio (`S-` y seis caracteres), que la web
+muestra al empezar, al terminar y en el reporte. Las sesiones se eliminan solas
+al cumplir `SESSION_RETENTION_MONTHS` (12 por defecto) desde su inicio; la
+auditoría registra solo la cantidad.
+
+## Sesión con protocolo
+
+Orden: cuestionario previo, imágenes abstractas marcadas "antes del analizador"
+(sin capturas), calibración neutral, estímulos del protocolo con capturas y, si
+el protocolo lo indica, cuestionario posterior. Sin protocolo, después de la
+calibración la fase es `live`: una lectura cada 3 segundos hasta que quien
+conduce termina. La confirmación ya se dio al crear la sesión: aquí no se pide
+otra. El servidor lleva el tiempo de cada exposición, así quien conduce y la
+persona evaluada pueden usar dispositivos distintos. Las rutas internas
+conservan el nombre `participant-view` (pantalla de la persona).
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `POST` | `/guided-sessions/{session_id}` | Quien conduce una sesión en progreso con protocolo; devuelve una sola vez `view_token`, el enlace de la vista del participante |
+| `POST` | `/guided-sessions/{session_id}` | Quien conduce una sesión en progreso; devuelve una sola vez `view_token`, el enlace de la pantalla de la persona |
 | `POST` | `/guided-sessions/{id}/view-link` | Reemplaza el enlace (el anterior deja de valer) |
-| `GET` | `/guided-sessions/{id}` | Quien conduce: fase, paso, tiempo restante, estado de la captura, capturas, marcadores y lo que el participante dijo ver |
-| `POST` | `/guided-sessions/{id}/confirm` | `commitment_reminder` y, con adulto, `authorization_confirmed`; con niño, `guardian_present` y `child_assent`. Sin ella, `422` y la sesión no empieza |
+| `GET` | `/guided-sessions/{id}` | Quien conduce: código, público, fase, paso, tiempo restante, estado de la captura, capturas, marcadores y lo que la persona dijo ver |
 | `POST` | `/guided-sessions/{id}/advance` | Continúa tras el cuestionario previo o posterior (`409` si falta responderlo) |
 | `POST` | `/guided-sessions/{id}/calibration` | Inicia la calibración neutral (solo después del cuestionario previo) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
-| `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant`, `guardian` o `conductor`; termina de inmediato y cancela la sesión |
+| `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |
 | `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |
-| `POST` | `/guided-sessions/{id}/verbal-responses` | `step_index` y `text`: lo que el participante dice ver en una abstracta que lo pide, cifrado |
+| `POST` | `/guided-sessions/{id}/verbal-responses` | `step_index` y `text`: lo que la persona dice ver en una abstracta que lo pide, cifrado |
 | `GET` | `/sessions/{id}/guided-results` | Quien condujo y su docente (`can_access_session`); se audita |
-| `GET` | `/participant-view/{token}` | Vista del participante, sin cuenta: fase, indicación y estímulo actual. Nunca expresiones, probabilidades, calidad ni notas |
-| `GET` | `/participant-view/{token}/stimulus` | La imagen del estímulo que se muestra ahora (nunca la de un participante) |
+| `GET` | `/participant-view/{token}` | Pantalla de la persona, sin cuenta: fase, indicación y estímulo actual. Nunca expresiones, probabilidades, calidad ni notas |
+| `GET` | `/participant-view/{token}/stimulus` | La imagen del estímulo que se muestra ahora (nunca la de una persona) |
 | `POST` | `/participant-view/{token}/frames` | Un cuadro JPEG (hasta 1 MB); se analiza en memoria y se descarta. Responde solo `{"received": true}` |
-| `POST` | `/participant-view/{token}/stop` | El participante pide parar: la sesión termina de inmediato |
+| `POST` | `/participant-view/{token}/stop` | La persona pide parar: la sesión termina de inmediato |
 
 Antes de cada captura se revisa rostro, centrado, tamaño, iluminación e
 inclinación de la cabeza; si falla, se reintenta 3 segundos y luego se guarda
@@ -159,31 +195,61 @@ tiempo desde su aparición; nunca la imagen. Las pantallas con imágenes
 abstractas muestran: "Registro descriptivo. Una sesión breve no permite sacar
 conclusiones a partir de una imagen."
 
-## Línea de tiempo, métricas y tendencias
+## Línea de tiempo y métricas
 
-Describen lo registrado; no interpretan. Con participante, el acceso pasa por
-`can_access_participant` (quien lo registró y su docente); en una sesión propia,
-por `can_access_session`. Cada consulta, también las denegadas, queda en la
-auditoría (`session_timeline`, `session_metrics`, `participant_trends`).
+Describen lo registrado; no interpretan. El acceso pasa por
+`can_access_session` (quien condujo la sesión y su docente). Cada consulta,
+también las denegadas, queda en la auditoría (`session_timeline`,
+`session_metrics`). No hay tendencias ni seguimiento por persona.
 
 | Método | Ruta | Contenido |
 | --- | --- | --- |
-| `GET` | `/sessions/{id}/timeline` | Un solo eje en segundos desde el inicio: respuestas de cuestionarios, aparición de cada estímulo, expresión estimada de cada captura, lo que el participante dijo ver, marcadores y el carril `heart_rate`, vacío y reservado para el sensor |
+| `GET` | `/sessions/{id}/timeline` | Un solo eje en segundos desde el inicio: respuestas de cuestionarios, aparición de cada estímulo, expresión estimada de cada captura, lo que la persona dijo ver, marcadores y el carril `heart_rate`, vacío y reservado para el sensor |
 | `GET` | `/sessions/{id}/metrics` | Por estímulo emocional: expresión estimada, probabilidad, segundos desde la aparición, calidad y si coincide con la esperada. Las capturas marcadas se muestran pero no cuentan; la primera de buena calidad decide. Las abstractas solo traen sus expresiones y lo que dijo ver, sin coincidencia, y `abstract_notice` |
-| `GET` | `/participants/{id}/trends` | Por protocolo (todas sus versiones), las coincidencias de cada sesión. Con menos de dos sesiones comparables, `comparable: false` y un mensaje en lugar de la tendencia |
 
 Los textos describen: "En 3 de 5 estímulos la expresión estimada coincidió con
 la esperada". Nunca valoran a la persona.
 
+## Estadísticas agregadas
+
+`GET /statistics` cuenta sesiones, no personas. Se calcula en el servidor solo
+con las sesiones a las que la cuenta tiene acceso (`can_access_session`); cada
+consulta, también las denegadas, se audita sin contenido (`session_statistics`).
+No se generan archivos: la interfaz copia la tabla al portapapeles.
+
+| Parámetro | Valores |
+| --- | --- |
+| `scope` | `mine` (sesiones que condujo la cuenta) o `group` (solo docentes: las de los usuarios de su grupo). La administración recibe `403` |
+| `date_from`, `date_to` | Fechas `AAAA-MM-DD` de inicio de la sesión (UTC), inclusive |
+| `protocol` | Familia del protocolo (todas sus versiones) o `none` (sin protocolo) |
+| `audience` | `propia`, `adulto` o `infantil` |
+| `questionnaire_id` | Versión exacta de un cuestionario de la lista `questionnaires` |
+
+Responde:
+- `sessions`: total, completadas, interrumpidas (canceladas o detenidas) y
+  duración promedio de las completadas.
+- `expressions`: por cada una de las 8 expresiones, el porcentaje de las
+  capturas de buena calidad, con la cantidad de capturas y de sesiones. Las de
+  mala calidad no cuentan (`excluded_captures`).
+- `coincidence`: estímulos emocionales comparados y en cuántos coincidió la
+  expresión estimada con la esperada (la primera captura de buena calidad de
+  cada uno decide).
+- `by_user` (solo `group`): sesiones, completadas e interrumpidas por correo
+  del usuario; nada más de cada sesión.
+- `questionnaire`: por pregunta, cuántas veces se eligió cada opción o punto, y
+  cuántas quedaron sin responder. No se suman ni se interpretan. En las de
+  texto, `counts` es nulo: solo se informa cuántas respuestas hubo.
+- `notice` (fijo) y, con menos de 5 sesiones, `few_sessions_notice`.
+
 ## Reporte de sesión
 
-Lo redacta quien condujo una sesión con participante, cuando terminó, y lo revisa
+Lo redacta quien condujo una sesión con protocolo, cuando terminó, y lo revisa
 su docente asignado. Estados: `draft` (borrador), `submitted` (enviado a
 revisión), `changes_requested` (con observaciones) y `approved`. Si quien condujo
 es un docente, cerrar el reporte lo deja aprobado sin revisión. Un reporte
 aprobado no se edita: `new-version` crea la siguiente, en borrador, que vuelve a
 revisión. El texto y los comentarios se guardan cifrados; el historial solo dice
-quién hizo qué y cuándo. Todo acceso pasa por `can_access_participant` y queda
+quién hizo qué y cuándo. Todo acceso pasa por `can_access_session` y queda
 en la auditoría.
 
 | Método | Ruta | Acceso |
@@ -197,7 +263,7 @@ en la auditoría.
 | `POST` | `/reports/{id}/print` | Solo aprobado: registra la impresión en la auditoría y devuelve el contenido imprimible. El navegador imprime; el servidor no genera archivos |
 
 El reporte incluye la línea de tiempo, las métricas, las respuestas de los
-cuestionarios, el código del participante (nunca su nombre), el modelo usado, el
+cuestionarios, el código de la sesión (nunca un nombre), el modelo usado, el
 aviso de que las expresiones son estimaciones de apoyo y no una evaluación y, si
 hubo imágenes abstractas, su aviso fijo.
 

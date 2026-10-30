@@ -25,7 +25,7 @@ const actionNames: Record<string, string> = {
 };
 const when = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "medium", timeStyle: "short" });
 
-/** Reporte de una sesión con participante: redacción, revisión por secciones e historial. */
+/** Reporte de una sesión con protocolo: redacción, revisión por secciones e historial. */
 export function SessionReportPage() {
   const { sessionId = "" } = useParams();
   const { token } = useAuth();

@@ -228,7 +228,7 @@ La restauración **reemplaza toda la base actual**: pide escribir `RESTAURAR`,
 detiene la API mientras restaura y la vuelve a iniciar. La carpeta `backups/`
 no se sube al repositorio. Guarda los respaldos en un lugar seguro: contienen
 datos personales. Un respaldo conserva los datos que la aplicación ya eliminó:
-elimina los respaldos con más antigüedad que `PARTICIPANT_RETENTION_MONTHS`
+elimina los respaldos con más antigüedad que `SESSION_RETENTION_MONTHS`
 (12 meses por defecto) y, si contienen datos de voluntarios, a los 30 días.
 
 ## 11. Borrar todo, incluidos los datos
@@ -260,13 +260,18 @@ Agrega allí `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`, y apunta
 POSTGRES_USER=emotv
 POSTGRES_PASSWORD=<contraseña-local>
 POSTGRES_DB=emotv
-DATABASE_URL=postgresql+psycopg://emotv:<contraseña-local>@localhost:5433/emotv
+DATABASE_URL=postgresql+psycopg://emotv:<contraseña-local>@127.0.0.1:5433/emotv
 ```
 
 PostgreSQL se publica solo en `127.0.0.1`, en el puerto **5433** para no
 chocar con un PostgreSQL instalado en Windows. Cámbialo con
 `POSTGRES_HOST_PORT`. Luego `python -m alembic upgrade head` y sigue el
 README.
+
+Escribe `127.0.0.1` en `DATABASE_URL`, no `localhost`. Windows resuelve
+`localhost` primero a IPv6 (`::1`), y Docker publica el puerto solo en IPv4.
+Cada conexión espera a que falle el intento por `::1` antes de probar
+`127.0.0.1`: alembic y las pruebas parecen colgadas, sin mostrar ningún error.
 
 ## Pruebas dentro de Docker
 

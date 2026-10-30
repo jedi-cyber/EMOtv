@@ -5,7 +5,6 @@ import type { GuidedPhase, GuidedState, MarkerKind, Questionnaire } from "../api
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
-import { Checkbox } from "../components/Checkbox";
 import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
@@ -15,12 +14,16 @@ import { paths } from "../routes/paths";
 
 const POLL_MS = 1000;
 const phaseNames: Record<GuidedPhase, string> = {
-  confirmation: "Confirmación",
   pre_questionnaire: "Cuestionario previo",
   before_analyzer: "Imágenes antes del analizador",
   calibration: "Calibración neutral",
-  stimuli: "Estímulos",
+  stimuli: "Imágenes",
   post_questionnaire: "Cuestionario posterior",
+  live: "Lectura en vivo",
+  // Fases de una estación de examen; el conductor no abre esas sesiones mientras corren.
+  waiting: "Espera el consentimiento",
+  ready: "Lista para el examen",
+  exam: "Examen en curso",
   finished: "Sesión terminada",
   stopped: "Sesión detenida",
 };
@@ -37,10 +40,10 @@ const issueNames: Record<string, string> = {
   no_frame: "no llegó imagen de la cámara", no_face: "no se ve el rostro", off_center: "rostro no centrado",
   too_small: "rostro muy lejos", too_dark: "poca luz", too_bright: "demasiada luz", tilted: "cabeza inclinada",
 };
-const stopNames = { participant: "el participante pidió parar", guardian: "el padre, la madre o el tutor pidió parar", conductor: "quien conduce la sesión la terminó" };
+const stopNames = { participant: "la persona pidió parar", guardian: "el padre, la madre o el tutor pidió parar", conductor: "quien conduce la sesión la terminó" };
 const time = (value: string) => new Date(value).toLocaleTimeString("es-PE", { timeStyle: "medium" });
 
-/** Vista de quien conduce: progreso, estado de la captura y marcadores. */
+/** Vista de quien conduce una sesión con protocolo: progreso, estado de la captura y marcadores. */
 export function GuidedConductorPage() {
   const { sessionId = "" } = useParams();
   const { token } = useAuth();
@@ -49,7 +52,6 @@ export function GuidedConductorPage() {
   const [state, setState] = useState<GuidedState | null>(null);
   const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(null);
   const [viewToken, setViewToken] = useState<string | null>(() => readViewToken(sessionId));
-  const [confirm, setConfirm] = useState({ commitment_reminder: false, authorization_confirmed: false, guardian_present: false, child_assent: false });
   const [note, setNote] = useState("");
   const [verbal, setVerbal] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,47 +123,22 @@ export function GuidedConductorPage() {
   const viewUrl = viewToken ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
-  const child = state?.participant_kind === "child";
-  const confirmReady = confirm.commitment_reminder && (state?.participant_kind == null
-    || (child ? confirm.guardian_present && confirm.child_assent : confirm.authorization_confirmed));
+  const child = state?.audience === "infantil";
 
   return <section>
     <ButtonLink variant="ghost" className="back-link" to={paths.session(sessionId)}>← Detalle de la sesión</ButtonLink>
-    <PageHeader title="Sesión guiada" description={state ? phaseNames[state.phase] : "Cargando la sesión…"} />
+    <PageHeader title="Sesión con protocolo" description={state ? phaseNames[state.phase] : "Cargando la sesión…"} />
+    {state?.session_code && <p className="session-code" role="status">Código de la sesión: <strong>{state.session_code}</strong> · Anótalo en el formato firmado.</p>}
     {error && <Callout variant="error">{error}</Callout>}
     {state?.abstract_notice && <Callout variant="info" role="note">{state.abstract_notice}</Callout>}
 
     {state && active && <div className="card form-stack">
-      <h2>Vista del participante</h2>
+      <h2>Pantalla de la persona</h2>
       <p className="muted">Ábrela en esta computadora (en otra ventana, a pantalla completa) o en otro dispositivo con el enlace. No muestra resultados ni notas.</p>
       {viewUrl ? <div className="inline-actions">
-        <Button onClick={() => window.open(viewUrl, "emotv-participante", "noopener")}>Abrir vista del participante</Button>
+        <Button onClick={() => window.open(viewUrl, "emotv-persona", "noopener")}>Abrir la pantalla de la persona</Button>
         <Button variant="ghost" onClick={() => { void navigator.clipboard?.writeText(viewUrl); }}>Copiar enlace</Button>
-      </div> : <Button disabled={busy} onClick={() => { void newLink(); }}>Crear enlace de la vista del participante</Button>}
-    </div>}
-
-    {state?.phase === "confirmation" && <div className="card form-stack">
-      <h2>Antes de empezar</h2>
-      <Callout variant="info" role="note">
-        Recuerda tu compromiso de confidencialidad: los datos de la sesión son solo para tu práctica y la de tu docente.
-        No escribas nombres ni datos que identifiquen a la persona. EMOtv estima expresiones; no diagnostica.
-      </Callout>
-      <Checkbox checked={confirm.commitment_reminder} onChange={(event) => setConfirm({ ...confirm, commitment_reminder: event.target.checked })}>
-        Leí el recordatorio del compromiso de confidencialidad
-      </Checkbox>
-      {state.participant_kind === "adult" && <Checkbox checked={confirm.authorization_confirmed}
-        onChange={(event) => setConfirm({ ...confirm, authorization_confirmed: event.target.checked })}>
-        El participante dio su autorización firmada para participar y para el uso de la cámara
-      </Checkbox>}
-      {child && <>
-        <Checkbox checked={confirm.guardian_present} onChange={(event) => setConfirm({ ...confirm, guardian_present: event.target.checked })}>
-          El padre, la madre o el tutor está presente
-        </Checkbox>
-        <Checkbox checked={confirm.child_assent} onChange={(event) => setConfirm({ ...confirm, child_assent: event.target.checked })}>
-          El niño o la niña dio su asentimiento
-        </Checkbox>
-      </>}
-      <Button variant="primary" disabled={busy || !confirmReady} onClick={() => { void act("/confirm", confirm); }}>Confirmar y empezar</Button>
+      </div> : <Button disabled={busy} onClick={() => { void newLink(); }}>Crear el enlace de la pantalla de la persona</Button>}
     </div>}
 
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">
@@ -173,7 +150,7 @@ export function GuidedConductorPage() {
 
     {state?.phase === "calibration" && <div className="card form-stack">
       <h2>Calibración neutral</h2>
-      <p>Pide al participante que mire la pantalla con el rostro relajado unos segundos.</p>
+      <p>Pide a la persona que mire la pantalla con el rostro relajado unos segundos.</p>
       {state.calibration.notice && <Callout variant="warning">{state.calibration.notice}</Callout>}
       {state.calibration.state === "calibrating"
         ? <p role="status">Calibrando… {Math.round(state.calibration.progress * 100)} %</p>
@@ -181,7 +158,7 @@ export function GuidedConductorPage() {
     </div>}
 
     {step && state && <div className="card form-stack">
-      <p className="step-caption">Estímulo {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
+      <p className="step-caption">Imagen {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
       <h2>{step.title}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
       {state.phase === "stimuli" && <p role="status">{state.capture_status.length > 0
@@ -193,14 +170,14 @@ export function GuidedConductorPage() {
           : <StatusChip tone="neutral">Marcada: {item.quality_issues.map((issue) => issueNames[issue] ?? issue).join(", ")}</StatusChip>}
       </li>)}</ul>}
       {step.record_verbal_response && <form className="form-stack" onSubmit={(event) => { event.preventDefault(); void act("/verbal-responses", { step_index: step.index, text: verbal }).then(() => setVerbal("")); }}>
-        <label>Lo que el participante dice ver<input value={verbal} maxLength={300} onChange={(event) => setVerbal(event.target.value)} /></label>
+        <label>Lo que la persona dice ver<input value={verbal} maxLength={300} onChange={(event) => setVerbal(event.target.value)} /></label>
         <small className="muted">Escríbelo tal como lo dijo. Se guarda cifrado. EMOtv no lo interpreta. No escribas nombres ni datos que identifiquen a la persona.</small>
         <Button type="submit" disabled={busy || !verbal.trim()}>Guardar lo que dice ver</Button>
       </form>}
-      <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar este estímulo</Button>
+      <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar esta imagen</Button>
     </div>}
 
-    {state && active && state.phase !== "confirmation" && <div className="card form-stack" aria-label="Marcadores">
+    {state && active && <div className="card form-stack" aria-label="Marcadores">
       <h2>Marcadores</h2>
       <div className="inline-actions">{markerButtons.map((item) => <Button key={item.kind} disabled={busy}
         aria-keyshortcuts={item.key.toUpperCase()} onClick={() => addMarker(item.kind)}>
@@ -212,7 +189,7 @@ export function GuidedConductorPage() {
       </form>
       <h3>Terminar</h3>
       <div className="inline-actions">
-        <Button variant="danger" disabled={busy} onClick={() => { void act("/stop", { reason: "participant" }); }}>El participante pidió parar</Button>
+        <Button variant="danger" disabled={busy} onClick={() => { void act("/stop", { reason: "participant" }); }}>La persona pidió parar</Button>
         {child && <Button variant="danger" disabled={busy} onClick={() => { void act("/stop", { reason: "guardian" }); }}>El tutor pidió parar</Button>}
         <Button variant="ghost" disabled={busy} onClick={() => { void act("/stop", { reason: "conductor" }); }}>Terminar la sesión</Button>
       </div>
@@ -220,6 +197,7 @@ export function GuidedConductorPage() {
 
     {state && !active && <Callout variant={state.phase === "finished" ? "success" : "info"}>
       {state.phase === "finished" ? "La sesión terminó y quedó registrada." : `La sesión se detuvo: ${stopNames[state.stop_reason ?? "conductor"]}.`}
+      {state.session_code && <> Código de la sesión: <strong>{state.session_code}</strong>.</>}
     </Callout>}
 
     {state && state.markers.length > 0 && <section className="card">

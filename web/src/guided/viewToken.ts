@@ -1,5 +1,5 @@
-// El enlace de la vista del participante se entrega una sola vez; se guarda en
-// esta pestaña para poder abrirlo de nuevo. No contiene datos del participante.
+// El enlace de la pantalla de la persona se entrega una sola vez; se guarda en
+// esta pestaña para poder abrirlo de nuevo. No contiene datos de la persona.
 const key = (sessionId: string) => `emotv:participant-view:${sessionId}`;
 
 export function storeViewToken(sessionId: string, token: string) {

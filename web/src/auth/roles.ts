@@ -10,7 +10,7 @@ export const roleNames: Record<UserRole, string> = {
 
 /** Papeles que conducen sesiones y aceptan el compromiso de confidencialidad. */
 export const conductorRoles: readonly UserRole[] = ["student", "psychologist"];
-/** Papeles de gestión: nunca ven participantes, sesiones ni resultados. */
+/** Papeles de gestión: nunca ven sesiones ni resultados. */
 export const managementRoles: readonly UserRole[] = ["admin", "superadmin"];
 
 export function isConductor(role: UserRole | undefined): boolean {

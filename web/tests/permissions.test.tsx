@@ -39,8 +39,19 @@ describe("rutas y navegación por rol", () => {
       expect(screen.getByText(destination)).toBeInTheDocument();
     });
   it("mantiene los módulos en una configuración por rol", () => {
-    // Orden del recorrido (DESIGN.md); Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/guided", "/participants", "/questionnaires", "/protocols", "/activities", "/sessions", "/consent"]);
+    // Orden del recorrido (DESIGN.md): toda sesión empieza en el Analizador; Cuestionarios y
+    // Protocolos van en el grupo «Mi material»; Consentimiento va abajo y separado.
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/activities", "/questionnaires", "/protocols", "/images", "/consent"]);
+    expect(navigationByRole.student.filter((item) => item.group).map((item) => item.to)).toEqual(["/questionnaires", "/protocols", "/images"]);
+    // El usuario sube sus imágenes; su docente las revisa (con contador en el menú).
+    expect(navigationByRole.student.some((item) => item.to === "/images/review")).toBe(false);
+    expect(navigationByRole.psychologist.find((item) => item.to === "/images/review")?.counter).toBe("imageReview");
+    expect(navigationByRole.psychologist.some((item) => item.to === "/images")).toBe(false);
+    expect([...navigationByRole.admin, ...navigationByRole.superadmin].some((item) => item.to.startsWith("/images"))).toBe(false);
+    // Estadísticas: usuarios y docentes; la administración nunca ve sesiones.
+    expect(navigationByRole.psychologist.some((item) => item.to === "/statistics")).toBe(true);
+    expect([...navigationByRole.admin, ...navigationByRole.superadmin].some((item) => item.to === "/statistics")).toBe(false);
+    expect(Object.values(navigationByRole).every((items) => items.every((item) => !["/guided", "/participants"].includes(item.to)))).toBe(true);
     // Los usuarios usan estímulos en sus protocolos, pero no los gestionan.
     expect(navigationByRole.student.some((item) => item.to === "/stimuli")).toBe(false);
     expect(navigationByRole.psychologist.map((item) => item.to)).toEqual(expect.arrayContaining(["/protocols", "/stimuli"]));
@@ -48,7 +59,7 @@ describe("rutas y navegación por rol", () => {
     expect(navigationByRole.superadmin.some((item) => ["/stimuli", "/protocols"].includes(item.to))).toBe(false);
     expect(navigationByRole.student.filter((item) => item.placement === "footer").map((item) => item.to)).toEqual(["/consent"]);
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
-    // El docente conduce sesiones propias; la gestión nunca ve participantes ni sesiones.
+    // El docente conduce sesiones propias; la gestión nunca ve sesiones.
     expect(navigationByRole.psychologist.some((item) => item.to === "/analysis")).toBe(true);
     expect(navigationByRole.superadmin.some((item) => item.to === "/admin/activities")).toBe(true);
     expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(false);
@@ -67,7 +78,9 @@ describe("rutas y navegación por rol", () => {
     expect(screen.queryByRole("link", { name: "Cuentas y grupos" }) !== null).toBe(role === "admin");
     expect(screen.queryByRole("link", { name: "Cuenta de administrador" }) !== null).toBe(role === "superadmin");
     expect(screen.queryByRole("link", { name: "Mi grupo" }) !== null).toBe(role === "psychologist");
-    expect(screen.queryByRole("link", { name: "Participantes" }) !== null).toBe(role === "student" || role === "psychologist");
+    expect(screen.queryByRole("link", { name: "Participantes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Sesión guiada" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Mi material") !== null).toBe(role === "student" || role === "psychologist");
     expect(screen.queryByRole("link", { name: "Mis sesiones" }) !== null).toBe(role === "student");
     expect(screen.getByText("u@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menú de usuario" })).toHaveAttribute("aria-expanded", "false");

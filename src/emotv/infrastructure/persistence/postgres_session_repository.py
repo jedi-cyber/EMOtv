@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from emotv.domain.session import EmotionalSession
@@ -57,12 +57,13 @@ class PostgresSessionRepository:
             records = database_session.scalars(statement).all()
             return tuple(self._to_domain(record) for record in records)
 
-    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
-        statement = (
-            select(SessionRecord)
-            .where(SessionRecord.participant_id == participant_id)
-            .order_by(SessionRecord.started_at, SessionRecord.id)
-        )
+    def code_exists(self, code: str) -> bool:
+        with self._session_factory() as database_session:
+            return database_session.scalar(
+                select(func.count()).select_from(SessionRecord).where(SessionRecord.code == code)) > 0
+
+    def list_started_before(self, cutoff: datetime) -> tuple[EmotionalSession, ...]:
+        statement = select(SessionRecord).where(SessionRecord.started_at < cutoff).order_by(SessionRecord.started_at)
         with self._session_factory() as database_session:
             records = database_session.scalars(statement).all()
             return tuple(self._to_domain(record) for record in records)
@@ -98,10 +99,14 @@ class PostgresSessionRepository:
             exercise_repetitions=session.exercise_repetitions,
             session_type=SessionType(session.session_type).value,
             owner_user_id=session.owner_user_id,
-            participant_id=session.participant_id,
             protocol_id=session.protocol_id,
             pre_questionnaire_id=session.pre_questionnaire_id,
             post_questionnaire_id=session.post_questionnaire_id,
+            code=session.code,
+            authorization_confirmed_at=session.authorization_confirmed_at,
+            deletion_requested_at=session.deletion_requested_at,
+            deletion_requested_by_user_id=session.deletion_requested_by_user_id,
+            exam_id=session.exam_id,
         )
 
     @staticmethod
@@ -126,10 +131,14 @@ class PostgresSessionRepository:
         record.exercise_repetitions = session.exercise_repetitions
         record.session_type = SessionType(session.session_type).value
         record.owner_user_id = session.owner_user_id
-        record.participant_id = session.participant_id
         record.protocol_id = session.protocol_id
         record.pre_questionnaire_id = session.pre_questionnaire_id
         record.post_questionnaire_id = session.post_questionnaire_id
+        record.code = session.code
+        record.authorization_confirmed_at = session.authorization_confirmed_at
+        record.deletion_requested_at = session.deletion_requested_at
+        record.deletion_requested_by_user_id = session.deletion_requested_by_user_id
+        record.exam_id = session.exam_id
 
     @classmethod
     def _to_domain(cls, record: SessionRecord) -> EmotionalSession:
@@ -160,11 +169,19 @@ class PostgresSessionRepository:
             exercise_repetitions=record.exercise_repetitions,
             session_type=SessionType(record.session_type or SessionType.OWN.value),
             owner_user_id=record.owner_user_id,
-            participant_id=record.participant_id,
             protocol_id=record.protocol_id,
             pre_questionnaire_id=record.pre_questionnaire_id,
             post_questionnaire_id=record.post_questionnaire_id,
+            code=record.code,
+            authorization_confirmed_at=cls._maybe_aware(record.authorization_confirmed_at),
+            deletion_requested_at=cls._maybe_aware(record.deletion_requested_at),
+            deletion_requested_by_user_id=record.deletion_requested_by_user_id,
+            exam_id=record.exam_id,
         )
+
+    @classmethod
+    def _maybe_aware(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else cls._as_aware(value)
 
     @staticmethod
     def _as_aware(value: datetime) -> datetime:

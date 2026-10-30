@@ -1,6 +1,7 @@
-"""Sesión guiada: confirmación, cuestionario previo, calibración, estímulos del
-protocolo, calidad de captura, marcadores y vista del participante (SQLite en
-memoria, analizador falso, sin modelos ni imágenes de personas)."""
+"""Sesión con protocolo: cuestionario previo, calibración, imágenes del
+protocolo, calidad de captura, marcadores y pantalla de la persona; y sesión sin
+protocolo con lectura en vivo (SQLite en memoria, analizador falso, sin modelos
+ni imágenes de personas)."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -11,8 +12,9 @@ from sqlalchemy import LargeBinary, inspect, select
 from emotv.domain.guided_session import ABSTRACT_NOTICE, FrameAssessment, QualityIssue
 from emotv.infrastructure.persistence.models import SessionMarkerRecord, VerbalResponseRecord
 from emotv.shared.security.field_encryption import FieldCipher
-from tests.integration.test_participant_practices import approve, authorize, upload_stimulus
-from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers, register  # noqa: F401
+from emotv.application.commitment_service import load_text
+from tests.integration.test_protocols_and_stimuli import approve, upload_stimulus
+from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers  # noqa: F401
 from tests.integration.test_questionnaires import create as create_questionnaire
 
 FRAME = b"cuadro-jpeg-de-prueba"
@@ -38,18 +40,19 @@ def protocol(env, steps, pre=None, post=None, for_children=False):  # noqa: F811
             "pre_questionnaire_id": pre["id"] if pre else None, "post_questionnaire_id": post["id"] if post else None}
     response = env.client.post("/protocols", headers=headers(env, env.user_1), json=body)
     assert response.status_code == 201, response.text
-    item = response.json()
-    if for_children:
-        env.client.post(f"/protocols/{item['id']}/approve", headers=headers(env, env.docente_a))
-    return item
+    return response.json()
 
 
-def guided(env, protocol_item, participant=None):  # noqa: F811
+def guided(env, protocol_item=None, session_type=None):  # noqa: F811
+    """Inicia la sesión con su única confirmación y prepara la pantalla de la persona."""
     accept_commitment(env, env.user_1)
-    body = {"session_type": "propia", "protocol_id": protocol_item["id"]}
-    if participant is not None:
-        kind = "participante_infantil" if participant["kind"] == "child" else "participante_adulto"
-        body.update(session_type=kind, participant_id=participant["id"])
+    env.commitments.accept(env.user_1, load_text("child_notice").version, "child_notice")
+    body = {"authorization_confirmed": True}
+    if protocol_item is not None:
+        body["protocol_id"] = protocol_item["id"]
+    body["session_type"] = session_type or ("propia" if protocol_item is not None
+                                            and not protocol_item["for_children"] else None)
+    body = {key: value for key, value in body.items() if value is not None}
     session = env.client.post("/sessions", headers=headers(env, env.user_1), json=body)
     assert session.status_code == 201, session.text
     created = env.client.post(f"/guided-sessions/{session.json()['id']}", headers=headers(env, env.user_1))
@@ -89,40 +92,57 @@ def calibrate(env, session_id, token):  # noqa: F811
     frame(env, token)
 
 
-# --- Confirmación y orden de la sesión ----------------------------------------------
+# --- Inicio y orden de la sesión -----------------------------------------------------
 
-def test_it_does_not_start_without_the_confirmation(env):  # noqa: F811
+def test_the_confirmation_happens_once_at_the_start(env):  # noqa: F811
     emotional, _ = stimuli(env)
-    adult = register(env, env.user_1)
-    authorize(env, env.user_1, adult)
-    session_id, token = guided(env, protocol(env, [step(emotional)]), adult)
-    assert state(env, session_id)["phase"] == "confirmation"
-    assert view(env, token).json()["capture_frames"] is False
-    frame(env, token)
-    assert post(env, session_id, "calibration").status_code == 409
-    assert post(env, session_id, "advance").status_code == 409
-    assert post(env, session_id, "confirm", {"authorization_confirmed": True}).status_code == 422  # sin recordatorio
-    assert post(env, session_id, "confirm", {"commitment_reminder": True}).status_code == 422      # sin autorización
-    assert post(env, session_id, "confirm", {"commitment_reminder": True,
-                                             "authorization_confirmed": True}).json()["phase"] == "calibration"
+    session_id, token = guided(env, protocol(env, [step(emotional)]))
+    # No hay una segunda confirmación dentro de la sesión: empieza en la calibración.
+    assert state(env, session_id)["phase"] == "calibration"
+    assert post(env, session_id, "confirm", {"authorization_confirmed": True}).status_code in (404, 405)
     assert state(env, session_id)["captures"] == []
+    child_session, _ = guided(env, protocol(env, [step(emotional)], for_children=True))
+    current = state(env, child_session)
+    assert current["phase"] == "calibration" and current["audience"] == "infantil"
+    assert current["session_code"].startswith("S-")
 
-    child = register(env, env.user_1, kind="child", age=9)
-    authorize(env, env.user_1, child, child_assent=True)
-    child_session, _ = guided(env, protocol(env, [step(emotional)], for_children=True), child)
-    for body in ({"commitment_reminder": True, "guardian_present": True},
-                 {"commitment_reminder": True, "child_assent": True},
-                 {"commitment_reminder": True, "authorization_confirmed": True}):
-        assert post(env, child_session, "confirm", body).status_code == 422, body
-    assert post(env, child_session, "confirm", {"commitment_reminder": True, "guardian_present": True,
-                                                "child_assent": True}).status_code == 200
+
+def test_a_session_without_a_confirmed_authorization_cannot_be_prepared(env):  # noqa: F811
+    emotional, _ = stimuli(env)
+    item = protocol(env, [step(emotional)])
+    accept_commitment(env, env.user_1)
+    session = env.sessions.start_session(student_id=env.student_1.id, owner_user_id=env.user_1.id,
+                                         protocol_id=item["id"])
+    assert post(env, session.id, "").status_code == 409
+
+
+def test_without_a_protocol_the_session_is_the_live_reading(env):  # noqa: F811
+    session_id, token = guided(env, session_type="infantil")
+    current = state(env, session_id)
+    assert current["phase"] == "calibration" and current["has_protocol"] is False and current["step_count"] == 0
+    calibrate(env, session_id, token)
+    assert state(env, session_id)["phase"] == "live"
+    # Un niño sin protocolo no ve ninguna imagen ni cuestionario: solo la lectura.
+    shown = view(env, token).json()
+    assert shown["stimulus"] is None and shown["capture_frames"] is True
+    assert env.client.get(f"/participant-view/{token}/stimulus").status_code in (404, 409)
+    assert env.client.get(f"/sessions/{session_id}/questionnaires/pre",
+                          headers=headers(env, env.user_1)).status_code in (404, 409)
+    for _ in range(3):
+        frame(env, token)
+        wait(env, 3)
+    captures = state(env, session_id)["captures"]
+    assert len(captures) >= 2 and all(item["stimulus_id"] is None for item in captures)
+    finished = env.guided.finish_live(env.user_1, session_id)
+    assert finished.phase.value == "finished"
+    session = env.sessions.get_session(session_id)
+    assert session.state.value == "completed" and session.initial_emotion == "happiness"
 
 
 def test_the_pre_questionnaire_goes_before_calibration(env):  # noqa: F811
     emotional, _ = stimuli(env)
     pre = create_questionnaire(env, env.user_1, items=[{"id": "a", "kind": "faces", "text": "¿Cómo estás?", "required": True}])
     session_id, token = guided(env, protocol(env, [step(emotional)], pre=pre))
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     assert state(env, session_id)["phase"] == "pre_questionnaire"
     assert post(env, session_id, "calibration").status_code == 409
     assert post(env, session_id, "advance").status_code == 409
@@ -136,12 +156,9 @@ def test_the_pre_questionnaire_goes_before_calibration(env):  # noqa: F811
 def test_the_flow_follows_the_protocol(env):  # noqa: F811
     emotional, abstract = stimuli(env)
     post_q = create_questionnaire(env, env.user_1, items=[{"id": "b", "kind": "short_text", "text": "¿Algo más?"}])
-    adult = register(env, env.user_1)
-    authorize(env, env.user_1, adult)
     steps = [step(abstract, exposure=4, verbal=True, before=True), step(emotional, exposure=6, capture=2),
              step(abstract, exposure=8, capture=2, verbal=True)]
-    session_id, token = guided(env, protocol(env, steps, post=post_q), adult)
-    post(env, session_id, "confirm", {"commitment_reminder": True, "authorization_confirmed": True})
+    session_id, token = guided(env, protocol(env, steps, post=post_q), "adulto")
     # Abstracta antes del analizador: se muestra, sin capturas.
     current = state(env, session_id)
     assert current["phase"] == "before_analyzer" and current["step_index"] == 0
@@ -179,14 +196,13 @@ def test_the_flow_follows_the_protocol(env):  # noqa: F811
     assert post(env, session_id, "advance").json()["phase"] == "finished"
     assert env.sessions.get_session(session_id).state.value == "completed"
     assert [item["step_index"] for item in state(env, session_id)["steps_log"]] == [0, 1, 2]
-    # Terminada, el enlace del participante deja de valer.
+    # Terminada, el enlace de la pantalla de la persona deja de valer.
     assert view(env, token).status_code == 404
 
 
 def test_a_low_quality_capture_is_retried_and_then_flagged(env):  # noqa: F811
     emotional, _ = stimuli(env)
     session_id, token = guided(env, protocol(env, [step(emotional, exposure=10, capture=2), step(emotional, exposure=5)]))
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     calibrate(env, session_id, token)
     env.frame_result = FrameAssessment((QualityIssue.OFF_CENTER, QualityIssue.TOO_DARK), "neutral", 0.6, {"neutral": 0.6})
     wait(env, 2)
@@ -206,13 +222,12 @@ def test_a_low_quality_capture_is_retried_and_then_flagged(env):  # noqa: F811
     assert flagged["step_index"] == 1 and flagged["quality_issues"] == ["no_frame"] and flagged["emotion"] is None
 
 
-# --- Vista del participante, paradas y marcadores --------------------------------------
+# --- Pantalla de la persona, paradas y marcadores --------------------------------------
 
-def test_the_participant_view_never_receives_results(env):  # noqa: F811
+def test_the_persons_screen_never_receives_results(env):  # noqa: F811
     emotional, abstract = stimuli(env)
     session_id, token = guided(env, protocol(env, [step(emotional), step(abstract, exposure=6, verbal=True)]))
     responses = [view(env, token).json()]
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     post(env, session_id, "markers", {"kind": "note", "note": "Miró la ventana"})
     responses.append(view(env, token).json())
     calibrate(env, session_id, token)
@@ -223,16 +238,15 @@ def test_the_participant_view_never_receives_results(env):  # noqa: F811
     assert state(env, session_id)["captures"]  # hubo capturas...
     text = json.dumps(responses)
     for word in RESULT_WORDS:
-        assert word not in text, word  # ...pero la vista del participante no las ve
+        assert word not in text, word  # ...pero la pantalla de la persona no las ve
     allowed = {"phase", "message", "stimulus", "remaining_seconds", "capture_frames", "frame_interval_ms", "abstract_notice"}
     # Al terminar, el enlace deja de valer y solo responde que no existe.
     assert all(set(item) <= allowed or item == {"received": True} or set(item) == {"detail"} for item in responses)
 
 
-def test_the_participant_can_stop_and_the_conductor_can_skip_or_end(env):  # noqa: F811
+def test_the_person_can_stop_and_the_conductor_can_skip_or_end(env):  # noqa: F811
     emotional, _ = stimuli(env)
     session_id, token = guided(env, protocol(env, [step(emotional), step(emotional), step(emotional)]))
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     calibrate(env, session_id, token)
     assert post(env, session_id, "skip").status_code == 200
     current = state(env, session_id)
@@ -244,7 +258,6 @@ def test_the_participant_can_stop_and_the_conductor_can_skip_or_end(env):  # noq
     assert view(env, token).status_code == 404
 
     second, _ = guided(env, protocol(env, [step(emotional)]))
-    post(env, second, "confirm", {"commitment_reminder": True})
     # El marcador "pidió parar" termina la sesión de inmediato.
     assert post(env, second, "markers", {"kind": "asked_to_stop"}).status_code == 201
     assert state(env, second)["stop_reason"] == "participant"
@@ -268,10 +281,9 @@ def test_only_the_conductor_controls_and_the_docente_can_review(env):  # noqa: F
 
 # --- Cifrado, aviso y tabla de capturas ---------------------------------------------------
 
-def test_notes_and_what_the_participant_says_are_stored_encrypted(env):  # noqa: F811
+def test_notes_and_what_the_person_says_are_stored_encrypted(env):  # noqa: F811
     _, abstract = stimuli(env)
     session_id, _ = guided(env, protocol(env, [step(abstract, verbal=True, before=True)]))
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     assert post(env, session_id, "markers", {"kind": "note", "note": "Miró la ventana"}).status_code == 201
     assert post(env, session_id, "markers", {"kind": "note"}).status_code == 422
     assert post(env, session_id, "verbal-responses", {"step_index": 0, "text": "Una mariposa"}).status_code == 201
@@ -288,7 +300,6 @@ def test_notes_and_what_the_participant_says_are_stored_encrypted(env):  # noqa:
 def test_the_abstract_notice_always_appears(env):  # noqa: F811
     emotional, abstract = stimuli(env)
     session_id, token = guided(env, protocol(env, [step(abstract, exposure=4, before=True), step(emotional)]))
-    post(env, session_id, "confirm", {"commitment_reminder": True})
     assert state(env, session_id)["abstract_notice"] == ABSTRACT_NOTICE
     assert view(env, token).json()["abstract_notice"] == ABSTRACT_NOTICE
     results = env.client.get(f"/sessions/{session_id}/guided-results", headers=headers(env, env.docente_a)).json()
@@ -310,20 +321,21 @@ def test_the_capture_table_has_no_images_or_identity_data(env):  # noqa: F811
     assert expected <= {column["name"] for column in inspect(env.engine).get_columns("expression_captures")}
 
 
-def test_deleting_the_participant_removes_the_guided_records(env):  # noqa: F811
+def test_deleting_the_session_removes_the_guided_records(env):  # noqa: F811
     emotional, abstract = stimuli(env)
-    adult = register(env, env.user_1)
-    authorize(env, env.user_1, adult)
     session_id, token = guided(env, protocol(env, [step(emotional, exposure=6, capture=2),
-                                                   step(abstract, verbal=True)]), adult)
-    post(env, session_id, "confirm", {"commitment_reminder": True, "authorization_confirmed": True})
+                                                   step(abstract, verbal=True)]), "adulto")
     calibrate(env, session_id, token)
     wait(env, 2)
     frame(env, token)
     post(env, session_id, "markers", {"kind": "laughed"})
     wait(env, 4)
     post(env, session_id, "verbal-responses", {"step_index": 1, "text": "Una nube"})
-    certificate = env.client.post(f"/participants/{adult['id']}/delete", headers=headers(env, env.docente_a)).json()
+    post(env, session_id, "stop", {"reason": "conductor"})
+    response = env.client.post(f"/sessions/{session_id}/delete", headers=headers(env, env.docente_a))
+    assert response.status_code == 200, response.text
+    certificate = response.json()
     counts = certificate["counts"]
     assert certificate["verified"] and counts["expression_captures"] >= 1
     assert counts["session_markers"] == 1 and counts["verbal_responses"] == 1 and counts["guided_runs"] == 1
+    assert env.guided.repository.get_run(session_id) is None

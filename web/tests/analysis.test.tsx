@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, Link, RouterProvider } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +36,14 @@ function page(withNavigation = false, role: "student" | "superadmin" = "student"
   return render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role, is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
 }
 
+/** Iniciar pide la única confirmación de la sesión (propia) antes de abrir la cámara. */
+async function begin() {
+  await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+  const dialog = await screen.findByRole("dialog", { name: "Antes de empezar" });
+  await userEvent.click(within(dialog).getByRole("checkbox", { name: /Es una sesión mía/ }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Empezar la sesión" }));
+}
+
 beforeEach(() => {
   admissions.value = [
     { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
@@ -55,7 +63,7 @@ describe("cámara y ciclo de actividad", () => {
     const view = page();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(requestedPaths).not.toContain("/analysis/models");
-    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onopen?.());
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
@@ -79,7 +87,7 @@ describe("cámara y ciclo de actividad", () => {
     const selector = screen.getByRole("combobox", { name: "Modelo de reconocimiento facial" });
     expect(selector).toHaveValue("ferplus_onnx");
     await userEvent.selectOptions(selector, modelId);
-    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onopen?.());
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).toEqual(expect.objectContaining({ emotion_model_id: modelId, token: "test" }));
@@ -88,23 +96,23 @@ describe("cámara y ciclo de actividad", () => {
   });
   it("no crea una sesión si el navegador no admite cámara", async () => {
     vi.stubGlobal("navigator", Object.create(navigator, { mediaDevices: { value: undefined } }));
-    page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(); await begin();
     expect(screen.getByRole("alert")).toHaveTextContent("conexión segura"); expect(apiRequest).not.toHaveBeenCalled();
   });
   it("no solicita cámara si falta consentimiento", async () => {
     const getMedia = camera(); vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(403, "El estudiante no tiene consentimiento activo"));
-    page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(); await begin();
     expect(await screen.findByRole("alert")).toHaveTextContent("consentimiento activo"); expect(getMedia).not.toHaveBeenCalled();
   });
   it.each(["NotAllowedError", "NotFoundError"])("cancela la sesión al recibir %s", async (name) => {
     camera(vi.fn().mockRejectedValue(new DOMException("Cámara", name)));
-    page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(); await begin();
     expect(await screen.findByRole("alert")).toHaveTextContent(/cámara/);
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/sessions/s/cancel", expect.objectContaining({ method: "POST" })));
   });
   it("muestra progreso y completa sin cancelar el resultado", async () => {
     const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
-    const view = page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    const view = page(); await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1)); const socket = Socket.instances[0];
     act(() => socket.onmessage?.({ data: JSON.stringify({ type: "status", state: "performing_exercise", progress: .5 }) }));
     expect(screen.getByText("Etapa 3 de 3")).toBeInTheDocument();
@@ -116,7 +124,7 @@ describe("cámara y ciclo de actividad", () => {
   });
   it("libera cámara y cancela al abandonar o perder conexión", async () => {
     const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
-    const view = page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    const view = page(); await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => Socket.instances[0].onclose?.());
     expect(screen.getByRole("alert")).toHaveTextContent("Se perdió la conexión"); expect(stop).toHaveBeenCalledOnce();
@@ -128,7 +136,7 @@ describe("cámara y ciclo de actividad", () => {
   ])("cierra la sesión del navegador si el token vence durante el análisis (%s)", async (_, expire) => {
     const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
     const expired = vi.fn(); window.addEventListener(AUTH_UNAUTHORIZED_EVENT, expired);
-    page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(); await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     act(() => expire(Socket.instances[0]));
     expect(screen.getByRole("alert")).toHaveTextContent("Tu sesión venció durante el análisis");
@@ -139,7 +147,7 @@ describe("cámara y ciclo de actividad", () => {
   });
   it("advierte antes de salir y cancela solo al confirmar", async () => {
     const stop = vi.fn(); camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }));
-    page(true); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(true); await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     await userEvent.click(screen.getByRole("link", { name: "Ir al inicio" }));
     expect(screen.getByRole("alertdialog", { name: "Salir del análisis" })).toBeInTheDocument();
@@ -157,13 +165,13 @@ describe("cámara y ciclo de actividad", () => {
     const router = createMemoryRouter([{ path: "*", element: <App /> }], { initialEntries: ["/analysis?activity=arms_up_5s"] });
     render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "test", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}><RouterProvider router={router} /></AuthContext.Provider>);
     expect(screen.queryByRole("link", { name: /Sesión activa/ })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    await begin();
     await waitFor(() => expect(screen.getAllByRole("link", { name: /Sesión activa/ })).toHaveLength(2));
     expect(screen.getAllByRole("link", { name: /Sesión activa/ })[0]).toHaveAttribute("href", "/analysis?activity=arms_up_5s");
   });
   it("permanece en el análisis si falla la cancelación al salir", async () => {
     camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
-    page(true); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    page(true); await begin();
     await waitFor(() => expect(Socket.instances).toHaveLength(1));
     vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(503, "No se pudo cancelar"));
     await userEvent.click(screen.getByRole("link", { name: "Ir al inicio" }));
@@ -174,7 +182,7 @@ describe("cámara y ciclo de actividad", () => {
   it("detiene una cámara cuyo permiso llega después de abandonar la pantalla", async () => {
     let resolve!: (stream: unknown) => void;
     camera(vi.fn().mockReturnValue(new Promise((done) => { resolve = done; })));
-    const view = page(); await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
+    const view = page(); await begin();
     view.unmount(); const stop = vi.fn();
     await act(async () => resolve({ getTracks: () => [{ stop }] }));
     expect(stop).toHaveBeenCalledOnce(); expect(Socket.instances).toHaveLength(0);

@@ -1,5 +1,12 @@
-"""Sesión guiada: confirmación, cuestionario previo, calibración, estímulos del
-protocolo y cuestionario posterior.
+"""Sesión que ejecuta un protocolo: cuestionario previo, calibración, estímulos y
+cuestionario posterior. En el aplicativo móvil, una sesión sin protocolo usa la
+fase live: calibración y registro periódico de la expresión, sin estímulos.
+
+La estación de un examen simulado espera el consentimiento (waiting), se
+calibra, espera el inicio (ready) y registra una fila cada medio segundo
+(exam) hasta que el docente termina el examen.
+
+La autorización se confirma una sola vez, al iniciar la sesión.
 
 Las capturas guardan solo la expresión estimada por el modelo local, su
 distribución y un indicador de calidad: nunca la imagen ni datos de identidad.
@@ -17,24 +24,41 @@ ABSTRACT_NOTICE = "Registro descriptivo. Una sesión breve no permite sacar conc
 QUALITY_RETRY_SECONDS = 3.0        # reintento antes de guardar una captura marcada
 ABSTRACT_CAPTURE_INTERVAL = 3.0    # una imagen abstracta se captura varias veces
 MAX_NOTE_LENGTH = 300
+EXAM_CAPTURE_INTERVAL = 0.5        # una fila cada medio segundo durante el examen
+EXAM_GAP_SECONDS = 1.5             # sin cuadros tras este margen, la fila se guarda marcada
+
+# Debriefing: lo que ve la persona al terminar el examen. Describe qué se
+# registró, sin valorar ni diagnosticar.
+EXAM_DEBRIEFING = (
+    "Gracias por participar. Durante el examen, EMOtv estimó cada medio segundo la expresión facial "
+    "que mostraba tu rostro, por ejemplo neutral, sorpresa o alegría. No se guardó ninguna imagen tuya: "
+    "cada cuadro de la cámara se analizó en memoria y se descartó. Solo quedó un registro con el código "
+    "de tu sesión, la expresión estimada, su confianza y el segundo del examen. Es un registro descriptivo "
+    "de expresiones faciales: no indica lo que sentiste ni es un diagnóstico. Si tienes preguntas, "
+    "consulta a tu docente."
+)
 
 
 class GuidedPhase(str, Enum):
-    CONFIRMATION = "confirmation"
     PRE_QUESTIONNAIRE = "pre_questionnaire"
     BEFORE_ANALYZER = "before_analyzer"   # imágenes abstractas antes del analizador, sin capturas
     CALIBRATION = "calibration"
     STIMULI = "stimuli"
     POST_QUESTIONNAIRE = "post_questionnaire"
+    LIVE = "live"                         # sin protocolo (móvil): registro periódico hasta terminar
+    WAITING = "waiting"                   # estación de examen sin consentimiento: no se analiza nada
+    READY = "ready"                       # estación calibrada: espera que el docente inicie
+    EXAM = "exam"                         # examen en curso: una fila cada medio segundo
     FINISHED = "finished"
     STOPPED = "stopped"
 
 
 TERMINAL_PHASES = frozenset({GuidedPhase.FINISHED, GuidedPhase.STOPPED})
+EXAM_STATION_PHASES = frozenset({GuidedPhase.WAITING, GuidedPhase.READY, GuidedPhase.EXAM})
 
 
 class StopReason(str, Enum):
-    PARTICIPANT = "participant"   # el participante pidió parar
+    PARTICIPANT = "participant"   # la persona analizada pidió parar
     GUARDIAN = "guardian"         # el padre, la madre o el tutor pidió parar
     CONDUCTOR = "conductor"       # quien conduce la sesión la terminó
 
@@ -65,14 +89,13 @@ class CaptureQuality(str, Enum):
 @dataclass(frozen=True, slots=True)
 class GuidedRun:
     """Estado de una sesión guiada, compartido por la vista de quien conduce y
-    la del participante. view_token_hash es el SHA-256 del enlace de la vista
-    del participante; el enlace en claro solo se entrega al crearlo."""
+    la pantalla de la persona. view_token_hash es el SHA-256 del enlace de esa
+    pantalla; el enlace en claro solo se entrega al crearlo."""
 
     session_id: str
     owner_user_id: str
     created_at: datetime
-    phase: GuidedPhase | str = GuidedPhase.CONFIRMATION
-    participant_id: str | None = None
+    phase: GuidedPhase | str = GuidedPhase.CALIBRATION
     confirmed_at: datetime | None = None
     step_index: int = 0
     step_started_at: datetime | None = None
@@ -112,7 +135,8 @@ class FrameAssessment:
 
 @dataclass(frozen=True, slots=True)
 class ExpressionCapture:
-    """Una captura del protocolo: sin imagen ni datos de identidad."""
+    """Una captura: sin imagen ni datos de identidad. stimulus_id es nulo en el
+    registro sin protocolo (fase live)."""
 
     id: str
     session_id: str
@@ -122,14 +146,13 @@ class ExpressionCapture:
     quality: CaptureQuality | str
     quality_issues: tuple[QualityIssue, ...]
     step_index: int
-    stimulus_id: str
+    stimulus_id: str | None
     seconds_since_stimulus: float
     emotion: str | None = None
     confidence: float | None = None
     distribution: dict[str, float] | None = None
     # Clase que más aumentó respecto de la base neutral, si hubo calibración.
     calibrated_emotion: str | None = None
-    participant_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "quality", CaptureQuality(self.quality))
@@ -151,7 +174,6 @@ class SessionMarker:
     recorded_by_user_id: str
     step_index: int | None = None
     note: str | None = None
-    participant_id: str | None = None
 
     def __post_init__(self) -> None:
         kind = MarkerKind(self.kind)
@@ -166,7 +188,7 @@ class SessionMarker:
 
 @dataclass(frozen=True, slots=True)
 class VerbalResponse:
-    """Lo que el participante dice ver en una imagen abstracta, tal como lo dijo.
+    """Lo que la persona dice ver en una imagen abstracta, tal como lo dijo.
     EMOtv no lo interpreta ni lo relaciona con ninguna condición."""
 
     id: str
@@ -176,7 +198,6 @@ class VerbalResponse:
     text: str
     recorded_at: datetime
     recorded_by_user_id: str
-    participant_id: str | None = None
 
     def __post_init__(self) -> None:
         text = (self.text or "").strip()

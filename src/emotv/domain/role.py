@@ -5,7 +5,7 @@ class Role(str, Enum):
     """Papeles internos. En la interfaz se muestran como Usuario, Docente,
     Administrador y Superadministrador."""
 
-    # Usuario: conduce las sesiones con sus participantes.
+    # Usuario: conduce sesiones propias o con otras personas.
     STUDENT = "student"
     # Docente: tiene un grupo de usuarios y también conduce sesiones propias.
     PSYCHOLOGIST = "psychologist"
@@ -15,7 +15,7 @@ class Role(str, Enum):
     SUPERADMIN = "superadmin"
 
 
-# Papeles que conducen sesiones y pueden ver datos de participantes.
+# Papeles que conducen sesiones y pueden ver sus datos.
 CONDUCTOR_ROLES = frozenset({Role.STUDENT, Role.PSYCHOLOGIST})
-# Papeles de gestión: nunca acceden a participantes, sesiones ni resultados.
+# Papeles de gestión: nunca acceden a sesiones ni resultados.
 MANAGEMENT_ROLES = frozenset({Role.ADMIN, Role.SUPERADMIN})

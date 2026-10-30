@@ -21,6 +21,7 @@ import { Button, ButtonLink } from "../components/Button";
 import { CameraFrame } from "../components/CameraFrame";
 import { Checkbox } from "../components/Checkbox";
 import { StatusChip } from "../components/StatusChip";
+import { SessionConfirmDialog } from "../sessions/SessionConfirmDialog";
 
 interface ModelAdmission {
   model_id: string;
@@ -79,6 +80,7 @@ function ManualActivityAnalysisPage() {
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [includeLandmarks, setIncludeLandmarks] = useState(true);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [emotionModelId, setEmotionModelId] = useState("ferplus_onnx");
@@ -175,7 +177,7 @@ function ManualActivityAnalysisPage() {
     announcedStepRef.current = -1;
     let created: EmotionalSession | null = null;
     try {
-      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ activity_id: activityId, session_type: "propia" }), token });
+      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ activity_id: activityId, session_type: "propia", authorization_confirmed: true }), token });
       if (lifecycle !== lifecycleRef.current) {
         await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
         return;
@@ -264,7 +266,7 @@ function ManualActivityAnalysisPage() {
   const progress = Math.round(Math.max(0, Math.min(1, status.progress ?? 0)) * 100);
   const stepIndex = status.state === "completed" || status.state === "performing_exercise" ? 2 : status.state === "waiting_for_posture" ? 1 : 0;
   return <section>{session && status.type !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}{(!session || status.type === "completed") && <ButtonLink variant="ghost" className="back-link" to="/activities">← Volver a actividades</ButtonLink>}<PageHeader title={activity?.name ?? "Actividad"} description={activity?.description ?? "Preparando el análisis de tu actividad."} /><PageState {...query} onRetry={query.reload} />{error && <Callout variant="error">{error}</Callout>}
-    {activity && !session && <div className="analysis-preflight card"><div><StatusChip tone="neutral">{postureName(activity.steps?.[0]?.posture ?? activity.required_posture)}</StatusChip><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Pasos</dt><dd>{activity.steps?.length || 1}</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl><AnalysisGuide activity /></div><div className="preflight-actions"><Checkbox checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)}>Mostrar puntos y líneas</Checkbox><Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={start}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</Button></div></div>}
+    {activity && !session && <div className="analysis-preflight card"><div><StatusChip tone="neutral">{postureName(activity.steps?.[0]?.posture ?? activity.required_posture)}</StatusChip><h2>Instrucciones</h2><p>{activity.description}</p><dl className="metadata"><div><dt>Pasos</dt><dd>{activity.steps?.length || 1}</dd></div><div><dt>Repeticiones</dt><dd>{activity.repetitions}</dd></div></dl><AnalysisGuide activity /></div><div className="preflight-actions"><Checkbox checked={includeLandmarks} onChange={(event) => setIncludeLandmarks(event.target.checked)}>Mostrar puntos y líneas</Checkbox><Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox><p className="muted">El navegador solicitará permiso para utilizar tu cámara.</p><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={() => setConfirmOpen(true)}>{starting ? "Iniciando…" : "Permitir cámara e iniciar"}</Button></div></div>}
     {canChooseModel && activity && !session && <fieldset className="card" disabled={starting}>
       <legend>Modelo de reconocimiento facial</legend>
       <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
@@ -297,6 +299,8 @@ function ManualActivityAnalysisPage() {
           <ButtonLink variant="primary" to={`/sessions/${session.id}`}>Ver resultado</ButtonLink>
         </>}
       </aside></div>}
+    <SessionConfirmDialog open={confirmOpen} audience="propia" busy={starting} onCancel={() => setConfirmOpen(false)}
+      onConfirm={() => { setConfirmOpen(false); void start(); }} />
     <ConfirmDialog open={confirmCancel} title="Cancelar actividad" message="Se cerrará la sesión y se apagará la cámara." confirming={cancelling} confirmLabel="Cancelar actividad" onCancel={() => setConfirmCancel(false)} onConfirm={cancel} />
   </section>;
 }

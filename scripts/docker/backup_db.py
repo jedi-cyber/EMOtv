@@ -11,7 +11,7 @@ No requiere PostgreSQL instalado en el host. Las credenciales se leen dentro
 del contenedor; no pasan por la línea de comandos.
 
 Retención: un respaldo conserva los datos que la aplicación ya eliminó. Elimina
-los respaldos con más antigüedad que PARTICIPANT_RETENTION_MONTHS (12 meses por
+los respaldos con más antigüedad que SESSION_RETENTION_MONTHS (12 meses por
 defecto); los de cuentas de voluntarios, a los 30 días (docs/privacy/).
 """
 

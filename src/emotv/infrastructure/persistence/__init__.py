@@ -26,7 +26,7 @@ from emotv.infrastructure.persistence.postgres_recommendation_repository import 
 from emotv.infrastructure.persistence.postgres_privacy_repositories import (
     PostgresAuditRepository,
     PostgresCommitmentRepository,
-    PostgresParticipantRepository,
+    PostgresSessionErasureRepository,
 )
 from emotv.infrastructure.persistence.postgres_local_model_settings_repository import (
     InMemoryLocalModelSettingsRepository,
@@ -40,7 +40,7 @@ from emotv.infrastructure.persistence.postgres_expression_info_repository import
 __all__ = [
     "PostgresAuditRepository",
     "PostgresCommitmentRepository",
-    "PostgresParticipantRepository",
+    "PostgresSessionErasureRepository",
     "InMemoryLocalModelSettingsRepository",
     "PostgresLocalModelSettingsRepository",
     "InMemoryAssignmentRepository",

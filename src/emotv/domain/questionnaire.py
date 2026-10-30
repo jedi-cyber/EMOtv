@@ -30,7 +30,7 @@ class ResponseMoment(str, Enum):
 
 
 class EntryMode(str, Enum):
-    PARTICIPANT = "participant"  # respondió quien participa, en la vista de participante
+    PARTICIPANT = "participant"  # respondió la persona analizada, en su pantalla
     CONDUCTOR = "conductor"      # quien conduce la sesión registró las respuestas a mano
 
 
@@ -210,7 +210,6 @@ class QuestionnaireResponse:
     entry_mode: EntryMode | str
     recorded_by_user_id: str
     submitted_at: datetime
-    participant_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "moment", ResponseMoment(self.moment))

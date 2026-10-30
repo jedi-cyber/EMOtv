@@ -67,8 +67,9 @@ describe("cuestionarios", () => {
     vi.mocked(apiRequest).mockResolvedValue({ ...questionnaire, id: "nuevo" } as never);
     withUser("student", <QuestionnairesPage />);
     expect(document.body.textContent).not.toMatch(/estudiante|psicolog/i);
-    expect(screen.getByText(/quien conduce la sesión/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Nuevo cuestionario" }));
+    expect(screen.getByText(/un protocolo aplica antes o después/)).toBeInTheDocument();
+    // Sin cuestionarios, el estado vacío también ofrece el botón que lo resuelve.
+    await userEvent.click(screen.getAllByRole("button", { name: "Nuevo cuestionario" })[0]);
     expect(screen.getByRole("dialog", { name: "Nuevo cuestionario" })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Título"), "Al llegar");
     await userEvent.selectOptions(screen.getByLabelText("Tipo de pregunta"), "scale");

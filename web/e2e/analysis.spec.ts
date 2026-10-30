@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { acceptConsent, adminToken, readyAccount, signIn, withToken } from "./support/api";
+import { acceptConsent, readyAccount, signIn, superadminToken, withToken } from "./support/api";
 import { fakeCamera } from "./support/env";
 
 const camera = fakeCamera();
@@ -23,7 +23,7 @@ test.describe("análisis con la cámara simulada", () => {
 
   let labels: string[] = [];
   test.beforeAll(async () => {
-    labels = await withToken(await adminToken(), async (api) =>
+    labels = await withToken(await superadminToken(), async (api) =>
       (await (await api.get("/expressions")).json() as { label_es: string }[]).map((item) => item.label_es));
   });
 

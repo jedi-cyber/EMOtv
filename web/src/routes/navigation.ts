@@ -8,35 +8,44 @@ export interface NavigationItem {
   icon: NavIconName;
   /** "footer": abajo y separado del recorrido principal (Consentimiento). */
   placement?: "main" | "footer";
+  /** Sección plegable del menú a la que pertenece (por ejemplo, "Mi material"). */
+  group?: string;
+  /** Contador junto al nombre: imágenes pendientes de revisión del docente. */
+  counter?: "imageReview";
 }
 
+/** Cuestionarios y protocolos: lo que cada cuenta prepara para usar en el Analizador. */
+const material: readonly NavigationItem[] = [
+  { to: paths.questionnaires, label: "Cuestionarios", icon: "document", group: "Mi material" },
+  { to: paths.protocols, label: "Protocolos", icon: "document", group: "Mi material" },
+];
+
 export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
-  // Orden del recorrido (DESIGN.md): Inicio, Analizador, Actividades, Mis sesiones.
+  // Toda sesión empieza en el Analizador, con un protocolo o sin él.
   student: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
-    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
-    { to: paths.participants, label: "Participantes", icon: "students" },
-    { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
-    { to: paths.protocols, label: "Protocolos", icon: "document" },
-    { to: paths.activities, label: "Actividades", icon: "activity" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
+    { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
+    { to: paths.activities, label: "Actividades", icon: "activity" },
+    ...material,
+    { to: paths.images, label: "Imágenes", icon: "document", group: "Mi material" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
   ],
   // El docente conduce sesiones propias y revisa las de su grupo.
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
-    { to: paths.guided, label: "Sesión guiada", icon: "guided" },
-    { to: paths.participants, label: "Participantes", icon: "students" },
-    { to: paths.questionnaires, label: "Cuestionarios", icon: "document" },
-    { to: paths.protocols, label: "Protocolos", icon: "document" },
-    { to: paths.stimuli, label: "Estímulos", icon: "manage" },
-    { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
+    { to: paths.exams, label: "Exámenes", icon: "guided" },
+    { to: paths.students, label: "Mi grupo", icon: "users" },
+    { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
     { to: paths.activities, label: "Actividades", icon: "activity" },
+    { to: paths.stimuli, label: "Estímulos", icon: "manage" },
+    { to: paths.imageReview, label: "Imágenes por revisar", icon: "shield", counter: "imageReview" },
+    ...material,
   ],
-  // Cuentas, grupos, estímulos institucionales y auditoría; nunca participantes ni resultados.
+  // Cuentas, grupos, estímulos institucionales y auditoría; nunca sesiones ni resultados.
   admin: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.users, label: "Cuentas y grupos", icon: "users" },

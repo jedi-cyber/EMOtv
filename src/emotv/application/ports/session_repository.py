@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from emotv.domain.session import EmotionalSession
@@ -29,8 +30,13 @@ class SessionRepository(Protocol):
 
         ...
 
-    def list_by_participant(self, participant_id: str) -> tuple[EmotionalSession, ...]:
-        """Devuelve las sesiones de un participante, de la más antigua a la más reciente."""
+    def code_exists(self, code: str) -> bool:
+        """Si alguna sesión ya usa ese código."""
+
+        ...
+
+    def list_started_before(self, cutoff: datetime) -> tuple[EmotionalSession, ...]:
+        """Sesiones iniciadas antes de esa fecha (retención)."""
 
         ...
 

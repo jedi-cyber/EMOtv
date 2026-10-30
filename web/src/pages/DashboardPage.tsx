@@ -13,7 +13,7 @@ import { paths } from "../routes/paths";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
 
 const descriptions: Record<UserRole, string> = {
-  student: "Registra a tus participantes, conduce sesiones y revisa tus resultados.",
+  student: "Conduce sesiones desde el Analizador, con o sin protocolo, y revisa sus resultados.",
   psychologist: "Revisa los resultados de tu grupo y conduce tus propias sesiones.",
   admin: "Gestiona las cuentas de docentes y usuarios, los grupos y la auditoría.",
   superadmin: "Soporte técnico: modelos, configuración, cuenta de administrador y auditoría.",
@@ -30,8 +30,8 @@ export function DashboardPage() {
     <PageHeader title="Hola" description={user ? descriptions[user.role] : ""} />
     {user?.role === "student" && <StudentNextStep />}
     {user?.role === "psychologist" && <NextStepCard title="Tu grupo"
-      action={<ButtonLink variant="primary" to={paths.participants}>Ver participantes</ButtonLink>}>
-      <p>Revisa los participantes y resultados de los usuarios de tu grupo, y los de tus propias sesiones.</p>
+      action={<ButtonLink variant="primary" to={paths.sessions}>Ver sesiones</ButtonLink>}>
+      <p>Revisa las sesiones y los reportes de los usuarios de tu grupo, y los de tus propias sesiones.</p>
     </NextStepCard>}
     {user?.role === "admin" && <NextStepCard title="Cuentas y grupos"
       action={<ButtonLink variant="primary" to={paths.users}>Gestionar cuentas</ButtonLink>}>

@@ -56,7 +56,7 @@ export function StimuliPage() {
     body.append("not_a_projective_test", String(abstract && notProjective));
     try {
       const created = await apiRequest<Stimulus>("/stimuli", { method: "POST", body, token });
-      setMessage(`Se agregó «${created.title}». Apruébalo cuando lo hayas revisado: con niños solo se ofrecen estímulos aprobados.`);
+      setMessage(`Se agregó «${created.title}». Las imágenes que agregas no pasan por revisión.`);
       setForm(emptyForm); setFile(null); setFileKey((key) => key + 1);
       setNotParticipantPhoto(false); setNotProjective(false); setAdding(false);
       await query.reload();
@@ -83,7 +83,7 @@ export function StimuliPage() {
         : "Imágenes que los usuarios de tu grupo pueden usar en sus protocolos, junto con las institucionales."}
       actions={<Button variant="primary" type="button" onClick={() => { setError(""); setMessage(""); setAdding(true); }}>Agregar estímulo</Button>} />
     <Callout variant="info" role="note">
-      Un estímulo nunca es una fotografía de un participante. Las imágenes abstractas son de creación propia o con una
+      Un estímulo nunca es una fotografía de una persona evaluada. Las imágenes abstractas son de creación propia o con una
       licencia que lo permita; no se incluyen láminas de pruebas proyectivas publicadas. El sistema solo muestra y
       registra: no relaciona ninguna imagen con una condición.
     </Callout>
@@ -121,7 +121,7 @@ export function StimuliPage() {
         onChange={(event) => set("origin", event.target.value)} /></label>
       <label>Licencia<input value={form.license} maxLength={300} required onChange={(event) => set("license", event.target.value)} /></label>
       <Checkbox checked={notParticipantPhoto} onChange={(event) => setNotParticipantPhoto(event.target.checked)}>
-        Confirmo que la imagen no es una fotografía de un participante
+        Confirmo que la imagen no es una fotografía de una persona evaluada
       </Checkbox>
       {abstract && <Checkbox checked={notProjective} onChange={(event) => setNotProjective(event.target.checked)}>
         Confirmo que es de creación propia o con una licencia que lo permite, y que no es una lámina de una prueba proyectiva publicada

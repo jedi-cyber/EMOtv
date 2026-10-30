@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
-import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Questionnaire, Student } from "../api/types";
+import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Protocol, SessionType, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { useActiveSession } from "../analysis/ActiveSessionContext";
@@ -14,22 +14,24 @@ import { Callout } from "../components/Callout";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PageHeader } from "../components/PageHeader";
 import { paths } from "../routes/paths";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { ExpressionResult } from "../expressions/ExpressionResult";
 import { LiveExpressionPanel, NO_CALIBRATION, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
 import { emotionModelName } from "../sessions/labels";
+import { SessionConfirmDialog } from "../sessions/SessionConfirmDialog";
+import { storeViewToken } from "../guided/viewToken";
 import { Button, ButtonLink } from "../components/Button";
 import { CameraFrame } from "../components/CameraFrame";
 import { Checkbox } from "../components/Checkbox";
 import { NavIcon } from "../components/NavIcon";
 import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { useConsentStatus } from "../consent/useConsentStatus";
-import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
 
-type Phase = "ready" | "questionnaire" | "live" | "result" | "exercise" | "completed";
+type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Message = Partial<LiveReading> & {
   type: "ready" | "live" | "calibration_started" | "confirm_rejected" | "recognized" | "status" | "recommendation" | "activity_started" | "completed" | "cancelled" | "error";
   emotion_model_id?: string;
@@ -57,6 +59,13 @@ const cameraProblemShort: Record<CameraProblem, string> = {
   unknown: "No se pudo abrir.",
 };
 
+/** ¿Con quién es la sesión? Solo se pregunta sin protocolo: con protocolo, decide su público. */
+const audiences: { value: SessionType; label: string; hint: string }[] = [
+  { value: "propia", label: "Conmigo", hint: "Analizo mi propia expresión." },
+  { value: "adulto", label: "Un adulto", hint: "Con su autorización firmada." },
+  { value: "infantil", label: "Un niño o niña", hint: "Con su tutor presente." },
+];
+
 /** Guía previa: lo que más influye en la lectura del rostro y en la verificación de posturas. */
 export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
   return <section className="analysis-guide" aria-labelledby="analysis-guide-title">
@@ -78,10 +87,18 @@ export function AdaptiveAnalysisPage() {
   // vale solo para esta sesión. Sin elección ("") el servidor usa el predeterminado
   // que fijó el superadministrador (o su respaldo si perdió la admisión).
   const modelsQuery = useApiQuery<LocalModelOption[]>("/analysis/models");
-  const questionnairesQuery = useApiQuery<Questionnaire[]>("/questionnaires");
-  // Sesión propia: se puede aplicar un cuestionario antes del analizador o saltarlo.
-  const [questionnaireId, setQuestionnaireId] = useState("");
-  const [pendingQuestionnaire, setPendingQuestionnaire] = useState<Questionnaire | null>(null);
+  const navigate = useNavigate();
+  // Toda sesión empieza aquí: con un protocolo (una receta guardada) o sin él.
+  const protocolsQuery = useApiQuery<Protocol[]>("/protocols");
+  const protocols = (protocolsQuery.data ?? []).filter((item) => item.owned_by_me);
+  // «Usar en el Analizador» desde Protocolos llega con ?protocol=<id>.
+  const [searchParams] = useSearchParams();
+  const [protocolId, setProtocolId] = useState(() => searchParams.get("protocol") ?? "");
+  const protocol = protocols.find((item) => item.id === protocolId) ?? null;
+  // Sin protocolo se elige con quién es la sesión; con protocolo, el público es el suyo.
+  const [audience, setAudience] = useState<SessionType | null>(null);
+  const sessionAudience: SessionType | null = protocol ? (protocol.for_children ? "infantil" : "adulto") : audience;
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const models = Array.isArray(modelsQuery.data) ? modelsQuery.data : [];
   const defaultModel = models.find((item) => item.is_default);
   const [modelId, setModelId] = useState("");
@@ -307,35 +324,46 @@ export function AdaptiveAnalysisPage() {
       throw new Error("Debes aceptar la versión vigente del consentimiento antes de iniciar el análisis.");
   }
 
-  async function start() {
-    if (modelBlocked || !token) return;
+  /** Pide la única confirmación de la sesión antes de crearla. */
+  function requestStart() {
+    if (modelBlocked || !token || !sessionAudience) return;
+    setError(""); setConfirmOpen(true);
+  }
+
+  function sessionBody(childNoticeVersion?: string) {
+    return JSON.stringify({
+      ...(protocol ? { protocol_id: protocol.id } : { session_type: sessionAudience }),
+      authorization_confirmed: true,
+      ...(childNoticeVersion ? { child_notice_version: childNoticeVersion } : {}),
+    });
+  }
+
+  async function start(childNoticeVersion?: string) {
+    if (modelBlocked || !token || !sessionAudience) return;
     const lifecycle = lifecycleRef.current;
     setStarting(true); setError(""); setNotice(""); completedRef.current = false;
     let created: EmotionalSession | null = null;
     try {
       await requireConsent();
       if (lifecycle !== lifecycleRef.current) return;
-      if (questionnaireId) {
-        created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", token,
-          body: JSON.stringify({ session_type: "propia", pre_questionnaire_id: questionnaireId }) });
-        if (lifecycle !== lifecycleRef.current) {
-          await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
-          return;
-        }
-        sessionRef.current = created; setSession(created);
-        const pending = await apiRequest<{ questionnaire: Questionnaire }>(`/sessions/${created.id}/questionnaires/pre`, { token });
-        // El cuestionario previo se responde antes de encender la cámara y calibrar.
-        setPendingQuestionnaire(pending.questionnaire); setPhase("questionnaire");
+      if (protocol) {
+        // Con protocolo, la sesión sigue sus pasos en la pantalla de quien conduce.
+        created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", token, body: sessionBody(childNoticeVersion) });
+        const guided = await apiRequest<{ view_token: string }>(`/guided-sessions/${encodeURIComponent(created.id)}`, { method: "POST", token });
+        storeViewToken(created.id, guided.view_token);
+        completedRef.current = true;
+        setConfirmOpen(false);
+        navigate(paths.guidedSession(created.id));
         return;
       }
-      if (!await previewCamera()) return;
+      if (!await previewCamera()) { setConfirmOpen(false); return; }
       if (lifecycle !== lifecycleRef.current) return;
-      // Sesión propia: quien inicia sesión se analiza a sí mismo.
-      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: JSON.stringify({ session_type: "propia" }), token });
+      created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", body: sessionBody(childNoticeVersion), token });
       if (lifecycle !== lifecycleRef.current) {
         await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
         return;
       }
+      setConfirmOpen(false);
       sessionRef.current = created; setSession(created);
       openSocket(created);
     } catch (reason) {
@@ -348,28 +376,8 @@ export function AdaptiveAnalysisPage() {
         await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
         sessionRef.current = null; setSession(null); releaseMedia(); setPreviewing(false);
       }
+      setConfirmOpen(false);
       setError(reason instanceof ApiError ? reason.message : reason instanceof Error ? reason.message : "No se pudo iniciar el análisis.");
-    } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
-  }
-
-  async function continueAfterQuestionnaire() {
-    const created = sessionRef.current;
-    const lifecycle = lifecycleRef.current;
-    setPendingQuestionnaire(null);
-    if (!created) { setPhase("ready"); return; }
-    setStarting(true); setError("");
-    try {
-      if (!await previewCamera()) {
-        await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
-        sessionRef.current = null; setSession(null); setPhase("ready");
-        return;
-      }
-      if (lifecycle !== lifecycleRef.current) return;
-      openSocket(created);
-    } catch (reason) {
-      await apiRequest(`/sessions/${created.id}/cancel`, { method: "POST", token }).catch(() => undefined);
-      sessionRef.current = null; setSession(null); releaseMedia(); setPreviewing(false); setPhase("ready");
-      setError(reason instanceof Error ? reason.message : "No se pudo iniciar el análisis.");
     } finally { if (lifecycle === lifecycleRef.current) setStarting(false); }
   }
 
@@ -537,7 +545,8 @@ export function AdaptiveAnalysisPage() {
     setMessage("Preparando un nuevo reconocimiento facial…");
     setError("");
     setPhase("ready");
-    void start();
+    // Cada sesión lleva su propia confirmación.
+    requestStart();
   }
 
   async function cancel(): Promise<boolean> {
@@ -572,7 +581,8 @@ export function AdaptiveAnalysisPage() {
 
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
-    <PageHeader title="Analizador" description="Primero analizamos tu expresión facial. Después podrás revisar una actividad sugerida y decidir si deseas realizarla." />
+    <PageHeader title="Analizador" description="Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo y después puedes revisar una actividad sugerida." />
+    {session?.code && phase !== "ready" && <p className="session-code" role="status">Código de la sesión: <strong>{session.code}</strong> · Anótalo en el formato firmado.</p>}
     {error && <Callout variant="error">{error}</Callout>}
     {notice && <Callout variant="info">{notice}</Callout>}
     <div className="analysis-preflight card">
@@ -617,27 +627,37 @@ export function AdaptiveAnalysisPage() {
             <p id="adaptive-model-help" className="muted">Puedes probar otro modelo local. La elección vale solo para esta sesión.</p>
             {selectedModel?.reasons && selectedModel.reasons.length > 0 && <Callout variant={selectedModel.state === "BLOCKED" ? "error" : "warning"}>{selectedModel.state === "BLOCKED" ? "Modelo no disponible" : "Modelo con advertencias"}: {selectedModel.reasons.join("; ")}</Callout>}
           </>}
-          <label htmlFor="adaptive-questionnaire">Cuestionario antes del análisis</label>
-          <select id="adaptive-questionnaire" value={questionnaireId} aria-describedby="adaptive-questionnaire-help"
-            onChange={(event) => setQuestionnaireId(event.target.value)}>
-            <option value="">Sin cuestionario</option>
-            {(questionnairesQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          <label htmlFor="adaptive-protocol">Protocolo</label>
+          <select id="adaptive-protocol" value={protocolId} aria-describedby="adaptive-protocol-help"
+            onChange={(event) => setProtocolId(event.target.value)}>
+            <option value="">Sin protocolo (solo analizar)</option>
+            {protocols.map((item) => <option key={item.id} value={item.id}>
+              {item.name} · {item.for_children ? "para niños" : "para adultos"}
+            </option>)}
           </select>
-          <p id="adaptive-questionnaire-help" className="muted">Es opcional. Si eliges uno, se responde antes de encender la cámara.</p>
+          <p id="adaptive-protocol-help" className="muted">{protocol
+            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", "calibración", `${protocol.steps.length} ${protocol.steps.length === 1 ? "imagen" : "imágenes"}`, protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}.`
+            : protocols.length > 0 ? "Un protocolo aplica cuestionarios e imágenes guardados. Sin protocolo, solo se analiza la expresión."
+              : <>Aún no tienes protocolos. <ButtonLink variant="ghost" size="sm" to={paths.protocols}>Crear un protocolo</ButtonLink></>}</p>
+          {!protocol && <fieldset className="audience-choice">
+            <legend>¿Con quién es la sesión?</legend>
+            {audiences.map((item) => <label key={item.value} className={`audience-option${audience === item.value ? " is-selected" : ""}`}>
+              <input type="radio" name="audience" value={item.value} checked={audience === item.value}
+                onChange={() => setAudience(item.value)} />
+              <strong>{item.label}</strong>
+              <span>{item.hint}</span>
+            </label>)}
+          </fieldset>}
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
-          <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0} aria-describedby="start-help" onClick={() => { void start(); }}>{starting ? "Preparando análisis…" : "Reconocer mi expresión"}</Button>
+          <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0 || !sessionAudience}
+            aria-describedby="start-help" onClick={requestStart}>{starting ? "Preparando…" : protocol ? "Empezar la sesión" : "Empezar el análisis"}</Button>
           <p id="start-help" className="muted" aria-live="polite">{pendingRequirements.length > 0
             ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
-            : "Todo listo. La cámara se usará solo mientras dure el análisis."}</p>
+            : !sessionAudience ? "Elige con quién es la sesión."
+              : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
         </>}
-        {phase === "questionnaire" && session && pendingQuestionnaire && <>
-          <p className="step-caption">Antes del análisis · Cuestionario</p>
-          <SessionQuestionnaire sessionId={session.id} moment="pre" questionnaire={pendingQuestionnaire}
-            onDone={() => { void continueAfterQuestionnaire(); }} />
-          <Button variant="ghost" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar sesión</Button>
-        </>}
-        {phase !== "ready" && phase !== "questionnaire" && <>
+        {phase !== "ready" && <>
           <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
           {phase === "live" && activeModel && <p className="muted">Modelo facial: {emotionModelName(activeModel)}</p>}
@@ -702,7 +722,7 @@ export function AdaptiveAnalysisPage() {
               ? "Terminaste todos los pasos. La cámara ya se apagó."
               : "La actividad terminó sin completar todos los pasos. La cámara ya se apagó."}</p>}
           </>}
-          {phase === "completed" && session ? <div className="inline-actions"><ButtonLink variant="secondary" to={paths.session(session.id)}>Ver resultado</ButtonLink><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</Button></div>
+          {phase === "completed" && session ? <div className="inline-actions"><ButtonLink variant="secondary" to={paths.session(session.id)}>Ver la sesión {session.code}</ButtonLink><Button variant="primary" type="submit" disabled={starting || modelBlocked} onClick={analyzeAgain}>{starting ? "Preparando análisis…" : "Analizar otra expresión"}</Button></div>
             : <>
               <Button variant="danger" type="submit" disabled={cancelling} onClick={() => setConfirmCancel(true)}>Cancelar análisis</Button>
               {expressionRecorded && <p className="muted">Tu expresión ya quedó registrada; cancelar solo detiene la actividad.</p>}
@@ -710,6 +730,8 @@ export function AdaptiveAnalysisPage() {
         </>}
       </div>
     </div>
+    {sessionAudience && <SessionConfirmDialog open={confirmOpen} audience={sessionAudience} busy={starting}
+      onCancel={() => setConfirmOpen(false)} onConfirm={(version) => { void start(version); }} />}
     <ConfirmDialog open={confirmCancel} title="Cancelar análisis" message={expressionRecorded ? "Tu expresión ya quedó registrada y se conserva. Se cancelará la actividad y se apagará la cámara." : "Se cancelará la sesión y se apagará la cámara."} confirming={cancelling} confirmLabel="Cancelar sesión" onCancel={() => setConfirmCancel(false)} onConfirm={() => { void cancel(); }} />
   </section>;
 }

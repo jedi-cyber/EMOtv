@@ -164,7 +164,7 @@ def test_delete_by_code_leaves_zero_records_in_every_table(factory, capsys, tmp_
     assert remaining(factory, other)["users"] == 1  # la otra cuenta sigue intacta
 
     output = capsys.readouterr().out
-    assert target.code in output and "Motivo: solicitud del participante" in output
+    assert target.code in output and "Motivo: solicitud del voluntario" in output
     assert "chat_messages: 2" in output and "Verificación: CORRECTA" in output
     assert "backup_db.py" in output
     saved = Path(output.split("Acta guardada en ", 1)[1].splitlines()[0])

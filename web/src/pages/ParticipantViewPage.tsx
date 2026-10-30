@@ -7,7 +7,7 @@ import { Button } from "../components/Button";
 const POLL_MS = 500;
 
 /**
- * Vista del participante, a pantalla completa y sin la navegación de la
+ * Pantalla de la persona evaluada, a pantalla completa y sin la navegación de la
  * aplicación: solo el estímulo o una indicación, y un botón para parar. No
  * recibe expresiones, probabilidades, calidad ni notas. La cámara se usa solo
  * mientras la sesión lo pide; los cuadros se analizan en el servidor y se descartan.

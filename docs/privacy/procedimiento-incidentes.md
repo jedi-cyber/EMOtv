@@ -13,7 +13,7 @@ Registro: `[15: UBICACIÓN DEL REGISTRO DE INCIDENTES]`.
 
 Un incidente es cualquier hecho que expone, altera, pierde o destruye datos
 personales sin autorización. Ejemplos con EMOtv: una foto o captura de la
-pantalla con datos de un participante difundida por mensajería; una ficha
+pantalla con datos de una sesión difundida por mensajería; un formato
 código–persona perdida; una cuenta usada por otra persona; un respaldo, un
 archivo `.env.docker` o una clave (`SENSITIVE_DATA_KEY`, `BACKUP_KEY`,
 `JWT_SECRET_KEY`, `N8N_WEBHOOK_KEY`) expuestos; acceso no autorizado al
@@ -30,7 +30,7 @@ Fuentes en el sistema:
 
 | Fuente | Qué permite ver | Quién |
 | --- | --- | --- |
-| Auditoría (`GET /audit`, pantalla **Auditoría**) | Accesos **denegados** a participantes, impresiones, eliminaciones, retiros de autorización, creación, desactivación y restablecimiento de cuentas, cambios de grupo, con fecha, cuenta y resultado. Sin contenido | Administrador y superadministrador |
+| Auditoría (`GET /audit`, pantalla **Auditoría**) | Accesos **denegados** a sesiones, impresiones, solicitudes de eliminación, eliminaciones, creación, desactivación y restablecimiento de cuentas, cambios de grupo, con fecha, cuenta y resultado. Sin contenido | Administrador y superadministrador |
 | Logs de los contenedores (`docker compose logs api` y `web`) | IP, ruta y código de respuesta de cada petición; errores de la aplicación | Responsable técnico, en el servidor |
 | Límite de intentos de inicio de sesión | Bloqueos por muchos fallos desde un correo o una IP (tabla `login_attempts`, 24 horas) | Responsable técnico, en la base |
 
@@ -46,7 +46,7 @@ Según el caso, el mismo día:
 | Respaldo o `BACKUP_KEY` expuestos | Cambiar `BACKUP_KEY`, generar un respaldo nuevo y eliminar los anteriores cifrados con la clave expuesta |
 | Clave del webhook de Emi expuesta | Cambiarla en n8n y en `.env.docker` ([chatbot/n8n-setup.md](../chatbot/n8n-setup.md)) |
 | Captura o foto difundida | Pedir a quien la difundió y a quienes la recibieron que la eliminen; no reenviarla como evidencia, solo describirla |
-| Ficha de papel perdida | Buscarla y, si no aparece, evaluar con el docente si se debe eliminar al participante |
+| Formato firmado perdido | Buscarlo y, si no aparece, evaluar con el docente si se deben eliminar las sesiones con los códigos que tenía |
 | Servidor comprometido | Aislarlo de la red, conservar los logs y avisar al área técnica de la institución |
 
 ## 3. Evaluación del alcance
@@ -55,13 +55,13 @@ Responder y anotar en el registro:
 
 - ¿Qué datos? (códigos, respuestas, expresiones estimadas, reportes, notas,
   cuentas, claves). Recordar: el sistema no guarda nombres, DNI ni imágenes de
-  participantes; la relación código–persona solo está en papel.
+  personas evaluadas; la relación código–persona solo está en papel.
 - ¿Estaban cifrados? Notas, respuestas, comentarios, lo que dijo ver y reportes
   se cifran con `SENSITIVE_DATA_KEY`; un volcado de la base sin esa clave no los
   revela. El resto no está cifrado en la aplicación ([registro-de-tratamiento.md](registro-de-tratamiento.md)).
-- ¿Cuántos participantes y cuentas? ¿Hay **niños**?
+- ¿Cuántas sesiones y cuentas? ¿Hay sesiones con **niños**?
 - ¿Se puede identificar a las personas? (por ejemplo, si una captura muestra el
-  código junto a la cara, o si se perdió la ficha de papel).
+  código junto a la cara, o si se perdió el formato firmado).
 - ¿Desde cuándo y hasta cuándo? Usar la auditoría y los logs.
 - ¿Qué riesgo tiene para las personas? `[Verificar con asesoría legal: criterios
   para decidir si se comunica a la autoridad y a los afectados.]`
@@ -72,7 +72,7 @@ Responder y anotar en el registro:
   posteriores a tomar conocimiento, por `[16]`, con lo que se sepa en ese momento;
   se completa después si hace falta. `[Verificar con asesoría legal.]`
 - **A las personas afectadas**: EMOtv no tiene sus datos de contacto. El docente
-  usa la ficha de papel para ubicar al participante adulto o al padre, madre o
+  usa el formato firmado para ubicar a la persona adulta o al padre, madre o
   tutor, y comunica en lenguaje sencillo qué pasó, qué datos se vieron afectados,
   qué se hizo y a quién pueden dirigirse (`[3: CONTACTO PARA EJERCER DERECHOS]`).
   `[Verificar con asesoría legal: cuándo y cómo.]`
@@ -81,7 +81,7 @@ Responder y anotar en el registro:
 ## 5. Registro posterior
 
 Todo incidente se registra, aunque se concluya que no había que comunicarlo. El
-registro va fuera del sistema (`[15]`), **sin nombres de participantes** (solo
+registro va fuera del sistema (`[15]`), **sin nombres de las personas evaluadas** (solo
 códigos) y sin copiar los datos expuestos.
 
 Después de cerrarlo: revisar qué falló, actualizar este procedimiento, la
@@ -98,7 +98,7 @@ recordar el compromiso de confidencialidad a las cuentas involucradas.
 | Descripción | Qué pasó, sin copiar los datos |
 | Fecha y hora estimadas de inicio y fin | |
 | Datos afectados | Tipos de datos; ¿cifrados? |
-| Personas afectadas | Cantidad de participantes (¿niños?) y de cuentas; solo códigos |
+| Personas afectadas | Cantidad de sesiones (¿con niños?) y de cuentas; solo códigos |
 | ¿Se puede identificar a las personas? | Sí / No / No se sabe — por qué |
 | Medidas de contención | Acción, fecha y quién la hizo |
 | Evaluación del riesgo | |

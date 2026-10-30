@@ -35,16 +35,25 @@ class EmotionalSession:
     exercise_steps_total: int | None = None
     exercise_repetitions: int | None = None
     session_type: SessionType | str = SessionType.OWN
-    # Cuenta que conduce la sesión (usuario o docente) y participante analizado,
-    # si lo hay. Una sesión propia no tiene participante.
+    # Cuenta que conduce la sesión (usuario o docente).
     owner_user_id: str | None = None
-    participant_id: str | None = None
     # Versión del protocolo aplicado, si la sesión sigue uno.
     protocol_id: str | None = None
     # Versiones exactas de los cuestionarios que se responden antes y después
     # del analizador; el analizador no empieza sin el previo respondido.
     pre_questionnaire_id: str | None = None
     post_questionnaire_id: str | None = None
+    # Código aleatorio (S-XXXXXX) que quien conduce anota en el formato firmado.
+    # Es lo único que identifica la sesión fuera del sistema: no hay nombre, DNI
+    # ni registro de la persona. Nulo solo en sesiones anteriores a los códigos.
+    code: str | None = None
+    # Cuándo quien conduce confirmó la autorización según el público.
+    authorization_confirmed_at: datetime | None = None
+    # Solicitud de eliminación de quien condujo; la ejecuta su docente.
+    deletion_requested_at: datetime | None = None
+    deletion_requested_by_user_id: str | None = None
+    # Examen simulado al que pertenece la sesión (una por estación).
+    exam_id: str | None = None
 
     def __post_init__(self) -> None:
         session_id = self.id.strip()
@@ -147,14 +156,20 @@ class EmotionalSession:
         object.__setattr__(self, "id", session_id)
         object.__setattr__(self, "state", state)
         object.__setattr__(self, "session_type", session_type)
-        for name in ("owner_user_id", "participant_id", "protocol_id", "pre_questionnaire_id", "post_questionnaire_id"):
+        for name in ("owner_user_id", "protocol_id", "pre_questionnaire_id", "post_questionnaire_id", "code",
+                     "deletion_requested_by_user_id", "exam_id"):
             value = getattr(self, name)
             if value is not None:
                 if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{name} no puede estar vacío")
                 object.__setattr__(self, name, value.strip())
-        if session_type is SessionType.OWN and self.participant_id is not None:
-            raise ValueError("una sesión propia no tiene participante")
+        for name in ("authorization_confirmed_at", "deletion_requested_at"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, datetime) or value.tzinfo is None
+                                      or value.utcoffset() is None):
+                raise ValueError(f"{name} debe incluir zona horaria")
+        if (self.deletion_requested_at is None) != (self.deletion_requested_by_user_id is None):
+            raise ValueError("La solicitud de eliminación requiere fecha y solicitante")
         object.__setattr__(self, "initial_emotion", emotion)
         object.__setattr__(self, "activity_id", activity_id)
         object.__setattr__(self, "exercise_result", exercise_result)

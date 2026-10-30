@@ -1,9 +1,16 @@
-"""Protocolos: secuencias de estímulos que arma quien conduce las sesiones.
+"""Protocolos: recetas guardadas que dicen qué aplicar en una sesión
+(cuestionario previo, imágenes con sus segundos y cuestionario posterior), para
+un público de adultos o de niños.
 
-Con adultos un protocolo se usa sin aprobación; con niños, solo cuando el
-docente lo aprueba y todos sus estímulos son leves, aprobados y adecuados a la
-edad. Una versión usada en una sesión no se edita: editarla crea una versión
-nueva, que vuelve a pedir aprobación.
+El protocolo y sus cuestionarios no necesitan aprobación del docente. Uno para
+niños solo admite imágenes «Para niños» (leves) y aprobadas; uno para adultos
+admite las dos. Una imagen propia pendiente de revisión no se usa en ningún
+protocolo. Una versión usada en una sesión no se edita: editarla crea una
+versión nueva. Si el docente elimina o reclasifica una imagen que un protocolo
+usa, el protocolo queda «Necesita una imagen» hasta que se reemplace.
+
+Los protocolos de examen simulado no pasan por aquí: no se listan, no se editan
+ni se aplican desde el Analizador. Los gestiona ExamService.
 """
 from __future__ import annotations
 
@@ -17,10 +24,9 @@ from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
-from emotv.domain.participant import Participant, ParticipantKind
-from emotv.domain.protocol import Protocol, ProtocolStep
+from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep
 from emotv.domain.role import Role
-from emotv.domain.stimulus import StimulusIntensity, StimulusKind
+from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
 
 RESOURCE = "protocol"
@@ -73,22 +79,15 @@ class ProtocolService:
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
             raise PermissionError("Los protocolos los arman usuarios y docentes")
 
-    def _approver_of(self, protocol: Protocol) -> str | None:
-        """El docente del autor; si el autor es docente, él mismo."""
-        docente = self.docente_of(protocol.owner_user_id)
-        return docente or None
-
     def can_view(self, user: User, protocol: Protocol) -> bool:
+        """Quien lo armó y el docente de esa cuenta. Un examen no es un protocolo de práctica."""
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
+            return False
+        if protocol.kind is not ProtocolKind.PRACTICE:
             return False
         if protocol.owner_user_id == user.id:
             return True
-        return user.role is Role.PSYCHOLOGIST and self._approver_of(protocol) == user.id
-
-    def can_approve(self, user: User, protocol: Protocol) -> bool:
-        if not user.is_active or user.role is not Role.PSYCHOLOGIST:
-            return False
-        return protocol.owner_user_id == user.id or self._approver_of(protocol) == user.id
+        return user.role is Role.PSYCHOLOGIST and self.docente_of(protocol.owner_user_id) == user.id
 
     def list_for(self, user: User) -> tuple[Protocol, ...]:
         self._require_conductor(user)
@@ -104,9 +103,34 @@ class ProtocolService:
     def is_used(self, protocol: Protocol) -> bool:
         return self.repository.is_used(protocol.id)
 
+    @staticmethod
+    def _image_problem(protocol: Protocol, stimulus: Stimulus | None) -> str | None:
+        """Por qué una imagen no sirve en este protocolo, o None si sirve."""
+        if stimulus is None or stimulus.deleted_at is not None:
+            return "Una imagen del protocolo fue eliminada"
+        if stimulus.scope is StimulusScope.USER and stimulus.owner_user_id != protocol.owner_user_id:
+            return "Una imagen propia solo se usa en los protocolos de quien la subió"
+        if stimulus.pending:
+            return f"La imagen «{stimulus.title}» todavía está en revisión"
+        if not stimulus.usable:
+            return f"El estímulo «{stimulus.title}» fue retirado del banco"
+        if protocol.for_children and not stimulus.suitable_for_children:
+            return (f"Un protocolo para niños solo admite imágenes leves y aprobadas «Para niños»: "
+                    f"«{stimulus.title}» no lo es")
+        return None
+
+    def needs_image(self, protocol: Protocol) -> bool:
+        """Algún paso nombra una imagen eliminada, sin aprobar, retirada o que ya
+        no corresponde al público del protocolo."""
+        return any(self._image_problem(protocol, self.stimuli.repository.get(step.stimulus_id)) is not None
+                   for step in protocol.steps)
+
     # --- Armado y versiones --------------------------------------------------
 
     def _validate(self, user: User, draft: ProtocolDraft) -> None:
+        target = Protocol(id="validacion", family_id="validacion", version=1, owner_user_id=user.id,
+                          name=draft.name or "validacion", description=draft.description,
+                          for_children=draft.for_children, created_at=self.clock(), steps=draft.steps)
         for questionnaire_id in (draft.pre_questionnaire_id, draft.post_questionnaire_id):
             if questionnaire_id is None:
                 continue
@@ -121,14 +145,13 @@ class ProtocolService:
                 stimulus = self.stimuli.get(user, step.stimulus_id)
             except StimulusNotFound as error:
                 raise ValueError("Un estímulo del protocolo no existe o no está disponible") from error
-            if not stimulus.active:
-                raise ValueError(f"El estímulo «{stimulus.title}» fue retirado del banco")
+            problem = self._image_problem(target, stimulus)
+            if problem is not None:
+                raise ValueError(problem)
             if step.record_verbal_response and stimulus.kind is not StimulusKind.ABSTRACT:
-                raise ValueError("Lo que el participante dice ver solo se registra en imágenes abstractas")
+                raise ValueError("Lo que la persona dice ver solo se registra en imágenes abstractas")
             if step.shown_before_analyzer and stimulus.kind is not StimulusKind.ABSTRACT:
                 raise ValueError("Solo las imágenes abstractas se muestran antes del analizador")
-            if draft.for_children and not (stimulus.approved and stimulus.intensity is StimulusIntensity.MILD):
-                raise ValueError(f"Con niños solo se usan estímulos leves y aprobados: «{stimulus.title}» no lo es")
 
     def create(self, user: User, draft: ProtocolDraft) -> Protocol:
         self._require_conductor(user)
@@ -144,7 +167,7 @@ class ProtocolService:
 
     def edit(self, user: User, protocol_id: str, draft: ProtocolDraft) -> Protocol:
         """Una versión sin usar se reemplaza; una usada en una sesión no se
-        toca y se crea la siguiente. En ambos casos se pierde la aprobación."""
+        toca y se crea la siguiente."""
         self._require_conductor(user)
         current = self.get(user, protocol_id)
         if current.owner_user_id != user.id:
@@ -165,43 +188,23 @@ class ProtocolService:
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, updated.id)
         return updated
 
-    def approve(self, user: User, protocol_id: str) -> Protocol:
-        protocol = self.get(user, protocol_id)
-        if not self.can_approve(user, protocol):
-            raise PermissionError("Los protocolos para niños los aprueba el docente")
-        if not protocol.for_children:
-            raise ValueError("Solo los protocolos para niños requieren aprobación")
-        if not protocol.current:
-            raise ValueError("Esta versión ya fue reemplazada")
-        if protocol.approved:
-            return protocol
-        approved = self.repository.replace(replace(protocol, approved_at=self.clock(), approved_by_user_id=user.id))
-        self.audit.record(user, AuditAction.APPROVE, RESOURCE, protocol.id)
-        return approved
-
     # --- Uso en una sesión ---------------------------------------------------
 
-    def require_usable(self, user: User, protocol_id: str, participant: Participant | None) -> Protocol:
-        """Comprueba que quien conduce puede aplicar esta versión al participante."""
+    def require_usable(self, user: User, protocol_id: str) -> Protocol:
+        """Comprueba que quien conduce puede aplicar esta versión ahora. El
+        público de la sesión es el del protocolo."""
         protocol = self.get(user, protocol_id)
         if protocol.owner_user_id != user.id:
             raise ProtocolUnavailable("Solo se aplican los protocolos que armaste")
         if not protocol.current:
             raise ProtocolUnavailable("Hay una versión más nueva de este protocolo")
-        stimuli = []
         for step in protocol.steps:
             try:
-                stimuli.append(self.stimuli.get(user, step.stimulus_id))
+                stimulus = self.stimuli.get(user, step.stimulus_id)
             except StimulusNotFound as error:
-                raise ProtocolUnavailable("Un estímulo del protocolo ya no está disponible") from error
-        if any(not item.active for item in stimuli):
-            raise ProtocolUnavailable("Un estímulo del protocolo fue retirado del banco")
-        if participant is not None and participant.kind is ParticipantKind.CHILD:
-            if not protocol.for_children:
-                raise ProtocolUnavailable("Este protocolo no está preparado para niños")
-            if not protocol.approved:
-                raise ProtocolUnavailable("Un protocolo para niños se usa solo cuando el docente lo aprueba")
-            if any(not item.suitable_for_child(participant.age_years) for item in stimuli):
-                raise ProtocolUnavailable("El protocolo tiene estímulos que no son adecuados para la edad del niño o "
-                                          "la niña")
+                raise ProtocolUnavailable("El protocolo necesita una imagen: una de sus imágenes ya no "
+                                          "está disponible") from error
+            problem = self._image_problem(protocol, stimulus)
+            if problem is not None:
+                raise ProtocolUnavailable(f"El protocolo necesita una imagen. {problem}")
         return protocol

@@ -61,7 +61,7 @@ def test_identity_activity_and_session_api(monkeypatch):
         # El administrador ve las cuentas para armar grupos, no el perfil ni el consentimiento.
         assert client.get(f"/students/{student_id}", headers=headers).status_code == 403
         assert client.get(f"/students/{student_id}/consents/active", headers=own).json() is None
-        assert client.post("/sessions", headers=own, json={}).status_code == 403
+        assert client.post("/sessions", headers=own, json={"session_type": "propia", "authorization_confirmed": True}).status_code == 403
         assert client.post(f"/students/{student_id}/consents", headers=own, json={"policy_version": "v1"}).status_code == 201
         assert client.post(f"/students/{student_id}/consents", headers=own, json={"policy_version": "v1"}).status_code == 409
         activity = dict(id="test", name="Prueba", description="Brazos arriba", required_posture="arms_up", duration_seconds=1, repetitions=1)
@@ -69,14 +69,14 @@ def test_identity_activity_and_session_api(monkeypatch):
         assert client.post("/activities", headers=technical, json=activity).status_code == 201
         assert ActivityCatalog(repository=PostgresActivityRepository(factory)).get("test").name == "Prueba"
         assert client.post("/activities", headers=technical, json=activity).status_code == 409
-        session = client.post("/sessions", headers=own, json={"activity_id": "test"}).json()
+        session = client.post("/sessions", headers=own, json={"activity_id": "test", "session_type": "propia", "authorization_confirmed": True}).json()
         result = dict(initial_emotion="neutral", emotion_confidence=0.9, activity_id="test", exercise_result="completed", exercise_duration_seconds=1)
         url = f"/sessions/{session['id']}/complete"
         # Nadie registra el resultado a mano y la gestión no accede a sesiones.
         assert client.post(url, headers=headers, json=result).status_code == 404
         assert client.get(f"/sessions/{session['id']}", headers=headers).status_code == 403
         assert client.post(f"/students/{student_id}/consents/revoke", headers=own).status_code == 200
-        assert client.post("/sessions", headers=own, json={}).status_code == 403
+        assert client.post("/sessions", headers=own, json={"session_type": "propia", "authorization_confirmed": True}).status_code == 403
         assert client.patch(f"/users/{student_user.id}", headers=headers, json={"is_active": False}).status_code == 200
         assert client.get("/students", headers=own).status_code == 401
         # El administrador no gestiona su propia cuenta ni la de otro administrador.

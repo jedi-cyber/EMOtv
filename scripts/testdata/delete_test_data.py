@@ -6,7 +6,7 @@ Uso (desde la raíz, o con docker compose ... exec api):
     python scripts/testdata/delete_test_data.py --all-test-accounts
     (añade --save para guardar el acta en reports/deletions/)
 
---code elimina una cuenta (motivo por defecto: solicitud del participante);
+--code elimina una cuenta (motivo por defecto: solicitud del voluntario);
 --expired, las creadas hace más de TEST_DATA_RETENTION_DAYS días (30 por
 defecto); --all-test-accounts, todas, tras escribir ELIMINAR. Solo toca cuentas
 con is_test_account=True. Todo ocurre en una transacción: si algo falla o la

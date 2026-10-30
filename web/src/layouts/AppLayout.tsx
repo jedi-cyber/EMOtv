@@ -7,7 +7,7 @@ import { useActiveSession } from "../analysis/ActiveSessionContext";
 import { paths } from "../routes/paths";
 import { navigationByRole, type NavigationItem } from "../routes/navigation";
 import type { UserRole } from "../auth/types";
-import { API_RECOVERED_EVENT, API_UNAVAILABLE_EVENT } from "../api/http";
+import { API_RECOVERED_EVENT, API_UNAVAILABLE_EVENT, apiRequest } from "../api/http";
 
 type Crumb = { label: string; to?: string };
 
@@ -18,22 +18,24 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   const sessions = role === "student" ? "Mis sesiones" : "Sesiones";
   if (parts[0] === "activities") return [home, { label: "Actividades", ...(parts[1] ? { to: paths.activities } : {}) }, ...(parts[1] ? [{ label: "Detalle de actividad" }] : [])];
   if (parts[0] === "analysis") return [home, { label: "Actividades", to: paths.activities }, { label: "Analizador" }];
+  if (parts[0] === "sessions" && parts[1] === "deletions") return [home, { label: sessions, to: paths.sessions }, { label: "Acta de eliminación" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
   if (parts[0] === "students") return [home, { label: "Mi grupo", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del usuario" }] : [])];
-  if (parts[0] === "participants") return [home, { label: "Participantes", ...(parts[1] ? { to: paths.participants } : {}) }, ...(parts[1] ? [{ label: "Acta de eliminación" }] : [])];
+  if (parts[0] === "images") return [home, { label: parts[1] === "review" ? "Imágenes por revisar" : "Imágenes" }];
   if (parts[0] === "admin" && parts[1] === "activities") return [home, { label: "Administrar actividades" }];
   if (parts[0] === "admin" && parts[1] === "models") return [home, { label: "Modelos" }];
   if (parts[0] === "admin" && parts[1] === "expressions") return [home, { label: "Catálogo de expresiones" }];
   const labels: Record<string, string> = {
     users: role === "superadmin" ? "Cuenta de administrador" : "Cuentas y grupos", audit: "Auditoría",
-    commitment: "Compromiso de confidencialidad", consent: "Consentimiento",
+    commitment: "Compromiso de confidencialidad", consent: "Consentimiento", statistics: "Estadísticas",
     unauthorized: "Acceso denegado", "connection-error": "Error de conexión",
   };
   return [home, { label: labels[parts[0]] ?? "Página no encontrada" }];
 }
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
+  const [reviewCount, setReviewCount] = useState(0);
   const { activeSession } = useActiveSession();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,6 +49,15 @@ export function AppLayout() {
     if (previousPathRef.current !== pathname) mainRef.current?.focus();
     previousPathRef.current = pathname;
   }, [pathname]);
+  // Imágenes por revisar del docente: se actualiza al cambiar de página.
+  useEffect(() => {
+    if (user?.role !== "psychologist") return;
+    let cancelled = false;
+    apiRequest<{ pending: number }>("/own-stimuli/review/count", { token })
+      .then((result) => { if (!cancelled) setReviewCount(result.pending); })
+      .catch(() => { if (!cancelled) setReviewCount(0); });
+    return () => { cancelled = true; };
+  }, [user?.role, token, pathname]);
   useEffect(() => {
     const unavailable = () => setBackendUnavailable(true);
     const recovered = () => setBackendUnavailable(false);
@@ -86,14 +97,18 @@ export function AppLayout() {
     menuButtonRef.current?.focus();
   }
   const items = user ? navigationByRole[user.role] : [];
-  const mainItems = items.filter((item) => item.placement !== "footer");
+  const mainItems = items.filter((item) => item.placement !== "footer" && !item.group);
+  // Secciones plegables ("Mi material"): cerradas salvo que la página actual esté dentro.
+  const groups = [...new Set(items.filter((item) => item.group).map((item) => item.group as string))]
+    .map((name) => ({ name, items: items.filter((item) => item.group === name) }));
   const footerItems = items.filter((item) => item.placement === "footer");
   const trail = user ? breadcrumbs(pathname, user.role) : [];
   const showBreadcrumbs = /^\/(activities|sessions)\/[^/]+\/?$/.test(pathname)
     || /^\/students\/[^/]+\/sessions\/?$/.test(pathname);
   const section = sectionName(pathname, items) ?? trail.at(-1)?.label ?? "Inicio";
-  const navLink = ({ to, label, icon }: NavigationItem) => <NavLink key={to} to={to} end={to === paths.dashboard}
-    className={({ isActive }) => isActive ? "active" : undefined}><NavIcon name={icon} /><span>{label}</span></NavLink>;
+  const navLink = ({ to, label, icon, counter }: NavigationItem) => <NavLink key={to} to={to} end={to === paths.dashboard}
+    className={({ isActive }) => isActive ? "active" : undefined}><NavIcon name={icon} /><span>{label}</span>
+    {counter === "imageReview" && reviewCount > 0 && <span className="nav-counter" aria-label={`${reviewCount} por revisar`}>{reviewCount}</span>}</NavLink>;
   const activeSessionPath = activeSession?.activityId ? paths.analysisForActivity(activeSession.activityId) : paths.analysis;
 
   return (
@@ -110,6 +125,11 @@ export function AppLayout() {
         <nav id="main-navigation" aria-label="Navegación principal" onClick={(event) => { if ((event.target as HTMLElement).closest("a")) setMenuOpen(false); }}>
           <div className="sidebar-group">
             {mainItems.map(navLink)}
+            {groups.map((group) => <details key={`${group.name}-${pathname}`} className="sidebar-section"
+              open={group.items.some((item) => pathname === item.to || pathname.startsWith(`${item.to}/`))}>
+              <summary>{group.name}</summary>
+              <div className="sidebar-section-items">{group.items.map(navLink)}</div>
+            </details>)}
             {user?.role === "student" && activeSession && <Link className="active-session-link" to={activeSessionPath}><span className="active-session-dot" aria-hidden="true" />Sesión activa · Volver al análisis</Link>}
           </div>
           {footerItems.length > 0 && <div className="sidebar-group sidebar-footer-group">{footerItems.map(navLink)}</div>}

@@ -1,5 +1,6 @@
-"""Papeles, control de acceso central, compromiso, cifrado, auditoría,
-retención y eliminación con acta (SQLite en memoria, sin servicios externos)."""
+"""Papeles, control de acceso a sesiones, compromiso, cifrado, auditoría,
+retención y eliminación por sesión con acta (SQLite en memoria, sin servicios
+externos)."""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -19,7 +20,7 @@ from emotv.application import ActivityCatalog, AuthenticationService, IdentityRe
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.commitment_service import CommitmentService, load_text
-from emotv.application.participant_service import ParticipantService
+from emotv.application.session_privacy_service import SessionPrivacyService
 from emotv.application.ports.privacy_repositories import AuditFilter, ErasureVerificationError
 from emotv.config import PrivacySettings
 from emotv.domain import AuditAction, Role, User
@@ -30,7 +31,7 @@ from emotv.infrastructure.persistence import (
     PostgresAuditRepository,
     PostgresCommitmentRepository,
     PostgresConsentRepository,
-    PostgresParticipantRepository,
+    PostgresSessionErasureRepository,
     PostgresSessionRepository,
     PostgresStudentRepository,
     PostgresUserRepository,
@@ -49,26 +50,34 @@ from emotv.infrastructure.persistence.postgres_guided_repositories import Postgr
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
+from emotv.application.session_statistics_service import SessionStatisticsService
+from emotv.interfaces.web.statistics_router import create_statistics_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
-    PostgresAuthorizationRepository,
     PostgresProtocolRepository,
     PostgresStimulusRepository,
 )
 from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
 from emotv.interfaces.web.stimulus_router import create_stimulus_router
+from emotv.application.user_image_service import UserImageService
+from emotv.config import UserImageSettings
+from emotv.infrastructure.persistence.postgres_practice_repositories import PostgresNoticeRepository
+from emotv.infrastructure.vision.person_detection import ImagePersonDetector
+from emotv.interfaces.web.user_image_router import create_user_image_router
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
-    ParticipantRecord,
     PsychologistAssignmentRecord,
+    SessionMarkerRecord,
     SessionRecord,
 )
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.identity_router import create_identity_router
-from emotv.interfaces.web.participant_router import create_participant_router
+from emotv.application.exam_service import ExamService
+from emotv.infrastructure.persistence.postgres_exam_repository import PostgresExamRepository
+from emotv.interfaces.web.exam_router import create_exam_router
 from emotv.interfaces.web.privacy_router import create_privacy_router
 from emotv.interfaces.web.session_router import create_session_router
 from emotv.shared.security.field_encryption import FieldCipher, FieldEncryptionError
@@ -117,7 +126,6 @@ def env():
 
     audit = AuditService(PostgresAuditRepository(factory), clock)
     commitments = CommitmentService(PostgresCommitmentRepository(factory), audit, clock)
-    participant_repository = PostgresParticipantRepository(factory, FieldCipher([KEY]))
 
     def docente_of(user_id):
         student = students.get_by_user_id(user_id)
@@ -127,11 +135,11 @@ def env():
     def group_user_ids(docente_id):
         return tuple(students.get_by_id(item.student_id).user_id for item in assignments.list_by_psychologist(docente_id))
 
-    authorization = AuthorizationService(assignments.is_assigned, docente_of, participant_repository.get_by_id)
-    participants = ParticipantService(participant_repository, authorization, commitments, audit, group_user_ids,
-                                      retention_months=12, notice_days=30, clock=clock,
-                                      authorizations=PostgresAuthorizationRepository(factory))
-    sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
+    authorization = AuthorizationService(assignments.is_assigned, docente_of)
+    sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents, clock=clock)
+    erasure = PostgresSessionErasureRepository(factory)
+    privacy = SessionPrivacyService(sessions, erasure, authorization, audit, docente_of, retention_months=12,
+                                    clock=clock)
     stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
     def session_access(user, session):
         actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
@@ -148,12 +156,25 @@ def env():
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,
                                               privacy=PrivacySettings(max_admin_accounts=1)))
     app.include_router(create_privacy_router(commitments, audit, auth, users))
-    app.include_router(create_participant_router(participants, auth, users))
     app.include_router(create_session_router(sessions, auth, users, students, authorization=authorization,
                                              assignments=assignments, commitments=commitments,
-                                             participants=participants, protocols=protocols,
-                                             questionnaires=questionnaires))
+                                             protocols=protocols, questionnaires=questionnaires,
+                                             privacy=privacy, audit=audit))
     app.include_router(create_stimulus_router(stimuli, protocols, auth, users))
+    # Detectores falsos de rostros y cuerpos (sin pesos): cada prueba fija su confianza.
+    e.face_confidence, e.body_confidence, e.detected_shapes = 0.0, 0.0, []
+
+    def fake_face(frame):
+        e.detected_shapes.append(frame.shape)
+        return e.face_confidence
+
+    e.images = UserImageService(
+        stimuli.repository, PostgresNoticeRepository(factory), audit, docente_of, group_user_ids,
+        sanitize_stimulus_image, ImagePersonDetector(fake_face, lambda frame: e.body_confidence),
+        UserImageSettings(person_reject_confidence=0.8, person_review_confidence=0.4, upload_limit_per_user=6,
+                          review_days=30, expiry_notice_days=7),
+        protocols_using=protocols.repository.list_current_using, clock=clock)
+    app.include_router(create_user_image_router(e.images, auth, users))
     app.include_router(create_questionnaire_router(questionnaires, auth, users))
     # Analizador falso: cada prueba fija el resultado del próximo cuadro (sin modelos ni imágenes).
     e.frame_result = FrameAssessment((), "happiness", 0.8, {"happiness": 0.8, "neutral": 0.2})
@@ -163,34 +184,43 @@ def env():
         e.frames_assessed += 1
         return e.frame_result
 
+    exam_repository = PostgresExamRepository(factory)
     guided = GuidedSessionService(
         PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
         protocols=protocols.repository.get, stimuli=stimuli.repository.get,
-        participants=participant_repository.get_by_id,
-        participant_ready=lambda participant: participants.status(participant) == "ready",
         questionnaire_answered=questionnaires.answered,
         resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
         assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
-        calibration_seconds=3.0, clock=clock)
+        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get)
     app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
                                             decode_frame=lambda data: data or None))
     e.guided = guided
     insights = SessionInsightsService(
         sessions, guided.repository, protocols=protocols.repository.get, stimuli=stimuli.repository.get,
-        participants=participant_repository.get_by_id, questionnaire_responses=questionnaires.responses.list_for_session,
+        questionnaire_responses=questionnaires.responses.list_for_session,
         questionnaires=questionnaires.repository.get, authorization=authorization,
         actor_student_id=lambda user: (students.get_by_user_id(user.id).id
                                        if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
         audit=audit)
     app.include_router(create_insights_router(insights, auth, users))
+    e.insights = insights
+    e.statistics = SessionStatisticsService(
+        sessions, insights, authorization,
+        lambda user: (students.get_by_user_id(user.id).id
+                      if user.role is Role.STUDENT and students.get_by_user_id(user.id) else None),
+        group_user_ids, lambda user_id: users.get_by_id(user_id).email if users.get_by_id(user_id) else None, audit)
+    app.include_router(create_statistics_router(e.statistics, auth, users))
     e.reports = ReportService(PostgresReportRepository(factory, FieldCipher([KEY])), sessions,
-                              participant_repository.get_by_id, authorization, docente_of, insights, audit, clock)
+                              authorization, docente_of, insights, audit, clock)
     app.include_router(create_report_router(e.reports, auth, users))
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
-    e.audit, e.commitments, e.participants, e.sessions = audit, commitments, participants, sessions
-    e.participant_repository, e.authorization = participant_repository, authorization
+    e.exams = ExamService(exam_repository, protocols.repository, sessions, audit, commitments, clock,
+                          stations=guided)
+    app.include_router(create_exam_router(e.exams, auth, users))
+    e.audit, e.commitments, e.sessions, e.privacy, e.erasure = audit, commitments, sessions, privacy, erasure
+    e.authorization = authorization
     e.stimuli, e.protocols, e.questionnaires = stimuli, protocols, questionnaires
     with TestClient(app) as client:
         e.client = client
@@ -206,17 +236,23 @@ def accept_commitment(env, user):
     env.commitments.accept(user, load_text("commitment").version)
 
 
-AGES = {"adult": 30, "child": 9}
+CONFIRMED = {"authorization_confirmed": True}
 
 
-def register(env, user, kind="adult", notes=None, age=None):
+def start_session(env, user, session_type="adulto", **body):
+    """Inicia una sesión sin protocolo con la confirmación según el público."""
     accept_commitment(env, user)
-    if kind == "child":
+    if session_type == "infantil":
         env.commitments.accept(user, load_text("child_notice").version, "child_notice")
-    response = env.client.post("/participants", headers=headers(env, user),
-                               json={"kind": kind, "age_years": age or AGES[kind], "notes": notes})
+    response = env.client.post("/sessions", headers=headers(env, user),
+                               json={"session_type": session_type, **CONFIRMED, **body})
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def finish(env, user, session):
+    """Deja la sesión terminada (cancelada) para poder eliminarla."""
+    assert env.client.post(f"/sessions/{session['id']}/cancel", headers=headers(env, user)).status_code == 200
 
 
 def audit_actions(env, **filters):
@@ -224,38 +260,36 @@ def audit_actions(env, **filters):
             for item in env.audit.query(AuditFilter(**filters), limit=500)]
 
 
-# --- Acceso a participantes -------------------------------------------------
+# --- Acceso a sesiones (can_access_session) -----------------------------------
 
-def test_admin_superadmin_and_a_foreign_user_never_access_a_participant(env):
-    participant = register(env, env.user_1)
+def test_only_the_conductor_and_their_docente_access_a_session(env):
+    session = start_session(env, env.user_1)
     for user in (env.admin, env.superadmin, env.user_2, env.docente_b):
-        response = env.client.get(f"/participants/{participant['id']}", headers=headers(env, user))
+        response = env.client.get(f"/sessions/{session['id']}", headers=headers(env, user))
         assert response.status_code == 403, user.role
     for user in (env.admin, env.superadmin):
-        assert env.client.get("/participants", headers=headers(env, user)).status_code == 403
-    # Quien lo registró y su docente sí acceden.
+        assert env.client.get("/sessions", headers=headers(env, user)).status_code == 403
     for user in (env.user_1, env.docente_a):
-        assert env.client.get(f"/participants/{participant['id']}", headers=headers(env, user)).status_code == 200
-    denied = [item for item in audit_actions(env, resource_type="participant") if item[2] == "denied"]
-    assert len(denied) == 4
+        assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, user)).status_code == 200
 
 
-def test_a_docente_only_sees_participants_of_their_group_and_their_own(env):
-    own = register(env, env.docente_a)
-    from_group = register(env, env.user_1)
-    other_group = register(env, env.user_2)
-    codes = {item["code"] for item in env.client.get("/participants", headers=headers(env, env.docente_a)).json()}
+def test_a_docente_only_sees_sessions_of_their_group_and_their_own(env):
+    own = start_session(env, env.docente_a, "propia")
+    from_group = start_session(env, env.user_1)
+    other_group = start_session(env, env.user_2)
+    codes = {item["code"] for item in env.client.get("/sessions", headers=headers(env, env.docente_a)).json()}
     assert codes == {own["code"], from_group["code"]}
     assert other_group["code"] not in codes
-    assert [item["code"] for item in env.client.get("/participants", headers=headers(env, env.user_1)).json()] == [from_group["code"]]
+    assert [item["code"] for item in env.client.get("/sessions", headers=headers(env, env.user_1)).json()] == [
+        from_group["code"]]
 
 
 def test_moving_a_user_to_another_docente_moves_access_and_is_audited(env):
-    participant = register(env, env.user_1)
+    session = start_session(env, env.user_1)
     response = env.client.put(f"/users/{env.docente_b.id}/assigned-students/{env.student_1.id}", headers=headers(env, env.admin))
     assert response.status_code == 200
-    assert env.client.get(f"/participants/{participant['id']}", headers=headers(env, env.docente_a)).status_code == 403
-    assert env.client.get(f"/participants/{participant['id']}", headers=headers(env, env.docente_b)).status_code == 200
+    assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, env.docente_a)).status_code == 403
+    assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, env.docente_b)).status_code == 200
     assert ("group_change", "student", "success") in audit_actions(env, action="group_change")
     # Solo el administrador mueve usuarios entre grupos.
     for user in (env.superadmin, env.docente_a):
@@ -317,20 +351,17 @@ def test_password_reset_shows_a_notice_and_is_audited(env):
 
 
 def test_management_roles_never_reach_sessions(env):
-    accept_commitment(env, env.user_1)
-    session = env.client.post("/sessions", headers=headers(env, env.user_1), json={}).json()
+    session = start_session(env, env.user_1)
     for user in (env.admin, env.superadmin):
         assert env.client.get("/sessions", headers=headers(env, user)).status_code == 403
         assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, user)).status_code == 403
+        assert env.client.get("/session-deletions", headers=headers(env, user)).status_code == 403
     assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, env.docente_a)).status_code == 200
     assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, env.docente_b)).status_code == 403
 
 
 def test_a_docente_opens_and_cancels_their_own_sessions(env):
-    accept_commitment(env, env.docente_a)
-    response = env.client.post("/sessions", headers=headers(env, env.docente_a), json={})
-    assert response.status_code == 201
-    session = response.json()
+    session = start_session(env, env.docente_a, "propia")
     assert session["owner_user_id"] == env.docente_a.id and session["student_id"] is None
     listed = [item["id"] for item in env.client.get("/sessions", headers=headers(env, env.docente_a)).json()]
     assert session["id"] in listed
@@ -338,47 +369,103 @@ def test_a_docente_opens_and_cancels_their_own_sessions(env):
     assert env.client.post(f"/sessions/{session['id']}/cancel", headers=headers(env, env.docente_a)).status_code == 200
     # No inicia sesiones a nombre de un usuario de su grupo.
     assert env.client.post("/sessions", headers=headers(env, env.docente_a),
-                           json={"student_id": env.student_1.id}).status_code == 403
+                           json={"student_id": env.student_1.id, "session_type": "propia",
+                                 **CONFIRMED}).status_code == 403
+
+
+# --- Inicio: sin protocolo, público y una sola confirmación ---------------------
+
+def test_starting_without_a_protocol_needs_nothing_created_first(env):
+    accept_commitment(env, env.user_1)
+    response = env.client.post("/sessions", headers=headers(env, env.user_1),
+                               json={"session_type": "propia", **CONFIRMED})
+    assert response.status_code == 201, response.text
+    session = response.json()
+    assert session["protocol_id"] is None and session["session_type"] == "propia"
+    assert session["authorization_confirmed_at"] is not None
+    assert ("create", "session", "success") in audit_actions(env, resource_type="session")
+
+
+def test_without_a_protocol_the_audience_is_required(env):
+    accept_commitment(env, env.user_1)
+    response = env.client.post("/sessions", headers=headers(env, env.user_1), json=CONFIRMED)
+    assert response.status_code == 422 and "con quién" in response.json()["detail"]
+
+
+def test_no_session_starts_without_the_confirmation(env):
+    accept_commitment(env, env.user_1)
+    env.commitments.accept(env.user_1, load_text("child_notice").version, "child_notice")
+    for session_type in ("propia", "adulto", "infantil"):
+        response = env.client.post("/sessions", headers=headers(env, env.user_1), json={"session_type": session_type})
+        assert response.status_code == 422, session_type
+        response = env.client.post("/sessions", headers=headers(env, env.user_1),
+                                   json={"session_type": session_type, "authorization_confirmed": False})
+        assert response.status_code == 422, session_type
+    adult = env.client.post("/sessions", headers=headers(env, env.user_1), json={"session_type": "adulto"})
+    assert "autorización firmada de la persona adulta" in adult.json()["detail"]
+    child = env.client.post("/sessions", headers=headers(env, env.user_1), json={"session_type": "infantil"})
+    assert "tutor autorizó por escrito" in child.json()["detail"]
+    assert not env.sessions.list_sessions_by_owner(env.user_1.id)
+
+
+def test_without_a_protocol_questionnaires_and_participants_are_not_accepted(env):
+    accept_commitment(env, env.user_1)
+    for field in ("pre_questionnaire_id", "post_questionnaire_id", "participant_id"):
+        response = env.client.post("/sessions", headers=headers(env, env.user_1),
+                                   json={"session_type": "adulto", **CONFIRMED, field: "x"})
+        assert response.status_code == 422, field
+
+
+def test_the_session_code_is_random_and_unique(env):
+    codes = {start_session(env, env.user_1)["code"] for _ in range(5)}
+    assert len(codes) == 5
+    assert all(code.startswith("S-") and len(code) == 8 for code in codes)
 
 
 # --- Compromiso -------------------------------------------------------------
 
-def test_without_the_commitment_participants_and_sessions_are_refused(env):
+def test_without_the_commitment_sessions_are_refused(env):
     commitment = env.client.get("/commitment", headers=headers(env, env.user_1)).json()
     assert commitment["required"] is True and commitment["provisional"] is True
     assert "no guarda imágenes" in commitment["content"]
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 428
-    assert env.client.post("/sessions", headers=headers(env, env.user_1), json={}).status_code == 428
+    body = {"session_type": "adulto", **CONFIRMED}
+    assert env.client.post("/sessions", headers=headers(env, env.user_1), json=body).status_code == 428
     accepted = env.client.post("/commitment/accept", headers=headers(env, env.user_1),
                                json={"version": commitment["version"]})
     assert accepted.status_code == 200 and accepted.json()["accepted"] is True
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "adult", "age_years": 30}).status_code == 201
+    assert env.client.post("/sessions", headers=headers(env, env.user_1), json=body).status_code == 201
     assert ("commitment_accept", "commitment", "success") in audit_actions(env, action="commitment_accept")
     # Una versión distinta no se acepta.
     assert env.client.post("/commitment/accept", headers=headers(env, env.user_2), json={"version": "otra"}).status_code == 409
 
 
-def test_the_first_child_requires_the_reinforced_notice(env):
+def test_the_first_session_with_a_child_requires_the_reinforced_notice(env):
     accept_commitment(env, env.user_1)
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 428
+    body = {"session_type": "infantil", **CONFIRMED}
+    missing = env.client.post("/sessions", headers=headers(env, env.user_1), json=body)
+    assert missing.status_code == 428 and missing.headers["X-EMOtv-Required"] == "child_notice"
     notice = env.client.get("/commitment/child-notice", headers=headers(env, env.user_1)).json()
     assert "más sensibles" in notice["content"]
-    created = env.client.post("/participants", headers=headers(env, env.user_1),
-                              json={"kind": "child", "age_years": 9, "child_notice_version": notice["version"]})
-    assert created.status_code == 201
-    # Con el aviso ya aceptado, el siguiente niño no lo vuelve a pedir.
-    assert env.client.post("/participants", headers=headers(env, env.user_1), json={"kind": "child", "age_years": 9}).status_code == 201
+    created = env.client.post("/sessions", headers=headers(env, env.user_1),
+                              json={**body, "child_notice_version": notice["version"]})
+    assert created.status_code == 201 and created.json()["session_type"] == "infantil"
+    # Con el aviso ya aceptado, la siguiente sesión con un niño no lo vuelve a pedir.
+    assert env.client.post("/sessions", headers=headers(env, env.user_1), json=body).status_code == 201
     assert ("child_notice_accept", "child_notice", "success") in audit_actions(env, action="child_notice_accept")
 
 
 # --- Cifrado ----------------------------------------------------------------
 
 def test_encrypted_fields_cannot_be_read_from_the_database_without_the_key(env):
-    note_text = "Prefiere sesiones por la mañana"
-    participant = register(env, env.user_1, notes=note_text)
+    note_text = "Se distrajo con un ruido de la calle"
+    session = start_session(env, env.user_1)
+    assert env.client.post(f"/guided-sessions/{session['id']}", headers=headers(env, env.user_1)).status_code == 201
+    marker = env.client.post(f"/guided-sessions/{session['id']}/markers", headers=headers(env, env.user_1),
+                             json={"kind": "note", "note": note_text})
+    assert marker.status_code == 201, marker.text
     with env.engine.connect() as connection:
-        stored = connection.execute(text("SELECT notes_encrypted FROM participants WHERE id = :id"),
-                                    {"id": participant["id"]}).scalar_one()
+        stored = connection.execute(text("SELECT note_encrypted FROM session_markers WHERE session_id = :id"),
+                                    {"id": session["id"]}).scalar_one()
     assert note_text not in stored
     with pytest.raises(FieldEncryptionError):
         FieldCipher([Fernet.generate_key().decode()]).decrypt(stored)
@@ -386,25 +473,27 @@ def test_encrypted_fields_cannot_be_read_from_the_database_without_the_key(env):
     # Rotación: una clave nueva primero y la anterior después siguen leyendo el dato.
     rotated = FieldCipher([Fernet.generate_key().decode(), KEY])
     assert rotated.decrypt(stored) == note_text and rotated.decrypt(rotated.rotate(stored)) == note_text
-    assert env.client.get(f"/participants/{participant['id']}", headers=headers(env, env.user_1)).json()["notes"] == note_text
 
 
-def test_participant_module_is_unavailable_without_the_key(env):
+def test_sessions_with_a_protocol_are_unavailable_without_the_key(env):
     app = FastAPI()
-    app.include_router(create_participant_router(None, env.auth, env.users))
+    app.include_router(create_guided_router(None, env.auth, env.users))
     with TestClient(app) as client:
-        response = client.get("/participants", headers=headers(env, env.user_1))
+        response = client.post("/guided-sessions/s-1", headers=headers(env, env.user_1))
     assert response.status_code == 503 and "clave de cifrado" in response.json()["detail"]
 
 
 # --- Auditoría --------------------------------------------------------------
 
 def test_audit_records_accesses_without_content_and_cannot_be_modified(env):
-    participant = register(env, env.user_1, notes="texto que nunca va a la auditoría")
-    env.client.get(f"/participants/{participant['id']}", headers=headers(env, env.docente_a))
+    session = start_session(env, env.user_1)
+    env.client.post(f"/guided-sessions/{session['id']}", headers=headers(env, env.user_1))
+    env.client.post(f"/guided-sessions/{session['id']}/markers", headers=headers(env, env.user_1),
+                    json={"kind": "note", "note": "texto que nunca va a la auditoría"})
+    env.client.get(f"/sessions/{session['id']}/guided-results", headers=headers(env, env.docente_a))
     for user in (env.admin, env.superadmin):
-        entries = env.client.get("/audit", headers=headers(env, user), params={"resource_type": "participant"}).json()
-        assert {(item["action"], item["actor_role"]) for item in entries} >= {("create", "student"), ("view", "psychologist")}
+        entries = env.client.get("/audit", headers=headers(env, user), params={"resource_type": "session"}).json()
+        assert ("create", "student") in {(item["action"], item["actor_role"]) for item in entries}
     for user in (env.user_1, env.docente_a):
         assert env.client.get("/audit", headers=headers(env, user)).status_code == 403
     entry_id = entries[0]["id"]
@@ -418,7 +507,7 @@ def test_audit_records_accesses_without_content_and_cannot_be_modified(env):
 
 
 def test_audit_retention_removes_only_old_entries(env):
-    register(env, env.user_1)
+    start_session(env, env.user_1)
     env.clock.now = NOW + timedelta(days=25 * 30)
     env.audit.record(env.admin, AuditAction.VIEW, "user", "x")
     removed = env.audit.purge_expired(24)
@@ -426,72 +515,90 @@ def test_audit_retention_removes_only_old_entries(env):
     assert all(item.occurred_at > NOW for item in env.audit.query(AuditFilter(), limit=500))
 
 
-# --- Retención y eliminación ------------------------------------------------
+# --- Retención y eliminación por sesión ---------------------------------------
 
-def test_retention_deletes_only_expired_participants_with_their_records(env):
-    old = register(env, env.user_1)
-    env.clock.now = NOW + timedelta(days=200)
-    recent = register(env, env.user_1)
+def add_marker_row(env, session_id):
     with env.factory.begin() as db:
-        for participant, session_id in ((old, "s-old"), (recent, "s-recent")):
-            db.add(SessionRecord(id=session_id, state="created", started_at=env.clock.now, session_type="participante_adulto",
-                                 participant_id=participant["id"], owner_user_id=env.user_1.id))
+        db.add(SessionMarkerRecord(id=f"m-{session_id}", session_id=session_id, kind="laughed",
+                                   occurred_at=env.clock.now, recorded_by_user_id=env.user_1.id))
+
+
+def test_retention_deletes_only_expired_sessions_with_their_records(env):
+    old = start_session(env, env.user_1)
+    add_marker_row(env, old["id"])
+    env.clock.now = NOW + timedelta(days=200)
+    recent = start_session(env, env.user_1)
+    add_marker_row(env, recent["id"])
     env.clock.now = NOW + timedelta(days=12 * 30 + 1)
-    assert env.participants.purge_expired() == 1
+    assert env.privacy.purge_expired() == 1
     with env.factory() as db:
-        assert db.get(ParticipantRecord, old["id"]) is None and db.get(SessionRecord, "s-old") is None
-        assert db.get(ParticipantRecord, recent["id"]) is not None and db.get(SessionRecord, "s-recent") is not None
+        assert db.get(SessionRecord, old["id"]) is None and db.get(SessionMarkerRecord, f"m-{old['id']}") is None
+        assert db.get(SessionRecord, recent["id"]) is not None
+        assert db.get(SessionMarkerRecord, f"m-{recent['id']}") is not None
     purge = [item for item in env.audit.query(AuditFilter(action="retention_purge"), limit=10)]
     assert len(purge) == 1 and purge[0].resource_id == "1" and purge[0].actor_user_id is None
 
 
-def test_the_docente_sees_participants_about_to_expire(env):
-    soon = register(env, env.user_1)
-    env.clock.now = NOW + timedelta(days=100)
-    register(env, env.user_1)
-    env.clock.now = NOW + timedelta(days=12 * 30 - 10)
-    expiring = env.client.get("/participants/expiring", headers=headers(env, env.docente_a)).json()
-    assert [item["code"] for item in expiring] == [soon["code"]]
-    assert env.client.get("/participants/expiring", headers=headers(env, env.user_1)).status_code == 403
-
-
-def test_on_demand_deletion_leaves_zero_records_and_generates_the_certificate(env):
-    participant = register(env, env.user_1, notes="nota")
-    with env.factory.begin() as db:
-        db.add(SessionRecord(id="s-1", state="created", started_at=NOW, session_type="participante_adulto",
-                             participant_id=participant["id"], owner_user_id=env.user_1.id))
-    # El usuario solo solicita; el docente ejecuta.
-    assert env.client.post(f"/participants/{participant['id']}/delete", headers=headers(env, env.user_1)).status_code == 403
-    assert env.client.post(f"/participants/{participant['id']}/deletion-request", headers=headers(env, env.user_1)).status_code == 200
-    response = env.client.post(f"/participants/{participant['id']}/delete", headers=headers(env, env.docente_a))
+def test_deleting_a_session_leaves_zero_records_and_produces_the_certificate(env):
+    session = start_session(env, env.user_1)
+    add_marker_row(env, session["id"])
+    # Una sesión en curso no se elimina.
+    assert env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.docente_a)).status_code == 409
+    finish(env, env.user_1, session)
+    # El usuario solo solicita; el docente ejecuta. Nadie más hace ninguna de las dos cosas.
+    assert env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.user_1)).status_code == 403
+    for user in (env.docente_a, env.docente_b, env.admin):
+        assert env.client.post(f"/sessions/{session['id']}/deletion-request",
+                               headers=headers(env, user)).status_code == 403, user.role
+    for user in (env.docente_b, env.admin, env.superadmin):
+        assert env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, user)).status_code == 403
+    requested = env.client.post(f"/sessions/{session['id']}/deletion-request", headers=headers(env, env.user_1))
+    assert requested.status_code == 200 and requested.json()["deletion_requested_at"]
+    response = env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.docente_a))
     assert response.status_code == 200
     certificate = response.json()
-    assert certificate["participant_code"] == participant["code"] and certificate["verified"] is True
-    assert certificate["counts"] == {"authorizations": 0, "questionnaire_responses": 0, "expression_captures": 0, "session_markers": 0,
-                                    "verbal_responses": 0, "guided_runs": 0, "report_comments": 0, "report_events": 0,
-                                    "session_reports": 0, "sessions": 1, "participants": 1}
+    assert certificate["session_code"] == session["code"] and certificate["verified"] is True
+    assert certificate["counts"] == {"questionnaire_responses": 0, "expression_captures": 0, "session_markers": 1,
+                                     "verbal_responses": 0, "guided_runs": 0, "report_comments": 0,
+                                     "report_events": 0, "session_reports": 0, "sessions": 1}
+    assert not set(certificate) & {"owner_user_id", "student_id", "executed_by_user_id", "requested_by_user_id"}
     with env.factory() as db:
-        assert db.scalar(select(func.count()).select_from(ParticipantRecord)) == 0
-        assert db.scalar(select(func.count()).select_from(SessionRecord).where(SessionRecord.participant_id == participant["id"])) == 0
+        assert all(value == 0 for value in env.erasure.remaining(db, session["id"]).values())
     # El acta la ven quien la solicitó y quien la ejecutó; imprimirla queda en la auditoría.
     for user in (env.user_1, env.docente_a):
-        assert env.client.get(f"/participant-deletions/{certificate['id']}", headers=headers(env, user)).status_code == 200
-    assert env.client.get(f"/participant-deletions/{certificate['id']}", headers=headers(env, env.admin)).status_code == 403
-    assert env.client.post(f"/participant-deletions/{certificate['id']}/print", headers=headers(env, env.docente_a)).status_code == 200
+        assert env.client.get(f"/session-deletions/{certificate['id']}", headers=headers(env, user)).status_code == 200
+        listed = env.client.get("/session-deletions", headers=headers(env, user)).json()
+        assert [item["session_code"] for item in listed] == [session["code"]]
+    for user in (env.admin, env.docente_b, env.user_2):
+        assert env.client.get(f"/session-deletions/{certificate['id']}",
+                              headers=headers(env, user)).status_code == 403
+    assert env.client.post(f"/session-deletions/{certificate['id']}/print",
+                           headers=headers(env, env.docente_a)).status_code == 200
     actions = audit_actions(env)
-    assert ("deletion_request", "participant", "success") in actions
-    assert ("delete", "participant", "success") in actions
+    assert ("deletion_request", "session", "success") in actions
+    assert ("delete", "session", "success") in actions
     assert ("print", "deletion_certificate", "success") in actions
 
 
+def test_a_docente_deletes_their_own_session_directly(env):
+    session = start_session(env, env.docente_a, "propia")
+    finish(env, env.docente_a, session)
+    response = env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.docente_a))
+    assert response.status_code == 200 and response.json()["counts"]["sessions"] == 1
+    assert env.client.get(f"/sessions/{session['id']}", headers=headers(env, env.docente_a)).status_code == 404
+
+
 def test_a_failed_verification_rolls_back_the_whole_deletion(env, monkeypatch):
-    participant = register(env, env.user_1)
-    monkeypatch.setattr(PostgresParticipantRepository, "remaining",
-                        staticmethod(lambda db, participant_id: {"sessions": 1, "participants": 0}))
+    session = start_session(env, env.user_1)
+    finish(env, env.user_1, session)
+    monkeypatch.setattr(PostgresSessionErasureRepository, "remaining",
+                        staticmethod(lambda db, session_id: {"sessions": 1}))
     with pytest.raises(ErasureVerificationError):
-        env.participant_repository.erase(participant["id"])
+        env.erasure.erase(session["id"])
     with env.factory() as db:
-        assert db.get(ParticipantRecord, participant["id"]) is not None
-    response = env.client.post(f"/participants/{participant['id']}/delete", headers=headers(env, env.docente_a))
+        assert db.get(SessionRecord, session["id"]) is not None
+    response = env.client.post(f"/sessions/{session['id']}/delete", headers=headers(env, env.docente_a))
     assert response.status_code == 500
-    assert ("delete", "participant", "failure") in audit_actions(env, action="delete")
+    assert ("delete", "session", "failure") in audit_actions(env, action="delete")
+    with env.factory() as db:
+        assert db.get(SessionRecord, session["id"]) is not None

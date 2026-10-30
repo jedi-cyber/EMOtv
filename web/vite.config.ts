@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import type { ProxyOptions } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Algunas rutas existen en la SPA y en la API (/sessions, /participants,
+// Algunas rutas existen en la SPA y en la API (/sessions,
 // /participant-view...). La navegación del navegador pide text/html y recibe la
 // SPA; las llamadas a la API van al backend (igual que en docker/nginx.conf).
 const api: ProxyOptions = {
@@ -11,9 +11,9 @@ const api: ProxyOptions = {
 };
 const apiPrefixes = [
   "/auth", "/sessions", "/students", "/users", "/activities", "/analysis", "/expressions", "/recommendations",
-  "/chat", "/consent-policy", "/consent-policies", "/health", "/commitment", "/audit", "/admin", "/participants",
-  "/participant-deletions", "/stimuli", "/protocols", "/questionnaires", "/guided-sessions", "/participant-view",
-  "/reports", "/mobile",
+  "/chat", "/consent-policy", "/consent-policies", "/health", "/commitment", "/audit", "/admin",
+  "/session-deletions", "/stimuli", "/protocols", "/questionnaires", "/guided-sessions", "/participant-view",
+  "/reports", "/mobile", "/exams", "/exam-stations", "/statistics", "/own-stimuli", "/notices",
 ];
 
 export default defineConfig({

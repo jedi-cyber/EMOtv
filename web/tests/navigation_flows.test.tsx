@@ -31,7 +31,7 @@ describe("recorridos principales por rol", () => {
     await userEvent.click(screen.getByRole("link", { name: "Analizador" }));
     expect(screen.getByRole("heading", { level: 1, name: "Analizador" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Probar cámara" }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Reconocer mi expresión" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Empezar el análisis" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Cuentas y grupos" })).not.toBeInTheDocument();
   });
 

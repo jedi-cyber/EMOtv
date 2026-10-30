@@ -18,7 +18,7 @@ export const sectionNames: Record<ReportSection, string> = {
 /**
  * Contenido del reporte: el mismo en pantalla y al imprimir. Lleva siempre el
  * aviso de que las expresiones son estimaciones de apoyo y el modelo usado.
- * Muestra el código del participante; el sistema no conoce su nombre.
+ * Muestra el código de la sesión; el sistema no conoce el nombre de nadie.
  */
 export function ReportBody({ report, expressionLabel, renderSection, narrative, printing = false }: {
   report: SessionReport;
@@ -32,7 +32,7 @@ export function ReportBody({ report, expressionLabel, renderSection, narrative, 
   const questionnaires = report.timeline.lanes.questionnaires;
   return <div className="report-body">
     <dl className="detail-grid">
-      <div><dt>Participante</dt><dd>{report.participant_code}</dd></div>
+      <div><dt>Código de la sesión</dt><dd>{report.session_code ?? report.session.code ?? "Sin código"}</dd></div>
       <div><dt>Sesión</dt><dd>{day(report.session.started_at)}</dd></div>
       <div><dt>Modelo facial</dt><dd>{emotionModelName(report.session.emotion_model_id)}{report.session.emotion_model_version ? ` · versión ${report.session.emotion_model_version}` : ""}</dd></div>
       <div><dt>Versión del reporte</dt><dd>{report.version}</dd></div>

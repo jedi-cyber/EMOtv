@@ -34,7 +34,7 @@ def test_knowledge_with_current_content_fits_the_workflow_limit():
     for item in seeded_items():
         assert item.label_es in text
     for heading in ("Qué es:", "Por qué suele presentarse:", "Cómo se reconoce:", "## Flujo de uso",
-                    "## Participantes y autorizaciones", "## Protocolos y sesión guiada",
+                    "## Sesiones y autorizaciones", "## Protocolos",
                     "## Línea de tiempo y métricas de la sesión", "## Reporte de la sesión",
                     "## Limitaciones del reconocimiento facial", "## Qué se guarda y qué no", "## Roles"):
         assert heading in text

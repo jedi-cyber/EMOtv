@@ -1,4 +1,4 @@
-"""Persistencia de autorizaciones de participantes, estímulos y protocolos."""
+"""Persistencia de estímulos y protocolos."""
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,16 +9,17 @@ from uuid import uuid4
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from emotv.domain.participant_authorization import ParticipantAuthorization
+from emotv.domain.notice import UserNotice
 from emotv.domain.protocol import Protocol, ProtocolStep
 from emotv.domain.stimulus import Stimulus, StimulusScope
 from emotv.infrastructure.persistence.models import (
-    ParticipantAuthorizationRecord,
-    ParticipantRecord,
+    ExpressionCaptureRecord,
     ProtocolRecord,
     ProtocolStepRecord,
     SessionRecord,
     StimulusRecord,
+    UserNoticeRecord,
+    VerbalResponseRecord,
 )
 
 
@@ -30,68 +31,6 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _enum_value(value):
     return getattr(value, "value", value)
-
-
-class PostgresAuthorizationRepository:
-    def __init__(self, factory: sessionmaker[Session]) -> None:
-        self._factory = factory
-
-    @staticmethod
-    def _fill(row: ParticipantAuthorizationRecord, item: ParticipantAuthorization) -> None:
-        row.participant_id = item.participant_id
-        row.form_version = item.form_version
-        row.signed_on = item.signed_on
-        row.grantor = _enum_value(item.grantor)
-        row.participation = item.participation
-        row.camera = item.camera
-        row.child_assent = item.child_assent
-        row.recorded_by_user_id = item.recorded_by_user_id
-        row.recorded_at = item.recorded_at
-        row.revoked_at = item.revoked_at
-        row.revoked_by_user_id = item.revoked_by_user_id
-        row.revoked_party = _enum_value(item.revoked_party)
-        row.revoked_scope = _enum_value(item.revoked_scope)
-
-    @staticmethod
-    def _domain(row: ParticipantAuthorizationRecord) -> ParticipantAuthorization:
-        return ParticipantAuthorization(
-            id=row.id, participant_id=row.participant_id, form_version=row.form_version, signed_on=row.signed_on,
-            grantor=row.grantor, participation=row.participation, camera=row.camera,
-            child_assent=row.child_assent, recorded_by_user_id=row.recorded_by_user_id,
-            recorded_at=_aware(row.recorded_at), revoked_at=_aware(row.revoked_at),
-            revoked_by_user_id=row.revoked_by_user_id, revoked_party=row.revoked_party,
-            revoked_scope=row.revoked_scope)
-
-    def add(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization:
-        with self._factory.begin() as db:
-            row = ParticipantAuthorizationRecord(id=authorization.id)
-            self._fill(row, authorization)
-            db.add(row)
-        return authorization
-
-    def get(self, authorization_id: str) -> ParticipantAuthorization | None:
-        with self._factory() as db:
-            row = db.get(ParticipantAuthorizationRecord, authorization_id)
-            return None if row is None else self._domain(row)
-
-    def list_for(self, participant_id: str) -> tuple[ParticipantAuthorization, ...]:
-        with self._factory() as db:
-            rows = db.scalars(select(ParticipantAuthorizationRecord)
-                              .where(ParticipantAuthorizationRecord.participant_id == participant_id)
-                              .order_by(ParticipantAuthorizationRecord.recorded_at.desc(),
-                                        ParticipantAuthorizationRecord.id)).all()
-            return tuple(self._domain(row) for row in rows)
-
-    def revoke(self, authorization: ParticipantAuthorization) -> ParticipantAuthorization:
-        with self._factory.begin() as db:
-            row = db.get(ParticipantAuthorizationRecord, authorization.id)
-            if row is None:
-                raise LookupError(authorization.id)
-            self._fill(row, authorization)
-            participant = db.get(ParticipantRecord, authorization.participant_id)
-            if participant is not None and participant.authorization_revoked_at is None:
-                participant.authorization_revoked_at = authorization.revoked_at
-        return authorization
 
 
 class PostgresStimulusRepository:
@@ -117,6 +56,10 @@ class PostgresStimulusRepository:
         row.approved_at = item.approved_at
         row.approved_by_user_id = item.approved_by_user_id
         row.active = item.active
+        row.possible_person = item.possible_person
+        row.upload_batch_id = item.upload_batch_id
+        row.expiry_notified_at = item.expiry_notified_at
+        row.deleted_at = item.deleted_at
 
     @staticmethod
     def _domain(row) -> Stimulus:
@@ -125,7 +68,9 @@ class PostgresStimulusRepository:
             expected_expression=row.expected_expression, intensity=row.intensity, min_age=row.min_age,
             origin=row.origin, license=row.license, scope=row.scope, owner_user_id=row.owner_user_id,
             content_type=row.content_type, created_at=_aware(row.created_at), approved_at=_aware(row.approved_at),
-            approved_by_user_id=row.approved_by_user_id, active=row.active)
+            approved_by_user_id=row.approved_by_user_id, active=row.active,
+            possible_person=bool(row.possible_person), upload_batch_id=row.upload_batch_id,
+            expiry_notified_at=_aware(row.expiry_notified_at), deleted_at=_aware(row.deleted_at))
 
     _COLUMNS = tuple(column for column in StimulusRecord.__table__.columns if column.name != "image")
 
@@ -152,19 +97,55 @@ class PostgresStimulusRepository:
     def get_image(self, stimulus_id: str) -> tuple[str, bytes] | None:
         with self._factory() as db:
             row = db.execute(select(StimulusRecord.content_type, StimulusRecord.image)
-                             .where(StimulusRecord.id == stimulus_id)).first()
+                             .where(StimulusRecord.id == stimulus_id, StimulusRecord.deleted_at.is_(None))).first()
             return None if row is None else (row.content_type, bytes(row.image))
 
-    def list_visible(self, group_owner_ids: Iterable[str]) -> tuple[Stimulus, ...]:
+    def _list(self, condition) -> tuple[Stimulus, ...]:
+        with self._factory() as db:
+            rows = db.execute(select(*self._COLUMNS).where(condition, StimulusRecord.deleted_at.is_(None))
+                              .order_by(StimulusRecord.created_at, StimulusRecord.id)).all()
+            return tuple(self._domain(row) for row in rows)
+
+    def list_visible(self, group_owner_ids: Iterable[str],
+                     user_image_owner_id: str | None = None) -> tuple[Stimulus, ...]:
         owners = tuple(group_owner_ids)
         condition = StimulusRecord.scope == StimulusScope.INSTITUTION.value
         if owners:
             condition = or_(condition, (StimulusRecord.scope == StimulusScope.GROUP.value)
                             & StimulusRecord.owner_user_id.in_(owners))
-        with self._factory() as db:
-            rows = db.execute(select(*self._COLUMNS).where(condition)
-                              .order_by(StimulusRecord.created_at, StimulusRecord.id)).all()
-            return tuple(self._domain(row) for row in rows)
+        if user_image_owner_id:
+            condition = or_(condition, (StimulusRecord.scope == StimulusScope.USER.value)
+                            & (StimulusRecord.owner_user_id == user_image_owner_id)
+                            & StimulusRecord.approved_at.is_not(None))
+        return self._list(condition)
+
+    def list_user_images(self, owner_ids: Iterable[str]) -> tuple[Stimulus, ...]:
+        owners = tuple(owner_ids)
+        if not owners:
+            return ()
+        return self._list((StimulusRecord.scope == StimulusScope.USER.value)
+                          & StimulusRecord.owner_user_id.in_(owners))
+
+    def list_pending(self) -> tuple[Stimulus, ...]:
+        return self._list((StimulusRecord.scope == StimulusScope.USER.value) & StimulusRecord.approved_at.is_(None))
+
+    def remove(self, stimulus_id: str, deleted_at: datetime) -> None:
+        with self._factory.begin() as db:
+            row = db.get(StimulusRecord, stimulus_id)
+            if row is None:
+                return
+            referenced = any(db.scalar(select(func.count()).select_from(table).where(column == stimulus_id))
+                             for table, column in ((ProtocolStepRecord, ProtocolStepRecord.stimulus_id),
+                                                   (ExpressionCaptureRecord, ExpressionCaptureRecord.stimulus_id),
+                                                   (VerbalResponseRecord, VerbalResponseRecord.stimulus_id)))
+            if not referenced:
+                db.delete(row)
+                return
+            # Una sesión o un protocolo la nombran: se borra el archivo y el
+            # registro queda solo como referencia, sin imagen.
+            row.image = b""
+            row.active = False
+            row.deleted_at = deleted_at
 
 
 class PostgresProtocolRepository:
@@ -185,6 +166,7 @@ class PostgresProtocolRepository:
         row.approved_at = item.approved_at
         row.approved_by_user_id = item.approved_by_user_id
         row.superseded_at = item.superseded_at
+        row.kind = item.kind.value
         db.add(row)
         db.flush()  # la versión existe antes que sus pasos
         db.execute(delete(ProtocolStepRecord).where(ProtocolStepRecord.protocol_id == item.id))
@@ -204,7 +186,7 @@ class PostgresProtocolRepository:
             created_at=_aware(row.created_at), pre_questionnaire_id=row.pre_questionnaire_id,
             post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
-            superseded_at=_aware(row.superseded_at),
+            superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                      step.record_verbal_response, step.shown_before_analyzer) for step in steps))
 
@@ -251,3 +233,39 @@ class PostgresProtocolRepository:
         with self._factory() as db:
             return db.scalar(select(func.count()).select_from(SessionRecord)
                              .where(SessionRecord.protocol_id == protocol_id)) > 0
+
+    def list_current_using(self, stimulus_id: str) -> tuple[Protocol, ...]:
+        with self._factory() as db:
+            using = select(ProtocolStepRecord.protocol_id).where(ProtocolStepRecord.stimulus_id == stimulus_id)
+            rows = db.scalars(select(ProtocolRecord).where(ProtocolRecord.id.in_(using),
+                                                           ProtocolRecord.superseded_at.is_(None))
+                              .order_by(ProtocolRecord.created_at, ProtocolRecord.id)).all()
+            return tuple(self._domain(db, row) for row in rows)
+
+
+class PostgresNoticeRepository:
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+
+    def add(self, notice: UserNotice) -> UserNotice:
+        with self._factory.begin() as db:
+            db.add(UserNoticeRecord(id=notice.id, user_id=notice.user_id, message=notice.message,
+                                    created_at=notice.created_at, read_at=notice.read_at))
+        return notice
+
+    def list_unread(self, user_id: str) -> tuple[UserNotice, ...]:
+        with self._factory() as db:
+            rows = db.scalars(select(UserNoticeRecord).where(UserNoticeRecord.user_id == user_id,
+                                                             UserNoticeRecord.read_at.is_(None))
+                              .order_by(UserNoticeRecord.created_at, UserNoticeRecord.id)).all()
+            return tuple(UserNotice(id=row.id, user_id=row.user_id, message=row.message,
+                                    created_at=_aware(row.created_at)) for row in rows)
+
+    def mark_read(self, notice_id: str, user_id: str, read_at: datetime) -> bool:
+        with self._factory.begin() as db:
+            row = db.get(UserNoticeRecord, notice_id)
+            if row is None or row.user_id != user_id:
+                return False
+            if row.read_at is None:
+                row.read_at = read_at
+            return True

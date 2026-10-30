@@ -1,27 +1,43 @@
-"""Sesión guiada: confirmación, cuestionario previo, imágenes abstractas antes
-del analizador, calibración neutral, estímulos del protocolo con capturas
-controladas por calidad, y cuestionario posterior.
+"""Sesión que ejecuta un protocolo: cuestionario previo, imágenes abstractas
+antes del analizador, calibración neutral, estímulos con capturas controladas
+por calidad, y cuestionario posterior. En el aplicativo móvil, una sesión sin
+protocolo hace la calibración y después la fase live: una captura cada pocos
+segundos hasta que quien conduce la termina.
 
-El servidor lleva el tiempo de cada exposición, así la vista de quien conduce y
-la del participante pueden estar en dispositivos distintos. Los cuadros de la
-cámara se analizan en memoria y se descartan; la base neutral también vive solo
-en memoria. La vista del participante nunca recibe resultados.
+La autorización se confirma una sola vez, al iniciar la sesión (POST /sessions);
+aquí no se vuelve a pedir. El servidor lleva el tiempo de cada exposición, así
+la vista de quien conduce y la pantalla de la persona pueden estar en
+dispositivos distintos. Los cuadros de la cámara se analizan en memoria y se
+descartan; la base neutral también vive solo en memoria. La pantalla de la
+persona nunca recibe resultados.
+
+La estación de un examen simulado usa la misma pantalla de la persona: espera
+el consentimiento sin analizar nada, se calibra sola cuando el docente lo
+confirma, espera el inicio y guarda una fila cada medio segundo, contada desde
+que el docente inició el examen. Al terminar el examen muestra el debriefing.
+Quien conduce no ve sus capturas mientras la estación sigue activa.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
+import math
 import secrets
 from typing import Any, Protocol as Interface
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
-from emotv.application.neutral_calibration import CALIBRATED, CALIBRATING, NeutralCalibration
+from emotv.application.neutral_calibration import CALIBRATED, CALIBRATING, NOT_CALIBRATED, NeutralCalibration
 from emotv.domain.audit import AuditAction, AuditResult
+from emotv.domain.exam import Exam, ExamState
 from emotv.domain.guided_session import (
     ABSTRACT_CAPTURE_INTERVAL,
+    EXAM_CAPTURE_INTERVAL,
+    EXAM_DEBRIEFING,
+    EXAM_GAP_SECONDS,
+    EXAM_STATION_PHASES,
     QUALITY_RETRY_SECONDS,
     CaptureQuality,
     ExpressionCapture,
@@ -34,7 +50,6 @@ from emotv.domain.guided_session import (
     StopReason,
     VerbalResponse,
 )
-from emotv.domain.participant import Participant, ParticipantKind
 from emotv.domain.protocol import Protocol, ProtocolStep
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
@@ -90,8 +105,6 @@ class GuidedSessionService:
         sessions,                                   # SessionService
         protocols: Callable[[str], Protocol | None],
         stimuli: Callable[[str], Stimulus | None],
-        participants: Callable[[str], Participant | None],
-        participant_ready: Callable[[Participant], bool],
         questionnaire_answered: Callable[[str, str], bool],
         resolve_model: Callable[[], tuple[str, str]],
         assess_factory: Callable[[str], Assess],
@@ -100,13 +113,12 @@ class GuidedSessionService:
         calibration_seconds: float = 3.0,
         calibration_min_increase: float = 0.10,
         clock: Callable[[], datetime] | None = None,
+        exam_of: Callable[[str], Exam | None] | None = None,
     ) -> None:
         self.repository = repository
         self.sessions = sessions
         self.protocols = protocols
         self.stimuli = stimuli
-        self.participants = participants
-        self.participant_ready = participant_ready
         self.questionnaire_answered = questionnaire_answered
         self.resolve_model = resolve_model
         self.assess_factory = assess_factory
@@ -115,6 +127,8 @@ class GuidedSessionService:
         self.calibration_seconds = calibration_seconds
         self.calibration_min_increase = calibration_min_increase
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        # Examen simulado de una estación; sin él no hay estaciones.
+        self.exam_of = exam_of
         self._live: dict[str, _Live] = {}
         self._assessors: dict[str, Assess] = {}
         self._viewed: set[tuple[str, str]] = set()
@@ -130,8 +144,12 @@ class GuidedSessionService:
     def _protocol(self, session: EmotionalSession) -> Protocol:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
-            raise GuidedConflict("La sesión guiada sigue un protocolo")
+            raise GuidedConflict("Esta acción corresponde a una sesión con protocolo")
         return protocol
+
+    def _steps(self, session: EmotionalSession) -> tuple[ProtocolStep, ...]:
+        """Los pasos del protocolo; ninguno en una sesión sin protocolo."""
+        return self._protocol(session).steps if session.protocol_id else ()
 
     def _conducted(self, user: User, session_id: str) -> tuple[GuidedRun, EmotionalSession]:
         run = self.repository.get_run(session_id)
@@ -185,6 +203,118 @@ class GuidedSessionService:
         return replace(run, phase=GuidedPhase.FINISHED, ended_at=self.clock(), step_started_at=None,
                        next_capture_due=None, view_token_hash=None)
 
+    # --- Estación de examen ----------------------------------------------------------
+
+    def _exam(self, session: EmotionalSession) -> Exam | None:
+        return self.exam_of(session.exam_id) if session.exam_id and self.exam_of else None
+
+    @staticmethod
+    def _next_slot(elapsed: float) -> float:
+        """El siguiente medio segundo del examen, estrictamente después de elapsed."""
+        return (math.floor(round(elapsed / EXAM_CAPTURE_INTERVAL, 6)) + 1) * EXAM_CAPTURE_INTERVAL
+
+    def _begin_calibration(self, session_id: str, keep_notice: bool = False) -> None:
+        live = self._live_of(session_id)
+        live.calibration = NeutralCalibration(seconds=self.calibration_seconds,
+                                              min_increase=self.calibration_min_increase,
+                                              clock=lambda: self.clock().timestamp())
+        live.calibration.start()
+        if not keep_notice:
+            live.calibration_notice = None
+
+    def _store_exam_capture(self, run: GuidedRun, session: EmotionalSession,
+                            assessment: FrameAssessment | None, second: float) -> None:
+        """Una fila del examen: segundo contado desde el inicio, expresión y confianza."""
+        if assessment is None:
+            assessment = FrameAssessment((QualityIssue.NO_FRAME,))
+        calibration = self._live_of(run.session_id).calibration
+        calibrated = None
+        if assessment.distribution and calibration is not None and calibration.state == CALIBRATED:
+            _, calibrated = calibration.compare(assessment.distribution)
+        self.repository.add_capture(ExpressionCapture(
+            id=str(uuid4()), session_id=session.id, captured_at=run.step_started_at + timedelta(seconds=second),
+            emotion_model_id=session.emotion_model_id or "", emotion_model_version=session.emotion_model_version or "",
+            quality=CaptureQuality.GOOD if assessment.ok else CaptureQuality.FLAGGED,
+            quality_issues=assessment.issues, step_index=0, stimulus_id=None, seconds_since_stimulus=round(second, 2),
+            emotion=assessment.emotion, confidence=assessment.confidence, distribution=assessment.distribution,
+            calibrated_emotion=calibrated))
+
+    def _fill_exam_gaps(self, run: GuidedRun, session: EmotionalSession, elapsed: float) -> GuidedRun:
+        """Los medios segundos sin cuadros se guardan marcados: así se ven los tramos sin registro."""
+        due = run.next_capture_due
+        while due is not None and due + EXAM_GAP_SECONDS <= elapsed:
+            self._store_exam_capture(run, session, None, due)
+            due += EXAM_CAPTURE_INTERVAL
+        return replace(run, next_capture_due=due)
+
+    def _close_station(self, run: GuidedRun, session: EmotionalSession, exam: Exam) -> GuidedRun:
+        """El docente terminó el examen: la estación termina y muestra el debriefing."""
+        if run.phase is GuidedPhase.READY and exam.started_at is not None:
+            # Calibrada, pero no volvió a comunicarse tras el inicio: sus huecos también se registran.
+            ready_at = max(exam.started_at, run.calibrated_at or exam.started_at)
+            run = replace(run, phase=GuidedPhase.EXAM, step_started_at=exam.started_at, next_capture_due=self._next_slot(
+                (ready_at - exam.started_at).total_seconds() - EXAM_CAPTURE_INTERVAL))
+        if run.phase is GuidedPhase.EXAM and exam.closed_at is not None:
+            run = self._fill_exam_gaps(run, session, (exam.closed_at - run.step_started_at).total_seconds())
+        if session.state is SessionState.IN_PROGRESS:
+            if self.repository.list_captures(session.id):
+                self.sessions.finish_guided(session.id)
+            else:
+                self.sessions.cancel_session(session.id)
+        self._live.pop(session.id, None)
+        return self.repository.save_run(replace(run, phase=GuidedPhase.FINISHED, ended_at=self.clock(),
+                                                step_started_at=None, next_capture_due=None))
+
+    def _tick_station(self, run: GuidedRun, session: EmotionalSession) -> GuidedRun:
+        exam = self._exam(session)
+        if exam is None or not run.active:
+            return run
+        if exam.state is ExamState.CLOSED:
+            return self._close_station(run, session, exam)
+        changed = False
+        if run.phase is GuidedPhase.WAITING and session.authorization_confirmed_at is not None:
+            # El docente confirmó el consentimiento: la calibración empieza sola.
+            run = replace(run, phase=GuidedPhase.CALIBRATION, confirmed_at=session.authorization_confirmed_at)
+            changed = True
+        if run.phase is GuidedPhase.CALIBRATION:
+            calibration = self._live_of(run.session_id).calibration
+            if calibration is None or calibration.state == NOT_CALIBRATED:
+                self._begin_calibration(run.session_id, keep_notice=True)
+        if run.phase is GuidedPhase.READY and exam.state is ExamState.IN_PROGRESS:
+            run = replace(run, phase=GuidedPhase.EXAM, step_index=0, step_started_at=exam.started_at,
+                          next_capture_due=self._next_slot(self._seconds(exam.started_at) - EXAM_CAPTURE_INTERVAL))
+            changed = True
+        if run.phase is GuidedPhase.EXAM:
+            before = run.next_capture_due
+            run = self._fill_exam_gaps(run, session, self._seconds(run.step_started_at))
+            changed = changed or run.next_capture_due != before
+        return self.repository.save_run(run) if changed else run
+
+    def create_station(self, session: EmotionalSession) -> str:
+        """Prepara la estación que se unió a un examen y entrega su enlace una sola vez.
+        Sin consentimiento confirmado espera: no se analiza ningún cuadro."""
+        if session.exam_id is None or self._exam(session) is None:
+            raise GuidedConflict("La sesión no pertenece a un examen")
+        model_id, version = self.resolve_model()
+        session = self.sessions.record_emotion_model(session.id, model_id, version)
+        token = secrets.token_urlsafe(32)
+        self.repository.save_run(GuidedRun(
+            session_id=session.id, owner_user_id=session.owner_user_id, created_at=self.clock(),
+            phase=GuidedPhase.WAITING, view_token_hash=hash_token(token)))
+        self.audit.record(None, AuditAction.CREATE, RESOURCE, session.id)
+        return token
+
+    def station_phase(self, session_id: str) -> str | None:
+        """Solo la fase de la estación, para la vista del docente."""
+        run = self.repository.get_run(session_id)
+        return None if run is None else self._tick(run).phase.value
+
+    def close_station(self, session_id: str) -> None:
+        """El examen terminó: cierra la estación (si existe) y deja el debriefing."""
+        run = self.repository.get_run(session_id)
+        if run is not None:
+            self._tick(run)
+
     def _next_step(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol, skipped: bool) -> GuidedRun:
         run = self._log_step(run, skipped)
         group = self._group(protocol, run.phase is GuidedPhase.BEFORE_ANALYZER)
@@ -197,6 +327,12 @@ class GuidedSessionService:
 
     def _tick(self, run: GuidedRun) -> GuidedRun:
         """Avanza según el reloj del servidor: fin de exposición y capturas sin cuadros."""
+        if run.phase in EXAM_STATION_PHASES or (run.phase is GuidedPhase.CALIBRATION and self.exam_of):
+            session = self._session(run.session_id)
+            if session.exam_id is not None:
+                return self._tick_station(run, session)
+        if run.phase is GuidedPhase.LIVE:
+            return self._tick_live(run)
         if run.phase not in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             return run
         session = self._session(run.session_id)
@@ -217,11 +353,25 @@ class GuidedSessionService:
             changed = True
         return self.repository.save_run(run) if changed else run
 
+    def _tick_live(self, run: GuidedRun) -> GuidedRun:
+        """Fase live: una captura vencida sin un cuadro válido se guarda marcada."""
+        changed = False
+        session = None
+        elapsed = self._seconds(run.step_started_at)
+        while run.next_capture_due is not None and elapsed >= run.next_capture_due + QUALITY_RETRY_SECONDS:
+            session = session or self._session(run.session_id)
+            run = self._store_capture(run, session, None, self._live_of(run.session_id).pending, elapsed,
+                                      timed_out=True)
+            changed = True
+        return self.repository.save_run(run) if changed else run
+
     # --- Capturas -----------------------------------------------------------------------
 
-    def _store_capture(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol,
+    def _store_capture(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol | None,
                        assessment: FrameAssessment | None, elapsed: float, timed_out: bool) -> GuidedRun:
-        step = protocol.steps[run.step_index]
+        """Guarda una captura. Sin protocolo (fase live) no hay estímulo y la
+        siguiente vence ABSTRACT_CAPTURE_INTERVAL segundos después."""
+        step = protocol.steps[run.step_index] if protocol is not None else None
         live = self._live_of(run.session_id)
         if assessment is None:
             assessment = FrameAssessment((QualityIssue.NO_FRAME,))
@@ -235,10 +385,12 @@ class GuidedSessionService:
             emotion_model_id=session.emotion_model_id or "", emotion_model_version=session.emotion_model_version or "",
             quality=CaptureQuality.GOOD if good else CaptureQuality.FLAGGED,
             quality_issues=() if good else (assessment.issues or (QualityIssue.NO_FRAME,)),
-            step_index=run.step_index, stimulus_id=step.stimulus_id, seconds_since_stimulus=round(elapsed, 2),
-            emotion=assessment.emotion, confidence=assessment.confidence, distribution=assessment.distribution,
-            calibrated_emotion=calibrated, participant_id=run.participant_id))
+            step_index=run.step_index, stimulus_id=step.stimulus_id if step else None,
+            seconds_since_stimulus=round(elapsed, 2), emotion=assessment.emotion, confidence=assessment.confidence,
+            distribution=assessment.distribution, calibrated_emotion=calibrated))
         live.pending = None
+        if step is None:
+            return replace(run, next_capture_due=(run.next_capture_due or 0.0) + ABSTRACT_CAPTURE_INTERVAL)
         stimulus = self.stimuli(step.stimulus_id)
         next_due = None
         if run.next_capture_due is not None and stimulus is not None and stimulus.kind is StimulusKind.ABSTRACT:
@@ -255,57 +407,44 @@ class GuidedSessionService:
     # --- Quien conduce la sesión -------------------------------------------------------
 
     def create(self, user: User, session_id: str) -> tuple[GuidedRun, str]:
-        """Prepara la sesión guiada y entrega una sola vez el enlace de la vista del participante."""
+        """Prepara la sesión y entrega una sola vez el enlace de la pantalla de la
+        persona. La autorización ya se confirmó al iniciar la sesión: empieza en
+        el cuestionario previo, en las imágenes previas o en la calibración."""
         session = self._session(session_id)
         if session.owner_user_id != user.id:
             raise PermissionError("Solo quien conduce la sesión la prepara")
-        self._protocol(session)
+        protocol = self.protocols(session.protocol_id) if session.protocol_id else None
+        if session.protocol_id and protocol is None:
+            raise GuidedConflict("El protocolo de la sesión ya no está disponible")
         if session.state is not SessionState.IN_PROGRESS:
             raise GuidedConflict("La sesión no está en progreso")
+        if session.authorization_confirmed_at is None:
+            raise GuidedConflict("La sesión empieza con la confirmación de la autorización")
         if self.repository.get_run(session_id) is not None:
             raise GuidedConflict("La sesión guiada ya está preparada")
+        model_id, version = self.resolve_model()
+        session = self.sessions.record_emotion_model(session.id, model_id, version)
         token = secrets.token_urlsafe(32)
-        run = self.repository.save_run(GuidedRun(
-            session_id=session.id, owner_user_id=user.id, created_at=self.clock(),
-            participant_id=session.participant_id, view_token_hash=hash_token(token)))
+        run = GuidedRun(session_id=session.id, owner_user_id=user.id, created_at=self.clock(),
+                        confirmed_at=session.authorization_confirmed_at, view_token_hash=hash_token(token))
+        if protocol is None:
+            run = replace(run, phase=GuidedPhase.CALIBRATION)
+        elif session.pre_questionnaire_id:
+            run = replace(run, phase=GuidedPhase.PRE_QUESTIONNAIRE)
+        else:
+            run = self._after_pre(run, protocol)
+        run = self.repository.save_run(run)
         self.audit.record(user, AuditAction.CREATE, RESOURCE, session.id)
         return run, token
 
     def new_view_link(self, user: User, session_id: str) -> str:
-        """Reemplaza el enlace de la vista del participante (el anterior deja de valer)."""
+        """Reemplaza el enlace de la pantalla de la persona (el anterior deja de valer)."""
         run, _ = self._conducted(user, session_id)
         if not run.active:
             raise GuidedConflict("La sesión ya terminó")
         token = secrets.token_urlsafe(32)
         self.repository.save_run(replace(run, view_token_hash=hash_token(token)))
         return token
-
-    def confirm(self, user: User, session_id: str, *, commitment_reminder: bool, authorization_confirmed: bool = False,
-                guardian_present: bool = False, child_assent: bool = False) -> GuidedRun:
-        """Sin la confirmación de quien conduce la sesión, no empieza."""
-        run, session = self._conducted(user, session_id)
-        if run.phase is not GuidedPhase.CONFIRMATION:
-            raise GuidedConflict("La confirmación ya se registró")
-        if not commitment_reminder:
-            raise ValueError("Confirma que leíste el recordatorio del compromiso de confidencialidad")
-        if session.participant_id is not None:
-            participant = self.participants(session.participant_id)
-            if participant is None or not self.participant_ready(participant):
-                raise GuidedConflict("El participante ya no tiene sus autorizaciones vigentes")
-            if participant.kind is ParticipantKind.CHILD:
-                if not (guardian_present and child_assent):
-                    raise ValueError("Confirma que el padre, la madre o el tutor está presente y que el niño o la "
-                                     "niña dio su asentimiento")
-            elif not authorization_confirmed:
-                raise ValueError("Confirma que el participante dio su autorización")
-        model_id, version = self.resolve_model()
-        session = self.sessions.record_emotion_model(session.id, model_id, version)
-        protocol = self._protocol(session)
-        run = replace(run, confirmed_at=self.clock())
-        run = (replace(run, phase=GuidedPhase.PRE_QUESTIONNAIRE) if session.pre_questionnaire_id
-               else self._after_pre(run, protocol))
-        self.audit.record(user, AuditAction.APPROVE, RESOURCE, session.id)
-        return self.repository.save_run(run)
 
     def advance(self, user: User, session_id: str) -> GuidedRun:
         """Continúa tras un cuestionario: el previo debe estar respondido."""
@@ -323,13 +462,8 @@ class GuidedSessionService:
     def start_calibration(self, user: User, session_id: str) -> GuidedRun:
         run, _ = self._conducted(user, session_id)
         if run.phase is not GuidedPhase.CALIBRATION:
-            raise GuidedConflict("La calibración va después del cuestionario previo")
-        live = self._live_of(session_id)
-        live.calibration = NeutralCalibration(seconds=self.calibration_seconds,
-                                              min_increase=self.calibration_min_increase,
-                                              clock=lambda: self.clock().timestamp())
-        live.calibration.start()
-        live.calibration_notice = None
+            raise GuidedConflict("La calibración va antes de las imágenes y después del cuestionario previo")
+        self._begin_calibration(session_id)
         return run
 
     def skip(self, user: User, session_id: str) -> GuidedRun:
@@ -350,16 +484,43 @@ class GuidedSessionService:
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             run = self._log_step(run, skipped=True)
         self._live.pop(run.session_id, None)
+        # La estación de un examen conserva su enlace para mostrar el debriefing.
+        token_hash = run.view_token_hash if session.exam_id is not None else None
         stopped = self.repository.save_run(replace(
             run, phase=GuidedPhase.STOPPED, stop_reason=reason, ended_at=self.clock(), step_started_at=None,
-            next_capture_due=None, view_token_hash=None))
+            next_capture_due=None, view_token_hash=token_hash))
         self.audit.record(actor, AuditAction.UPDATE, RESOURCE, run.session_id)
         return stopped
 
     def stop(self, user: User, session_id: str, reason: StopReason | str) -> GuidedRun:
-        """El participante o su tutor pidieron parar, o quien conduce terminó: termina de inmediato."""
+        """La persona o su tutor pidieron parar, o quien conduce terminó: termina de inmediato."""
         run, _ = self._conducted(user, session_id)
         return self._stop(run, StopReason(reason), user)
+
+    def finish_live(self, user: User, session_id: str) -> GuidedRun:
+        """Quien conduce termina el registro sin protocolo. Como en el analizador
+        web, la sesión conserva una expresión registrada: la de la última captura
+        de buena calidad. Sin ninguna, la sesión queda cancelada."""
+        run, session = self._conducted(user, session_id)
+        run = self._tick(run)
+        if run.phase is not GuidedPhase.LIVE:
+            raise GuidedConflict("Solo se termina así el registro sin protocolo")
+        good = [item for item in self.repository.list_captures(session.id)
+                if item.quality is CaptureQuality.GOOD and item.emotion is not None]
+        if good:
+            last = good[-1]
+            self.sessions.record_recognition(session.id, last.emotion, last.confidence,
+                                             session.emotion_model_id or last.emotion_model_id,
+                                             session.emotion_model_version or last.emotion_model_version)
+            self.sessions.finish_without_activity(session.id)
+        else:
+            self.sessions.cancel_session(session.id)
+        self._live.pop(session.id, None)
+        finished = self.repository.save_run(replace(run, phase=GuidedPhase.FINISHED, ended_at=self.clock(),
+                                                    step_started_at=None, next_capture_due=None,
+                                                    view_token_hash=None))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session.id)
+        return finished
 
     def add_marker(self, user: User, session_id: str, kind: MarkerKind | str, note: str | None = None) -> SessionMarker:
         run, session = self._conducted(user, session_id)
@@ -371,10 +532,10 @@ class GuidedSessionService:
         marker = self.repository.add_marker(SessionMarker(
             id=str(uuid4()), session_id=session.id, kind=kind, occurred_at=self.clock(),
             recorded_by_user_id=user.id, step_index=run.step_index if in_step else None,
-            note=note if kind is MarkerKind.NOTE else None, participant_id=run.participant_id))
+            note=note if kind is MarkerKind.NOTE else None))
         self.audit.record(user, AuditAction.CREATE, MARKER, marker.id)
         if kind is MarkerKind.ASKED_TO_STOP:
-            # Si el participante pide parar, la sesión termina de inmediato.
+            # Si la persona pide parar, la sesión termina de inmediato.
             self._stop(run, StopReason.PARTICIPANT, user)
         return marker
 
@@ -383,7 +544,7 @@ class GuidedSessionService:
         run = self._tick(run)
         protocol = self._protocol(session)
         if not 0 <= step_index < len(protocol.steps) or not protocol.steps[step_index].record_verbal_response:
-            raise ValueError("Ese estímulo no registra lo que el participante dice ver")
+            raise ValueError("Ese estímulo no registra lo que la persona dice ver")
         shown = {item["step_index"] for item in run.steps_log} | (
             {run.step_index} if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) else set())
         if step_index not in shown:
@@ -391,13 +552,20 @@ class GuidedSessionService:
         response = self.repository.save_verbal(VerbalResponse(
             id=str(uuid4()), session_id=session.id, step_index=step_index,
             stimulus_id=protocol.steps[step_index].stimulus_id, text=text, recorded_at=self.clock(),
-            recorded_by_user_id=user.id, participant_id=run.participant_id))
+            recorded_by_user_id=user.id))
         self.audit.record(user, AuditAction.CREATE, VERBAL, response.id)
         return response
+
+    @staticmethod
+    def _require_station_finished(run: GuidedRun, session: EmotionalSession) -> None:
+        """Sin monitoreo en vivo: las capturas de una estación se ven al terminar."""
+        if session.exam_id is not None and run.active:
+            raise GuidedConflict("Los resultados del examen se ven cuando la estación termina")
 
     def conductor_state(self, user: User, session_id: str) -> dict[str, Any]:
         run, session = self._conducted(user, session_id)
         run = self._tick(run)
+        self._require_station_finished(run, session)
         if (user.id, session_id) not in self._viewed:
             self._viewed.add((user.id, session_id))
             self.audit.record(user, AuditAction.VIEW, RESOURCE, session_id)
@@ -412,29 +580,33 @@ class GuidedSessionService:
         if not self.session_access(user, session):
             self.audit.record(user, AuditAction.VIEW, CAPTURES, session_id, AuditResult.DENIED)
             raise PermissionError("No tienes acceso a esta sesión")
+        run = self._tick(run)
+        self._require_station_finished(run, session)
         self.audit.record(user, AuditAction.VIEW, CAPTURES, session_id)
         return self._summary(run, session, include_results=True)
 
     def _summary(self, run: GuidedRun, session: EmotionalSession, include_results: bool) -> dict[str, Any]:
-        protocol = self._protocol(session)
-        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) for step in protocol.steps}
+        steps = self._steps(session)
+        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) for step in steps}
         live = self._live.get(session.id)
         calibration = live.calibration if live else None
-        step = protocol.steps[run.step_index] if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) else None
-        participant = self.participants(session.participant_id) if session.participant_id else None
+        step = steps[run.step_index] if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) else None
         summary: dict[str, Any] = {
             "session_id": session.id,
+            # Código para anotar en el formato firmado.
+            "session_code": session.code,
             "phase": run.phase.value,
-            "participant_kind": participant.kind.value if participant else None,
+            "audience": session.session_type.value,
+            "has_protocol": session.protocol_id is not None,
             "stop_reason": run.stop_reason.value if run.stop_reason else None,
             "step_index": run.step_index if step else None,
-            "step_count": len(protocol.steps),
+            "step_count": len(steps),
             "steps": [{"index": index, "stimulus_id": item.stimulus_id,
                        "title": stimuli[item.stimulus_id].title if stimuli[item.stimulus_id] else "",
                        "kind": stimuli[item.stimulus_id].kind.value if stimuli[item.stimulus_id] else "",
                        "exposure_seconds": item.exposure_seconds, "capture_after_seconds": item.capture_after_seconds,
                        "record_verbal_response": item.record_verbal_response,
-                       "shown_before_analyzer": item.shown_before_analyzer} for index, item in enumerate(protocol.steps)],
+                       "shown_before_analyzer": item.shown_before_analyzer} for index, item in enumerate(steps)],
             "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
                                   if step else None),
             "steps_log": list(run.steps_log),
@@ -464,29 +636,31 @@ class GuidedSessionService:
             } for item in self.repository.list_verbal(session.id)]
         return summary
 
-    # --- Vista del participante (enlace propio, sin cuenta) ---------------------------
+    # --- Pantalla de la persona (enlace propio, sin cuenta) ---------------------------
 
-    def _by_token(self, token: str) -> GuidedRun:
+    def _by_token(self, token: str, include_finished: bool = False) -> GuidedRun:
+        """Solo una sesión activa; con include_finished, también una estación de
+        examen que terminó (para leer el debriefing)."""
         run = self.repository.get_run_by_token_hash(hash_token(token)) if token else None
-        if run is None or not run.active:
+        if run is None or not (run.active or include_finished):
             raise GuidedNotFound("view")
         return run
 
     def participant_state(self, token: str) -> dict[str, Any]:
-        """Solo lo que se muestra al participante: nunca expresiones, probabilidades,
+        """Solo lo que se muestra a la persona: nunca expresiones, probabilidades,
         calidad ni notas."""
-        run = self._tick(self._by_token(token))
+        run = self._tick(self._by_token(token, include_finished=True))
+        session = self._session(run.session_id)
         if not run.active:
-            return {"phase": run.phase.value, "message": "La sesión terminó. Gracias.", "stimulus": None,
+            message = EXAM_DEBRIEFING if session.exam_id is not None else "La sesión terminó. Gracias."
+            return {"phase": run.phase.value, "message": message, "stimulus": None,
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
                     "abstract_notice": False}
-        session = self._session(run.session_id)
-        protocol = self._protocol(session)
         stimulus = None
         remaining = None
         abstract = False
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
-            step = protocol.steps[run.step_index]
+            step = self._protocol(session).steps[run.step_index]
             item = self.stimuli(step.stimulus_id)
             # Un identificador de exposición, no el del estímulo, para pedir la imagen.
             stimulus = {"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"}
@@ -495,19 +669,32 @@ class GuidedSessionService:
         live = self._live.get(run.session_id)
         calibrating = run.phase is GuidedPhase.CALIBRATION and live is not None and live.calibration is not None \
             and live.calibration.state == CALIBRATING
+        if session.exam_id is not None:
+            # La persona sabe que se la analiza, pero no qué se mide ni en qué momento.
+            station_messages = {
+                GuidedPhase.WAITING: "Espera un momento: tu docente confirmará el inicio.",
+                GuidedPhase.CALIBRATION: ((live.calibration_notice if live and live.calibration_notice else None)
+                                          or "Mira a la pantalla unos segundos, con el rostro relajado."),
+                GuidedPhase.READY: "Todo listo. El examen empieza cuando tu docente lo indique.",
+                GuidedPhase.EXAM: "Examen en curso.",
+            }
+            return {"phase": run.phase.value, "message": station_messages.get(run.phase), "stimulus": None,
+                    "remaining_seconds": None,
+                    "capture_frames": calibrating or run.phase is GuidedPhase.EXAM,
+                    "frame_interval_ms": FRAME_INTERVAL_MS, "abstract_notice": False}
         messages = {
-            GuidedPhase.CONFIRMATION: "La sesión empezará en un momento.",
             GuidedPhase.PRE_QUESTIONNAIRE: "Primero, unas preguntas.",
             GuidedPhase.CALIBRATION: ("Mira a la pantalla con el rostro relajado." if calibrating
                                       else "En un momento empieza la calibración."),
             GuidedPhase.POST_QUESTIONNAIRE: "Para terminar, unas preguntas.",
+            GuidedPhase.LIVE: "Mira a la pantalla con naturalidad.",
         }
         return {
             "phase": run.phase.value,
             "message": messages.get(run.phase),
             "stimulus": stimulus,
             "remaining_seconds": remaining,
-            "capture_frames": calibrating or run.phase is GuidedPhase.STIMULI,
+            "capture_frames": calibrating or run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE),
             "frame_interval_ms": FRAME_INTERVAL_MS,
             "abstract_notice": abstract,
         }
@@ -521,18 +708,18 @@ class GuidedSessionService:
         return self._protocol(session).steps[run.step_index].stimulus_id
 
     def participant_stop(self, token: str) -> None:
-        """El botón visible de la vista del participante: termina de inmediato."""
+        """El botón visible de la pantalla de la persona: termina de inmediato."""
         self._stop(self._by_token(token), StopReason.PARTICIPANT, None)
 
     def receive_frame(self, token: str, frame) -> None:
-        """Un cuadro de la vista del participante (enlace propio)."""
+        """Un cuadro de la pantalla de la persona (enlace propio)."""
         self._receive(self._tick(self._by_token(token)), frame)
 
     # --- Aplicativo móvil: quien conduce y la cámara están en el mismo dispositivo -----
 
     def conductor_frame(self, user: User, session_id: str, frame) -> dict[str, Any]:
         """Un cuadro enviado por quien conduce la sesión. Sigue el mismo control de
-        calidad y modelo local que la vista del participante; la imagen se descarta.
+        calidad y modelo local que la pantalla de la persona; la imagen se descarta.
         Devuelve solo la fase y los problemas de calidad, nunca la expresión."""
         run, _ = self._conducted(user, session_id)
         if not run.active:
@@ -542,17 +729,6 @@ class GuidedSessionService:
         live = self._live.get(session_id)
         return {"phase": run.phase.value,
                 "capture_status": [item.value for item in live.pending.issues] if live and live.pending else []}
-
-    def stimulus_in_active_session(self, user_id: str, session_id: str, stimulus_id: str) -> bool:
-        """El estímulo pertenece al protocolo de una sesión activa que conduce esa cuenta."""
-        run = self.repository.get_run(session_id)
-        if run is None or run.owner_user_id != user_id:
-            return False
-        run = self._tick(run)
-        if not run.active:
-            return False
-        protocol = self._protocol(self._session(session_id))
-        return any(step.stimulus_id == stimulus_id for step in protocol.steps)
 
     def _receive(self, run: GuidedRun, frame) -> None:
         """Analiza un cuadro en memoria (calibración o captura) y lo descarta."""
@@ -569,25 +745,44 @@ class GuidedSessionService:
             if notice:
                 live.calibration_notice = notice
             elif calibration.state == CALIBRATED:
-                protocol = self._protocol(session)
-                during = self._group(protocol, False)
                 run = replace(run, calibrated_at=self.clock())
-                run = (self._start_step(run, protocol, GuidedPhase.STIMULI, during[0]) if during
-                       else self._after_stimuli(run, session))
+                if session.exam_id is not None:
+                    # Estación calibrada: espera que el docente inicie el examen.
+                    live.calibration_notice = None
+                    self.repository.save_run(replace(run, phase=GuidedPhase.READY))
+                    return
+                if session.protocol_id is None:
+                    # Sin protocolo: registro periódico desde ahora.
+                    run = replace(run, phase=GuidedPhase.LIVE, step_index=0, step_started_at=self.clock(),
+                                  next_capture_due=0.0)
+                else:
+                    protocol = self._protocol(session)
+                    during = self._group(protocol, False)
+                    run = (self._start_step(run, protocol, GuidedPhase.STIMULI, during[0]) if during
+                           else self._after_stimuli(run, session))
                 self.repository.save_run(run)
             return
-        if run.phase is not GuidedPhase.STIMULI or run.next_capture_due is None:
+        if run.phase is GuidedPhase.EXAM:
+            elapsed = self._seconds(run.step_started_at)
+            if run.next_capture_due is None or elapsed < run.next_capture_due:
+                return
+            # Cada medio segundo se guarda lo que haya, bueno o marcado: sin reintentos.
+            self._store_exam_capture(run, session, self._assess(session, frame), run.next_capture_due)
+            self.repository.save_run(replace(run, next_capture_due=self._next_slot(elapsed)))
+            return
+        if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE) or run.next_capture_due is None:
             return
         elapsed = self._seconds(run.step_started_at)
         if elapsed < run.next_capture_due:
             return
+        protocol = self._protocol(session) if run.phase is GuidedPhase.STIMULI else None
         assessment = self._assess(session, frame)
         if assessment.ok:
-            self.repository.save_run(self._store_capture(run, session, self._protocol(session), assessment,
-                                                         elapsed, timed_out=False))
+            self.repository.save_run(self._store_capture(run, session, protocol, assessment, elapsed,
+                                                         timed_out=False))
         elif elapsed >= run.next_capture_due + QUALITY_RETRY_SECONDS:
             # No se logró una captura de buena calidad: se guarda marcada con su problema.
-            self.repository.save_run(self._store_capture(run, session, self._protocol(session), assessment,
-                                                         elapsed, timed_out=True))
+            self.repository.save_run(self._store_capture(run, session, protocol, assessment, elapsed,
+                                                         timed_out=True))
         else:
             live.pending = assessment  # se reintenta con el próximo cuadro

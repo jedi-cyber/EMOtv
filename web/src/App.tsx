@@ -26,26 +26,30 @@ import { ExpressionCatalogProvider } from "./expressions/ExpressionCatalog";
 import { AdminExpressionsPage } from "./pages/AdminExpressionsPage";
 import { AdminModelsPage } from "./pages/AdminModelsPage";
 import { CommitmentPage } from "./pages/CommitmentPage";
-import { ParticipantsPage } from "./pages/ParticipantsPage";
 import { ProtocolsPage } from "./pages/ProtocolsPage";
 import { QuestionnairesPage } from "./pages/QuestionnairesPage";
 import { GuidedConductorPage } from "./pages/GuidedConductorPage";
-import { GuidedSetupPage } from "./pages/GuidedSetupPage";
 import { ParticipantViewPage } from "./pages/ParticipantViewPage";
-import { ParticipantTrendsPage } from "./pages/ParticipantTrendsPage";
 import { ReportPrintPage } from "./pages/ReportPrintPage";
 import { SessionReportPage } from "./pages/SessionReportPage";
 import { SessionQuestionnairePage } from "./pages/SessionQuestionnairePage";
 import { StimuliPage } from "./pages/StimuliPage";
+import { ImagesPage } from "./pages/ImagesPage";
+import { ImageReviewPage } from "./pages/ImageReviewPage";
+import { StatisticsPage } from "./pages/StatisticsPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
+import { ExamsPage } from "./pages/ExamsPage";
+import { ExamPage } from "./pages/ExamPage";
+import { StationPage } from "./pages/StationPage";
 
 export function App() {
   return (
     <ExpressionCatalogProvider><AssistantProvider><ActiveSessionProvider><Routes>
       <Route path={paths.login} element={<LoginPage />} />
-      {/* Vista del participante: enlace propio, sin cuenta ni navegación de la aplicación. */}
+      {/* Pantalla de la persona evaluada: enlace propio, sin cuenta ni navegación de la aplicación. */}
       <Route path={paths.participantViewPattern} element={<ParticipantViewPage />} />
+      <Route path={paths.station} element={<StationPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path={paths.firstAccess} element={<FirstAccessPage />} />
         <Route element={<AppLayout />}>
@@ -54,16 +58,16 @@ export function App() {
           <Route path={paths.commitment} element={<RoleRoute allowed={["student", "psychologist"]}><CommitmentPage /></RoleRoute>} />
           {/* El docente también conduce sesiones propias. */}
           <Route path={paths.analysis} element={<RoleRoute allowed={["student", "psychologist"]}><AnalysisPage /></RoleRoute>} />
-          <Route path={paths.participants} element={<RoleRoute allowed={["student", "psychologist"]}><ParticipantsPage /></RoleRoute>} />
           <Route path={paths.sessionReportPattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionReportPage /></RoleRoute>} />
           <Route path={paths.reportPrintPattern} element={<RoleRoute allowed={["student", "psychologist"]}><ReportPrintPage /></RoleRoute>} />
-          <Route path={paths.participantTrendsPattern} element={<RoleRoute allowed={["student", "psychologist"]}><ParticipantTrendsPage /></RoleRoute>} />
-          <Route path={paths.guided} element={<RoleRoute allowed={["student", "psychologist"]}><GuidedSetupPage /></RoleRoute>} />
           <Route path={paths.guidedSessionPattern} element={<RoleRoute allowed={["student", "psychologist"]}><GuidedConductorPage /></RoleRoute>} />
           <Route path={paths.questionnaires} element={<RoleRoute allowed={["student", "psychologist"]}><QuestionnairesPage /></RoleRoute>} />
           <Route path={paths.sessionQuestionnairePattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionQuestionnairePage /></RoleRoute>} />
           <Route path={paths.protocols} element={<RoleRoute allowed={["student", "psychologist"]}><ProtocolsPage /></RoleRoute>} />
           <Route path={paths.stimuli} element={<RoleRoute allowed={["psychologist", "admin"]}><StimuliPage /></RoleRoute>} />
+          <Route path={paths.images} element={<RoleRoute allowed={["student"]}><ImagesPage /></RoleRoute>} />
+          <Route path={paths.statistics} element={<RoleRoute allowed={["student", "psychologist"]}><StatisticsPage /></RoleRoute>} />
+          <Route path={paths.imageReview} element={<RoleRoute allowed={["psychologist"]}><ImageReviewPage /></RoleRoute>} />
           <Route path={paths.deletionCertificatePattern} element={<RoleRoute allowed={["student", "psychologist"]}><DeletionCertificatePage /></RoleRoute>} />
           <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
           <Route path={paths.activities} element={<ActivitiesPage />} />
@@ -71,6 +75,8 @@ export function App() {
           {/* Sesiones y resultados: solo usuarios y docentes; nunca la administración. */}
           <Route path={paths.sessions} element={<RoleRoute allowed={["student", "psychologist"]}><SessionsPage /></RoleRoute>} />
           <Route path={paths.sessionPattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionDetailPage /></RoleRoute>} />
+          <Route path={paths.exams} element={<RoleRoute allowed={["psychologist"]}><ExamsPage /></RoleRoute>} />
+          <Route path={paths.examPattern} element={<RoleRoute allowed={["psychologist"]}><ExamPage /></RoleRoute>} />
           <Route path={paths.students} element={<RoleRoute allowed={["psychologist"]}><StudentsPage /></RoleRoute>} />
           <Route path={paths.studentSessionsPattern} element={<RoleRoute allowed={["psychologist"]}><StudentSessionsPage /></RoleRoute>} />
           <Route path={paths.users} element={<RoleRoute allowed={["admin", "superadmin"]}><UsersPage /></RoleRoute>} />

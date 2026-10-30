@@ -15,6 +15,8 @@ interface ModalProps {
   busy?: boolean;
   role?: "dialog" | "alertdialog";
   describedBy?: string;
+  /** false: no se cierra con Escape, con el fondo ni con un botón (una aceptación obligatoria). */
+  dismissible?: boolean;
 }
 
 /**
@@ -22,11 +24,12 @@ interface ModalProps {
  * modal mientras está abierto y vuelve al elemento que lo abrió al cerrarse.
  * Un formulario dentro del modal enlaza su botón del pie con el atributo `form`.
  */
-export function Modal({ open, title, onClose, children, footer, busy = false, role = "dialog", describedBy }: ModalProps) {
+export function Modal({ open, title, onClose, children, footer, busy = false, role = "dialog", describedBy,
+  dismissible = true }: ModalProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const latest = useRef({ busy, onClose });
-  latest.current = { busy, onClose };
+  latest.current = { busy: busy || !dismissible, onClose };
   const titleId = useId();
 
   useEffect(() => {
@@ -67,14 +70,14 @@ export function Modal({ open, title, onClose, children, footer, busy = false, ro
   }, [open]);
 
   if (!open) return null;
-  return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!busy) onClose(); }}>
+  return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!busy && dismissible) onClose(); }}>
     <section ref={dialogRef} className="modal" role={role} aria-modal="true" aria-labelledby={titleId}
       aria-describedby={describedBy} onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header">
         <h2 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h2>
-        <button type="button" className="modal-close" aria-label="Cerrar" disabled={busy} onClick={onClose}>
+        {dismissible && <button type="button" className="modal-close" aria-label="Cerrar" disabled={busy} onClick={onClose}>
           <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
-        </button>
+        </button>}
       </header>
       <div className="modal-body">{children}</div>
       {footer && <footer className="modal-footer">{footer}</footer>}

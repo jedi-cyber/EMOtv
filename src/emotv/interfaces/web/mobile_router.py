@@ -1,11 +1,16 @@
 """API del aplicativo Android (contrato en docs/mobile-api.md).
 
+El aplicativo no conduce sesiones: ninguna captura del rostro sale del
+teléfono. Las sesiones se conducen en la web; el aplicativo consulta las
+sesiones, sus reportes y las estadísticas agregadas, y permite actuar sobre el
+reporte (el Usuario lo redacta y lo envía; el Docente lo comenta, lo devuelve o
+lo aprueba).
+
 No tiene lógica propia de negocio: llama a los mismos servicios que la web
-(AuthenticationService y LoginThrottle, ParticipantService con
-can_access_participant, ProtocolService, QuestionnaireService, el iniciador de
-sesiones y GuidedSessionService). En el aplicativo, quien conduce y la cámara
-están en el mismo dispositivo, que también ve el participante: por eso ninguna
-respuesta incluye expresiones estimadas ni probabilidades.
+(AuthenticationService y LoginThrottle, SessionInsightsService, ReportService y
+SessionStatisticsService), que aplican can_access_session y registran la
+auditoría. No se registra a las personas evaluadas: cada sesión se identifica
+solo por su código.
 
 Todos los errores tienen la forma ``{"detail": {"code": ..., "message": ...}}``.
 En producción se rechazan las peticiones que no llegan por HTTPS.
@@ -19,43 +24,22 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.concurrency import run_in_threadpool
 
 from emotv.application.audit_service import AuditService
-from emotv.application.guided_session_service import (
-    FRAME_INTERVAL_MS,
-    GuidedConflict,
-    GuidedNotFound,
-    GuidedSessionService,
-)
 from emotv.application.mobile_auth_service import MobileAuthService, MobileLoginError, MobileTokens
-from emotv.application.participant_service import ParticipantNotFound, ParticipantService
 from emotv.application.ports import UserRepository
-from emotv.application.protocol_service import ProtocolNotFound, ProtocolService, ProtocolUnavailable
-from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
-from emotv.application.session_service import SessionService
-from emotv.application.signed_urls import StimulusUrlSigner
-from emotv.domain import User
-from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.guided_session import ABSTRACT_NOTICE
-from emotv.domain.participant import Participant, ParticipantKind
+from emotv.application.report_service import ReportConflict, ReportNotFound, ReportService
+from emotv.application.session_insights_service import InsightsNotFound, SessionInsightsService
+from emotv.application.session_statistics_service import SessionStatisticsService, StatisticsFilter
+from emotv.domain import EmotionalSession, SessionType, User
+from emotv.domain.audit import AuditAction
+from emotv.domain.report import ReportSection
+from emotv.domain.role import Role
 from emotv.interfaces.web.auth_router import client_ip
-from emotv.interfaces.web.guided_router import MAX_FRAME_BYTES
-from emotv.interfaces.web.session_router import CreateSessionRequest
 
 CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
-         413: "too_large", 415: "unsupported_media_type", 422: "invalid", 428: "commitment_required",
-         429: "too_many_requests", 503: "unavailable"}
+         422: "invalid", 429: "too_many_requests", 503: "unavailable"}
 ROLE_NAMES = {"student": "Usuario", "psychologist": "Docente"}
-COMMITMENT_REMINDER = ("Recuerda tu compromiso de confidencialidad: los datos de la sesión son solo para tu práctica "
-                       "y la de tu docente.")
-GAP_MESSAGES = {
-    "participation": "Falta la autorización de participación",
-    "camera": "Falta la autorización de uso de la cámara",
-    "child_assent": "Falta el asentimiento del niño o la niña",
-    "revoked": "Se retiró una autorización: no se inician sesiones nuevas",
-    "age": "Falta la edad: regístralo de nuevo con su edad",
-}
 
 
 def fail(status: int, message: str, code: str | None = None, headers: dict[str, str] | None = None) -> HTTPException:
@@ -75,30 +59,15 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=256)
 
 
-class StartRequest(BaseModel):
+class NarrativeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    participant_id: str = Field(min_length=1, max_length=64)
-    protocol_id: str = Field(min_length=1, max_length=64)
+    narrative: str = Field(max_length=8000)
 
 
-class ConfirmRequest(BaseModel):
+class CommentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    commitment_reminder: bool = False
-    authorization_confirmed: bool = False
-    guardian_present: bool = False
-    child_assent: bool = False
-
-
-class AnswersRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    answers: dict[str, Any]
-    # El participante responde en el dispositivo, o quien conduce anota lo que dijo.
-    entry_mode: Literal["participant", "conductor"] = "participant"
-
-
-class StopRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    reason: Literal["participant", "guardian", "conductor"]
+    section: ReportSection = ReportSection.GENERAL
+    text: str = Field(min_length=1, max_length=2000)
 
 
 def create_mobile_router(
@@ -106,15 +75,10 @@ def create_mobile_router(
     users: UserRepository | None,
     *,
     audit: AuditService | None = None,
-    sessions: SessionService | None = None,
-    start_session: Callable[[User, CreateSessionRequest], Any] | None = None,
-    participants: ParticipantService | None = None,
-    protocols: ProtocolService | None = None,
-    questionnaires: QuestionnaireService | None = None,
-    guided: GuidedSessionService | None = None,
-    signer: StimulusUrlSigner | None = None,
-    stimulus_image: Callable[[str], tuple[str, bytes] | None] | None = None,
-    decode_frame: Callable[[bytes], Any] | None = None,
+    visible_sessions: Callable[[User], list[EmotionalSession]] | None = None,
+    insights: SessionInsightsService | None = None,
+    reports: ReportService | None = None,
+    statistics: SessionStatisticsService | None = None,
     production: bool = False,
     api_version: str = "",
     min_app_version: str = "1.0.0",
@@ -146,24 +110,25 @@ def create_mobile_router(
     def current_user(found: tuple[User, str] = Depends(current)) -> User:
         return found[0]
 
-    def guided_service() -> GuidedSessionService:
-        if guided is None or participants is None or start_session is None or sessions is None:
-            raise fail(503, "Las sesiones con participante no están disponibles en este servidor")
-        return guided
+    def session_services() -> tuple[Callable[[User], list[EmotionalSession]], SessionInsightsService]:
+        if visible_sessions is None or insights is None:
+            raise fail(503, "Las sesiones no están disponibles en este servidor")
+        return visible_sessions, insights
+
+    def report_service() -> ReportService:
+        if reports is None:
+            raise fail(503, "Los reportes no están disponibles en este servidor")
+        return reports
 
     def guarded(operation):
         """Traduce las excepciones de los servicios al formato de error del contrato."""
         try:
             return operation()
-        except HTTPException as error:
-            if isinstance(error.detail, dict):
-                raise
-            raise fail(error.status_code, str(error.detail)) from error
-        except (GuidedNotFound, ParticipantNotFound, ProtocolNotFound, QuestionnaireNotFound) as error:
+        except (InsightsNotFound, ReportNotFound) as error:
             raise fail(404, "No encontrado") from error
         except PermissionError as error:
             raise fail(403, str(error)) from error
-        except (GuidedConflict, ProtocolUnavailable, RuntimeError) as error:
+        except ReportConflict as error:
             raise fail(409, str(error)) from error
         except ValueError as error:
             raise fail(422, str(error)) from error
@@ -181,7 +146,9 @@ def create_mobile_router(
         """Pantalla de carga: no requiere sesión ni devuelve datos personales."""
         return {"status": "ok", "api_version": api_version, "min_app_version": min_app_version,
                 "server_time": now().isoformat(),
-                "services": {"login": mobile_auth is not None, "participant_sessions": guided is not None}}
+                "services": {"login": mobile_auth is not None,
+                             "sessions": visible_sessions is not None and insights is not None,
+                             "reports": reports is not None, "statistics": statistics is not None}}
 
     @router.post("/auth/login")
     def login(body: LoginRequest, request: Request) -> dict[str, Any]:
@@ -204,7 +171,34 @@ def create_mobile_router(
         auth_service().logout(*found)
         return Response(status_code=204)
 
-    # --- Resumen del dashboard ---------------------------------------------------------
+    # --- Sesiones (solo consulta) --------------------------------------------------------
+
+    def session_items(user: User, found: list[EmotionalSession]) -> list[dict[str, Any]]:
+        _, service = session_services()
+        current_reports = reports.current_for_sessions(tuple(item.id for item in found)) if reports else {}
+        items = []
+        for session in found:
+            protocol = service.protocols(session.protocol_id) if session.protocol_id else None
+            report = current_reports.get(session.id)
+            items.append({
+                "id": session.id, "code": session.code, "started_at": session.started_at.isoformat(),
+                "state": session.state.value, "audience": SessionType(session.session_type).value,
+                "protocol_name": protocol.name if protocol else None,
+                # Del docente: las sesiones de su grupo no son suyas.
+                "mine": session.owner_user_id == user.id,
+                "report_status": report.status.value if report else None,
+            })
+        return items
+
+    def newest_first(user: User) -> list[EmotionalSession]:
+        listing, _ = session_services()
+        return sorted(listing(user), key=lambda item: (item.started_at, item.id), reverse=True)
+
+    def pending_reviews(user: User, found: list[EmotionalSession]) -> list[EmotionalSession]:
+        if reports is None or user.role is not Role.PSYCHOLOGIST:
+            return []
+        waiting = reports.pending_review(user, tuple(item.id for item in found))
+        return [item for item in found if item.id in waiting]
 
     def day_window(day: date | None, offset_minutes: int) -> tuple[date, datetime, datetime]:
         zone = timezone(timedelta(minutes=offset_minutes))
@@ -212,205 +206,115 @@ def create_mobile_router(
         start = datetime(local_day.year, local_day.month, local_day.day, tzinfo=zone)
         return local_day, start, start + timedelta(days=1)
 
-    def session_item(session, codes: dict[str, str]) -> dict[str, Any]:
-        run = guided.repository.get_run(session.id) if guided is not None else None
-        protocol = protocols.repository.get(session.protocol_id) if protocols and session.protocol_id else None
-        return {"id": session.id, "started_at": session.started_at.isoformat(), "state": session.state.value,
-                "guided_phase": run.phase.value if run else None,
-                "participant_id": session.participant_id,
-                "participant_code": codes.get(session.participant_id or ""),
-                "protocol_name": protocol.name if protocol else None}
-
     @router.get("/summary")
     def summary(day: date | None = Query(default=None, alias="date"),
                 utc_offset_minutes: int = Query(default=-300, ge=-720, le=840),
+                limit: int = Query(default=10, ge=1, le=50),
                 user: User = Depends(current_user)) -> dict[str, Any]:
-        """Solo lo de la cuenta que inició sesión: sus participantes y sus sesiones,
-        aunque sea docente (los de su grupo se revisan en la web)."""
-        guided_service()
+        """Inicio del aplicativo: sesiones de hoy y recientes (las que la cuenta
+        ya puede ver en la web) y, para el docente, los reportes por revisar."""
         local_day, start, end = day_window(day, utc_offset_minutes)
-        mine = tuple(item for item in guarded(lambda: participants.list_for(user))
-                     if item.registered_by_user_id == user.id)
-        codes = {item.id: item.code for item in mine}
-        owned = sorted((item for item in sessions.list_sessions_by_owner(user.id)
-                        if item.participant_id is None or item.participant_id in codes),
-                       key=lambda item: item.started_at, reverse=True)
-        last: dict[str, Any] = {}
-        for item in owned:
-            if item.participant_id and item.participant_id not in last:
-                last[item.participant_id] = item
-
-        def participant_item(item: Participant) -> dict[str, Any]:
-            gaps = participants.authorization_gaps(item)
-            latest = last.get(item.id)
-            return {"id": item.id, "code": item.code, "kind": item.kind.value, "age_years": item.age_years,
-                    "ready": not gaps, "missing": list(gaps),
-                    "warnings": [GAP_MESSAGES[gap] for gap in gaps],
-                    "last_session": session_item(latest, codes) if latest else None}
-
+        found = newest_first(user)
         if audit is not None:
             audit.record(user, AuditAction.VIEW, "mobile_summary", None)
         return {
             "user": {"id": user.id, "email": user.email, "role": user.role.value,
                      "role_name": ROLE_NAMES.get(user.role.value, "")},
             "date": local_day.isoformat(),
-            "today_sessions": [session_item(item, codes) for item in owned if start <= item.started_at < end],
-            "participants": [participant_item(item) for item in mine],
+            "today_sessions": session_items(user, [item for item in found if start <= item.started_at < end]),
+            "recent_sessions": session_items(user, found[:limit]),
+            "pending_reviews": len(pending_reviews(user, found)),
         }
 
-    # --- Sesión desde el móvil ---------------------------------------------------------
-
-    @router.get("/protocols")
-    def usable_protocols(participant_id: str, user: User = Depends(current_user)) -> list[dict[str, Any]]:
-        """Protocolos que quien inició sesión puede aplicar a ese participante."""
-        guided_service()
-        participant = guarded(lambda: participants.get(user, participant_id))
-        if protocols is None:
-            raise fail(503, "Los protocolos no están configurados")
-        usable = []
-        for item in guarded(lambda: protocols.list_for(user)):
-            try:
-                protocols.require_usable(user, item.id, participant)
-            except (PermissionError, ProtocolUnavailable, ProtocolNotFound, ValueError):
-                continue
-            usable.append({"id": item.id, "name": item.name, "version": item.version,
-                           "for_children": item.for_children, "step_count": len(item.steps),
-                           "has_pre_questionnaire": item.pre_questionnaire_id is not None,
-                           "has_post_questionnaire": item.post_questionnaire_id is not None})
-        return usable
-
-    def confirmation_fields(kind: str | None) -> list[str]:
-        if kind == ParticipantKind.CHILD.value:
-            return ["commitment_reminder", "guardian_present", "child_assent"]
-        return ["commitment_reminder", "authorization_confirmed"]
-
-    @router.post("/sessions", status_code=201)
-    def start(body: StartRequest, user: User = Depends(current_user)) -> dict[str, Any]:
-        service = guided_service()
-        participant = guarded(lambda: participants.get(user, body.participant_id))
-        session_type = ("participante_infantil" if participant.kind is ParticipantKind.CHILD
-                        else "participante_adulto")
-        request = CreateSessionRequest(session_type=session_type, participant_id=participant.id,
-                                       protocol_id=body.protocol_id)
-        session = guarded(lambda: start_session(user, request))
-        try:
-            # El enlace de la vista del participante no se usa: este dispositivo muestra los estímulos.
-            run, _ = service.create(user, session.id)
-        except Exception:
-            sessions.cancel_session(session.id)
-            raise
-        return {"session_id": session.id, "phase": run.phase.value,
-                "participant": {"id": participant.id, "code": participant.code, "kind": participant.kind.value},
-                "confirmation": {"reminder": COMMITMENT_REMINDER,
-                                 "required": confirmation_fields(participant.kind.value)}}
-
-    @router.post("/sessions/{session_id}/confirm")
-    def confirm(session_id: str, body: ConfirmRequest, user: User = Depends(current_user)) -> dict[str, Any]:
-        run = guarded(lambda: guided_service().confirm(user, session_id, **body.model_dump()))
-        return next_step(session_id, user) | {"phase": run.phase.value}
-
-    @router.get("/sessions/{session_id}/next")
-    def next_step(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        """Qué mostrar ahora: confirmación, cuestionario, calibración, estímulo o fin."""
-        service = guided_service()
-        state = guarded(lambda: service.conductor_state(user, session_id))
-        phase = state["phase"]
-        body: dict[str, Any] = {"session_id": session_id, "phase": phase, "stop_reason": state["stop_reason"],
-                                "send_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
-                                "capture_status": state["capture_status"], "questionnaire": None,
-                                "calibration": None, "stimulus": None, "confirmation": None,
-                                "step_count": state["step_count"]}
-        if phase == "confirmation":
-            body["confirmation"] = {"reminder": COMMITMENT_REMINDER,
-                                    "required": confirmation_fields(state["participant_kind"])}
-        elif phase in ("pre_questionnaire", "post_questionnaire"):
-            moment = phase.split("_")[0]
-            item = guarded(lambda: questionnaires.pending_for(user, session_id, moment))
-            body["questionnaire"] = {
-                "moment": moment, "id": item.id, "version": item.version, "title": item.title,
-                "instructions": item.instructions, "questions": [question.to_dict() for question in item.questions],
-                "answered": questionnaires.answered(session_id, moment)}
-        elif phase == "calibration":
-            body["calibration"] = state["calibration"]
-            body["send_frames"] = state["calibration"]["state"] == "calibrating"
-        elif phase in ("before_analyzer", "stimuli"):
-            step = state["steps"][state["step_index"]]
-            expires, signature = signer.sign(user.id, session_id, step["stimulus_id"])
-            body["stimulus"] = {
-                "step_index": step["index"], "title": step["title"], "kind": step["kind"],
-                "exposure_seconds": step["exposure_seconds"], "remaining_seconds": state["remaining_seconds"],
-                "image_url": (f"/mobile/stimulus-images/{session_id}/{step['stimulus_id']}"
-                              f"?expires={expires}&signature={signature}"),
-                "image_expires_at": datetime.fromtimestamp(expires, timezone.utc).isoformat(),
-                "abstract_notice": ABSTRACT_NOTICE if step["kind"] == "abstract" else None,
-                # Lo registra quien conduce desde la web.
-                "records_verbal_response": step["record_verbal_response"]}
-            body["send_frames"] = phase == "stimuli"
-        return body
-
-    @router.post("/sessions/{session_id}/questionnaires/{moment}", status_code=201)
-    def answer(session_id: str, moment: Literal["pre", "post"], body: AnswersRequest,
-               user: User = Depends(current_user)) -> dict[str, Any]:
-        """Guarda las respuestas (cifradas) y continúa a la fase siguiente."""
-        service = guided_service()
-        if questionnaires is None:
-            raise fail(503, "Los cuestionarios no están disponibles")
-        guarded(lambda: questionnaires.submit(user, session_id, moment, body.answers, body.entry_mode))
-        run = guarded(lambda: service.advance(user, session_id))
-        return {"phase": run.phase.value}
-
-    @router.post("/sessions/{session_id}/advance")
-    def advance(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        return {"phase": guarded(lambda: guided_service().advance(user, session_id)).phase.value}
-
-    @router.post("/sessions/{session_id}/calibration")
-    def calibration(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        return {"phase": guarded(lambda: guided_service().start_calibration(user, session_id)).phase.value}
-
-    @router.post("/sessions/{session_id}/frames")
-    async def frame(session_id: str, request: Request, user: User = Depends(current_user)) -> dict[str, Any]:
-        """Un cuadro JPEG. Se analiza en memoria con el modelo local y se descarta."""
-        service = guided_service()
-        if request.headers.get("content-type", "").split(";")[0].strip().lower() != "image/jpeg":
-            raise fail(415, "Envía el cuadro como image/jpeg")
-        data = await request.body()
-        if len(data) > MAX_FRAME_BYTES:
-            raise fail(413, "El cuadro es demasiado grande")
-        decoded = decode_frame(data) if decode_frame else None
-        if decoded is None:
-            raise fail(422, "El cuadro no es una imagen JPEG válida")
-        return await run_in_threadpool(lambda: guarded(lambda: service.conductor_frame(user, session_id, decoded)))
-
-    @router.post("/sessions/{session_id}/skip")
-    def skip(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
-        return {"phase": guarded(lambda: guided_service().skip(user, session_id)).phase.value}
-
-    @router.post("/sessions/{session_id}/stop")
-    def stop(session_id: str, body: StopRequest, user: User = Depends(current_user)) -> dict[str, Any]:
-        """Interrumpe la sesión: el participante, su tutor o quien conduce lo pidió."""
-        return {"phase": guarded(lambda: guided_service().stop(user, session_id, body.reason)).phase.value}
-
-    # --- Imágenes de estímulos (URL firmada) ----------------------------------------------
-
-    @router.get("/stimulus-images/{session_id}/{stimulus_id}", response_class=Response)
-    def stimulus(session_id: str, stimulus_id: str, expires: int, signature: str) -> Response:
-        """Sin token: la firma nombra la sesión, el estímulo y el vencimiento, y solo
-        vale mientras la sesión de quien la recibió sigue activa con ese protocolo."""
-        service = guided_service()
-        run = service.repository.get_run(session_id)
-        owner = users.get_by_id(run.owner_user_id) if run is not None and users is not None else None
-        valid = (owner is not None and signer is not None
-                 and signer.verify(owner.id, session_id, stimulus_id, expires, signature)
-                 and service.stimulus_in_active_session(owner.id, session_id, stimulus_id))
+    @router.get("/sessions")
+    def list_sessions(limit: int = Query(default=100, ge=1, le=500),
+                      user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        """Las sesiones de la cuenta y, para el docente, las de su grupo; de la más nueva a la más antigua."""
+        found = newest_first(user)[:limit]
         if audit is not None:
-            audit.record(owner, AuditAction.VIEW, "stimulus_image", stimulus_id,
-                         AuditResult.SUCCESS if valid else AuditResult.DENIED)
-        if not valid:
-            raise fail(403, "El enlace de la imagen venció o no es válido", "invalid_or_expired_url")
-        found = stimulus_image(stimulus_id) if stimulus_image else None
-        if found is None:
-            raise fail(404, "Estímulo no disponible")
-        content_type, data = found
-        return Response(content=data, media_type=content_type)
+            audit.record(user, AuditAction.VIEW, "mobile_sessions", None)
+        return session_items(user, found)
+
+    @router.get("/sessions/{session_id}")
+    def session_detail(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Línea de tiempo y métricas descriptivas; el acceso lo decide can_access_session."""
+        _, service = session_services()
+        timeline = guarded(lambda: service.timeline(user, session_id))
+        metrics = guarded(lambda: service.metrics(user, session_id))
+        session = service.sessions.get_session(session_id)
+        return {"session": session_items(user, [session])[0], "timeline": timeline, "metrics": metrics}
+
+    # --- Reporte ----------------------------------------------------------------------
+
+    @router.get("/sessions/{session_id}/report")
+    def session_report(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        return guarded(lambda: report_service().for_session(user, session_id))
+
+    @router.post("/sessions/{session_id}/report", status_code=201)
+    def create_report(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Quien condujo la sesión empieza su reporte (borrador)."""
+        service = report_service()
+        created = guarded(lambda: service.create(user, session_id))
+        return guarded(lambda: service.get(user, created.id))
+
+    def act(user: User, report_id: str, action: Callable[[ReportService], Any]) -> dict[str, Any]:
+        """Aplica la acción y devuelve el reporte actualizado, con lo que la cuenta puede hacer ahora."""
+        service = report_service()
+        guarded(lambda: action(service))
+        return guarded(lambda: service.get(user, report_id))
+
+    @router.get("/reports/{report_id}")
+    def get_report(report_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        return guarded(lambda: report_service().get(user, report_id))
+
+    @router.put("/reports/{report_id}")
+    def edit_report(report_id: str, body: NarrativeRequest, user: User = Depends(current_user)) -> dict[str, Any]:
+        """El Usuario responde a las observaciones corrigiendo el texto."""
+        return act(user, report_id, lambda service: service.edit(user, report_id, body.narrative))
+
+    @router.post("/reports/{report_id}/submit")
+    def submit_report(report_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        return act(user, report_id, lambda service: service.submit(user, report_id))
+
+    @router.post("/reports/{report_id}/comments")
+    def comment_report(report_id: str, body: CommentRequest, user: User = Depends(current_user)) -> dict[str, Any]:
+        return act(user, report_id, lambda service: service.comment(user, report_id, body.section, body.text))
+
+    @router.post("/reports/{report_id}/return")
+    def return_report(report_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        return act(user, report_id, lambda service: service.return_with_comments(user, report_id))
+
+    @router.post("/reports/{report_id}/approve")
+    def approve_report(report_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        return act(user, report_id, lambda service: service.approve(user, report_id))
+
+    @router.get("/reviews")
+    def reviews(user: User = Depends(current_user)) -> list[dict[str, Any]]:
+        """Del docente: reportes que los usuarios de su grupo enviaron a revisión."""
+        if user.role is not Role.PSYCHOLOGIST:
+            raise fail(403, "Solo el docente revisa reportes")
+        report_service()
+        waiting = pending_reviews(user, newest_first(user))
+        current_reports = reports.current_for_sessions(tuple(item.id for item in waiting))
+        if audit is not None:
+            audit.record(user, AuditAction.VIEW, "mobile_reviews", None)
+        return [{**item, "report_id": current_reports[item["id"]].id} for item in session_items(user, waiting)]
+
+    # --- Estadísticas agregadas ---------------------------------------------------------
+
+    @router.get("/statistics")
+    def session_statistics(scope: Literal["mine", "group"] = "mine",
+                           date_from: date | None = None,
+                           date_to: date | None = None,
+                           user: User = Depends(current_user)) -> dict[str, Any]:
+        """Cuentan sesiones, no personas. En el aplicativo no se desglosa por usuario."""
+        if statistics is None:
+            raise fail(503, "Las estadísticas no están disponibles en este servidor")
+        if date_from and date_to and date_from > date_to:
+            raise fail(422, "La fecha inicial es posterior a la final")
+        result = guarded(lambda: statistics.statistics(user, StatisticsFilter(
+            scope=scope, date_from=date_from, date_to=date_to)))
+        return {key: result[key] for key in ("scope", "notice", "few_sessions_notice", "sessions", "expressions",
+                                             "coincidence")}
 
     return router

@@ -80,7 +80,7 @@ def accept(client, student, headers, policy_id):
 
 
 def start(client, headers):
-    return client.post("/sessions", headers=headers, json={"activity_id": ACTIVITY})
+    return client.post("/sessions", headers=headers, json={"activity_id": ACTIVITY, "session_type": "propia", "authorization_confirmed": True})
 
 
 def analyze(client, token, session_id):

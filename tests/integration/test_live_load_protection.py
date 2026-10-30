@@ -105,7 +105,7 @@ def _wait_cancelled(sessions, session_id):
 
 def _open(client, auth, user, socket):
     token = auth.create_access_token(user)
-    session_id = client.post("/sessions", headers={"Authorization": f"Bearer {token}"}, json={}).json()["id"]
+    session_id = client.post("/sessions", headers={"Authorization": f"Bearer {token}"}, json={"session_type": "propia", "authorization_confirmed": True}).json()["id"]
     socket.send_json({"type": "authenticate", "token": token, "session_id": session_id})
     return session_id, socket.receive_json()
 

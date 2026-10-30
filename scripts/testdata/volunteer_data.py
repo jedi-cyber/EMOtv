@@ -10,10 +10,9 @@ Tablas con datos vinculados a un usuario o estudiante:
 
 - users, students (código PRUEBA-NN), consents;
 - sessions (sessions.student_id es SET NULL: se borran aquí para que no queden
-  sesiones anónimas huérfanas), también las que la cuenta condujo y las de sus
-  participantes;
-- participants registrados por la cuenta, sus participant_authorizations y
-  commitment_acceptances;
+  sesiones anónimas huérfanas), también las que la cuenta condujo;
+- session_deletion_records (actas) que la cuenta pidió o ejecutó;
+- commitment_acceptances;
 - protocols armados por la cuenta y sus protocol_steps;
 - questionnaires de la cuenta y questionnaire_responses de sus sesiones;
 - de sus sesiones guiadas: guided_runs, expression_captures, session_markers y
@@ -53,8 +52,6 @@ from emotv.infrastructure.persistence.models import (
     GuidedRunRecord,
     LoginAttemptRecord,
     MobileSessionRecord,
-    ParticipantAuthorizationRecord,
-    ParticipantRecord,
     ProtocolRecord,
     ProtocolStepRecord,
     PsychologistAssignmentRecord,
@@ -62,6 +59,7 @@ from emotv.infrastructure.persistence.models import (
     QuestionnaireResponseRecord,
     ReportCommentRecord,
     ReportEventRecord,
+    SessionDeletionRecord,
     SessionMarkerRecord,
     SessionReportRecord,
     SessionRecord,
@@ -76,7 +74,7 @@ EMAIL_DOMAIN = "emotv.local"
 MAX_ACCOUNTS_PER_RUN = 50
 DELETIONS_DIR = Path(__file__).resolve().parents[2] / "reports" / "deletions"
 
-REASON_REQUEST = "solicitud del participante"
+REASON_REQUEST = "solicitud del voluntario"
 REASON_EXPIRED = "expirado"
 REASON_CLOSING = "cierre de pruebas"
 
@@ -84,7 +82,7 @@ REASON_CLOSING = "cierre de pruebas"
 TABLES = ("chat_messages", "chat_conversations", "report_comments", "report_events", "session_reports",
           "questionnaire_responses", "expression_captures",
           "session_markers", "verbal_responses", "guided_runs", "sessions",
-          "participant_authorizations", "participants", "protocol_steps", "protocols", "questionnaires",
+          "session_deletion_records", "protocol_steps", "protocols", "questionnaires",
           "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "mobile_sessions", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
 
@@ -324,8 +322,7 @@ _MODELS = {
     "verbal_responses": VerbalResponseRecord,
     "guided_runs": GuidedRunRecord,
     "sessions": SessionRecord,
-    "participant_authorizations": ParticipantAuthorizationRecord,
-    "participants": ParticipantRecord,
+    "session_deletion_records": SessionDeletionRecord,
     "protocol_steps": ProtocolStepRecord,
     "protocols": ProtocolRecord,
     "questionnaires": QuestionnaireRecord,
@@ -342,11 +339,9 @@ _MODELS = {
 def _conditions(account: VolunteerAccount) -> dict[str, object]:
     student = account.student_id
     conversations = select(ChatConversationRecord.id).where(ChatConversationRecord.user_id == account.user_id)
-    participants = select(ParticipantRecord.id).where(ParticipantRecord.registered_by_user_id == account.user_id)
     protocols = select(ProtocolRecord.id).where(ProtocolRecord.owner_user_id == account.user_id)
     sessions = or_(SessionRecord.student_id == student if student else false(),
-                   SessionRecord.owner_user_id == account.user_id,
-                   SessionRecord.participant_id.in_(participants))
+                   SessionRecord.owner_user_id == account.user_id)
     reports = select(SessionReportRecord.id).where(SessionReportRecord.session_id.in_(select(SessionRecord.id).where(sessions)))
     return {
         "chat_messages": ChatMessageRecord.conversation_id.in_(conversations),
@@ -360,8 +355,8 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
         "verbal_responses": VerbalResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "guided_runs": GuidedRunRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "sessions": sessions,
-        "participant_authorizations": ParticipantAuthorizationRecord.participant_id.in_(participants),
-        "participants": ParticipantRecord.registered_by_user_id == account.user_id,
+        "session_deletion_records": or_(SessionDeletionRecord.executed_by_user_id == account.user_id,
+                                        SessionDeletionRecord.requested_by_user_id == account.user_id),
         "protocol_steps": ProtocolStepRecord.protocol_id.in_(protocols),
         "protocols": ProtocolRecord.owner_user_id == account.user_id,
         "questionnaires": QuestionnaireRecord.owner_user_id == account.user_id,

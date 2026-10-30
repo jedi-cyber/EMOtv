@@ -49,7 +49,7 @@ class Env:
 
     def open_session(self, user, model_id=None):
         """Crea una sesión propia, abre el analizador y devuelve el primer mensaje."""
-        response = self.client.post("/sessions", headers=self.headers(user), json={})
+        response = self.client.post("/sessions", headers=self.headers(user), json={"session_type": "propia", "authorization_confirmed": True})
         assert response.status_code == 201
         session_id = response.json()["id"]
         message = {"type": "authenticate", "token": self.auth.create_access_token(user), "session_id": session_id}
@@ -214,16 +214,20 @@ def test_models_page_reports_checks_and_who_changed_the_default(env):
 
 
 def test_sessions_store_their_type(env):
-    response = env.client.post("/sessions", headers=env.headers(env.student_user), json={})
+    response = env.client.post("/sessions", headers=env.headers(env.student_user), json={"session_type": "propia", "authorization_confirmed": True})
     assert response.json()["session_type"] == "propia"
     assert env.sessions.get_session(response.json()["id"]).session_type is SessionType.OWN
-    for session_type in ("participante_adulto", "participante_infantil"):
-        # Sin un participante registrado con su autorización firmada no se inician.
+    for session_type in ("propia", "adulto"):
+        # Sin la confirmación de la autorización no se inician.
         rejected = env.client.post("/sessions", headers=env.headers(env.student_user),
                                    json={"session_type": session_type})
         assert rejected.status_code == 422
-    assert env.client.post("/sessions", headers=env.headers(env.student_user),
-                           json={"session_type": "otro"}).status_code == 422
+    adult = env.client.post("/sessions", headers=env.headers(env.student_user),
+                            json={"session_type": "adulto", "authorization_confirmed": True})
+    assert env.sessions.get_session(adult.json()["id"]).session_type is SessionType.ADULT
+    for legacy in ("participante_adulto", "otro"):
+        assert env.client.post("/sessions", headers=env.headers(env.student_user),
+                               json={"session_type": legacy, "authorization_confirmed": True}).status_code == 422
 
 
 def test_the_repository_keeps_every_session_type(env):

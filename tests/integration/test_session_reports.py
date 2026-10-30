@@ -10,16 +10,14 @@ from emotv.application.ports.privacy_repositories import AuditFilter
 from emotv.domain.report import ESTIMATES_NOTICE
 from emotv.infrastructure.persistence.models import ReportCommentRecord, SessionReportRecord
 from emotv.shared.security.field_encryption import FieldCipher
-from tests.integration.test_participant_practices import authorize
-from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers, register  # noqa: F401
+from tests.integration.test_privacy_accounts import KEY, accept_commitment, env, headers  # noqa: F401
 from tests.integration.test_session_insights import run_session, setup
 
-TEXT = "El participante observó los estímulos con atención y pidió una pausa breve."
+TEXT = "La persona observó las imágenes con atención y pidió una pausa breve."
 
 
 def finished_session(env):  # noqa: F811
-    item, adult = setup(env)
-    return run_session(env, adult, item), adult
+    return run_session(env, setup(env))
 
 
 def call(env, method, path, user, body=None):  # noqa: F811
@@ -28,7 +26,7 @@ def call(env, method, path, user, body=None):  # noqa: F811
 
 
 def test_states_flow_through_the_docente_review(env):  # noqa: F811
-    session_id, _ = finished_session(env)
+    session_id = finished_session(env)
     report = call(env, "POST", f"/sessions/{session_id}/report", env.user_1)
     assert report.status_code == 201, report.text
     report = report.json()
@@ -52,7 +50,7 @@ def test_states_flow_through_the_docente_review(env):  # noqa: F811
 
 
 def test_only_the_assigned_docente_reviews(env):  # noqa: F811
-    session_id, _ = finished_session(env)
+    session_id = finished_session(env)
     report = call(env, "POST", f"/sessions/{session_id}/report", env.user_1).json()
     call(env, "PUT", f"/reports/{report['id']}", env.user_1, {"narrative": TEXT})
     call(env, "POST", f"/reports/{report['id']}/submit", env.user_1)
@@ -69,12 +67,10 @@ def test_only_the_assigned_docente_reviews(env):  # noqa: F811
 
 
 def test_a_docente_report_needs_no_review(env):  # noqa: F811
-    item, _ = setup(env)
+    item = setup(env)
     accept_commitment(env, env.docente_a)
-    participant = register(env, env.docente_a)
-    authorize(env, env.docente_a, participant)
-    session = env.sessions.start_session(session_type="participante_adulto", owner_user_id=env.docente_a.id,
-                                         participant_id=participant["id"], protocol_id=item["id"])
+    session = env.sessions.start_session(session_type="adulto", owner_user_id=env.docente_a.id,
+                                         protocol_id=item["id"], authorization_confirmed=True)
     env.sessions.finish_guided(session.id)
     report = call(env, "POST", f"/sessions/{session.id}/report", env.docente_a).json()
     assert report["requires_review"] is False
@@ -84,7 +80,7 @@ def test_a_docente_report_needs_no_review(env):  # noqa: F811
 
 
 def test_an_approved_report_is_not_edited_but_versioned(env):  # noqa: F811
-    session_id, _ = finished_session(env)
+    session_id = finished_session(env)
     report = call(env, "POST", f"/sessions/{session_id}/report", env.user_1).json()
     call(env, "PUT", f"/reports/{report['id']}", env.user_1, {"narrative": TEXT})
     call(env, "POST", f"/reports/{report['id']}/submit", env.user_1)
@@ -105,7 +101,7 @@ def test_an_approved_report_is_not_edited_but_versioned(env):  # noqa: F811
 
 
 def test_texts_are_stored_encrypted(env):  # noqa: F811
-    session_id, _ = finished_session(env)
+    session_id = finished_session(env)
     report = call(env, "POST", f"/sessions/{session_id}/report", env.user_1).json()
     call(env, "PUT", f"/reports/{report['id']}", env.user_1, {"narrative": TEXT})
     call(env, "POST", f"/reports/{report['id']}/submit", env.user_1)
@@ -118,7 +114,7 @@ def test_texts_are_stored_encrypted(env):  # noqa: F811
 
 
 def test_printing_the_approved_report_is_audited(env):  # noqa: F811
-    session_id, participant = finished_session(env)
+    session_id = finished_session(env)
     report = call(env, "POST", f"/sessions/{session_id}/report", env.user_1).json()
     assert report["estimates_notice"] == ESTIMATES_NOTICE and report["abstract_notice"]
     call(env, "PUT", f"/reports/{report['id']}", env.user_1, {"narrative": TEXT})
@@ -128,7 +124,10 @@ def test_printing_the_approved_report_is_audited(env):  # noqa: F811
     printed = call(env, "POST", f"/reports/{report['id']}/print", env.docente_a)
     assert printed.status_code == 200
     data = printed.json()
-    assert data["participant_code"] == participant["code"] and data["estimates_notice"] == ESTIMATES_NOTICE
+    # El código de la sesión aparece en el reporte para cruzarlo con el formato firmado.
+    code = env.sessions.get_session(session_id).code
+    assert data["session_code"] == code and data["session"]["code"] == code
+    assert data["estimates_notice"] == ESTIMATES_NOTICE and "participant_code" not in data
     assert data["session"]["emotion_model_id"] == "hsemotion_enet_b0_8_best_afew"
     assert "comments" not in data and "name" not in str(data.keys())
     assert call(env, "POST", f"/reports/{report['id']}/print", env.user_2).status_code == 403
@@ -140,12 +139,17 @@ def test_printing_the_approved_report_is_audited(env):  # noqa: F811
 
 
 def test_a_report_is_written_only_after_the_session_by_its_conductor(env):  # noqa: F811
-    item, adult = setup(env)
+    item = setup(env)
     accept_commitment(env, env.user_1)
     running = env.client.post("/sessions", headers=headers(env, env.user_1), json={
-        "session_type": "participante_adulto", "participant_id": adult["id"], "protocol_id": item["id"]}).json()
+        "protocol_id": item["id"], "authorization_confirmed": True}).json()
     assert call(env, "POST", f"/sessions/{running['id']}/report", env.user_1).status_code == 409
-    own = env.client.post("/sessions", headers=headers(env, env.user_1), json={"session_type": "propia"}).json()
-    assert call(env, "POST", f"/sessions/{own['id']}/report", env.user_1).status_code == 404  # sin participante
-    session_id = run_session(env, adult, item)
+    # Una sesión sin protocolo también tiene reporte cuando termina.
+    own = env.client.post("/sessions", headers=headers(env, env.user_1),
+                          json={"session_type": "propia", "authorization_confirmed": True}).json()
+    assert call(env, "POST", f"/sessions/{own['id']}/report", env.user_1).status_code == 409
+    env.client.post(f"/sessions/{own['id']}/cancel", headers=headers(env, env.user_1))
+    own_report = call(env, "POST", f"/sessions/{own['id']}/report", env.user_1)
+    assert own_report.status_code == 201 and own_report.json()["session_code"] == own["code"]
+    session_id = run_session(env, item)
     assert call(env, "POST", f"/sessions/{session_id}/report", env.docente_a).status_code == 403

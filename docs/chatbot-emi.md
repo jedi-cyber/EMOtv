@@ -6,10 +6,10 @@ ninguna persona concreta, no determina el estado psicológico de nadie, no
 reemplaza al docente y no sustituye la atención psicológica ni los servicios de
 emergencia.
 
-Los participantes no tienen cuenta, así que nunca acceden a Emi. FastAPI
-rechaza con 403 a las cuentas de administración y la interfaz no muestra a Emi
-ni en la vista del participante ni en la sesión guiada, donde hay un
-participante delante.
+Las personas evaluadas no se registran ni tienen cuenta, así que nunca acceden
+a Emi. FastAPI rechaza con 403 a las cuentas de administración y la interfaz no
+muestra a Emi ni en la pantalla de la persona ni en la sesión con protocolo,
+donde hay una persona evaluada delante.
 
 ## Arquitectura
 
@@ -48,8 +48,8 @@ Petición: `POST N8N_WEBHOOK_URL` con la cabecera `X-EMOtv-Key: N8N_WEBHOOK_KEY`
 | Cualquier otro fallo | — | 502 |
 
 `knowledge` lleva el conocimiento verificado de EMOtv que genera
-`emotv.application.emi_knowledge`: textos fijos (flujo de uso, participantes y
-autorizaciones, protocolos y sesión guiada, línea de tiempo y métricas, estados
+`emotv.application.emi_knowledge`: textos fijos (flujo de uso, sesiones y
+autorizaciones, protocolos y sesión con protocolo, línea de tiempo y métricas, estados
 del reporte, limitaciones del reconocimiento facial, qué se guarda y roles) y,
 desde la base de datos, las cinco posturas, las actividades y sus pasos y los
 textos del catálogo de expresiones. Los textos fijos van primero: si hay que
@@ -58,9 +58,9 @@ edita actividades o el catálogo (y, como respaldo, cada 10 minutos) y su tamañ
 se registra en el log. Debe quedar por debajo de 12 000 caracteres, porque el
 workflow corta lo que exceda; si el contenido crece, los textos se acortan y
 una prueba falla si se supera el límite. No incluye datos de ningún usuario
-ni participante: ni sesiones, ni reportes, ni resultados.
+ni de ninguna persona evaluada: ni sesiones, ni reportes, ni resultados.
 
-Al webhook **nunca** se envían datos de participantes, resultados
+Al webhook **nunca** se envían datos de personas evaluadas, resultados
 emocionales, sesiones, reportes, nombres, correos ni el id del usuario. El
 contrato no cambia: el workflow EMI se modifica en n8n, aparte de este
 repositorio. La configuración de n8n está en

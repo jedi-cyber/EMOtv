@@ -54,7 +54,7 @@ antepón `docker compose --env-file .env.docker exec api` a cada
 
 Si se elimina la cuenta con el código más alto, la siguiente cuenta que se
 cree volverá a usar ese código. La fecha del papel y la fecha de creación que
-figura en el acta permiten distinguir a los dos participantes.
+figura en el acta permiten distinguir a los dos voluntarios.
 
 ## 3. Entrega del código
 
@@ -107,7 +107,7 @@ python scripts/testdata/delete_test_data.py --expired --save
 python scripts/testdata/delete_test_data.py --all-test-accounts --save
 ```
 
-El motivo del acta se asigna según el modo: solicitud del participante,
+El motivo del acta se asigna según el modo: solicitud del voluntario,
 expirado o cierre de pruebas. Puedes cambiarlo con
 `--reason solicitud|expirado|cierre`.
 

@@ -1,6 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { acceptConsent, assignStudent, createAccount, loginToken, readyAccount, signIn, studentIdOf, withToken } from "./support/api";
+import { acceptConsent, adminAccount, assignStudent, createAccount, loginToken, readyAccount, signIn, studentIdOf, withToken } from "./support/api";
 import { env } from "./support/env";
 import { startFakeN8n } from "./support/fakeN8n";
 
@@ -10,6 +10,29 @@ import { startFakeN8n } from "./support/fakeN8n";
  * (e2e-…@emotv.local) y la cámara es el video simulado sin persona.
  */
 const outDir = fileURLToPath(new URL("../../docs/thesis-evidence/screenshots/", import.meta.url));
+
+/** Acepta por API el compromiso de confidencialidad vigente: sin él no se inician sesiones. */
+async function acceptCommitment(api: APIRequestContext) {
+  const commitment = await (await api.get("/commitment")).json() as { version: string | null };
+  if (commitment.version) await api.post("/commitment/accept", { data: { version: commitment.version } });
+}
+
+/** Sesiones propias canceladas, sin cámara: muestran códigos y estados reales sin datos personales. */
+async function cancelledSessions(api: APIRequestContext, count: number): Promise<string[]> {
+  const ids: string[] = [];
+  for (let index = 0; index < count; index++) {
+    const response = await api.post("/sessions", { data: { session_type: "propia", authorization_confirmed: true } });
+    expect(response.status(), await response.text()).toBe(201);
+    const { id } = await response.json() as { id: string };
+    await api.post(`/sessions/${id}/cancel`);
+    ids.push(id);
+  }
+  return ids;
+}
+
+async function heading(page: Page) {
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+}
 
 test.describe("capturas para la tesis", () => {
   test.skip(process.env.E2E_SCREENSHOTS !== "1", "Activa E2E_SCREENSHOTS=1 para regenerar las capturas.");
@@ -31,6 +54,12 @@ test.describe("capturas para la tesis", () => {
 
     const student = await readyAccount("student");
     await signIn(page, student.email, student.password);
+    const commitment = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Compromiso de confidencialidad" }) });
+    await expect(commitment).toBeVisible();
+    await shot(page, "29-compromiso-confidencialidad", false);
+    await commitment.getByRole("checkbox", { name: /Leí el compromiso/ }).check();
+    await commitment.getByRole("button", { name: "Aceptar el compromiso" }).click();
+    await expect(commitment).toBeHidden();
     await expect(page.getByRole("heading", { level: 1, name: "Hola" })).toBeVisible();
     await shot(page, "03-inicio-sin-consentimiento");
 
@@ -80,28 +109,83 @@ test.describe("capturas para la tesis", () => {
     await shot(page, "13-analizador-360px");
   });
 
+  test("material, sesiones y estadísticas del usuario", async ({ page }) => {
+    const student = await readyAccount("student");
+    await acceptConsent(student);
+    const [first] = await withToken(await loginToken(student.email, student.password), async (api) => {
+      await acceptCommitment(api);
+      expect((await api.post("/questionnaires/starter")).status()).toBe(201);
+      return cancelledSessions(api, 3);
+    });
+
+    await signIn(page, student.email, student.password);
+    await page.goto("/sessions");
+    await heading(page);
+    await shot(page, "19-mis-sesiones-con-codigo");
+    await page.goto(`/sessions/${first}`);
+    await heading(page);
+    await shot(page, "20-sesion-detalle");
+
+    await page.goto("/statistics");
+    await expect(page.getByRole("list", { name: "Sesiones completadas e interrumpidas" })).toBeVisible();
+    await shot(page, "21-estadisticas");
+
+    await page.goto("/questionnaires");
+    await heading(page);
+    await shot(page, "22-cuestionarios");
+    await page.goto("/protocols");
+    await heading(page);
+    await shot(page, "23-protocolos");
+    await page.goto("/images");
+    await heading(page);
+    await shot(page, "24-imagenes-propias");
+    await page.goto("/analysis");
+    await heading(page);
+    await shot(page, "25-analizador-con-quien");
+  });
+
   test("vistas de Psicología y Administración", async ({ page }) => {
     const student = await readyAccount("student");
     await acceptConsent(student);
     const studentId = await studentIdOf(student);
-    // Una sesión cancelada sin expresión: el historial muestra un estado real sin datos personales.
+    // Sesiones canceladas sin expresión: el historial muestra estados reales sin datos personales.
     await withToken(await loginToken(student.email, student.password), async (api) => {
-      const created = await (await api.post("/sessions", { data: {} })).json() as { id: string };
-      await api.post(`/sessions/${created.id}/cancel`);
+      await acceptCommitment(api);
+      await cancelledSessions(api, 2);
     });
     const psychologist = await readyAccount("psychologist");
     await assignStudent(psychologist, studentId);
 
     await signIn(page, psychologist.email, psychologist.password);
+    await withToken(await loginToken(psychologist.email, psychologist.password), async (api) => {
+      await acceptCommitment(api);
+      expect((await api.post("/exams")).status()).toBe(201);
+    });
     await page.goto("/students");
-    await expect(page.getByText(student.studentCode!, { exact: true })).toBeVisible();
+    await heading(page);
     await shot(page, "14-psicologia-estudiantes");
-    await page.getByRole("link", { name: `Ver sesiones del estudiante ${student.studentCode}` }).click();
+    await page.goto("/sessions");
+    await heading(page);
     await shot(page, "15-psicologia-sesiones-del-estudiante");
+    await page.goto("/images/review");
+    await heading(page);
+    await shot(page, "26-docente-imagenes-por-revisar");
+    await page.goto("/exams");
+    await heading(page);
+    await shot(page, "27-docente-examenes");
+    await page.goto("/statistics");
+    await heading(page);
+    await page.getByRole("radio", { name: "Mi grupo" }).check({ force: true });
+    await expect(page.getByRole("list", { name: "Sesiones completadas e interrumpidas" })).toBeVisible();
+    await shot(page, "28-docente-estadisticas-grupo");
+
+    const admin = await adminAccount();
+    await signIn(page, admin.email, admin.password);
+    await page.goto("/users");
+    await heading(page);
+    await shot(page, "16-admin-usuarios");
 
     await signIn(page, env.adminEmail, env.adminPassword);
-    await page.goto("/users");
-    await shot(page, "16-admin-usuarios");
     await page.goto("/admin/activities");
     await shot(page, "17-admin-actividades");
     await page.goto("/admin/expressions");

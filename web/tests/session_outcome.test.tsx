@@ -58,7 +58,7 @@ describe("resultado de la actividad", () => {
     expect(screen.getByText("Actividad").nextElementSibling).toHaveTextContent("Brazos arriba breve");
     expect(screen.getByText("Modelo facial").nextElementSibling).toHaveTextContent("FER+ · versión 1.0");
     // Las sesiones anteriores al tipo de sesión se muestran como propias.
-    expect(screen.getByText("Tipo de sesión").nextElementSibling).toHaveTextContent("Propia");
+    expect(screen.getByText("Con quién").nextElementSibling).toHaveTextContent("Conmigo");
     for (const hidden of ["s-done", "student-1", "arms_up_5s", "ferplus_onnx"]) expect(screen.queryByText(new RegExp(hidden))).not.toBeInTheDocument();
   });
 

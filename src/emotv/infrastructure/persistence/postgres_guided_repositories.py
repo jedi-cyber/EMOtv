@@ -1,5 +1,5 @@
 """Persistencia de la sesión guiada: estado, capturas, marcadores (nota
-cifrada) y lo que el participante dice ver (cifrado)."""
+cifrada) y lo que la persona dice ver (cifrado)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -34,7 +34,7 @@ class PostgresGuidedSessionRepository:
     def _run(row: GuidedRunRecord) -> GuidedRun:
         return GuidedRun(
             session_id=row.session_id, owner_user_id=row.owner_user_id, created_at=_aware(row.created_at),
-            phase=row.phase, participant_id=row.participant_id, confirmed_at=_aware(row.confirmed_at),
+            phase=row.phase, confirmed_at=_aware(row.confirmed_at),
             step_index=row.step_index, step_started_at=_aware(row.step_started_at),
             next_capture_due=row.next_capture_due, steps_log=tuple(row.steps_log or ()),
             calibrated_at=_aware(row.calibrated_at), view_token_hash=row.view_token_hash,
@@ -46,7 +46,6 @@ class PostgresGuidedSessionRepository:
             if row is None:
                 row = GuidedRunRecord(session_id=run.session_id)
                 db.add(row)
-            row.participant_id = run.participant_id
             row.owner_user_id = run.owner_user_id
             row.phase = run.phase.value
             row.created_at = run.created_at
@@ -76,7 +75,7 @@ class PostgresGuidedSessionRepository:
     def add_capture(self, capture: ExpressionCapture) -> ExpressionCapture:
         with self._factory.begin() as db:
             db.add(ExpressionCaptureRecord(
-                id=capture.id, session_id=capture.session_id, participant_id=capture.participant_id,
+                id=capture.id, session_id=capture.session_id,
                 captured_at=capture.captured_at, emotion_model_id=capture.emotion_model_id,
                 emotion_model_version=capture.emotion_model_version, emotion=capture.emotion,
                 confidence=capture.confidence, distribution=capture.distribution,
@@ -94,15 +93,15 @@ class PostgresGuidedSessionRepository:
                 emotion_model_id=row.emotion_model_id, emotion_model_version=row.emotion_model_version,
                 quality=row.quality, quality_issues=tuple(row.quality_issues or ()), step_index=row.step_index,
                 stimulus_id=row.stimulus_id, seconds_since_stimulus=row.seconds_since_stimulus, emotion=row.emotion,
-                confidence=row.confidence, distribution=row.distribution, calibrated_emotion=row.calibrated_emotion,
-                participant_id=row.participant_id) for row in rows)
+                confidence=row.confidence, distribution=row.distribution, calibrated_emotion=row.calibrated_emotion)
+                for row in rows)
 
     # --- Marcadores y respuestas verbales (cifradas) ---------------------------------
 
     def add_marker(self, marker: SessionMarker) -> SessionMarker:
         with self._factory.begin() as db:
             db.add(SessionMarkerRecord(
-                id=marker.id, session_id=marker.session_id, participant_id=marker.participant_id,
+                id=marker.id, session_id=marker.session_id,
                 kind=marker.kind.value, note_encrypted=self._cipher.encrypt(marker.note),
                 occurred_at=marker.occurred_at, step_index=marker.step_index,
                 recorded_by_user_id=marker.recorded_by_user_id))
@@ -115,7 +114,7 @@ class PostgresGuidedSessionRepository:
             return tuple(SessionMarker(
                 id=row.id, session_id=row.session_id, kind=row.kind, occurred_at=_aware(row.occurred_at),
                 recorded_by_user_id=row.recorded_by_user_id, step_index=row.step_index,
-                note=self._cipher.decrypt(row.note_encrypted), participant_id=row.participant_id) for row in rows)
+                note=self._cipher.decrypt(row.note_encrypted)) for row in rows)
 
     def save_verbal(self, response: VerbalResponse) -> VerbalResponse:
         """Una por paso: registrar de nuevo reemplaza el texto."""
@@ -127,7 +126,6 @@ class PostgresGuidedSessionRepository:
                 row = VerbalResponseRecord(id=response.id, session_id=response.session_id,
                                            step_index=response.step_index)
                 db.add(row)
-            row.participant_id = response.participant_id
             row.stimulus_id = response.stimulus_id
             row.text_encrypted = self._cipher.encrypt(response.text)
             row.recorded_at = response.recorded_at
@@ -141,4 +139,4 @@ class PostgresGuidedSessionRepository:
             return tuple(VerbalResponse(
                 id=row.id, session_id=row.session_id, step_index=row.step_index, stimulus_id=row.stimulus_id,
                 text=self._cipher.decrypt(row.text_encrypted), recorded_at=_aware(row.recorded_at),
-                recorded_by_user_id=row.recorded_by_user_id, participant_id=row.participant_id) for row in rows)
+                recorded_by_user_id=row.recorded_by_user_id) for row in rows)
