@@ -1,7 +1,7 @@
 # Práctica de producción de expresiones (diseño)
 
-Estado: propuesta para revisión (prompt S1). Las decisiones marcadas con
-**[Confirmar]** esperan la aprobación del desarrollador antes de S2.
+Estado: aprobado por el desarrollador el 2026-10-30. Sin mediana de segundos
+en las estadísticas.
 
 ## 1. Propósito
 
@@ -61,8 +61,8 @@ Reglas del dominio (en `ProtocolStep.__post_init__`):
   `usable` (creación propia o con licencia; las imágenes propias ya pasan por la
   detección de personas y la revisión del docente) y, en un protocolo para
   niños, `suitable_for_children`. Su `expected_expression` no se usa.
-- `PRACTICE_TARGETS` **[Confirmar]**: `happiness`, `surprise`, `sadness`,
-  `anger`, `fear`, `disgust` y `neutral`. Se propone excluir `contempt`: es
+- `PRACTICE_TARGETS`: `happiness`, `surprise`, `sadness`,
+  `anger`, `fear`, `disgust` y `neutral`. Se excluye `contempt`: es
   difícil de pedir a un niño y los dos modelos la estiman con poca
   frecuencia, así que casi nunca se lograría.
 - `Protocol`: el mínimo de pasos sigue siendo 1 y el máximo 30, sumando ambos
@@ -80,7 +80,7 @@ Migración nueva (`20261030_28_practice_steps.py`, sin editar las existentes):
 
 ### Resultado de un ejercicio
 
-**[Confirmar]** Se propone una tabla nueva `practice_results` (una fila por paso de
+Se usa una tabla nueva `practice_results` (una fila por paso de
 práctica y sesión) en lugar de escribir el resultado dentro de
 `guided_runs.steps_log` (JSON). Motivos: las métricas, el reporte y las
 estadísticas lo consultan por columna; la eliminación con acta cuenta filas
@@ -130,14 +130,14 @@ Por cada cuadro del ejercicio (ver §6 para la carga):
    expresión pedida no es `neutral`:
    `x = clamp((p - base[target]) / (1 - base[target]), 0, 1)`.
    Si la base se perdió (reinicio del servidor) o se pide `neutral`, `x = p`, y
-   el resultado guarda `relative_to_calibration = False`. **[Confirmar]** el caso
-   `neutral`: respecto de una base neutral el aumento sería casi cero, por eso se
+   el resultado guarda `relative_to_calibration = False`. En el caso
+   `neutral`, respecto de una base neutral el aumento sería casi cero, por eso se
    usa la probabilidad directa.
 5. Promedio móvil exponencial ajustado al tiempo real entre cuadros, para que un
    cuadro perdido no cambie el ritmo de la señal:
    `alpha = 1 - exp(-dt / TAU)`, `level += alpha * (x - level)`, con
    `TAU = 0.8 s` y `dt` acotado a 2 s. `peak = max(peak, level)`.
-6. Umbral con histéresis **[Confirmar valores]**: `PRACTICE_THRESHOLD = 0.6`. Si
+6. Umbral con histéresis: `PRACTICE_THRESHOLD = 0.6`. Si
    `level ≥ 0.6` y `above_since` es nulo, `above_since = ahora`; si
    `level < 0.55`, `above_since = None`. Las constantes van en
    `domain/guided_session.py`, junto a las del examen; no se piden en el editor.
@@ -192,8 +192,8 @@ infantil, el aviso de limitación de §9. Nueva ruta
 `POST /guided-sessions/{id}/practice-feedback` `{visible: bool}` (solo quien
 conduce; se aplica en FastAPI). El estado se guarda en una columna nueva
 `guided_runs.practice_feedback` (por defecto `true`) para que sobreviva a un
-reinicio. **[Confirmar]** que el interruptor vale para toda la sesión (no por
-ejercicio) y que, si cambia a mitad de un ejercicio, ese ejercicio queda con
+reinicio. El interruptor vale para toda la sesión (no por
+ejercicio) y, si cambia a mitad de un ejercicio, ese ejercicio queda con
 `feedback_visible = False`.
 
 **Editor de protocolos (`ProtocolsPage`).** "Agregar imagen" y "Agregar
@@ -225,9 +225,8 @@ limitación con niños.
 **Estadísticas (`session_statistics_service.py`, `StatisticsPage`).** Bloque
 nuevo `practice`: por expresión pedida, ejercicios, logrados y sesiones en las
 que se aplicó, más el total. Cuenta ejercicios y sesiones, nunca personas;
-no calcula puntajes ni promedios por persona. **[Confirmar]** si se agrega la
-mediana de segundos hasta lograrlo por expresión (es descriptiva, pero no hace
-falta).
+no calcula puntajes ni promedios por persona. No incluye la mediana de
+segundos hasta lograrlo.
 
 **Contrato móvil (`docs/mobile-api.md`).** Revisión 5, **compatible**: solo campos
 nuevos de lectura (`Metrics.practice[]`, `Metrics.totals.practice_*`,
@@ -259,7 +258,7 @@ Propuesta:
 2. Si no hay cupo, el cuadro **se descarta** (sin esperar los 5 s de
    `busy_wait_seconds`) y la respuesta sigue siendo `{"received": true}`: la
    persona no recibe ningún resultado ni error. Un intento sin bloqueo en
-   `AnalysisCapacity` (`try_run`). **[Confirmar]** que el descarte vale también
+   `AnalysisCapacity` (`try_run`). El descarte vale también
    para el examen: hoy los medios segundos sin cuadro ya se guardan marcados
    (`EXAM_GAP_SECONDS`), así que el registro muestra el hueco en vez de
    retrasarse.
@@ -332,7 +331,7 @@ entrenan ni se agregan modelos (fuera de alcance). Mitigaciones:
 - los textos dicen "se logró / no se logró en el sistema", nunca valoran.
 
 Aviso fijo (`PRACTICE_CHILD_NOTICE`) en la vista del conductor, el detalle, el
-reporte y las estadísticas cuando el público es infantil **[Confirmar texto]**:
+reporte y las estadísticas cuando el público es infantil:
 
 > "Los modelos de EMOtv se entrenaron sobre todo con rostros de personas
 > adultas. Con niños y niñas la estimación puede ser menos precisa: que el

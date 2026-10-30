@@ -45,6 +45,7 @@ from emotv.domain.guided_session import (
     GuidedPhase,
     GuidedRun,
     MarkerKind,
+    PracticeResult,
     QualityIssue,
     SessionMarker,
     StopReason,
@@ -75,6 +76,9 @@ class GuidedRepository(Interface):
     def list_markers(self, session_id: str) -> tuple[SessionMarker, ...]: ...
     def save_verbal(self, response: VerbalResponse) -> VerbalResponse: ...
     def list_verbal(self, session_id: str) -> tuple[VerbalResponse, ...]: ...
+    # Uno por paso de práctica: guardar de nuevo el mismo paso lo reemplaza.
+    def save_practice_result(self, result: PracticeResult) -> PracticeResult: ...
+    def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]: ...
 
 
 class GuidedNotFound(LookupError):

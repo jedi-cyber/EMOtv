@@ -559,7 +559,8 @@ def test_deleting_a_session_leaves_zero_records_and_produces_the_certificate(env
     certificate = response.json()
     assert certificate["session_code"] == session["code"] and certificate["verified"] is True
     assert certificate["counts"] == {"questionnaire_responses": 0, "expression_captures": 0, "session_markers": 1,
-                                     "verbal_responses": 0, "guided_runs": 0, "report_comments": 0,
+                                     "verbal_responses": 0, "practice_results": 0, "guided_runs": 0,
+                                     "report_comments": 0,
                                      "report_events": 0, "session_reports": 0, "sessions": 1}
     assert not set(certificate) & {"owner_user_id", "student_id", "executed_by_user_id", "requested_by_user_id"}
     with env.factory() as db:

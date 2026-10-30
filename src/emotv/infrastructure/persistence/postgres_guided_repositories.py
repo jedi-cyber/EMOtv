@@ -1,5 +1,5 @@
 """Persistencia de la sesión guiada: estado, capturas, marcadores (nota
-cifrada) y lo que la persona dice ver (cifrado)."""
+cifrada), lo que la persona dice ver (cifrado) y resultados de las prácticas."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from emotv.domain.guided_session import ExpressionCapture, GuidedRun, SessionMarker, VerbalResponse
+from emotv.domain.guided_session import ExpressionCapture, GuidedRun, PracticeResult, SessionMarker, VerbalResponse
 from emotv.infrastructure.persistence.models import (
     ExpressionCaptureRecord,
     GuidedRunRecord,
+    PracticeResultRecord,
     SessionMarkerRecord,
     VerbalResponseRecord,
 )
@@ -140,3 +141,42 @@ class PostgresGuidedSessionRepository:
                 id=row.id, session_id=row.session_id, step_index=row.step_index, stimulus_id=row.stimulus_id,
                 text=self._cipher.decrypt(row.text_encrypted), recorded_at=_aware(row.recorded_at),
                 recorded_by_user_id=row.recorded_by_user_id) for row in rows)
+
+    # --- Resultados de las prácticas ---------------------------------------------------
+
+    def save_practice_result(self, result: PracticeResult) -> PracticeResult:
+        """Uno por paso: guardar de nuevo el mismo paso lo reemplaza."""
+        with self._factory.begin() as db:
+            row = db.scalars(select(PracticeResultRecord).where(
+                PracticeResultRecord.session_id == result.session_id,
+                PracticeResultRecord.step_index == result.step_index)).first()
+            if row is None:
+                row = PracticeResultRecord(id=result.id, session_id=result.session_id,
+                                           step_index=result.step_index)
+                db.add(row)
+            row.target_expression = result.target_expression
+            row.outcome = result.outcome.value
+            row.seconds_to_achieve = result.seconds_to_achieve
+            row.peak_level = result.peak_level
+            row.relative_to_calibration = result.relative_to_calibration
+            row.feedback_visible = result.feedback_visible
+            row.analyzed_frames = result.analyzed_frames
+            row.flagged_frames = result.flagged_frames
+            row.emotion_model_id = result.emotion_model_id
+            row.emotion_model_version = result.emotion_model_version
+            row.started_at = result.started_at
+            row.ended_at = result.ended_at
+        return result
+
+    def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]:
+        with self._factory() as db:
+            rows = db.scalars(select(PracticeResultRecord).where(PracticeResultRecord.session_id == session_id)
+                              .order_by(PracticeResultRecord.step_index)).all()
+            return tuple(PracticeResult(
+                id=row.id, session_id=row.session_id, step_index=row.step_index,
+                target_expression=row.target_expression, outcome=row.outcome, peak_level=row.peak_level,
+                relative_to_calibration=row.relative_to_calibration, feedback_visible=row.feedback_visible,
+                analyzed_frames=row.analyzed_frames, flagged_frames=row.flagged_frames,
+                emotion_model_id=row.emotion_model_id, emotion_model_version=row.emotion_model_version,
+                started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
+                seconds_to_achieve=row.seconds_to_achieve) for row in rows)
