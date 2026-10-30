@@ -1,10 +1,10 @@
 import { request } from "@playwright/test";
 import { env } from "./support/env";
 
-/** Comprueba antes de empezar que el stack responde y que la cuenta de administración sirve. */
+/** Comprueba antes de empezar que el stack responde y que la cuenta de superadministrador sirve. */
 export default async function globalSetup() {
   if (!env.adminEmail || !env.adminPassword) {
-    throw new Error("Define E2E_ADMIN_EMAIL y E2E_ADMIN_PASSWORD (cuenta de administración que ya cambió su contraseña provisional). Ver docs/testing/e2e.md.");
+    throw new Error("Define E2E_ADMIN_EMAIL y E2E_ADMIN_PASSWORD (cuenta de superadministrador que ya cambió su contraseña provisional). Ver docs/testing/e2e.md.");
   }
   const api = await request.newContext({ baseURL: env.baseURL });
   try {
@@ -16,8 +16,8 @@ export default async function globalSetup() {
     const { access_token: token } = await login.json() as { access_token: string };
     const me = await api.get("/auth/me", { headers: { Authorization: `Bearer ${token}` } });
     const user = await me.json() as { role: string; must_change_password?: boolean };
-    if (user.role !== "admin") throw new Error("E2E_ADMIN_EMAIL no corresponde a una cuenta de administración.");
-    if (user.must_change_password) throw new Error("La cuenta de administración aún tiene la contraseña provisional; cámbiala en /first-access.");
+    if (user.role !== "superadmin") throw new Error("E2E_ADMIN_EMAIL no corresponde a la cuenta de superadministrador.");
+    if (user.must_change_password) throw new Error("La cuenta de superadministrador aún tiene la contraseña provisional; cámbiala en /first-access.");
   } finally {
     await api.dispose();
   }

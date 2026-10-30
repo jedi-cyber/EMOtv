@@ -8,7 +8,7 @@ repositorio, sin datos personales reales.
 | [chronology.md](chronology.md) | cronología real de desarrollo extraída de `git log` (fecha, commit, cambio) |
 | [test-results.md](test-results.md) | resultados de las pruebas del 10 de octubre de 2026, con fecha y comandos |
 | [benchmark-ferplus.md](benchmark-ferplus.md) | benchmark de FER+ como medición en el entorno evaluado, no como garantía |
-| [screenshots/](screenshots/) | 18 capturas de cada vista, generadas con Playwright con cuentas ficticias |
+| [screenshots/](screenshots/) | 29 capturas de cada vista, generadas con Playwright con cuentas ficticias |
 | [diagrams/](diagrams/) | arquitectura, flujo del estudiante y modelo de datos en HTML imprimible sin conexión |
 
 Los diagramas de texto equivalentes están en
@@ -70,7 +70,7 @@ licencia.
 | --- | --- |
 | `01-login.png` | inicio de sesión |
 | `02-primer-acceso.png` | cambio de la contraseña provisional |
-| `03-inicio-sin-consentimiento.png` | inicio del estudiante sin consentimiento |
+| `03-inicio-sin-consentimiento.png` | inicio del usuario sin consentimiento |
 | `04-consentimiento.png`, `05-consentimiento-modal.png` | consentimiento y lectura de la política |
 | `06-analizador-requisitos.png`, `07-analizador-camara-simulada.png` | analizador con guía previa y requisitos |
 | `08-inicio-primeros-pasos.png` | inicio con los tres pasos del recorrido |
@@ -78,8 +78,17 @@ licencia.
 | `11-mis-sesiones-vacio.png` | historial vacío |
 | `12-emi.png` | Emi (respuesta del n8n falso) |
 | `13-analizador-360px.png` | analizador en pantalla de 360 px |
-| `14-psicologia-estudiantes.png`, `15-psicologia-sesiones-del-estudiante.png` | vistas de Psicología |
-| `16-admin-usuarios.png`, `17-admin-actividades.png`, `18-admin-expresiones.png` | vistas de administración |
+| `14-psicologia-estudiantes.png`, `15-psicologia-sesiones-del-estudiante.png` | grupo del docente y sesiones de su grupo |
+| `16-admin-usuarios.png` | cuentas y grupos (administrador de la Facultad) |
+| `17-admin-actividades.png`, `18-admin-expresiones.png` | actividades y expresiones (superadministrador) |
+| `19-mis-sesiones-con-codigo.png`, `20-sesion-detalle.png` | sesiones identificadas solo por su código y detalle de una sesión |
+| `21-estadisticas.png` | estadísticas agregadas con gráfico de barras (cuentan sesiones, no personas) |
+| `22-cuestionarios.png`, `23-protocolos.png`, `24-imagenes-propias.png` | material del usuario: cuestionarios, protocolos e imágenes propias |
+| `25-analizador-con-quien.png` | analizador con la pregunta «¿Con quién es la sesión?» |
+| `26-docente-imagenes-por-revisar.png` | imágenes de los usuarios que esperan la revisión del docente |
+| `27-docente-examenes.png` | exámenes simulados del docente |
+| `28-docente-estadisticas-grupo.png` | estadísticas del grupo del docente |
+| `29-compromiso-confidencialidad.png` | compromiso de confidencialidad antes de iniciar sesiones |
 
 ## Diagramas visuales
 

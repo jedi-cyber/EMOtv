@@ -38,8 +38,37 @@ export async function withToken<T>(token: string, run: (api: APIRequestContext) 
   try { return await run(api); } finally { await api.dispose(); }
 }
 
-export async function adminToken(): Promise<string> {
+/** La cuenta de E2E_ADMIN_EMAIL es la de superadministrador (soporte técnico). */
+export async function superadminToken(): Promise<string> {
   return loginToken(env.adminEmail, env.adminPassword);
+}
+
+const ORG_ADMIN_EMAIL = "e2e-admin-org@emotv.local";
+let orgAdmin: Promise<Account> | undefined;
+
+/**
+ * Cuenta de administrador de la Facultad: crea cuentas de Usuario y Docente y arma los grupos.
+ * El superadministrador la crea (o le renueva la contraseña) una vez por proceso de pruebas.
+ */
+export function adminAccount(): Promise<Account> {
+  orgAdmin ??= (async () => {
+    const prepared = await withToken(await superadminToken(), async (api) => {
+      const users = await (await api.get("/users")).json() as { id: string; email: string }[];
+      const existing = users.find((item) => item.email === ORG_ADMIN_EMAIL);
+      const response = existing
+        ? await api.post(`/users/${encodeURIComponent(existing.id)}/reset-password`)
+        : await api.post("/users", { data: { email: ORG_ADMIN_EMAIL, role: "admin" } });
+      expect(response.ok(), await response.text()).toBe(true);
+      return await response.json() as { id: string; temporary_password: string };
+    });
+    return activate({ id: prepared.id, email: ORG_ADMIN_EMAIL, role: "admin", password: prepared.temporary_password });
+  })();
+  return orgAdmin;
+}
+
+export async function adminToken(): Promise<string> {
+  const admin = await adminAccount();
+  return loginToken(admin.email, admin.password);
 }
 
 /** Crea una cuenta con contraseña provisional (debe cambiarla en el primer acceso). */
