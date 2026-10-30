@@ -25,11 +25,14 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import math
 import secrets
+import threading
 from typing import Any, Protocol as Interface
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
 from emotv.application.neutral_calibration import CALIBRATED, CALIBRATING, NOT_CALIBRATED, NeutralCalibration
+from emotv.application.practice_tracker import PracticeTracker
+from emotv.config import PracticeSettings
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.exam import Exam, ExamState
 from emotv.domain.guided_session import (
@@ -45,6 +48,7 @@ from emotv.domain.guided_session import (
     GuidedPhase,
     GuidedRun,
     MarkerKind,
+    PracticeOutcome,
     PracticeResult,
     QualityIssue,
     SessionMarker,
@@ -91,11 +95,14 @@ class GuidedConflict(Exception):
 
 @dataclass(slots=True)
 class _Live:
-    """Estado en memoria de una sesión: calibración y último problema de calidad."""
+    """Estado en memoria de una sesión: calibración, último problema de calidad
+    y el ejercicio de práctica en curso (de tamaño fijo)."""
 
     calibration: NeutralCalibration | None = None
     calibration_notice: str | None = None
     pending: FrameAssessment | None = None
+    practice: PracticeTracker | None = None
+    analyzing: bool = False   # un cuadro de práctica se está analizando
 
 
 def hash_token(token: str) -> str:
@@ -118,6 +125,7 @@ class GuidedSessionService:
         calibration_min_increase: float = 0.10,
         clock: Callable[[], datetime] | None = None,
         exam_of: Callable[[str], Exam | None] | None = None,
+        practice: PracticeSettings | None = None,
     ) -> None:
         self.repository = repository
         self.sessions = sessions
@@ -133,7 +141,10 @@ class GuidedSessionService:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         # Examen simulado de una estación; sin él no hay estaciones.
         self.exam_of = exam_of
+        self.practice = practice or PracticeSettings()
         self._live: dict[str, _Live] = {}
+        # Protege el nivel de la práctica: los cuadros llegan en hilos distintos.
+        self._practice_lock = threading.Lock()
         self._assessors: dict[str, Assess] = {}
         self._viewed: set[tuple[str, str]] = set()
 
@@ -174,7 +185,8 @@ class GuidedSessionService:
         return [index for index, step in enumerate(protocol.steps) if step.shown_before_analyzer == before]
 
     def _first_due(self, step: ProtocolStep, phase: GuidedPhase) -> float | None:
-        return float(step.capture_after_seconds) if phase is GuidedPhase.STIMULI else None
+        # En una práctica, next_capture_due solo marca cuándo avanzar tras lograrla.
+        return float(step.capture_after_seconds) if phase is GuidedPhase.STIMULI and not step.is_practice else None
 
     def _start_step(self, run: GuidedRun, protocol: Protocol, phase: GuidedPhase, index: int) -> GuidedRun:
         step = protocol.steps[index]
@@ -345,6 +357,12 @@ class GuidedSessionService:
         while run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = protocol.steps[run.step_index]
             elapsed = self._seconds(run.step_started_at)
+            if step.is_practice:
+                advanced = self._tick_practice(run, session, protocol, step, elapsed)
+                if advanced is None:
+                    break
+                run, changed = advanced, True
+                continue
             # Una captura vencida sin cuadros (o sin uno válido) se guarda marcada.
             while (run.next_capture_due is not None
                    and (elapsed >= run.next_capture_due + QUALITY_RETRY_SECONDS or elapsed >= step.exposure_seconds)):
@@ -356,6 +374,135 @@ class GuidedSessionService:
             run = self._next_step(run, session, protocol, skipped=False)
             changed = True
         return self.repository.save_run(run) if changed else run
+
+    # --- Práctica de expresiones ----------------------------------------------------------
+
+    def _tick_practice(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol,
+                       step: ProtocolStep, elapsed: float) -> GuidedRun | None:
+        """Avanza un ejercicio por el reloj: tras la pausa del logro, o al vencer
+        el tiempo máximo (no logrado). None si el ejercicio sigue."""
+        if run.next_capture_due is None and elapsed < step.exposure_seconds:
+            return None
+        if run.next_capture_due is not None and elapsed < run.next_capture_due:
+            return None
+        with self._practice_lock:
+            # Un cuadro pudo lograrlo mientras tanto: se decide con el estado guardado.
+            fresh = self.repository.get_run(run.session_id) or run
+            if (fresh.phase, fresh.step_index, fresh.step_started_at) != (run.phase, run.step_index,
+                                                                           run.step_started_at):
+                return fresh
+            run = fresh
+            if run.next_capture_due is None:
+                if elapsed < step.exposure_seconds:
+                    return None
+                self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT,
+                                     ended_at=run.step_started_at + timedelta(seconds=step.exposure_seconds))
+            elif elapsed < run.next_capture_due:
+                return None
+            return self.repository.save_run(self._next_step(replace(run, next_capture_due=None), session,
+                                                            protocol, skipped=False))
+
+    def _practice_tracker(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep) -> PracticeTracker:
+        """El seguidor del ejercicio en curso; uno nuevo si cambió el paso."""
+        live = self._live_of(run.session_id)
+        started = run.step_started_at.timestamp()
+        tracker = live.practice
+        if tracker is None or tracker.step_index != run.step_index or tracker.started_at != started:
+            calibration = live.calibration
+            # Con base neutral, el nivel es relativo a ella; pedir neutral usa la probabilidad directa.
+            relative = (calibration is not None and calibration.state == CALIBRATED
+                        and step.target_expression != "neutral")
+            tracker = live.practice = PracticeTracker(
+                run.step_index, started, step.hold_seconds, relative,
+                threshold=self.practice.threshold, release_threshold=self.practice.release_threshold,
+                smoothing_seconds=self.practice.smoothing_seconds)
+        return tracker
+
+    def _practice_value(self, live: _Live, tracker: PracticeTracker, step: ProtocolStep,
+                        assessment: FrameAssessment) -> float | None:
+        """Lo que aporta un cuadro al nivel; None si no sirve (sin rostro o con un problema de calidad)."""
+        if not assessment.ok or not assessment.distribution:
+            return None
+        if tracker.relative and live.calibration is not None and live.calibration.state == CALIBRATED:
+            return live.calibration.relative_level(assessment.distribution, step.target_expression)
+        return float(assessment.distribution.get(step.target_expression, 0.0))
+
+    def _store_practice(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep,
+                        outcome: PracticeOutcome, ended_at: datetime, seconds: float | None = None) -> None:
+        """Guarda el resultado del ejercicio y descarta su seguidor."""
+        live = self._live_of(run.session_id)
+        tracker = live.practice
+        if tracker is not None and (tracker.step_index != run.step_index
+                                    or tracker.started_at != run.step_started_at.timestamp()):
+            tracker = None
+        if tracker is None:
+            tracker = self._practice_tracker(run, session, step)
+        self.repository.save_practice_result(PracticeResult(
+            id=str(uuid4()), session_id=session.id, step_index=run.step_index,
+            target_expression=step.target_expression, outcome=outcome, peak_level=round(tracker.peak, 4),
+            relative_to_calibration=tracker.relative,
+            # La persona ve la señal mientras no exista el interruptor de quien conduce.
+            feedback_visible=True, analyzed_frames=tracker.analyzed, flagged_frames=tracker.flagged,
+            emotion_model_id=session.emotion_model_id or "", emotion_model_version=session.emotion_model_version or "",
+            started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
+            seconds_to_achieve=seconds))
+        live.practice = None
+
+    def _end_practice(self, run: GuidedRun, session: EmotionalSession, outcome: PracticeOutcome) -> None:
+        """Saltar o detener un ejercicio sin terminar: se registra cómo terminó.
+        Si ya venció el tiempo, cuenta como no logrado; si ya se logró, no cambia."""
+        if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
+            return
+        step = self._protocol(session).steps[run.step_index]
+        if not step.is_practice or run.next_capture_due is not None:
+            return
+        with self._practice_lock:
+            fresh = self.repository.get_run(run.session_id) or run
+            if fresh.next_capture_due is not None or fresh.step_started_at != run.step_started_at:
+                return
+            limit = run.step_started_at + timedelta(seconds=step.exposure_seconds)
+            if self.clock() >= limit:
+                self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT, ended_at=limit)
+            else:
+                self._store_practice(run, session, step, outcome, ended_at=self.clock())
+
+    def _practice_frame(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep, frame) -> None:
+        """Cada cuadro del ejercicio actualiza el nivel. Si ya hay un cuadro de esta
+        sesión en análisis, este se descarta: el nivel tolera cuadros perdidos."""
+        if run.next_capture_due is not None or self._seconds(run.step_started_at) >= step.exposure_seconds:
+            return  # logrado (en pausa) o vencido: no se analiza
+        live = self._live_of(run.session_id)
+        with self._practice_lock:
+            if live.analyzing:
+                return
+            live.analyzing = True
+        try:
+            assessment = self._assess(session, frame)
+        finally:
+            live.analyzing = False
+        with self._practice_lock:
+            fresh = self.repository.get_run(run.session_id)
+            if (fresh is None or fresh.phase is not GuidedPhase.STIMULI or fresh.step_index != run.step_index
+                    or fresh.step_started_at != run.step_started_at or fresh.next_capture_due is not None):
+                return  # el paso cambió mientras se analizaba
+            elapsed = self._seconds(fresh.step_started_at)
+            if elapsed >= step.exposure_seconds:
+                return
+            tracker = self._practice_tracker(fresh, session, step)
+            if tracker.add(self.clock().timestamp(), self._practice_value(live, tracker, step, assessment)):
+                self._store_practice(fresh, session, step, PracticeOutcome.ACHIEVED, ended_at=self.clock(),
+                                     seconds=round(elapsed, 2))
+                # La persona ve el logro durante la pausa; después el paso avanza solo.
+                self.repository.save_run(replace(fresh, next_capture_due=elapsed + self.practice.success_pause_seconds))
+
+    def practice_frame_drops_when_busy(self, token: str) -> bool:
+        """Si el cuadro de esta pantalla es de un ejercicio de práctica en curso:
+        sin cupo de análisis, ese cuadro se descarta en lugar de esperar."""
+        run = self.repository.get_run_by_token_hash(hash_token(token)) if token else None
+        if run is None or not run.active or run.phase is not GuidedPhase.STIMULI or run.next_capture_due is not None:
+            return False
+        session = self._session(run.session_id)
+        return session.protocol_id is not None and self._protocol(session).steps[run.step_index].is_practice
 
     def _tick_live(self, run: GuidedRun) -> GuidedRun:
         """Fase live: una captura vencida sin un cuadro válido se guarda marcada."""
@@ -475,6 +622,7 @@ class GuidedSessionService:
         run = self._tick(run)
         if run.phase not in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             raise GuidedConflict("No hay un estímulo en curso")
+        self._end_practice(run, session, PracticeOutcome.SKIPPED)
         self._live_of(session_id).pending = None
         return self.repository.save_run(self._next_step(replace(run, next_capture_due=None), session,
                                                         self._protocol(session), skipped=True))
@@ -485,6 +633,7 @@ class GuidedSessionService:
         session = self._session(run.session_id)
         if session.state in (SessionState.CREATED, SessionState.IN_PROGRESS, SessionState.RECOGNIZED):
             self.sessions.cancel_session(session.id)
+        self._end_practice(run, session, PracticeOutcome.STOPPED)
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             run = self._log_step(run, skipped=True)
         self._live.pop(run.session_id, None)
@@ -591,7 +740,7 @@ class GuidedSessionService:
 
     def _summary(self, run: GuidedRun, session: EmotionalSession, include_results: bool) -> dict[str, Any]:
         steps = self._steps(session)
-        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) for step in steps}
+        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None for step in steps}
         live = self._live.get(session.id)
         calibration = live.calibration if live else None
         step = steps[run.step_index] if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) else None
@@ -665,9 +814,11 @@ class GuidedSessionService:
         abstract = False
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = self._protocol(session).steps[run.step_index]
-            item = self.stimuli(step.stimulus_id)
+            item = self.stimuli(step.stimulus_id) if step.stimulus_id else None
             # Un identificador de exposición, no el del estímulo, para pedir la imagen.
-            stimulus = {"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"}
+            # Una práctica sin ilustración no muestra imagen.
+            stimulus = ({"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"}
+                        if step.stimulus_id else None)
             remaining = max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
             abstract = item is not None and item.kind is StimulusKind.ABSTRACT
         live = self._live.get(run.session_id)
@@ -709,7 +860,10 @@ class GuidedSessionService:
         if run.phase not in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             raise GuidedNotFound("stimulus")
         session = self._session(run.session_id)
-        return self._protocol(session).steps[run.step_index].stimulus_id
+        stimulus_id = self._protocol(session).steps[run.step_index].stimulus_id
+        if stimulus_id is None:
+            raise GuidedNotFound("stimulus")
+        return stimulus_id
 
     def participant_stop(self, token: str) -> None:
         """El botón visible de la pantalla de la persona: termina de inmediato."""
@@ -774,6 +928,11 @@ class GuidedSessionService:
             self._store_exam_capture(run, session, self._assess(session, frame), run.next_capture_due)
             self.repository.save_run(replace(run, next_capture_due=self._next_slot(elapsed)))
             return
+        if run.phase is GuidedPhase.STIMULI:
+            step = self._protocol(session).steps[run.step_index]
+            if step.is_practice:
+                self._practice_frame(run, session, step, frame)
+                return
         if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE) or run.next_capture_due is None:
             return
         elapsed = self._seconds(run.step_started_at)

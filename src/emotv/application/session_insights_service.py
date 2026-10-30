@@ -69,7 +69,8 @@ class SessionInsightsService:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
             return stimulus_metrics((), {}, ())
-        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) for step in protocol.steps}
+        stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
+                   for step in protocol.steps}
         run = self.guided.get_run(session.id)
         skipped = [item["step_index"] for item in run.steps_log if item.get("skipped")] if run else []
         return stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
@@ -102,7 +103,7 @@ class SessionInsightsService:
         titles = {}
         if protocol:
             for index, step in enumerate(protocol.steps):
-                stimulus = self.stimuli(step.stimulus_id)
+                stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
                 titles[index] = (stimulus.title if stimulus else "", stimulus.kind.value if stimulus else "")
         run = self.guided.get_run(session.id)
         stimuli_lane = []

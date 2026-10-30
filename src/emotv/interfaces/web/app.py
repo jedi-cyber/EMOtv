@@ -20,7 +20,7 @@ from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_settings,
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
-                          get_live_expression_settings, get_server_load_settings,
+                          get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
                           get_user_image_settings)
 from emotv.infrastructure.persistence import (
@@ -287,10 +287,10 @@ if DATABASE_URL and JWT_SECRET_KEY:
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
             calibration_min_increase=live_expression.calibration_min_increase,
-            exam_of=exam_repository.get)
+            exam_of=exam_repository.get, practice=get_practice_settings())
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
-                                            decode_frame=decode_frame))
+                                            decode_frame=decode_frame, capacity=analysis_capacity))
     # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
     # cada estación se une con el código y usa la pantalla de la persona.
     exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,

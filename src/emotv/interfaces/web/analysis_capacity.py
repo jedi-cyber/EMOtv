@@ -63,6 +63,17 @@ class AnalysisCapacity:
     async def run(self, function: Callable[..., T], *args) -> T:
         """Ejecuta un análisis en el pool propio, dentro del límite de simultáneos."""
         await self._acquire(self._analyses)
+        return await self._start(function, *args)
+
+    async def try_run(self, function: Callable[..., T], *args) -> tuple[bool, T | None]:
+        """Como run, pero sin esperar: sin cupo libre devuelve (False, None) y el
+        análisis no se hace (un cuadro de práctica se descarta)."""
+        if self._analyses.locked():
+            return False, None
+        await self._analyses.acquire()  # hay cupo: no espera
+        return True, await self._start(function, *args)
+
+    async def _start(self, function: Callable[..., T], *args) -> T:
         try:
             future = asyncio.get_running_loop().run_in_executor(self._executor, function, *args)
         except BaseException:

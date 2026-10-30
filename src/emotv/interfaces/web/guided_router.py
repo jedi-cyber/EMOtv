@@ -57,6 +57,7 @@ def create_guided_router(
     users: UserRepository | None,
     stimulus_image=None,       # Callable[[str], tuple[str, bytes] | None]
     decode_frame=None,         # Callable[[bytes], ndarray | None]
+    capacity=None,             # AnalysisCapacity: cupo de análisis de los cuadros de práctica
 ) -> APIRouter:
     router = APIRouter(tags=["guided-sessions"])
     current_user = create_current_user_dependency(authentication, users)
@@ -156,7 +157,18 @@ def create_guided_router(
         if len(data) > MAX_FRAME_BYTES:
             raise HTTPException(413, "El cuadro es demasiado grande")
         frame = decode_frame(data) if decode_frame else None
-        await run_in_threadpool(lambda: guarded(lambda: service().receive_frame(token, frame)))
+
+        def receive() -> None:
+            guarded(lambda: service().receive_frame(token, frame))
+
+        practice = capacity is not None and await run_in_threadpool(
+            lambda: guarded(lambda: service().practice_frame_drops_when_busy(token)))
+        if practice:
+            # Cada cuadro de una práctica se analiza dentro del cupo del servidor;
+            # sin cupo libre se descarta. La persona no recibe ninguna señal de ello.
+            await capacity.try_run(receive)
+        else:
+            await run_in_threadpool(receive)
         return {"received": True}
 
     @router.post("/participant-view/{token}/stop")

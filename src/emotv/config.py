@@ -124,6 +124,46 @@ def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> Li
     return LiveExpressionSettings(*values)
 
 
+@dataclass(frozen=True)
+class PracticeSettings:
+    """Paso de práctica de expresiones (docs/expression-practice.md).
+
+    El nivel es un promedio móvil exponencial de la expresión pedida, con
+    constante de tiempo smoothing_seconds. Se considera alcanzado al llegar a
+    threshold y deja de estarlo bajo release_threshold (histéresis). Al
+    lograrlo, la persona ve el logro success_pause_seconds antes de avanzar.
+    """
+
+    threshold: float = 0.6
+    release_threshold: float = 0.55
+    smoothing_seconds: float = 0.8
+    success_pause_seconds: float = 2.0
+
+
+def get_practice_settings(environ: Mapping[str, str] | None = None) -> PracticeSettings:
+    source = os.environ if environ is None else environ
+    defaults = PracticeSettings()
+    values = []
+    for name, default, minimum, maximum in (
+        ("PRACTICE_THRESHOLD", defaults.threshold, 0.05, 1.0),
+        ("PRACTICE_RELEASE_THRESHOLD", defaults.release_threshold, 0.0, 1.0),
+        ("PRACTICE_SMOOTHING_SECONDS", defaults.smoothing_seconds, 0.0, 10.0),
+        ("PRACTICE_SUCCESS_PAUSE_SECONDS", defaults.success_pause_seconds, 0.0, 10.0),
+    ):
+        raw = source.get(name, "").strip()
+        try:
+            value = float(raw) if raw else default
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número") from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre {minimum:g} y {maximum:g}")
+        values.append(value)
+    settings = PracticeSettings(*values)
+    if settings.release_threshold >= settings.threshold:
+        raise ValueError("PRACTICE_RELEASE_THRESHOLD debe ser menor que PRACTICE_THRESHOLD")
+    return settings
+
+
 def _default_concurrent_analyses() -> int:
     # Núcleos disponibles para este proceso menos uno (para la API, la base y
     # el servidor web), con mínimo 1. En Docker conviene fijarlo: os.cpu_count

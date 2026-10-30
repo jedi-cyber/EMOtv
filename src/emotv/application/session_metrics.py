@@ -55,6 +55,8 @@ def stimulus_metrics(
     skipped = set(skipped)
     emotional, abstract = [], []
     for index, step in enumerate(steps):
+        if step.is_practice:
+            continue  # su ilustración no es un estímulo: no cuenta en las coincidencias
         stimulus = stimuli.get(step.stimulus_id)
         if stimulus is None:
             continue

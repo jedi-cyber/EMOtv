@@ -199,6 +199,8 @@ class ProtocolService:
         if not protocol.current:
             raise ProtocolUnavailable("Hay una versión más nueva de este protocolo")
         for step in protocol.steps:
+            if step.stimulus_id is None:
+                continue  # práctica sin ilustración: no necesita imagen
             try:
                 stimulus = self.stimuli.get(user, step.stimulus_id)
             except StimulusNotFound as error:
