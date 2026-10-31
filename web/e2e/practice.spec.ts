@@ -1,18 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { acceptConsent, loginToken, readyAccount, signIn, withToken, type Account } from "./support/api";
+import { acceptCommitment, acceptConsent, loginToken, readyAccount, signIn, withToken, type Account } from "./support/api";
 import { fakeCamera } from "./support/env";
 
 const camera = fakeCamera();
-
-/** Sin el compromiso de confidencialidad no se inicia una sesión con otra persona. */
-async function acceptCommitment(account: Account): Promise<void> {
-  await withToken(await loginToken(account.email, account.password), async (api) => {
-    const text = await (await api.get("/commitment")).json() as { version: string; required: boolean };
-    if (!text.required) return;
-    const response = await api.post("/commitment/accept", { data: { version: text.version } });
-    expect(response.ok(), await response.text()).toBe(true);
-  });
-}
 
 /** Protocolo para adultos con un solo ejercicio de práctica, sin ilustración. */
 async function practiceProtocol(account: Account, maxSeconds: number): Promise<string> {

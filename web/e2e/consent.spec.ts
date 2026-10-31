@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { loginToken, readyAccount, signIn, withToken } from "./support/api";
+import { acceptCommitment, loginToken, readyAccount, signIn, withToken } from "./support/api";
 
-test("el estudiante acepta la política vigente y después revoca su consentimiento", async ({ page }) => {
+test("el usuario acepta la política vigente y después revoca su consentimiento", async ({ page }) => {
   const student = await readyAccount("student");
+  await acceptCommitment(student);
   const policy = await withToken(await loginToken(student.email, student.password), async (api) =>
     await (await api.get("/consent-policy")).json() as { mode: string; available: boolean });
   test.skip(policy.mode === "development", "CONSENT_MODE=development no pide consentimiento; usa demo.");
@@ -36,5 +37,7 @@ test("el estudiante acepta la política vigente y después revoca su consentimie
   // Sin consentimiento, el analizador no deja empezar.
   await page.goto("/analysis");
   await expect(requirements.getByRole("link", { name: "Revisar consentimiento" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reconocer mi expresión" })).toBeDisabled();
+  await page.getByText("Conmigo", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: /Conmigo/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Empezar el análisis" })).toBeDisabled();
 });

@@ -1,14 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { assignStudent, loginToken, readyAccount, signIn, studentIdOf, withToken } from "./support/api";
+import { acceptCommitment, assignStudent, loginToken, readyAccount, signIn, studentIdOf, withToken } from "./support/api";
 
-test("Psicología solo ve a los estudiantes que administración le asignó", async ({ page }) => {
+test("el Docente solo ve a los usuarios que administración asignó a su grupo", async ({ page }) => {
   const student = await readyAccount("student");
   const studentId = await studentIdOf(student);
   const psychologist = await readyAccount("psychologist");
+  await acceptCommitment(psychologist);
 
   await signIn(page, psychologist.email, psychologist.password);
   await page.goto("/students");
-  await expect(page.getByText(/Aún no tienes estudiantes asignados/)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Mi grupo" })).toBeVisible();
+  await expect(page.getByText(/Aún no tienes usuarios en tu grupo/)).toBeVisible();
   await expect(page.getByText(student.studentCode!)).toHaveCount(0);
 
   // El permiso se aplica en FastAPI, no solo en la interfaz.
@@ -21,7 +23,7 @@ test("Psicología solo ve a los estudiantes que administración le asignó", asy
   await assignStudent(psychologist, studentId);
   await page.reload();
   await expect(page.getByText(student.studentCode!, { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: `Ver sesiones del estudiante ${student.studentCode}` }).click();
+  await page.getByRole("link", { name: `Ver sesiones del usuario ${student.studentCode}` }).click();
   await expect(page.getByRole("heading", { level: 1, name: `Sesiones de ${student.studentCode}` })).toBeVisible();
-  await expect(page.getByText("Este estudiante todavía no tiene sesiones registradas.")).toBeVisible();
+  await expect(page.getByText("Este usuario todavía no tiene sesiones registradas.")).toBeVisible();
 });

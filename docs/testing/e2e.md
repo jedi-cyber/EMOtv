@@ -15,7 +15,7 @@ Lo que necesita una cámara y personas reales no se automatiza: está en
 | `consent.spec.ts` | aceptar la política vigente desde el modal y revocar el consentimiento |
 | `analysis.spec.ts` | la cámara simulada abre en el analizador; resultado con expresión en español, confianza, información y limitación; finalizar sin actividad y verla en el historial; la actividad no avanza con un video sin persona |
 | `practice.spec.ts` | sesión con un ejercicio de práctica iniciada desde el Analizador, con la pantalla de la persona, hasta detenerla; con rostro en el video, calibración, ejercicio y final con su resultado (sin rostro la calibración no termina y esa parte se omite) |
-| `psychologist.spec.ts` | Psicología no ve a un estudiante sin asignación (interfaz y API) y sí lo ve después de asignarlo |
+| `psychologist.spec.ts` | el Docente no ve a un usuario fuera de su grupo (interfaz y API) y sí lo ve después de asignarlo |
 | `emi.spec.ts` | Emi con un n8n falso: respuesta dentro del alcance, fuera del alcance y error 502 `llm_unavailable` |
 | `screenshots.spec.ts` | capturas de cada vista para `docs/thesis-evidence/screenshots/`; solo con `E2E_SCREENSHOTS=1` |
 
