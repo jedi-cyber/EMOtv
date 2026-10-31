@@ -23,8 +23,9 @@ from emotv.application.chat_safety import (IDENTIFIER_CATEGORY, IDENTIFIER_MESSA
 from emotv.application.chat_service import ChatService
 from emotv.config import N8N_PRODUCTION_WEBHOOK_URL, ChatSettings, get_chat_settings
 from emotv.domain import Role
-from emotv.infrastructure.chat import N8nWebhookChatGateway
+from emotv.infrastructure.chat import N8nWebhookChatGateway, SimChatGateway
 from emotv.infrastructure.chat.n8n_client import KEY_HEADER, _verify_setting
+from emotv.infrastructure.chat.sim_client import SIM_KEY_HEADER
 from emotv.infrastructure.persistence import (Base, PostgresChatRepository, PostgresConsentRepository,
                                                PostgresStudentRepository, PostgresUserRepository)
 from emotv.interfaces.web.chat_router import create_chat_router
@@ -291,7 +292,7 @@ def test_successful_call_logs_request_id_and_status(emi, caplog):
     _, headers = accounts["PRUEBA-01"]
     with caplog.at_level(logging.INFO):
         ask(client, headers, "Pregunta de registro")
-    assert f"request_id={fake.bodies()[0]['request_id']} n8n_status=200" in caplog.text
+    assert f"request_id={fake.bodies()[0]['request_id']} gateway_status=200" in caplog.text
     assert "Pregunta de registro" not in caplog.text and FAKE_KEY not in caplog.text
 
 
@@ -456,3 +457,127 @@ def test_user_deletes_only_their_own_conversation(emi):
     assert client.delete(f"/chat/conversations/{conversation_id}", headers=owner).status_code == 404
     # El contador agregado no depende de la conversación.
     assert repository.rejection_counts() == {"matematica": 1}
+
+
+# --- Sim (sim.ai): mismo contrato de Emi con el sobre de la API v2 ---
+
+FAKE_SIM_URL = "https://sim.invalid/api/v2/workflows/emi/execute"
+
+
+class FakeSim:
+    """Imita la API v2 de Sim: ``{"input": ...}`` → ``{"data": {"status", "output"}}``."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.next: list[object] = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == FAKE_SIM_URL
+        self.requests.append(request)
+        body = json.loads(request.content)["input"]
+        planned = self.next.pop(0) if self.next else None
+        if isinstance(planned, httpx.Response):
+            return planned
+        if request.headers.get(SIM_KEY_HEADER) != FAKE_KEY:
+            return httpx.Response(401, json={"error": {"code": "unauthorized", "message": "Invalid API key"}})
+        output = planned if isinstance(planned, dict) else {
+            "answer": f"Respuesta a: {body['question']}", "in_scope": True,
+            "category": "uso_emotv", "request_id": body["request_id"],
+        }
+        return httpx.Response(200, json={"data": {"runId": "run-1", "status": "completed",
+                                                  "output": output, "error": None}})
+
+    def inputs(self) -> list[dict]:
+        return [json.loads(request.content)["input"] for request in self.requests]
+
+
+@pytest.fixture
+def emi_sim(emi):
+    client, service, repository, _, clock, accounts = emi
+    fake = FakeSim()
+    service.gateway = SimChatGateway(FAKE_SIM_URL, FAKE_KEY, transport=httpx.MockTransport(fake.handler))
+    service.knowledge = lambda: "# Conocimiento de prueba"
+    return client, service, repository, fake, clock, accounts
+
+
+def test_sim_keeps_the_emi_contract(emi_sim):
+    client, _, repository, fake, _, accounts = emi_sim
+    user, headers = accounts["PRUEBA-01"]
+
+    response = ask(client, headers, "¿Qué es EMOtv?")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert (data["answer"], data["in_scope"], data["category"]) == ("Respuesta a: ¿Qué es EMOtv?", True, "uso_emotv")
+    request = fake.requests[0]
+    assert request.headers[SIM_KEY_HEADER] == FAKE_KEY and KEY_HEADER not in request.headers
+    sent = fake.inputs()[0]
+    assert set(sent) == {"request_id", "question", "history", "knowledge"}
+    assert sent["knowledge"] == "# Conocimiento de prueba" and sent["history"] == []
+    assert user.id not in request.content.decode() and "prueba-01@example.org" not in request.content.decode()
+
+
+@pytest.mark.parametrize("output", [
+    {"data": {"answer": "Anidada", "in_scope": False, "category": "otro"}},
+    {"content": json.dumps({"answer": "Anidada", "in_scope": False, "category": "otro"}), "model": "x"},
+])
+def test_sim_accepts_nested_or_structured_agent_output(emi_sim, output):
+    client, _, _, fake, _, accounts = emi_sim
+    fake.next.append(output)
+    data = ask(client, accounts["PRUEBA-01"][1], "Pregunta").json()
+    assert (data["answer"], data["in_scope"], data["category"]) == ("Anidada", False, "otro")
+
+
+@pytest.mark.parametrize("planned,status,fragment", [
+    (httpx.Response(200, json={"data": {"status": "failed", "output": {}, "error": "Groq"}}), 502,
+     "inteligencia artificial"),
+    (httpx.Response(200, json={"data": {"status": "completed", "output": {"error": "llm_unavailable",
+                                                                          "answer": "x"}}}), 502,
+     "inteligencia artificial"),
+    (httpx.Response(429), 502, "inteligencia artificial"),
+    (httpx.Response(402), 502, "inteligencia artificial"),
+    (httpx.Response(401), 502, "configuración del servidor"),
+    (httpx.Response(403), 502, "configuración del servidor"),
+    (httpx.Response(404), 502, "no está activo"),
+    (httpx.Response(500), 502, "No se pudo contactar"),
+    (httpx.Response(200, json={"data": {"status": "completed", "output": {"answer": "sin in_scope"}}}), 502,
+     "no se pudo leer"),
+    (httpx.Response(200, text="no es json"), 502, "no se pudo leer"),
+])
+def test_sim_failures_are_translated_without_secrets(emi_sim, caplog, planned, status, fragment):
+    client, _, _, fake, _, accounts = emi_sim
+    fake.next.append(planned)
+    question = "Pregunta confidencial de prueba"
+
+    with caplog.at_level(logging.INFO):
+        response = ask(client, accounts["PRUEBA-01"][1], question)
+
+    assert response.status_code == status
+    assert fragment in response.json()["detail"]
+    assert fake.inputs()[0]["request_id"] in caplog.text
+    assert FAKE_KEY not in caplog.text and question not in caplog.text
+
+
+def test_sim_wrong_key_is_a_configuration_error(emi_sim):
+    client, service, _, _, _, accounts = emi_sim
+    fake = FakeSim()
+    service.gateway = SimChatGateway(FAKE_SIM_URL, "otra-clave", transport=httpx.MockTransport(fake.handler))
+    response = ask(client, accounts["PRUEBA-01"][1], "Hola")
+    assert response.status_code == 502 and "configuración" in response.json()["detail"]
+
+
+def test_provider_settings():
+    settings = get_chat_settings({})
+    assert settings.provider == "sim" and settings.sim_workflow_url == "" and settings.sim_api_key == ""
+    sim = get_chat_settings({"SIM_WORKFLOW_URL": FAKE_SIM_URL, "SIM_API_KEY": FAKE_KEY})
+    assert (sim.sim_workflow_url, sim.sim_api_key) == (FAKE_SIM_URL, FAKE_KEY)
+    assert FAKE_KEY not in repr(sim) and FAKE_KEY not in repr(SimChatGateway(FAKE_SIM_URL, FAKE_KEY))
+    assert get_chat_settings({"CHAT_PROVIDER": " N8N "}).provider == "n8n"
+    assert get_chat_settings({"CHAT_TIMEOUT_SECONDS": "12", "N8N_TIMEOUT_SECONDS": "40"}).timeout_seconds == 12
+    assert get_chat_settings({"N8N_TIMEOUT_SECONDS": "40"}).timeout_seconds == 40
+    with pytest.raises(ValueError, match="CHAT_PROVIDER"):
+        get_chat_settings({"CHAT_PROVIDER": "gemini"})
+    with pytest.raises(ValueError, match="obligatoria"):
+        SimChatGateway(FAKE_SIM_URL, "")
+    with pytest.raises(ValueError, match="URL"):
+        SimChatGateway("sim.invalid", FAKE_KEY)

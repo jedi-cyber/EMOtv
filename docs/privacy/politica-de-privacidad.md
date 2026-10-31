@@ -76,7 +76,7 @@ tus datos ni tus resultados, y el sistema anota cada vez que alguien los consult
 - **Ninguno recibe tus imágenes.** El análisis de la cara se hace con modelos que
   funcionan dentro del servidor de EMOtv, sin servicios externos de visión.
 - EMOtv tiene un asistente, **Emi**, que solo usan usuarios y docentes. Emi
-  funciona con servicios externos en la nube (n8n y Groq), pero **nunca recibe
+  funciona con servicios externos en la nube (Sim y el modelo de lenguaje que usa), pero **nunca recibe
   tus datos**: ni tu código, ni tus respuestas, ni tus resultados. El servidor
   bloquea los mensajes a Emi que contienen un DNI, un correo o un teléfono.
   `[Verificar con asesoría legal: si el uso de estos servicios constituye flujo

@@ -19,8 +19,8 @@ guardan fotografías ni video.
 | `web` | Interfaz web (nginx) y proxy hacia la API y el WebSocket | http://localhost:8080 |
 | `https` (opcional) | HTTPS para usar la cámara desde otras computadoras | https://IP:8443 |
 
-Emi, el chatbot, no tiene servicio propio: la API llama al workflow EMI
-publicado en n8n Cloud ([chatbot-emi.md](chatbot-emi.md)).
+Emi, el chatbot, no tiene servicio propio: la API llama al workflow de Emi
+desplegado en Sim ([chatbot-emi.md](chatbot-emi.md)).
 
 ## 1. Requisitos
 
@@ -88,10 +88,11 @@ EMOtv en esta misma computadora. Variables importantes:
   institucional aprobada.
 - `CONSENT_MODE`: deja `demo`, el valor para pruebas funcionales y la
   presentación. Ver [Modos de consentimiento](#modos-de-consentimiento).
-- `N8N_WEBHOOK_URL` y `N8N_WEBHOOK_KEY`: chatbot Emi. La URL de producción
-  ya viene en el ejemplo; la clave es la de la credencial Header Auth del
-  webhook y solo se escribe en tu `.env.docker`. Sin clave, el resto de EMOtv
-  funciona y el chat responde 503.
+- `SIM_WORKFLOW_URL` y `SIM_API_KEY`: chatbot Emi (`CHAT_PROVIDER=sim`). En
+  el ejemplo van vacías: la URL es la de ejecución del workflow en Sim y la
+  clave, una clave de API de Sim, que solo se escribe en tu `.env.docker`. Sin
+  ellas, el resto de EMOtv funciona y el chat responde 503. Con
+  `CHAT_PROVIDER=n8n` se usan `N8N_WEBHOOK_URL` y `N8N_WEBHOOK_KEY`.
 
 ### Modos de consentimiento
 
@@ -299,9 +300,10 @@ docker compose --env-file .env.docker --profile test rm -sf test-db
   con binarios de Linux, separado del `web/node_modules` de Windows.
 - Las pruebas que requieren pesos se saltan si `models/weights/` no los tiene.
 
-## Chatbot Emi con n8n
+## Chatbot Emi con Sim
 
-Pon la clave real en `.env.docker` (`N8N_WEBHOOK_KEY=...`) y recrea la API:
+Pon la URL y la clave reales en `.env.docker` (`SIM_WORKFLOW_URL=...` y
+`SIM_API_KEY=...`) y recrea la API:
 `docker compose --env-file .env.docker up -d api`. La prueba manual está en
 [chatbot-emi.md](chatbot-emi.md#prueba-manual-con-docker-compose).
 

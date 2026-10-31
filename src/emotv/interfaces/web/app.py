@@ -100,7 +100,7 @@ from emotv.interfaces.web.report_router import create_report_router
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
-from emotv.infrastructure.chat import N8nWebhookChatGateway
+from emotv.infrastructure.chat import N8nWebhookChatGateway, SimChatGateway
 from emotv.application.chat_service import ChatService
 from emotv.application.emi_knowledge import EmiKnowledge
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
@@ -386,11 +386,17 @@ if DATABASE_URL and JWT_SECRET_KEY:
         questionnaire_ready=questionnaire_service.pre_completed,
     ))
     chat_gateway = None
-    if chat_settings.webhook_key:
+    if chat_settings.provider == "sim":
+        if chat_settings.sim_workflow_url and chat_settings.sim_api_key:
+            chat_gateway = SimChatGateway(chat_settings.sim_workflow_url, chat_settings.sim_api_key,
+                                          chat_settings.timeout_seconds)
+        else:
+            # El resto de la API arranca igual; POST /chat responde 503.
+            logger.warning("SIM_WORKFLOW_URL o SIM_API_KEY está vacía: Emi responderá 503 hasta configurarla")
+    elif chat_settings.webhook_key:
         chat_gateway = N8nWebhookChatGateway(chat_settings.webhook_url, chat_settings.webhook_key,
                                              chat_settings.timeout_seconds)
     else:
-        # El resto de la API arranca igual; POST /chat responde 503.
         logger.warning("N8N_WEBHOOK_KEY está vacía: Emi responderá 503 hasta configurarla")
     chat_service = ChatService(PostgresChatRepository(database_sessions), chat_gateway, chat_settings,
                                knowledge=emi_knowledge.get)

@@ -29,8 +29,8 @@ flowchart LR
     VOL[["volumen emotv_models<br/>YuNet · FER+ · MediaPipe"]]
   end
   subgraph Externo["Servicios externos"]
-    N8N["n8n Cloud<br/>workflow «Version 1.0 EMI»"]
-    GROQ["Groq (LLM)"]
+    N8N["Sim<br/>workflow de Emi"]
+    GROQ["Modelo de lenguaje"]
   end
   SPA -->|"REST /auth /sessions /students ..."| WEB
   SPA -->|"WebSocket /ws/activity<br/>frames JPEG, sin guardar"| WEB
@@ -38,7 +38,7 @@ flowchart LR
   API --> DB
   MOD --> VOL
   VOL -->|solo lectura| API
-  API -->|"POST + X-EMOtv-Key<br/>pregunta, historial, conocimiento"| N8N
+  API -->|"POST + X-API-Key<br/>pregunta, historial, conocimiento"| N8N
   N8N --> GROQ
 ```
 
@@ -128,9 +128,10 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 - `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
   `vision.movement_analysis` (`PostureValidator`, ángulos).
 - `persistence`: adaptadores PostgreSQL y en memoria, modelos ORM y conexión.
-- `chat.N8nWebhookChatGateway` para Emi: llama al workflow EMI de n8n Cloud,
-  que usa Groq. Nunca recibe resultados personales ni identificadores del
-  usuario. Ver [chatbot-emi.md](chatbot-emi.md).
+- `chat.SimChatGateway` para Emi: llama al workflow de Emi desplegado en Sim
+  (`CHAT_PROVIDER=sim`); `chat.N8nWebhookChatGateway` queda para el workflow
+  anterior de n8n. Los dos cumplen el mismo contrato y nunca reciben resultados
+  personales ni identificadores del usuario. Ver [chatbot-emi.md](chatbot-emi.md).
 
 ### Interfaces (`emotv.interfaces.web`)
 

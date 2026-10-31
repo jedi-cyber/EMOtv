@@ -17,7 +17,7 @@ para la Facultad de Psicología de la Universidad Nacional Hermilio Valdizán
    ([práctica de expresiones](docs/expression-practice.md)).
 
 Incluye inicio de sesión con roles, consentimiento configurable, historial de
-sesiones y **Emi**, un chatbot educativo (workflow de n8n Cloud con Groq).
+sesiones y **Emi**, un chatbot educativo (workflow de Sim; n8n queda como opción).
 
 > **Aviso.** EMOtv es una herramienta formativa. **Estima una expresión
 > facial; no diagnostica**, no determina el estado emocional ni psicológico de
@@ -36,7 +36,7 @@ flowchart LR
   N --> A["FastAPI<br/>src/emotv"]
   A --> V["Visión en memoria<br/>YuNet · FER+ · MediaPipe"]
   A --> D[("PostgreSQL<br/>Alembic")]
-  A -->|"POST + X-EMOtv-Key"| W["n8n Cloud<br/>workflow EMI"] --> G["Groq"]
+  A -->|"POST + X-API-Key"| W["Sim<br/>workflow de Emi"] --> G["Modelo de lenguaje"]
 ```
 
 - La cámara se abre **en el navegador**; el servidor nunca abre una cámara
@@ -117,7 +117,8 @@ valores reales.
 | `MAX_CONCURRENT_ANALYSES`, `MAX_ACTIVE_SESSIONS`, `ANALYSIS_BUSY_WAIT_SECONDS`, `LIVE_IDLE_TIMEOUT_SECONDS`, `ONNX_THREADS_PER_SESSION` | protección de carga del análisis ([arquitectura](docs/architecture.md#protección-de-carga-del-análisis)) |
 | `API_CPUS`, `API_MEMORY_LIMIT` | límites de CPU y memoria del contenedor `api` (solo Docker) |
 | `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
-| `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY`, `N8N_TIMEOUT_SECONDS` | workflow de Emi; sin clave, el chat responde 503 |
+| `CHAT_PROVIDER`, `SIM_WORKFLOW_URL`, `SIM_API_KEY`, `CHAT_TIMEOUT_SECONDS` | workflow de Emi en Sim (`sim`, por defecto); sin URL o clave, el chat responde 503 ([docs/chatbot/sim-setup.md](docs/chatbot/sim-setup.md)) |
+| `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY` | solo con `CHAT_PROVIDER=n8n`, el workflow anterior |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
 | `TEST_DATA_RETENTION_DAYS` | plazo (1 a 30 días) de las cuentas de voluntarios `PRUEBA-NN` |
 | `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD` | nivel (0,05 a 1) en que se alcanza la expresión pedida en un ejercicio de práctica y nivel menor en que deja de estarlo (0,6 y 0,55) |

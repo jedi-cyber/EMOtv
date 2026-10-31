@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.output.name} ya existe; no se modificó.")
         return 0
     print(f"{args.output.name} creado con POSTGRES_PASSWORD y JWT_SECRET_KEY aleatorios.")
-    print("Revisa CORS_ORIGINS y TRUSTED_HOSTS, y pon en N8N_WEBHOOK_KEY la clave del webhook de Emi.")
+    print("Revisa CORS_ORIGINS y TRUSTED_HOSTS, y pon en SIM_WORKFLOW_URL y SIM_API_KEY la URL y la clave del workflow de Emi.")
     return 0
 
 

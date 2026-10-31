@@ -1,5 +1,9 @@
 # Configuración del workflow EMI en n8n Cloud
 
+> **Configuración anterior.** El periodo de prueba de n8n Cloud terminó y Emi
+> usa ahora un workflow de Sim ([sim-setup.md](sim-setup.md)). Este documento
+> queda como referencia para `CHAT_PROVIDER=n8n`.
+
 El prompt de sistema de Emi y el clasificador de alcance viven en el workflow
 **EMI** de n8n Cloud (versión publicada «Version 1.0 EMI»). El repositorio no lo
 modifica: genera el conocimiento que viaja en el campo `knowledge`

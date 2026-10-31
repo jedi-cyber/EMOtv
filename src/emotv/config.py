@@ -20,6 +20,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or None
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 N8N_PRODUCTION_WEBHOOK_URL = "https://emotv.app.n8n.cloud/webhook/emi-chat"
+CHAT_PROVIDERS = ("sim", "n8n")
 DEFAULT_CHAT_RISK_MESSAGE = (
     "Emi no puede ayudarte con este tema. Te pedimos que hables ahora con una "
     "persona de confianza o con un profesional de la salud. Si estás en peligro "
@@ -50,10 +51,15 @@ class LoginLimits:
 
 @dataclass(frozen=True)
 class ChatSettings:
-    """Emi: webhook de n8n, historial, retención, límites de uso y filtro."""
+    """Emi: proveedor del workflow (Sim o n8n), historial, retención, límites de uso y filtro."""
 
+    # sim: workflow desplegado en sim.ai (vigente). n8n: webhook anterior, opcional.
+    provider: str = "sim"
+    sim_workflow_url: str = ""
+    # Obligatoria con Sim: sin ella el chat responde 503. Nunca se escribe en logs.
+    sim_api_key: str = field(default="", repr=False)
     webhook_url: str = N8N_PRODUCTION_WEBHOOK_URL
-    # Obligatoria: sin ella el chat responde 503. Nunca se escribe en logs.
+    # Obligatoria con n8n: sin ella el chat responde 503. Nunca se escribe en logs.
     webhook_key: str = field(default="", repr=False)
     # Cada petición incluye dos llamadas a modelos (clasificación y respuesta).
     timeout_seconds: float = 30.0
@@ -80,10 +86,18 @@ def get_chat_settings(environ: Mapping[str, str] | None = None) -> ChatSettings:
             raise ValueError(f"{name} debe ser al menos {minimum:g}")
         return value
 
+    provider = source.get("CHAT_PROVIDER", "").strip().lower() or defaults.provider
+    if provider not in CHAT_PROVIDERS:
+        raise ValueError("CHAT_PROVIDER debe ser sim o n8n")
+    # N8N_TIMEOUT_SECONDS se acepta como nombre anterior de CHAT_TIMEOUT_SECONDS.
+    timeout_name = "CHAT_TIMEOUT_SECONDS" if source.get("CHAT_TIMEOUT_SECONDS", "").strip() else "N8N_TIMEOUT_SECONDS"
     return ChatSettings(
+        provider=provider,
+        sim_workflow_url=source.get("SIM_WORKFLOW_URL", "").strip(),
+        sim_api_key=source.get("SIM_API_KEY", "").strip(),
         webhook_url=source.get("N8N_WEBHOOK_URL", "").strip() or defaults.webhook_url,
         webhook_key=source.get("N8N_WEBHOOK_KEY", "").strip(),
-        timeout_seconds=number("N8N_TIMEOUT_SECONDS", defaults.timeout_seconds, float, 1),
+        timeout_seconds=number(timeout_name, defaults.timeout_seconds, float, 1),
         history_messages=number("CHAT_HISTORY_MESSAGES", defaults.history_messages, int, 0),
         retention_days=number("CHAT_RETENTION_DAYS", defaults.retention_days),
         window_messages=number("CHAT_LIMIT_WINDOW_MESSAGES", defaults.window_messages),

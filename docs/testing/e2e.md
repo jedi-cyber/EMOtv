@@ -16,7 +16,7 @@ Lo que necesita una cámara y personas reales no se automatiza: está en
 | `analysis.spec.ts` | la cámara simulada abre en el analizador; resultado con expresión en español, confianza, información y limitación; finalizar sin actividad y verla en el historial; la actividad no avanza con un video sin persona |
 | `practice.spec.ts` | sesión con un ejercicio de práctica iniciada desde el Analizador, con la pantalla de la persona, hasta detenerla; con rostro en el video, calibración, ejercicio y final con su resultado (sin rostro la calibración no termina y esa parte se omite) |
 | `psychologist.spec.ts` | el Docente no ve a un usuario fuera de su grupo (interfaz y API) y sí lo ve después de asignarlo |
-| `emi.spec.ts` | Emi con un n8n falso: respuesta dentro del alcance, fuera del alcance y error 502 `llm_unavailable` |
+| `emi.spec.ts` | Emi con un workflow falso (Sim o n8n): respuesta dentro del alcance, fuera del alcance y error 502 `llm_unavailable` |
 | `screenshots.spec.ts` | capturas de cada vista para `docs/thesis-evidence/screenshots/`; solo con `E2E_SCREENSHOTS=1` |
 
 Cada prueba crea sus propias cuentas (`e2e-…@emotv.local`, códigos `E2E-…`)
@@ -27,7 +27,7 @@ datos de voluntarios**: usa el stack aislado.
 
 `docker-compose.e2e.yml` levanta un proyecto aparte (`emotv-e2e`) con su
 propia base de datos (`emotv_e2e_pgdata`) en `http://localhost:8081`. Reutiliza
-los pesos ya descargados y apunta Emi al n8n falso de las pruebas.
+los pesos ya descargados y apunta Emi al Sim falso de las pruebas.
 
 ```bash
 # Desde la raíz, en Git Bash o Linux. Usa los valores de .env.docker.
@@ -78,8 +78,10 @@ base debe ser de pruebas.
   espera la ventana. Si cambias `LOGIN_MAX_FAILURES_PER_ACCOUNT`, define el
   mismo valor en `E2E_LOGIN_MAX_FAILURES`.
 - Emi solo se prueba con `E2E_FAKE_N8N=1` y el backend arrancado con
-  `N8N_WEBHOOK_URL=http://localhost:5679/webhook/emi-chat` y cualquier
-  `N8N_WEBHOOK_KEY` de prueba. Sin eso, la prueba se marca como omitida.
+  `CHAT_PROVIDER=sim`, `SIM_WORKFLOW_URL=http://localhost:5679/api/v2/workflows/emi-e2e/execute`
+  y cualquier `SIM_API_KEY` de prueba (o, con `CHAT_PROVIDER=n8n`,
+  `N8N_WEBHOOK_URL=http://localhost:5679/webhook/emi-chat`). Sin eso, la prueba
+  se marca como omitida.
 
 ## Cámara simulada
 
@@ -105,20 +107,22 @@ y que el paso y el progreso no avanzan. **Completar una actividad no se
 automatiza:** una imagen fija no puede adoptar posturas y un video grabado
 para eso no sería fiable. Esa verificación está en la lista manual.
 
-## Emi con n8n simulado
+## Emi con el workflow simulado
 
 `web/e2e/support/fakeN8n.ts` levanta, dentro de la prueba, un servidor con el
-contrato del workflow "Version 1.0 EMI":
+contrato de Emi en sus dos proveedores:
 
-- `POST /webhook/emi-chat` con `X-EMOtv-Key` y
-  `{request_id, question, history, knowledge}`;
-- `200 {answer, in_scope, category, request_id}`;
-- `502 {error: "llm_unavailable", answer, request_id}`;
-- `403` si falta la clave (o si no coincide con `E2E_FAKE_N8N_KEY`, cuando se
-  define).
+- Sim: `POST /api/v2/workflows/{id}/execute` con `X-API-Key` y
+  `{input: {request_id, question, history, knowledge}}` →
+  `200 {data: {status: "completed", output: {answer, in_scope, category, request_id}}}`;
+  la caída del modelo llega como `status: "failed"`; `401` si falta la clave;
+- n8n: `POST /webhook/emi-chat` con `X-EMOtv-Key` y el cuerpo tal cual →
+  `200 {answer, in_scope, category, request_id}` o
+  `502 {error: "llm_unavailable", answer, request_id}`; `403` si falta la clave.
 
-La palabra «receta» en la pregunta produce una respuesta fuera de alcance y
-«falla-llm» produce el 502. La prueba también comprueba que ni el correo ni el
+Con `E2E_FAKE_N8N_KEY` definida, la clave también debe coincidir. La palabra
+«receta» en la pregunta produce una respuesta fuera de alcance y «falla-llm»
+produce el error del modelo (502 en EMOtv). La prueba también comprueba que ni el correo ni el
 código del estudiante viajan al workflow. Escucha en `0.0.0.0:5679`
 (`E2E_FAKE_N8N_PORT`); el contenedor de la API llega por
 `host.docker.internal`.

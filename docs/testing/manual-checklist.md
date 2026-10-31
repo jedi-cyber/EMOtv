@@ -72,8 +72,8 @@ Cada postura se prueba a la distancia que funcionó mejor en la tabla anterior.
 
 ## Emi con el workflow publicado
 
-Usa la clave real solo en el `.env` local (`N8N_WEBHOOK_KEY`). No la escribas
-en esta hoja.
+Usa la URL y la clave reales solo en el `.env` local (`SIM_WORKFLOW_URL` y
+`SIM_API_KEY`). No las escribas en esta hoja.
 
 | Prueba | Resultado esperado | Resultado obtenido | Fecha | Observaciones |
 | --- | --- | --- | --- | --- |
