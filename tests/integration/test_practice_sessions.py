@@ -62,36 +62,46 @@ def test_sostener_la_expresion_pedida_la_logra_y_avanza_tras_la_pausa(env):  # n
     # Sin ilustración no hay imagen; la cámara sigue enviando cuadros.
     assert shown["stimulus"] is None and shown["capture_frames"] is True
     assert env.client.get(f"/participant-view/{token}/stimulus").status_code == 404
-    send(env, token, HAPPY, count=6)            # el nivel cruza el umbral al 1.0 s y se sostiene 2 s
+    send(env, token, HAPPY, count=5)            # el nivel cruza el umbral al 0.5 s y se sostiene 2 s
     [item] = results(env, session_id)
-    assert item.outcome is PracticeOutcome.ACHIEVED and item.seconds_to_achieve == 3.0
+    assert item.outcome is PracticeOutcome.ACHIEVED and item.seconds_to_achieve == 2.5
     assert item.relative_to_calibration is True and item.feedback_visible is True
     assert item.target_expression == "happiness" and 0.6 <= item.peak_level <= 1.0
-    assert (item.analyzed_frames, item.flagged_frames) == (6, 0)
+    assert (item.analyzed_frames, item.flagged_frames) == (5, 0)
     assert item.emotion_model_id == "hsemotion_enet_b0_8_best_afew"
     # Pausa del logro: el paso sigue y ya no se analizan cuadros.
     assessed = env.frames_assessed
-    send(env, token, HAPPY, count=2, every=0.5)
+    send(env, token, HAPPY, count=3, every=0.5)
     assert env.frames_assessed == assessed and state(env, session_id)["phase"] == "stimuli"
-    wait(env, 1.1)
+    assert state(env, session_id)["practice"]["achieved"] is True
+    wait(env, 0.6)
     assert state(env, session_id)["phase"] == "finished"
     assert state(env, session_id)["captures"] == []   # la práctica no crea capturas
     assert [entry["step_index"] for entry in state(env, session_id)["steps_log"]] == [0]
 
 
-def test_al_vencer_el_tiempo_se_registra_no_logrado_y_avanza(env):  # noqa: F811
+def test_al_vencer_el_tiempo_se_registra_no_logrado_y_avanza_tras_la_pausa(env):  # noqa: F811
     second = ProtocolStep.practice("surprise", 2, 10)
     session_id, token = start(env, ProtocolStep.practice("happiness", 2, 6), second)
     send(env, token, SLIGHT, count=8)           # la alegría apenas sube: nunca alcanza el umbral
-    wait(env, 2.5)
+    wait(env, 2.5)                               # 6.5 s: venció el tiempo, en la pausa de 2 s
     current = state(env, session_id)
-    assert current["phase"] == "stimuli" and current["step_index"] == 1
+    assert current["phase"] == "stimuli" and current["step_index"] == 0
+    assert current["practice"]["achieved"] is False
     [item] = results(env, session_id)
     assert item.outcome is PracticeOutcome.TIMED_OUT and item.seconds_to_achieve is None
     assert item.peak_level < 0.6 and item.analyzed_frames == 8
     assert item.ended_at - item.started_at == timedelta(seconds=6)
-    # Sin cuadros, el reloj del servidor también cierra el ejercicio.
+    # Durante la pausa no se analizan cuadros.
+    assessed = env.frames_assessed
+    send(env, token, SLIGHT, count=2)
+    assert env.frames_assessed == assessed and state(env, session_id)["step_index"] == 0
+    wait(env, 0.6)                               # 8.1 s: terminó la pausa
+    assert state(env, session_id)["step_index"] == 1
+    # Sin cuadros, el reloj del servidor también cierra el ejercicio, y tras la pausa termina.
     wait(env, 10)
+    assert state(env, session_id)["step_index"] == 1 and len(results(env, session_id)) == 2
+    wait(env, 2)
     assert state(env, session_id)["phase"] == "finished"
     second_result = results(env, session_id)[1]
     assert second_result.outcome is PracticeOutcome.TIMED_OUT and second_result.analyzed_frames == 0
@@ -235,7 +245,7 @@ def test_la_pantalla_de_la_persona_recibe_solo_la_instruccion_el_nivel_y_el_logr
     assert set(shown) == {"phase", "message", "stimulus", "remaining_seconds", "capture_frames",
                           "frame_interval_ms", "abstract_notice", "practice"}
     assert shown["practice"] == {"instruction": "Muestra alegría", "level": 0.0, "achieved": False,
-                                 "message": None, "frame_interval_ms": 500}
+                                 "message": None, "frame_interval_ms": 250}
     assert shown["abstract_notice"] is None
     _no_forbidden(shown)
     send(env, token, HAPPY, count=2)
@@ -244,7 +254,7 @@ def test_la_pantalla_de_la_persona_recibe_solo_la_instruccion_el_nivel_y_el_logr
     send(env, token, HAPPY, count=4)
     shown = view(env, token).json()
     assert shown["practice"] == {"instruction": "Muestra alegría", "level": 1.0, "achieved": True,
-                                 "message": "¡Lo lograste!", "frame_interval_ms": 500}
+                                 "message": "¡Lo lograste!", "frame_interval_ms": 250}
     _no_forbidden(shown)
     assert frame(env, token).json() == {"received": True}
 
@@ -252,6 +262,12 @@ def test_la_pantalla_de_la_persona_recibe_solo_la_instruccion_el_nivel_y_el_logr
 def test_al_vencer_el_tiempo_no_hay_mensaje_de_fracaso(env):  # noqa: F811
     session_id, token = start(env, ProtocolStep.practice("sadness", 2, 4), ProtocolStep.practice("neutral", 2, 10))
     send(env, token, SLIGHT, count=9)
+    shown = view(env, token).json()              # 4.5 s: en la pausa, sin mensaje
+    assert shown["practice"]["instruction"] == "Muestra tristeza"
+    assert shown["practice"]["achieved"] is False and shown["practice"]["message"] is None
+    assert shown["message"] is None
+    _no_forbidden(shown)
+    wait(env, 2)
     shown = view(env, token).json()
     assert shown["practice"]["instruction"] == "Deja la cara tranquila"
     assert shown["practice"]["achieved"] is False and shown["practice"]["message"] is None

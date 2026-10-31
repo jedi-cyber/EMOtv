@@ -213,8 +213,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
     protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
                                        audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service)
     app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
+    practice_settings = get_practice_settings()
     app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
-                                              user_repository))
+                                              user_repository, practice=practice_settings))
     # Imágenes propias: detección de personas en memoria y revisión del docente.
     user_image_service = UserImageService(
         stimulus_service.repository, PostgresNoticeRepository(database_sessions), audit_service, docente_of,
@@ -289,7 +290,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
             calibration_min_increase=live_expression.calibration_min_increase,
-            exam_of=exam_repository.get, practice=get_practice_settings())
+            exam_of=exam_repository.get, practice=practice_settings)
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
                                             decode_frame=decode_frame, capacity=analysis_capacity))

@@ -45,6 +45,18 @@ def start(env, *steps):  # noqa: F811
 
 # --- Armado del protocolo ------------------------------------------------------------------
 
+
+def test_el_editor_recibe_lo_que_propone_el_servidor(env):  # noqa: F811
+    for user in (env.user_1, env.docente_a):
+        response = env.client.get("/protocols/practice-defaults", headers=headers(env, user))
+        assert response.status_code == 200
+        assert response.json() == {"hold_seconds": 2, "max_seconds": 20, "targets": [
+            "neutral", "happiness", "surprise", "sadness", "anger", "disgust", "fear", "contempt"]}
+    for user in (env.admin, env.superadmin):
+        assert env.client.get("/protocols/practice-defaults", headers=headers(env, user)).status_code == 403
+    assert env.client.get("/protocols/practice-defaults").status_code == 401
+
+
 def test_un_protocolo_con_ejercicios_se_guarda_y_se_devuelve(env):  # noqa: F811
     mild = approve(env, env.docente_a, upload_stimulus(env, env.docente_a, title="Leve"))
     response = create(env, practice(), practice("surprise", 3, 15, illustration=mild),
@@ -66,7 +78,7 @@ def test_un_protocolo_con_ejercicios_se_guarda_y_se_devuelve(env):  # noqa: F811
 
 
 @pytest.mark.parametrize("step, message", [
-    (practice(target="contempt"), "expresión que se pide"),
+    (practice(target="desprecio"), "expresión que se pide"),
     (practice(target=None), "expresión que se pide"),
     (practice(hold=0), "entre 1 y 10 segundos"),
     (practice(hold=11, max_seconds=30), "entre 1 y 10 segundos"),
@@ -103,7 +115,7 @@ def test_quien_conduce_ve_la_expresion_pedida_el_nivel_y_el_logro(env):  # noqa:
     current = state(env, session_id)
     assert current["practice"]["achieved"] is True and current["practice"]["level"] == 1.0
     [result] = current["practice_results"]
-    assert result["outcome"] == "achieved" and result["seconds_to_achieve"] == 3.0
+    assert result["outcome"] == "achieved" and result["seconds_to_achieve"] == 2.5
     # Los marcadores siguen funcionando en un ejercicio.
     assert post(env, session_id, "markers", {"kind": "laughed"}).status_code == 201
     assert state(env, session_id)["markers"][0]["step_index"] == 0

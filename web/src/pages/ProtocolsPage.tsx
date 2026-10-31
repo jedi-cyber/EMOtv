@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts, stimulusSummary } from "../stimuli/labels";
+import { DEFAULT_PRACTICE, MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
 interface Draft {
@@ -46,6 +46,9 @@ export function ProtocolsPage() {
   // Solo cuentas de voluntarios (PRUEBA-NN) en modo demo: el servidor decide.
   const validationQuery = useApiQuery<{ available: boolean; protocol_id: string | null }>("/practice-validation/protocol");
   const validation = validationQuery.data && "available" in validationQuery.data ? validationQuery.data : null;
+  // Lo que propone el editor para un ejercicio nuevo; lo configura el servidor.
+  const defaultsQuery = useApiQuery<{ hold_seconds: number; max_seconds: number }>("/protocols/practice-defaults");
+  const practiceDefaults = defaultsQuery.data && "hold_seconds" in defaultsQuery.data ? defaultsQuery.data : DEFAULT_PRACTICE;
   const protocols = query.data ?? [];
   const stimuli = stimuliQuery.data ?? [];
   const byId = new Map(stimuli.map((item) => [item.id, item]));
@@ -85,8 +88,8 @@ export function ProtocolsPage() {
     setChoice("");
   }
   function addPractice() {
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness", hold_seconds: 2,
-      exposure_seconds: 15, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness",
+      hold_seconds: practiceDefaults.hold_seconds, exposure_seconds: practiceDefaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
     setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);

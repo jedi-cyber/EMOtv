@@ -9,9 +9,10 @@ from emotv.domain.expression_info import EXPRESSION_KEYS
 MAX_EXPOSURE_SECONDS = 120
 MAX_STEPS = 30
 MAX_HOLD_SECONDS = 10
-# Expresiones que se pueden pedir en una práctica. Desprecio no: es difícil de
-# pedir a un niño y los modelos casi nunca la estiman.
-PRACTICE_TARGETS = tuple(key for key in EXPRESSION_KEYS if key != "contempt")
+# Expresiones que se pueden pedir en una práctica: todo el catálogo. Quien arma
+# el protocolo decide; la validación con adultos muestra cuáles se registran mejor
+# (docs/expression-practice.md, §14.1).
+PRACTICE_TARGETS = EXPRESSION_KEYS
 
 
 class ProtocolKind(str, Enum):

@@ -122,7 +122,9 @@ valores reales.
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
 | `TEST_DATA_RETENTION_DAYS` | plazo (1 a 30 días) de las cuentas de voluntarios `PRUEBA-NN` |
 | `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD` | nivel (0,05 a 1) en que se alcanza la expresión pedida en un ejercicio de práctica y nivel menor en que deja de estarlo (0,6 y 0,55) |
-| `PRACTICE_SMOOTHING_SECONDS`, `PRACTICE_SUCCESS_PAUSE_SECONDS` | constante de tiempo del suavizado de la señal (0,8 s) y pausa con «¡Lo lograste!» antes de avanzar (2 s) |
+| `PRACTICE_SMOOTHING_SECONDS`, `PRACTICE_FRAME_INTERVAL_MS` | constante de tiempo del suavizado de la señal (0,49 s) e intervalo entre cuadros de un ejercicio (250 ms) |
+| `PRACTICE_STEP_PAUSE_SECONDS` | pausa tras cada ejercicio, logrado o no, antes del siguiente (2 s; acepta el nombre anterior `PRACTICE_SUCCESS_PAUSE_SECONDS`) |
+| `PRACTICE_HOLD_SECONDS`, `PRACTICE_MAX_SECONDS` | sostén y tiempo máximo que propone el editor para un ejercicio nuevo (2 s y 20 s) |
 | `SSL_CERT_FILE` | CA adicional en redes que inspeccionan HTTPS |
 
 ## Limitaciones conocidas

@@ -3,6 +3,7 @@ el cupo sin espera (sin modelos ni imágenes)."""
 from __future__ import annotations
 
 import asyncio
+import math
 import threading
 
 import pytest
@@ -81,23 +82,47 @@ def test_nivel_relativo_a_la_base_neutral():
 # --- Configuración ------------------------------------------------------------------------
 
 def test_valores_iniciales_del_documento():
-    assert get_practice_settings({}) == PracticeSettings(0.6, 0.55, 0.8, 2.0)
+    # docs/expression-practice.md, §14.2: provisionales hasta la validación.
+    assert get_practice_settings({}) == PracticeSettings(
+        threshold=0.6, release_threshold=0.55, smoothing_seconds=0.49, step_pause_seconds=2.0,
+        hold_seconds=2, max_seconds=20, frame_interval_ms=250)
+
+
+def test_alfa_de_0_4_con_cuadros_cada_250_ms():
+    settings = get_practice_settings({})
+    alpha = 1 - math.exp(-(settings.frame_interval_ms / 1000) / settings.smoothing_seconds)
+    assert alpha == pytest.approx(0.4, abs=0.005)
 
 
 def test_valores_desde_el_entorno():
-    settings = get_practice_settings({"PRACTICE_THRESHOLD": "0.7", "PRACTICE_RELEASE_THRESHOLD": "0.6",
-                                      "PRACTICE_SMOOTHING_SECONDS": "0", "PRACTICE_SUCCESS_PAUSE_SECONDS": "3"})
-    assert settings == PracticeSettings(0.7, 0.6, 0.0, 3.0)
+    settings = get_practice_settings({
+        "PRACTICE_THRESHOLD": "0.7", "PRACTICE_RELEASE_THRESHOLD": "0.6", "PRACTICE_SMOOTHING_SECONDS": "0",
+        "PRACTICE_STEP_PAUSE_SECONDS": "3", "PRACTICE_HOLD_SECONDS": "4", "PRACTICE_MAX_SECONDS": "30",
+        "PRACTICE_FRAME_INTERVAL_MS": "500"})
+    assert settings == PracticeSettings(0.7, 0.6, 0.0, 3.0, 4, 30, 500)
+
+
+def test_el_nombre_anterior_de_la_pausa_sigue_valiendo():
+    assert get_practice_settings({"PRACTICE_SUCCESS_PAUSE_SECONDS": "3"}).step_pause_seconds == 3.0
+    both = {"PRACTICE_SUCCESS_PAUSE_SECONDS": "3", "PRACTICE_STEP_PAUSE_SECONDS": "1"}
+    assert get_practice_settings(both).step_pause_seconds == 1.0
 
 
 @pytest.mark.parametrize("name, value", [
     ("PRACTICE_THRESHOLD", "0"), ("PRACTICE_THRESHOLD", "1.5"), ("PRACTICE_RELEASE_THRESHOLD", "-0.1"),
-    ("PRACTICE_SMOOTHING_SECONDS", "11"), ("PRACTICE_SUCCESS_PAUSE_SECONDS", "-1"),
-    ("PRACTICE_THRESHOLD", "alto"),
+    ("PRACTICE_SMOOTHING_SECONDS", "11"), ("PRACTICE_STEP_PAUSE_SECONDS", "-1"),
+    ("PRACTICE_SUCCESS_PAUSE_SECONDS", "-1"), ("PRACTICE_THRESHOLD", "alto"),
+    ("PRACTICE_HOLD_SECONDS", "0"), ("PRACTICE_HOLD_SECONDS", "11"), ("PRACTICE_HOLD_SECONDS", "2.5"),
+    ("PRACTICE_MAX_SECONDS", "121"), ("PRACTICE_FRAME_INTERVAL_MS", "50"), ("PRACTICE_FRAME_INTERVAL_MS", "2000"),
 ])
 def test_valores_fuera_de_rango(name, value):
     with pytest.raises(ValueError, match=name):
         get_practice_settings({name: value})
+
+
+def test_el_tiempo_maximo_es_mayor_que_el_sosten():
+    with pytest.raises(ValueError, match="mayor que PRACTICE_HOLD_SECONDS"):
+        get_practice_settings({"PRACTICE_HOLD_SECONDS": "5", "PRACTICE_MAX_SECONDS": "5"})
 
 
 def test_el_umbral_de_salida_es_menor_que_el_de_entrada():

@@ -28,7 +28,6 @@ ABSTRACT_CAPTURE_INTERVAL = 3.0    # una imagen abstracta se captura varias vece
 MAX_NOTE_LENGTH = 300
 EXAM_CAPTURE_INTERVAL = 0.5        # una fila cada medio segundo durante el examen
 EXAM_GAP_SECONDS = 1.5             # sin cuadros tras este margen, la fila se guarda marcada
-PRACTICE_FRAME_INTERVAL_MS = 500   # en una práctica se analiza cada cuadro
 
 # Lo que lee la persona en un ejercicio de práctica: corto y sin valorar.
 PRACTICE_INSTRUCTIONS = {
@@ -39,6 +38,7 @@ PRACTICE_INSTRUCTIONS = {
     "fear": "Muestra miedo",
     "disgust": "Muestra asco",
     "neutral": "Deja la cara tranquila",
+    "contempt": "Muestra desprecio",
 }
 PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
 # Aviso fijo junto a todo resultado de práctica.

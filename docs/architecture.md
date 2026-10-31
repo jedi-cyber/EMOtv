@@ -209,7 +209,7 @@ Detalle, diferencias con el diseño y pendientes en
 [expression-practice.md](expression-practice.md).
 
 ```text
-ParticipantViewPage --(un cuadro a la vez, cada 500 ms)--> POST /participant-view/{token}/frames
+ParticipantViewPage --(un cuadro a la vez, cada PRACTICE_FRAME_INTERVAL_MS)--> POST /participant-view/{token}/frames
   -> AnalysisCapacity.try_run (sin cupo: el cuadro se descarta)
   -> GuidedSessionService: YuNet + modelo local -> distribución (imagen descartada)
   -> PracticeTracker (nivel EMA, histéresis, sostén; memoria constante)

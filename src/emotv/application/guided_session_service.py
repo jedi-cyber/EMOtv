@@ -42,7 +42,6 @@ from emotv.domain.guided_session import (
     EXAM_GAP_SECONDS,
     EXAM_STATION_PHASES,
     PRACTICE_ACHIEVED_MESSAGE,
-    PRACTICE_FRAME_INTERVAL_MS,
     PRACTICE_INSTRUCTIONS,
     QUALITY_RETRY_SECONDS,
     CaptureQuality,
@@ -400,6 +399,10 @@ class GuidedSessionService:
                     return None
                 self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT,
                                      ended_at=run.step_started_at + timedelta(seconds=step.exposure_seconds))
+                # También sin lograrlo hay una pausa antes del paso siguiente (§14.5).
+                pause_until = step.exposure_seconds + self.practice.step_pause_seconds
+                if self.practice.step_pause_seconds > 0 and elapsed < pause_until:
+                    return self.repository.save_run(replace(run, next_capture_due=pause_until))
             elif elapsed < run.next_capture_due:
                 return None
             return self.repository.save_run(self._next_step(replace(run, next_capture_due=None), session,
@@ -497,7 +500,7 @@ class GuidedSessionService:
                 self._store_practice(fresh, session, step, PracticeOutcome.ACHIEVED, ended_at=self.clock(),
                                      seconds=round(elapsed, 2))
                 # La persona ve el logro durante la pausa; después el paso avanza solo.
-                self.repository.save_run(replace(fresh, next_capture_due=elapsed + self.practice.success_pause_seconds))
+                self.repository.save_run(replace(fresh, next_capture_due=elapsed + self.practice.step_pause_seconds))
 
     def set_practice_feedback(self, user: User, session_id: str, visible: bool) -> GuidedRun:
         """Quien conduce enciende o apaga la señal del nivel para toda la sesión.
@@ -520,7 +523,7 @@ class GuidedSessionService:
         """Lo que ve la persona en un ejercicio: la instrucción, un nivel de 0 a 1
         (nulo con la señal apagada) y si lo logró. Nunca la expresión detectada,
         probabilidades ni calidad."""
-        achieved = run.next_capture_due is not None
+        achieved = self._practice_achieved(run, step)
         level = None
         if run.practice_feedback:
             live = self._live.get(run.session_id)
@@ -530,7 +533,14 @@ class GuidedSessionService:
             level = 1.0 if achieved else round(tracker.level, 2) if current else 0.0
         return {"instruction": PRACTICE_INSTRUCTIONS[step.target_expression], "level": level, "achieved": achieved,
                 "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
-                "frame_interval_ms": PRACTICE_FRAME_INTERVAL_MS}
+                "frame_interval_ms": self.practice.frame_interval_ms}
+
+    def _practice_achieved(self, run: GuidedRun, step: ProtocolStep) -> bool:
+        """En pausa tras un logro. La pausa tras vencer el tiempo empieza justo en
+        exposure_seconds; la de un logro, antes (se logró antes de vencer)."""
+        if run.next_capture_due is None:
+            return False
+        return run.next_capture_due < step.exposure_seconds + self.practice.step_pause_seconds
 
     def _conductor_practice(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce en un ejercicio: la expresión pedida, el nivel

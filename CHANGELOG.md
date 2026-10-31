@@ -20,11 +20,18 @@ commit de cada grupo. La cronología commit por commit está en
 - Protocolo «Validación con adultos» para voluntarios `PRUEBA-NN` en modo demo
   y exportación CSV agregada para administración (`a4db041`).
 - Variables `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD`,
-  `PRACTICE_SMOOTHING_SECONDS` y `PRACTICE_SUCCESS_PAUSE_SECONDS`.
+  `PRACTICE_SMOOTHING_SECONDS`, `PRACTICE_FRAME_INTERVAL_MS`,
+  `PRACTICE_STEP_PAUSE_SECONDS` (antes `PRACTICE_SUCCESS_PAUSE_SECONDS`, que se
+  sigue aceptando), `PRACTICE_HOLD_SECONDS` y `PRACTICE_MAX_SECONDS`.
+- `GET /protocols/practice-defaults`: lo que el editor propone para un
+  ejercicio nuevo.
 - Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- Práctica (§14.5): se puede pedir cualquier expresión del catálogo, incluido
+  desprecio; el editor propone 20 s; hay una pausa de 2 s tras cada ejercicio,
+  logrado o no; cuadros cada 250 ms y suavizado de 0,49 s.
 - Los cuadros de un ejercicio de práctica pasan por el cupo de análisis y se
   descartan si no hay cupo; la pantalla de la persona envía un cuadro a la vez.
 - El Analizador cuenta imágenes y ejercicios por separado al elegir un

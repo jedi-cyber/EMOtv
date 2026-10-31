@@ -427,18 +427,23 @@ niños ni dice nada sobre el estado emocional de nadie.
 ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo
 elige en el **Analizador** y confirma la autorización. Tras la calibración
 neutral, cada ejercicio corre en `STIMULI`: la pantalla de la persona envía un
-cuadro cada 500 ms (uno a la vez), el servidor lo analiza en memoria, actualiza
+cuadro cada 250 ms (uno a la vez), el servidor lo analiza en memoria, actualiza
 el nivel y descarta la imagen. Al lograrlo, vencer el tiempo, saltarlo o parar
 la sesión se guarda una fila en `practice_results`. El detalle, el reporte y las
 estadísticas describen lo ocurrido («Logró la expresión pedida en 3 de 5
 ejercicios.») junto al aviso fijo.
 
-**Parámetros.** Umbral, umbral de salida, constante de suavizado y pausa tras el
-logro se leen del entorno (`PRACTICE_THRESHOLD=0.6`,
-`PRACTICE_RELEASE_THRESHOLD=0.55`, `PRACTICE_SMOOTHING_SECONDS=0.8`,
-`PRACTICE_SUCCESS_PAUSE_SECONDS=2`); la API no arranca si el umbral de salida no
-es menor que el umbral. El sostén va de 1 a 10 s y el tiempo máximo hasta
-120 s, siempre mayor que el sostén.
+**Parámetros.** Se leen del entorno con los valores de §14.2
+(`PRACTICE_THRESHOLD=0.6`, `PRACTICE_RELEASE_THRESHOLD=0.55`,
+`PRACTICE_SMOOTHING_SECONDS=0.49`, `PRACTICE_FRAME_INTERVAL_MS=250`,
+`PRACTICE_STEP_PAUSE_SECONDS=2`, `PRACTICE_HOLD_SECONDS=2`,
+`PRACTICE_MAX_SECONDS=20`); `PRACTICE_SUCCESS_PAUSE_SECONDS` se sigue aceptando
+como nombre anterior de la pausa. La API no arranca si el umbral de salida no es
+menor que el umbral o si el tiempo máximo propuesto no es mayor que el sostén.
+El sostén va de 1 a 10 s y el tiempo máximo hasta 120 s, siempre mayor que el
+sostén. El editor pide los valores propuestos a `GET /protocols/practice-defaults`
+(usuarios y docentes) y cada paso guarda los suyos. La pausa sigue a todo
+ejercicio terminado, logrado o con el tiempo vencido; saltarlo avanza sin pausa.
 
 **Pruebas.** Dominio y persistencia (`test_practice_domain.py`,
 `test_practice_persistence.py`), algoritmo con reloj falso
@@ -458,7 +463,8 @@ vitest de las pantallas y de los resultados, y la e2e
 - **Parámetros configurables.** Umbral, histéresis, suavizado y pausa son
   variables de entorno con validación de rango (`config.PracticeSettings`), no
   constantes del dominio. Los valores por defecto son los del diseño.
-- **Tiempo máximo por defecto.** El editor propone 15 s, no 20.
+- **Tiempo máximo por defecto.** El editor proponía 15 s; desde §14.5 propone
+  20 s, como el diseño.
 - **Aviso.** En lugar de `PRACTICE_CHILD_NOTICE`, solo con público infantil, hay
   un aviso fijo `PRACTICE_NOTICE` junto a **todo** resultado de práctica, sea
   cual sea el público: los modelos se entrenaron sobre todo con rostros de
@@ -611,7 +617,9 @@ guarda nada que permita reconocer que dos sesiones son de la misma persona. Las
 estadísticas siguen siendo agregadas: cuentan ejercicios y sesiones, nunca
 personas.
 
-### 14.5. Lo que falta ajustar en el código
+### 14.5. Ajustes en el código
+
+Aplicados, salvo la prueba de carga:
 
 - Quitar la exclusión de `contempt` en `PRACTICE_TARGETS`
   (`domain/protocol.py`) y ofrecer todo el catálogo en el editor.
@@ -621,4 +629,7 @@ personas.
 - Hacer que el editor proponga 20 s de tiempo máximo (hoy propone 15).
 - Aplicar la pausa de 2 s entre todos los pasos de práctica, no solo después
   de un logro.
-- Repetir la prueba de carga con cuadros cada 250 ms.
+- Repetir la prueba de carga con cuadros cada 250 ms. **Pendiente.**
+
+El protocolo «Validación con adultos» (§10) mantiene su lista sin `contempt` y
+15 s por ejercicio: es una lista fija de la validación, no la del editor.

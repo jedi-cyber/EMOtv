@@ -56,13 +56,13 @@ def test_practica_valida_con_y_sin_ilustracion():
 
 
 def test_expresiones_que_se_pueden_pedir():
-    assert set(PRACTICE_TARGETS) <= set(EXPRESSION_KEYS)
-    assert "contempt" not in PRACTICE_TARGETS and "neutral" in PRACTICE_TARGETS
+    # Todo el catálogo, incluido desprecio: quien arma el protocolo elige (§14.1).
+    assert PRACTICE_TARGETS == EXPRESSION_KEYS and "contempt" in PRACTICE_TARGETS
     for target in PRACTICE_TARGETS:
         assert practice(target_expression=target).target_expression == target
 
 
-@pytest.mark.parametrize("target", [None, "", "contempt", "alegria", "HAPPINESS"])
+@pytest.mark.parametrize("target", [None, "", "desprecio", "alegria", "HAPPINESS"])
 def test_practica_exige_una_expresion_valida(target):
     with pytest.raises(ValueError, match="expresión que se pide"):
         practice(target_expression=target)
@@ -139,7 +139,7 @@ def test_logrado_exige_segundos_no_negativos():
 
 
 @pytest.mark.parametrize("fields", [
-    {"target_expression": "contempt"},
+    {"target_expression": "desprecio"},
     {"outcome": "failed"},
     {"peak_level": 1.2},
     {"peak_level": -0.1},

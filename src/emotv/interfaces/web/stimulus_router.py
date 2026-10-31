@@ -8,7 +8,7 @@ estímulo es la única imagen que sirve la API y nunca es la de una persona eval
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,8 +17,10 @@ from emotv.application import AuthenticationService
 from emotv.application.protocol_service import ProtocolDraft, ProtocolNotFound, ProtocolService
 from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
+from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import MAX_EXPOSURE_SECONDS, MAX_STEPS
+from emotv.domain.protocol import MAX_EXPOSURE_SECONDS, MAX_STEPS, PRACTICE_TARGETS
+from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
@@ -96,9 +98,11 @@ def create_stimulus_router(
     protocols: ProtocolService | None,
     authentication: AuthenticationService | None,
     users: UserRepository | None,
+    practice: PracticeSettings | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["stimuli"])
     current_user = create_current_user_dependency(authentication, users)
+    practice = practice or PracticeSettings()
 
     def stimulus_service() -> StimulusService:
         if stimuli is None:
@@ -215,6 +219,15 @@ def create_stimulus_router(
     @router.post("/protocols", response_model=ProtocolResponse, status_code=201)
     def create_protocol(request: ProtocolRequest, user: User = Depends(current_user)):
         return protocol_response(guarded(lambda: protocol_service().create(user, draft(request))), user)
+
+    @router.get("/protocols/practice-defaults")
+    def practice_defaults(user: User = Depends(current_user)) -> dict[str, Any]:
+        """Lo que el editor propone para un ejercicio nuevo y las expresiones que se
+        pueden pedir. Va antes de /protocols/{protocol_id}."""
+        if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
+            raise HTTPException(403, "Los protocolos los arman usuarios y docentes")
+        return {"hold_seconds": practice.hold_seconds, "max_seconds": practice.max_seconds,
+                "targets": list(PRACTICE_TARGETS)}
 
     @router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def get_protocol(protocol_id: str, user: User = Depends(current_user)):

@@ -16,7 +16,7 @@ export const expectedExpressionNames: Record<string, string> = {
   contempt: "Desprecio",
 };
 
-// Expresiones que se pueden pedir en un ejercicio de práctica (todas menos desprecio).
+// Expresiones que se pueden pedir en un ejercicio de práctica: todo el catálogo.
 export const practiceTargetNames: Record<string, string> = {
   happiness: "Alegría",
   surprise: "Sorpresa",
@@ -25,7 +25,10 @@ export const practiceTargetNames: Record<string, string> = {
   fear: "Miedo",
   disgust: "Asco",
   neutral: "Cara tranquila",
+  contempt: "Desprecio",
 };
+// Lo que propone el editor si el servidor no responde (PRACTICE_HOLD_SECONDS y PRACTICE_MAX_SECONDS).
+export const DEFAULT_PRACTICE = { hold_seconds: 2, max_seconds: 20 };
 export const MAX_HOLD_SECONDS = 10;
 export const MAX_STEP_SECONDS = 120;
 

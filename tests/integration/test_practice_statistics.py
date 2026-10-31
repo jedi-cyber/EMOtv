@@ -45,7 +45,7 @@ def test_la_sesion_resume_sus_ejercicios_aparte_de_los_estimulos(env):  # noqa: 
     lane = get(env, f"/sessions/{session_id}/timeline")["lanes"]["stimuli"]
     assert [(item["kind"], item["target_expression"], item["outcome"]) for item in lane] == [
         ("practice", "happiness", "achieved"), ("practice", "surprise", "skipped"), ("practice", "sadness", "stopped")]
-    assert lane[0]["seconds_to_achieve"] == 3.0 and lane[1]["skipped"] is True
+    assert lane[0]["seconds_to_achieve"] == 2.5 and lane[1]["skipped"] is True
 
 
 def test_el_reporte_incluye_la_practica_con_su_aviso(env):  # noqa: F811

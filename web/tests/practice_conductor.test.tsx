@@ -43,8 +43,8 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
   it("elige la expresión pedida, el sostén y el tiempo máximo, y lo envía al servidor", async () => {
     await openEditor();
     const options = within(screen.getByLabelText("Expresión pedida")).getAllByRole("option").map((option) => option.textContent);
-    expect(options).toEqual(["Alegría", "Sorpresa", "Tristeza", "Enojo", "Miedo", "Asco", "Cara tranquila"]);
-    expect(options).not.toContain("Desprecio");
+    // Todo el catálogo: quien arma el protocolo elige, incluido desprecio.
+    expect(options).toEqual(["Alegría", "Sorpresa", "Tristeza", "Enojo", "Miedo", "Asco", "Cara tranquila", "Desprecio"]);
     await userEvent.selectOptions(screen.getByLabelText("Expresión pedida"), "surprise");
     await userEvent.clear(screen.getByLabelText("Sostener (s)"));
     await userEvent.type(screen.getByLabelText("Sostener (s)"), "3");
@@ -55,7 +55,14 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
     const body = JSON.parse(String(init?.body));
     expect(body.for_children).toBe(true);
     expect(body.steps).toEqual([{ kind: "practice", stimulus_id: "a", target_expression: "surprise", hold_seconds: 3,
-      exposure_seconds: 15, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }]);
+      exposure_seconds: 20, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }]);
+  });
+
+  it("propone el sostén y el tiempo máximo que configura el servidor", async () => {
+    data.value["/protocols/practice-defaults"] = { hold_seconds: 4, max_seconds: 30, targets: [] };
+    await openEditor();
+    expect(screen.getByLabelText("Sostener (s)")).toHaveValue(4);
+    expect(screen.getByLabelText("Tiempo máximo (s)")).toHaveValue(30);
   });
 
   it("muestra las reglas del dominio en español y no deja guardar", async () => {
