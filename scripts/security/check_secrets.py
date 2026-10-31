@@ -35,7 +35,7 @@ from pathlib import PurePosixPath
 
 ALLOWLIST_PATH = ".secrets-allowlist"
 MAX_BYTES = 5 * 1024 * 1024
-# webhook_key: N8N_WEBHOOK_KEY permite gastar la cuota de Groq del workflow de Emi.
+# api_key / webhook_key: SIM_API_KEY y N8N_WEBHOOK_KEY permiten gastar la cuota del workflow de Emi.
 SECRET_WORDS = "(?:" + "|".join(("password", "passwd", "secret", r"api[_-]?key", r"webhook[_-]?key", "token")) + ")"
 
 ASSIGNMENT = re.compile(

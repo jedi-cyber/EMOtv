@@ -445,6 +445,14 @@ class QuestionnaireResponseRecord(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice')"
+PROTOCOL_STEP_STIMULUS = "kind = 'practice' OR stimulus_id IS NOT NULL"
+PROTOCOL_STEP_PRACTICE = (
+    "(kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL) OR "
+    "(kind = 'practice' AND target_expression IS NOT NULL AND hold_seconds IS NOT NULL "
+    "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0)")
+
+
 class ProtocolStepRecord(Base):
     __tablename__ = "protocol_steps"
     __table_args__ = (
@@ -452,13 +460,21 @@ class ProtocolStepRecord(Base):
         CheckConstraint("exposure_seconds BETWEEN 1 AND 120", name="ck_protocol_steps_exposure"),
         CheckConstraint("capture_after_seconds >= 0 AND capture_after_seconds <= exposure_seconds",
                         name="ck_protocol_steps_capture"),
+        CheckConstraint(PROTOCOL_STEP_KIND, name="ck_protocol_steps_kind"),
+        CheckConstraint(PROTOCOL_STEP_STIMULUS, name="ck_protocol_steps_stimulus"),
+        CheckConstraint(PROTOCOL_STEP_PRACTICE, name="ck_protocol_steps_practice"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     protocol_id: Mapped[str] = mapped_column(
         ForeignKey("protocols.id", ondelete="CASCADE"), nullable=False, index=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    stimulus_id: Mapped[str] = mapped_column(
-        ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=False, index=True)
+    # Nulo solo en una práctica sin ilustración.
+    stimulus_id: Mapped[str | None] = mapped_column(
+        ForeignKey("stimuli.id", ondelete="RESTRICT"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="stimulus",
+                                      server_default=text("'stimulus'"))
+    target_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -491,6 +507,8 @@ class GuidedRunRecord(Base):
     view_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stop_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    practice_feedback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                                    server_default=text("true"))
 
 
 class ExpressionCaptureRecord(Base):
@@ -553,6 +571,37 @@ class VerbalResponseRecord(Base):
     text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class PracticeResultRecord(Base):
+    """Resultado de un ejercicio de práctica. Nunca imágenes, niveles por cuadro
+    ni la base neutral."""
+
+    __tablename__ = "practice_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", name="uq_practice_results_session_step"),
+        CheckConstraint("outcome IN ('achieved', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_practice_results_outcome"),
+        CheckConstraint("(outcome = 'achieved') = (seconds_to_achieve IS NOT NULL)",
+                        name="ck_practice_results_achieved"),
+        CheckConstraint("peak_level >= 0 AND peak_level <= 1", name="ck_practice_results_peak"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_expression: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    seconds_to_achieve: Mapped[float | None] = mapped_column(Float, nullable=True)
+    peak_level: Mapped[float] = mapped_column(Float, nullable=False)
+    relative_to_calibration: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    feedback_visible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    analyzed_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    flagged_frames: Mapped[int] = mapped_column(Integer, nullable=False)
+    emotion_model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    emotion_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SessionReportRecord(Base):

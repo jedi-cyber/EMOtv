@@ -8,7 +8,24 @@ import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
-import { expectedExpressionNames } from "../stimuli/labels";
+import { expectedExpressionNames, practiceTargetNames } from "../stimuli/labels";
+import type { PracticeRow } from "../api/types";
+
+function averageText(value: number | null) {
+  return value == null ? "—" : `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} s`;
+}
+
+function PracticeTable({ first, rows }: { first: string; rows: (PracticeRow & { key: string; label: string })[] }) {
+  return <div className="table-wrap"><table className="data-table">
+    <thead><tr><th>{first}</th><th>Logrados</th><th>Terminados</th><th>Tiempo promedio hasta lograrla</th><th>Saltados</th></tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.key}>
+      <td data-label={first}>{row.label}</td><td data-label="Logrados">{row.achieved}</td>
+      <td data-label="Terminados">{row.applied}</td>
+      <td data-label="Tiempo promedio hasta lograrla">{averageText(row.average_seconds_to_achieve)}</td>
+      <td data-label="Saltados">{row.skipped}</td>
+    </tr>)}</tbody>
+  </table></div>;
+}
 
 type Scope = "mine" | "group";
 
@@ -91,6 +108,12 @@ export function StatisticsPage() {
       ["Estímulos emocionales comparados", stats.coincidence.compared],
       ["Coincidió con la esperada", stats.coincidence.matched],
     ];
+    if (stats.practice) {
+      rows.push([], ["Ejercicios de práctica", stats.practice.totals.sentence], [stats.practice.notice],
+        ["Expresión pedida", "Logrados", "Terminados", "Tiempo promedio (s)", "Saltados"],
+        ...stats.practice.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.achieved,
+          row.applied, row.average_seconds_to_achieve ?? "", row.skipped]));
+    }
     if (stats.by_user) {
       rows.push([], ["Usuario", "Sesiones", "Completadas", "Interrumpidas"],
         ...stats.by_user.map((row) => [row.email, row.sessions, row.completed, row.interrupted]));
@@ -198,6 +221,24 @@ export function StatisticsPage() {
           ? "Ningún estímulo emocional tuvo una captura de buena calidad para comparar."
           : `En ${data.coincidence.matched} de ${data.coincidence.compared} estímulos emocionales la expresión estimada coincidió con la esperada.`}
       </p>
+
+      {data.practice && <section aria-label="Ejercicios de práctica">
+        <h2 className="stat-heading">Ejercicios de práctica</h2>
+        <Callout variant="info" role="note">{data.practice.notice}</Callout>
+        <p>{data.practice.totals.sentence} En {data.practice.sessions} {data.practice.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        {data.practice.totals.average_sentence && <p>{data.practice.totals.average_sentence}</p>}
+        {data.practice.totals.feedback_sentence && <p className="muted">{data.practice.totals.feedback_sentence}</p>}
+        <p className="muted">Se cuentan los ejercicios que llegaron a su final. Van aparte de la coincidencia de estímulos.</p>
+        <h3>Por expresión pedida</h3>
+        <PracticeTable first="Expresión pedida" rows={data.practice.by_target.map((row) => ({ ...row, key: row.target_expression,
+          label: practiceTargetNames[row.target_expression] ?? row.target_expression }))} />
+        <h3>Por protocolo</h3>
+        <PracticeTable first="Protocolo" rows={data.practice.by_protocol.map((row) => ({ ...row, key: row.family_id, label: row.name }))} />
+        {data.practice.by_user && <>
+          <h3>Por usuario del grupo</h3>
+          <PracticeTable first="Usuario" rows={data.practice.by_user.map((row) => ({ ...row, key: row.email, label: row.email }))} />
+        </>}
+      </section>}
 
       {data.by_user && <>
         <h2 className="stat-heading">Totales por usuario</h2>

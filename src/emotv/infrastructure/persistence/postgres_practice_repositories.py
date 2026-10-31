@@ -174,7 +174,9 @@ class PostgresProtocolRepository:
             id=str(uuid4()), protocol_id=item.id, position=position, stimulus_id=step.stimulus_id,
             exposure_seconds=step.exposure_seconds, capture_after_seconds=step.capture_after_seconds,
             record_verbal_response=step.record_verbal_response,
-            shown_before_analyzer=step.shown_before_analyzer) for position, step in enumerate(item.steps))
+            shown_before_analyzer=step.shown_before_analyzer, kind=step.kind.value,
+            target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+            for position, step in enumerate(item.steps))
 
     @staticmethod
     def _domain(db: Session, row: ProtocolRecord) -> Protocol:
@@ -188,7 +190,9 @@ class PostgresProtocolRepository:
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
             superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
-                                     step.record_verbal_response, step.shown_before_analyzer) for step in steps))
+                                     step.record_verbal_response, step.shown_before_analyzer,
+                                     kind=step.kind or "stimulus", target_expression=step.target_expression,
+                                     hold_seconds=step.hold_seconds) for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:
         with self._factory.begin() as db:

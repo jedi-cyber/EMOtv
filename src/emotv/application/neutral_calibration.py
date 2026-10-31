@@ -87,6 +87,17 @@ class NeutralCalibration:
         self.state = CALIBRATED
         return None
 
+    def relative_level(self, distribution: Mapping[str, float], label: str) -> float:
+        """Cuánto subió una clase respecto a la base, en proporción de lo que le
+        quedaba por subir: 0 en la base (o por debajo) y 1 con probabilidad 1."""
+        if self._baseline is None:
+            raise ValueError("Sin calibración")
+        baseline = self._baseline.get(label, 0.0)
+        if baseline >= 1.0:
+            return 0.0
+        value = (float(distribution.get(label, 0.0)) - baseline) / (1.0 - baseline)
+        return min(1.0, max(0.0, value))
+
     def compare(self, distribution: Mapping[str, float]) -> tuple[tuple[CalibratedClass, ...], str | None]:
         """Clases ordenadas por probabilidad con su cambio, y la expresión sugerida.
 

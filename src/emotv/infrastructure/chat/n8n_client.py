@@ -42,9 +42,9 @@ class ChatReply:
 
 
 class ChatGatewayError(RuntimeError):
-    """Fallo al consultar el workflow. ``kind`` permite elegir el mensaje al usuario.
+    """Fallo al consultar el workflow (n8n o Sim). ``kind`` permite elegir el mensaje al usuario.
 
-    Tipos: ``timeout``, ``llm_unavailable`` (502 de n8n), ``unauthorized``
+    Tipos: ``timeout``, ``llm_unavailable`` (el LLM no respondió), ``unauthorized``
     (401/403, clave incorrecta), ``not_published`` (404), ``invalid_response``
     y ``unavailable`` (cualquier otro fallo).
     """
@@ -139,15 +139,20 @@ class N8nWebhookChatGateway:
             payload = response.json()
         except ValueError as error:
             raise ChatGatewayError("invalid_response", status) from error
-        if not isinstance(payload, dict):
-            raise ChatGatewayError("invalid_response", status)
-        answer, in_scope = payload.get("answer"), payload.get("in_scope")
-        if not isinstance(answer, str) or not answer.strip() or not isinstance(in_scope, bool):
-            raise ChatGatewayError("invalid_response", status)
-        category = payload.get("category")
-        return ChatReply(
-            answer=answer.strip(),
-            in_scope=in_scope,
-            category=category.strip() if isinstance(category, str) else "",
-            status_code=status,
-        )
+        return parse_reply(payload, status)
+
+
+def parse_reply(payload: object, status: int) -> ChatReply:
+    """Valida ``{answer, in_scope, category}``; sin ``answer`` o ``in_scope`` booleano es error."""
+    if not isinstance(payload, dict):
+        raise ChatGatewayError("invalid_response", status)
+    answer, in_scope = payload.get("answer"), payload.get("in_scope")
+    if not isinstance(answer, str) or not answer.strip() or not isinstance(in_scope, bool):
+        raise ChatGatewayError("invalid_response", status)
+    category = payload.get("category")
+    return ChatReply(
+        answer=answer.strip(),
+        in_scope=in_scope,
+        category=category.strip() if isinstance(category, str) else "",
+        status_code=status,
+    )

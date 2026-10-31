@@ -8,10 +8,16 @@ para la Facultad de Psicología de la Universidad Nacional Hermilio Valdizán
    FER+ ONNX);
 2. muestra **información educativa** sobre la expresión estimada;
 3. recomienda una **actividad guiada de dos o más posturas** y verifica cada
-   postura con MediaPipe y reglas geométricas.
+   postura con MediaPipe y reglas geométricas;
+4. conduce **protocolos** con imágenes y **ejercicios de práctica de
+   expresiones**: la persona recibe una instrucción («Muestra alegría») y ve
+   una señal de 0 a 1 que crece cuando su expresión estimada se acerca a la
+   pedida. El sistema registra si se logró, en cuánto tiempo y si la señal
+   estuvo visible; no valora a la persona ni guarda imágenes
+   ([práctica de expresiones](docs/expression-practice.md)).
 
 Incluye inicio de sesión con roles, consentimiento configurable, historial de
-sesiones y **Emi**, un chatbot educativo (workflow de n8n Cloud con Groq).
+sesiones y **Emi**, un chatbot educativo (workflow de Sim; n8n queda como opción).
 
 > **Aviso.** EMOtv es una herramienta formativa. **Estima una expresión
 > facial; no diagnostica**, no determina el estado emocional ni psicológico de
@@ -30,7 +36,7 @@ flowchart LR
   N --> A["FastAPI<br/>src/emotv"]
   A --> V["Visión en memoria<br/>YuNet · FER+ · MediaPipe"]
   A --> D[("PostgreSQL<br/>Alembic")]
-  A -->|"POST + X-EMOtv-Key"| W["n8n Cloud<br/>workflow EMI"] --> G["Groq"]
+  A -->|"POST + X-API-Key"| W["Sim<br/>workflow de Emi"] --> G["Modelo de lenguaje"]
 ```
 
 - La cámara se abre **en el navegador**; el servidor nunca abre una cámara
@@ -111,9 +117,14 @@ valores reales.
 | `MAX_CONCURRENT_ANALYSES`, `MAX_ACTIVE_SESSIONS`, `ANALYSIS_BUSY_WAIT_SECONDS`, `LIVE_IDLE_TIMEOUT_SECONDS`, `ONNX_THREADS_PER_SESSION` | protección de carga del análisis ([arquitectura](docs/architecture.md#protección-de-carga-del-análisis)) |
 | `API_CPUS`, `API_MEMORY_LIMIT` | límites de CPU y memoria del contenedor `api` (solo Docker) |
 | `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
-| `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY`, `N8N_TIMEOUT_SECONDS` | workflow de Emi; sin clave, el chat responde 503 |
+| `CHAT_PROVIDER`, `SIM_WORKFLOW_URL`, `SIM_API_KEY`, `CHAT_TIMEOUT_SECONDS` | workflow de Emi en Sim (`sim`, por defecto); sin URL o clave, el chat responde 503 ([docs/chatbot/sim-setup.md](docs/chatbot/sim-setup.md)) |
+| `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY` | solo con `CHAT_PROVIDER=n8n`, el workflow anterior |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
 | `TEST_DATA_RETENTION_DAYS` | plazo (1 a 30 días) de las cuentas de voluntarios `PRUEBA-NN` |
+| `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD` | nivel (0,05 a 1) en que se alcanza la expresión pedida en un ejercicio de práctica y nivel menor en que deja de estarlo (0,6 y 0,55) |
+| `PRACTICE_SMOOTHING_SECONDS`, `PRACTICE_FRAME_INTERVAL_MS` | constante de tiempo del suavizado de la señal (0,49 s) e intervalo entre cuadros de un ejercicio (250 ms) |
+| `PRACTICE_STEP_PAUSE_SECONDS` | pausa tras cada ejercicio, logrado o no, antes del siguiente (2 s; acepta el nombre anterior `PRACTICE_SUCCESS_PAUSE_SECONDS`) |
+| `PRACTICE_HOLD_SECONDS`, `PRACTICE_MAX_SECONDS` | sostén y tiempo máximo que propone el editor para un ejercicio nuevo (2 s y 20 s) |
 | `SSL_CERT_FILE` | CA adicional en redes que inspeccionan HTTPS |
 
 ## Limitaciones conocidas

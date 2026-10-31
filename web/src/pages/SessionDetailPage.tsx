@@ -127,7 +127,7 @@ export function SessionDetailPage() {
         <SessionTimeline timeline={timelineQuery.data} expressionLabel={expressionLabel} />
       </>}
       {metricsQuery.data && <>
-        <h3>Métricas por imagen</h3>
+        <h3>{metricsQuery.data.practice ? "Métricas por imagen y por ejercicio" : "Métricas por imagen"}</h3>
         <StimulusMetrics metrics={metricsQuery.data} expressionLabel={expressionLabel} />
       </>}
     </section>}

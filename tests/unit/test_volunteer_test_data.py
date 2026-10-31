@@ -249,3 +249,28 @@ def test_records_left_after_delete_roll_back_everything(factory, monkeypatch, ca
     assert delete_cli.main(["--code", account.code], factory=factory) == 1
     assert "Quedan registros" in capsys.readouterr().err
     assert table_totals(factory) == before
+
+
+def test_deleting_a_volunteer_also_deletes_their_practice_results(factory, capsys):
+    """Los ejercicios de la validación con adultos se borran con la cuenta."""
+    from emotv.infrastructure.persistence.models import PracticeResultRecord
+
+    target, other = create(factory, 2)
+    activity_for(factory, target)
+    activity_for(factory, other)
+    with factory.begin() as db:
+        for account in (target, other):
+            db.add(PracticeResultRecord(
+                id=f"practice-{account.code}", session_id=f"session-{account.code}", step_index=0,
+                target_expression="happiness", outcome="achieved", seconds_to_achieve=2.0, peak_level=0.9,
+                relative_to_calibration=True, feedback_visible=True, analyzed_frames=8, flagged_frames=0,
+                emotion_model_id="m", emotion_model_version="1", started_at=NOW, ended_at=NOW))
+    assert TABLES.index("practice_results") < TABLES.index("sessions")
+
+    assert delete_cli.main(["--code", target.code], factory=factory, clock=lambda: NOW) == 0
+
+    with factory() as db:
+        left = db.scalars(select(PracticeResultRecord.id)).all()
+    assert left == [f"practice-{other.code}"]
+    output = capsys.readouterr().out
+    assert "practice_results: 1" in output and "Verificación: CORRECTA" in output

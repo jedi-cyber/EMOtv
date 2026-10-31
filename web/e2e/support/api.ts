@@ -139,3 +139,17 @@ export async function signIn(page: Page, email: string, password: string, { expe
   await page.getByRole("button", { name: "Ingresar" }).click();
   if (!expectFailure) await page.waitForURL((url) => !url.pathname.endsWith("/login"));
 }
+
+/**
+ * Acepta por API el compromiso de confidencialidad vigente. Sin él, la interfaz de
+ * Usuarios y Docentes muestra su modal y no se inician sesiones con otras personas.
+ * screenshots.spec.ts lo acepta por la interfaz para capturar el modal.
+ */
+export async function acceptCommitment(account: Account): Promise<void> {
+  await withToken(await loginToken(account.email, account.password), async (api) => {
+    const text = await (await api.get("/commitment")).json() as { version: string; required: boolean };
+    if (!text.required) return;
+    const response = await api.post("/commitment/accept", { data: { version: text.version } });
+    expect(response.ok(), await response.text()).toBe(true);
+  });
+}

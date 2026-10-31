@@ -1,4 +1,4 @@
-import type { ImageAudience, Stimulus, StimulusIntensity, StimulusKind } from "../api/types";
+import type { ImageAudience, ProtocolStep, Stimulus, StimulusIntensity, StimulusKind } from "../api/types";
 
 export const stimulusKindNames: Record<StimulusKind, string> = { emotional: "Emocional", abstract: "Abstracta" };
 export const intensityNames: Record<StimulusIntensity, string> = { mild: "Leve", moderate: "Moderada" };
@@ -15,6 +15,43 @@ export const expectedExpressionNames: Record<string, string> = {
   fear: "Miedo",
   contempt: "Desprecio",
 };
+
+// Expresiones que se pueden pedir en un ejercicio de práctica: todo el catálogo.
+export const practiceTargetNames: Record<string, string> = {
+  happiness: "Alegría",
+  surprise: "Sorpresa",
+  sadness: "Tristeza",
+  anger: "Enojo",
+  fear: "Miedo",
+  disgust: "Asco",
+  neutral: "Cara tranquila",
+  contempt: "Desprecio",
+};
+// Lo que propone el editor si el servidor no responde (PRACTICE_HOLD_SECONDS y PRACTICE_MAX_SECONDS).
+export const DEFAULT_PRACTICE = { hold_seconds: 2, max_seconds: 20 };
+export const MAX_HOLD_SECONDS = 10;
+export const MAX_STEP_SECONDS = 120;
+
+/** Las mismas reglas que valida el servidor, con sus mensajes. */
+export function practiceProblem(step: { exposure_seconds: number; hold_seconds?: number | null; target_expression?: string | null }): string | null {
+  const hold = step.hold_seconds ?? 0;
+  if (!step.target_expression || !(step.target_expression in practiceTargetNames)) return "Una práctica indica la expresión que se pide";
+  if (!Number.isInteger(hold) || hold < 1 || hold > MAX_HOLD_SECONDS) return `La expresión se sostiene entre 1 y ${MAX_HOLD_SECONDS} segundos`;
+  if (!Number.isInteger(step.exposure_seconds) || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)
+    return `La exposición dura entre 1 y ${MAX_STEP_SECONDS} segundos`;
+  if (hold >= step.exposure_seconds) return "El tiempo máximo de la práctica es mayor que el tiempo de sostén";
+  return null;
+}
+
+/** Qué tiene un protocolo, sin llamar «imagen» a un ejercicio de práctica: ["1 imagen", "2 ejercicios"]. */
+export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[] {
+  const practices = steps.filter((step) => step.kind === "practice").length;
+  const images = steps.length - practices;
+  const parts = [];
+  if (images > 0 || practices === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
+  return parts;
+}
 
 export function stimulusSummary(item: Stimulus): string {
   if (item.scope === "user") return `Imagen propia · ${audienceNames[item.audience]}`;

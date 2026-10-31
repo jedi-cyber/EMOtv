@@ -16,7 +16,7 @@ personales sin autorización. Ejemplos con EMOtv: una foto o captura de la
 pantalla con datos de una sesión difundida por mensajería; un formato
 código–persona perdida; una cuenta usada por otra persona; un respaldo, un
 archivo `.env.docker` o una clave (`SENSITIVE_DATA_KEY`, `BACKUP_KEY`,
-`JWT_SECRET_KEY`, `N8N_WEBHOOK_KEY`) expuestos; acceso no autorizado al
+`JWT_SECRET_KEY`, `SIM_API_KEY`) expuestos; acceso no autorizado al
 servidor o a la base de datos.
 
 ## 1. Detección
@@ -44,7 +44,7 @@ Según el caso, el mismo día:
 | Sospecha de robo de sesiones en general | Cambiar `JWT_SECRET_KEY` y reiniciar la API: todas las sesiones abiertas dejan de valer |
 | Clave `SENSITIVE_DATA_KEY` expuesta | Generar una nueva y configurar `SENSITIVE_DATA_KEY=nueva,anterior`: lo nuevo se cifra con la nueva y lo anterior sigue legible. **El sistema no tiene hoy un script que vuelva a cifrar los datos existentes**, así que la clave anterior no se puede retirar sin perder esos datos; registrar esta limitación en el incidente |
 | Respaldo o `BACKUP_KEY` expuestos | Cambiar `BACKUP_KEY`, generar un respaldo nuevo y eliminar los anteriores cifrados con la clave expuesta |
-| Clave del webhook de Emi expuesta | Cambiarla en n8n y en `.env.docker` ([chatbot/n8n-setup.md](../chatbot/n8n-setup.md)) |
+| Clave de Emi expuesta (`SIM_API_KEY`) | Revocarla en Sim, crear otra y ponerla en `.env.docker` ([chatbot/sim-setup.md](../chatbot/sim-setup.md)) |
 | Captura o foto difundida | Pedir a quien la difundió y a quienes la recibieron que la eliminen; no reenviarla como evidencia, solo describirla |
 | Formato firmado perdido | Buscarlo y, si no aparece, evaluar con el docente si se deben eliminar las sesiones con los códigos que tenía |
 | Servidor comprometido | Aislarlo de la red, conservar los logs y avisar al área técnica de la institución |

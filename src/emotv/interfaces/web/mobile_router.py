@@ -314,7 +314,12 @@ def create_mobile_router(
             raise fail(422, "La fecha inicial es posterior a la final")
         result = guarded(lambda: statistics.statistics(user, StatisticsFilter(
             scope=scope, date_from=date_from, date_to=date_to)))
-        return {key: result[key] for key in ("scope", "notice", "few_sessions_notice", "sessions", "expressions",
+        body = {key: result[key] for key in ("scope", "notice", "few_sessions_notice", "sessions", "expressions",
                                              "coincidence")}
+        # Revisión 4.1: ejercicios de práctica, aparte de la coincidencia; null si no hubo.
+        practice = result.get("practice")
+        body["practice"] = ({key: value for key, value in practice.items() if key != "by_user"}
+                            if practice else None)
+        return body
 
     return router

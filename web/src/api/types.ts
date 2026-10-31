@@ -91,13 +91,19 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
+export type StepKind = "stimulus" | "practice";
+
 export interface ProtocolStep {
-  stimulus_id: string;
+  /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional. */
+  kind?: StepKind;
+  stimulus_id: string | null;
   exposure_seconds: number;
   capture_after_seconds: number;
   record_verbal_response: boolean;
   /** Solo imágenes abstractas: se muestran antes de la calibración, sin capturas. */
   shown_before_analyzer: boolean;
+  target_expression?: string | null;
+  hold_seconds?: number | null;
 }
 
 export interface Protocol {
@@ -221,13 +227,34 @@ export type MarkerKind = "distracted" | "laughed" | "asked_to_stop" | "cried" | 
 
 export interface GuidedStep {
   index: number;
-  stimulus_id: string;
+  stimulus_id: string | null;
   title: string;
   kind: "emotional" | "abstract" | "";
   exposure_seconds: number;
   capture_after_seconds: number;
   record_verbal_response: boolean;
   shown_before_analyzer: boolean;
+  step_kind?: StepKind;
+  target_expression?: string | null;
+  hold_seconds?: number | null;
+}
+
+/** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
+export interface GuidedPractice {
+  target_expression: string;
+  hold_seconds: number;
+  level: number | null;
+  achieved: boolean;
+}
+
+export interface GuidedPracticeResult {
+  step_index: number;
+  target_expression: string;
+  outcome: "achieved" | "timed_out" | "skipped" | "stopped";
+  seconds_to_achieve: number | null;
+  peak_level: number;
+  relative_to_calibration: boolean;
+  feedback_visible: boolean;
 }
 
 export interface GuidedCapture {
@@ -266,9 +293,23 @@ export interface GuidedState {
   captures: GuidedCapture[];
   markers: { id: string; kind: MarkerKind; occurred_at: string; step_index: number | null; note: string | null }[];
   verbal_responses: { step_index: number; stimulus_id: string; text: string; recorded_at: string }[];
+  /** Si la persona ve la señal del nivel en los ejercicios. */
+  practice_feedback?: boolean;
+  practice?: GuidedPractice | null;
+  practice_results?: GuidedPracticeResult[];
 }
 
 /** Lo único que recibe la pantalla de la persona evaluada. */
+/** Ejercicio de práctica en la pantalla de la persona: nunca la expresión detectada ni probabilidades. */
+export interface ParticipantPractice {
+  instruction: string;
+  /** Entre 0 y 1; nulo si quien conduce apagó la señal. */
+  level: number | null;
+  achieved: boolean;
+  message: string | null;
+  frame_interval_ms: number;
+}
+
 export interface ParticipantViewState {
   phase: GuidedPhase;
   message: string | null;
@@ -277,6 +318,7 @@ export interface ParticipantViewState {
   capture_frames: boolean;
   frame_interval_ms: number;
   abstract_notice: string | null;
+  practice?: ParticipantPractice | null;
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
@@ -287,7 +329,9 @@ export interface SessionTimeline {
   duration_seconds: number;
   lanes: {
     questionnaires: { time: number; moment: QuestionnaireMoment; title: string; answers: { question: string; kind: QuestionKind; answer: AnswerValue | null }[] }[];
-    stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean }[];
+    stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean;
+      /** Solo en un ejercicio de práctica (kind «practice»). */
+      target_expression?: string | null; outcome?: PracticeOutcome | null; seconds_to_achieve?: number | null }[];
     captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
     said: { time: number; step_index: number; title: string; text: string }[];
     markers: { time: number; kind: MarkerKind; note: string | null }[];
@@ -309,6 +353,39 @@ export interface MetricCapture {
 }
 
 /** Métricas descriptivas: describen, no interpretan. */
+export type PracticeOutcome = "achieved" | "timed_out" | "skipped" | "stopped";
+
+/** Totales de ejercicios de práctica: describen lo ocurrido, sin valorar a la persona. */
+export interface PracticeTotals {
+  applied: number;
+  achieved: number;
+  skipped: number;
+  stopped: number;
+  average_seconds_to_achieve: number | null;
+  feedback_visible: number;
+  sentence: string;
+  average_sentence: string | null;
+  feedback_sentence: string | null;
+}
+
+export interface PracticeRow {
+  applied: number;
+  achieved: number;
+  skipped: number;
+  stopped: number;
+  average_seconds_to_achieve: number | null;
+}
+
+export interface SessionPractice {
+  exercises: { step_index: number; target_expression: string; hold_seconds: number; max_seconds: number;
+    /** null: la sesión no llegó a este ejercicio. */
+    outcome: PracticeOutcome | null; seconds_to_achieve: number | null; peak_level: number | null;
+    relative_to_calibration: boolean | null; feedback_visible: boolean | null }[];
+  totals: PracticeTotals & { exercises: number; not_reached: number };
+  by_target: (PracticeRow & { target_expression: string })[];
+  notice: string;
+}
+
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
@@ -316,6 +393,8 @@ export interface SessionMetrics {
   abstract: { step_index: number; title: string; category: string; skipped: boolean; captures: MetricCapture[]; said: string | null }[];
   totals: { emotional_stimuli: number; counted: number; matched: number; excluded_captures: number; sentence: string };
   abstract_notice: string | null;
+  /** Ejercicios de práctica, aparte de la coincidencia de estímulos; null si no hubo. */
+  practice?: SessionPractice | null;
 }
 
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
@@ -381,6 +460,15 @@ export interface SessionStatistics {
   questionnaires: { id: string; title: string; version: number; responses: number }[];
   questionnaire: { id: string; title: string; version: number; responses: number; questions: QuestionStatistics[] } | null;
   by_user?: { email: string; sessions: number; completed: number; interrupted: number }[];
+  /** Ejercicios de práctica, sin mezclar con la coincidencia de estímulos; null si no hubo. */
+  practice?: {
+    sessions: number;
+    totals: PracticeTotals;
+    by_protocol: (PracticeRow & { family_id: string; name: string; sessions: number })[];
+    by_target: (PracticeRow & { target_expression: string })[];
+    by_user?: (PracticeRow & { email: string })[];
+    notice: string;
+  } | null;
 }
 
 /** Examen simulado: lo crea un docente; cada estación es una sesión con su código. */

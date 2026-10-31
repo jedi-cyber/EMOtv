@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 
-/** Cuerpo que EMOtv envía al workflow EMI (docs/chatbot-emi.md). */
+/** Cuerpo que EMOtv envía al workflow de Emi (en Sim, dentro de `input`; docs/chatbot-emi.md). */
 export interface EmiRequest {
   request_id: string;
   question: string;
@@ -37,9 +37,11 @@ function isEmiRequest(value: unknown): value is EmiRequest {
 }
 
 /**
- * Servidor falso con el contrato del webhook "Version 1.0 EMI":
- * POST + X-EMOtv-Key → 200 {answer, in_scope, category, request_id};
- * 502 {error: "llm_unavailable", answer, request_id}; 403 si la clave no coincide.
+ * Servidor falso con el contrato de Emi en sus dos proveedores (docs/chatbot-emi.md):
+ * - n8n, `POST /webhook/...` + X-EMOtv-Key → 200 {answer, in_scope, category, request_id};
+ *   502 {error: "llm_unavailable", answer, request_id}; 403 si la clave no coincide.
+ * - Sim, `POST /api/v2/workflows/{id}/execute` + X-API-Key con {input: ...} →
+ *   200 {data: {status, output}}; la caída del LLM llega como status "failed"; 401 si la clave no coincide.
  */
 export async function startFakeN8n(port: number, expectedKey = ""): Promise<FakeN8n> {
   const requests: FakeN8n["requests"] = [];
@@ -48,18 +50,23 @@ export async function startFakeN8n(port: number, expectedKey = ""): Promise<Fake
       response.writeHead(status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(body));
     };
-    if (request.method !== "POST" || !request.url?.startsWith("/webhook/")) return reply(404, { message: "not found" });
-    const key = request.headers["x-emotv-key"];
+    const sim = request.url?.startsWith("/api/v2/workflows/") ?? false;
+    if (request.method !== "POST" || !(sim || request.url?.startsWith("/webhook/"))) return reply(404, { message: "not found" });
+    const key = request.headers[sim ? "x-api-key" : "x-emotv-key"];
     const keyValue = Array.isArray(key) ? key[0] : key;
-    if (!keyValue || (expectedKey && keyValue !== expectedKey)) return reply(403, { message: "forbidden" });
-    let body: unknown;
-    try { body = await readJson(request); } catch { return reply(400, { message: "invalid json" }); }
+    if (!keyValue || (expectedKey && keyValue !== expectedKey)) return reply(sim ? 401 : 403, { message: "forbidden" });
+    let raw: unknown;
+    try { raw = await readJson(request); } catch { return reply(400, { message: "invalid json" }); }
+    const body = sim ? (raw as { input?: unknown })?.input : raw;
     if (!isEmiRequest(body)) return reply(400, { message: "invalid body" });
     requests.push({ key: keyValue, body });
+    const answer = (status: number, output: Record<string, unknown>) => sim
+      ? reply(200, { data: { runId: "run-e2e", status: status === 200 ? "completed" : "failed", output, error: status === 200 ? null : "llm_unavailable" } })
+      : reply(status, output);
     const question = body.question.toLowerCase();
-    if (question.includes(triggers.llmDown)) return reply(502, { error: "llm_unavailable", answer: LLM_DOWN_ANSWER, request_id: body.request_id });
-    if (question.includes(triggers.outOfScope)) return reply(200, { answer: OUT_OF_SCOPE_ANSWER, in_scope: false, category: "otro", request_id: body.request_id });
-    return reply(200, { answer: IN_SCOPE_ANSWER, in_scope: true, category: "uso_emotv", request_id: body.request_id });
+    if (question.includes(triggers.llmDown)) return answer(502, { error: "llm_unavailable", answer: LLM_DOWN_ANSWER, request_id: body.request_id });
+    if (question.includes(triggers.outOfScope)) return answer(200, { answer: OUT_OF_SCOPE_ANSWER, in_scope: false, category: "otro", request_id: body.request_id });
+    return answer(200, { answer: IN_SCOPE_ANSWER, in_scope: true, category: "uso_emotv", request_id: body.request_id });
   });
   // 0.0.0.0: el contenedor de la API llega por host.docker.internal.
   await new Promise<void>((resolve, reject) => {

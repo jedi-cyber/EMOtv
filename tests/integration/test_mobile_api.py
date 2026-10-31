@@ -166,10 +166,12 @@ def get(mobile, path, email, **params):
 
 def test_the_mobile_api_does_not_conduct_sessions(mobile):
     """Ninguna captura sale del teléfono: no existen rutas para iniciar ni conducir sesiones."""
-    routes = {(method, route.path) for route in mobile.client.app.routes for method in getattr(route, "methods", ())}
-    assert not [path for _, path in routes
+    # El esquema lista también las rutas de los routers incluidos.
+    paths = mobile.client.app.openapi()["paths"]
+    assert "/mobile/sessions" in paths
+    assert not [path for path in paths
                 if any(word in path for word in ("frame", "calibration", "stimulus-images", "protocols", "advance"))]
-    assert ("POST", "/mobile/sessions") not in routes
+    assert "post" not in paths["/mobile/sessions"]
     tokens = signed_in(mobile, "usuario1@example.com")
     response = mobile.client.post("/mobile/sessions", headers=bearer(tokens), json={"session_type": "adulto"})
     assert response.status_code == 405

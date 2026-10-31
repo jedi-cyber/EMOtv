@@ -39,7 +39,8 @@ repositorio, en mensajes ni en capturas.
       menos).
 - [ ] `POSTGRES_PASSWORD`: aleatoria; la base no se publica fuera de la red de
       Docker.
-- [ ] `N8N_WEBHOOK_KEY`: la misma de la credencial Header Auth de n8n.
+- [ ] `SIM_API_KEY`: clave de API de Sim creada para EMOtv, solo en `.env.docker`
+      (con `CHAT_PROVIDER=n8n`, `N8N_WEBHOOK_KEY`).
 - [ ] Rotación: `SENSITIVE_DATA_KEY=nueva,anterior` cifra con la nueva y lee con
       ambas. No hay un script para volver a cifrar los datos existentes, así que
       la clave anterior no se puede retirar todavía.
@@ -90,9 +91,10 @@ repositorio, en mensajes ni en capturas.
       accesos denegados, impresiones, eliminaciones, restablecimientos de
       contraseña y cambios de grupo.
 - [ ] Revisar los bloqueos por intentos de inicio de sesión fallidos.
-- [ ] En n8n, el workflow EMI no guarda las ejecuciones exitosas de producción;
-      las fallidas sí (con la pregunta): revisarlas solo para diagnosticar y
-      borrarlas ([../chatbot/n8n-setup.md](../chatbot/n8n-setup.md)).
+- [ ] En Sim, revisar qué registros de ejecución guarda el workflow de Emi
+      (incluyen la pregunta) y por cuánto tiempo; consultarlos solo para
+      diagnosticar ([../chatbot/sim-setup.md](../chatbot/sim-setup.md)).
+      `[Verificar en Sim: retención de los registros de ejecución.]`
 
 ## 7. Actualización de dependencias
 

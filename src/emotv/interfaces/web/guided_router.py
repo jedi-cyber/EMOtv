@@ -39,6 +39,22 @@ class VerbalRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_NOTE_LENGTH)
 
 
+class PracticeFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    visible: bool
+
+
+class PracticeView(BaseModel):
+    """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
+    está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
+
+    instruction: str
+    level: float | None = Field(default=None, ge=0, le=1)
+    achieved: bool
+    message: str | None
+    frame_interval_ms: int
+
+
 class ParticipantView(BaseModel):
     """Lo único que recibe la pantalla de la persona evaluada."""
 
@@ -49,6 +65,7 @@ class ParticipantView(BaseModel):
     capture_frames: bool
     frame_interval_ms: int
     abstract_notice: str | None
+    practice: PracticeView | None = None
 
 
 def create_guided_router(
@@ -57,6 +74,7 @@ def create_guided_router(
     users: UserRepository | None,
     stimulus_image=None,       # Callable[[str], tuple[str, bytes] | None]
     decode_frame=None,         # Callable[[bytes], ndarray | None]
+    capacity=None,             # AnalysisCapacity: cupo de análisis de los cuadros de práctica
 ) -> APIRouter:
     router = APIRouter(tags=["guided-sessions"])
     current_user = create_current_user_dependency(authentication, users)
@@ -122,6 +140,13 @@ def create_guided_router(
         item = guarded(lambda: service().add_marker(user, session_id, request.kind, request.note))
         return {"id": item.id, "kind": item.kind.value, "occurred_at": item.occurred_at.isoformat()}
 
+    @router.post("/guided-sessions/{session_id}/practice-feedback")
+    def practice_feedback(session_id: str, request: PracticeFeedbackRequest,
+                          user: User = Depends(current_user)) -> dict[str, bool]:
+        """Enciende o apaga la señal del nivel en la pantalla de la persona."""
+        run = guarded(lambda: service().set_practice_feedback(user, session_id, request.visible))
+        return {"practice_feedback": run.practice_feedback}
+
     @router.post("/guided-sessions/{session_id}/verbal-responses", status_code=201)
     def verbal(session_id: str, request: VerbalRequest, user: User = Depends(current_user)) -> dict[str, Any]:
         item = guarded(lambda: service().record_verbal(user, session_id, request.step_index, request.text))
@@ -134,10 +159,12 @@ def create_guided_router(
 
     # --- Pantalla de la persona evaluada (enlace propio) ----------------------------------------
 
-    @router.get("/participant-view/{token}", response_model=ParticipantView)
-    def participant_view(token: str) -> ParticipantView:
+    @router.get("/participant-view/{token}")
+    def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
-        return ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
+        view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
+        # practice solo aparece en un ejercicio de práctica: las imágenes y la estación quedan como antes.
+        return view.model_dump(exclude={"practice"} if view.practice is None else set())
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
@@ -156,7 +183,18 @@ def create_guided_router(
         if len(data) > MAX_FRAME_BYTES:
             raise HTTPException(413, "El cuadro es demasiado grande")
         frame = decode_frame(data) if decode_frame else None
-        await run_in_threadpool(lambda: guarded(lambda: service().receive_frame(token, frame)))
+
+        def receive() -> None:
+            guarded(lambda: service().receive_frame(token, frame))
+
+        practice = capacity is not None and await run_in_threadpool(
+            lambda: guarded(lambda: service().practice_frame_drops_when_busy(token)))
+        if practice:
+            # Cada cuadro de una práctica se analiza dentro del cupo del servidor;
+            # sin cupo libre se descarta. La persona no recibe ninguna señal de ello.
+            await capacity.try_run(receive)
+        else:
+            await run_in_threadpool(receive)
         return {"received": True}
 
     @router.post("/participant-view/{token}/stop")

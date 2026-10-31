@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, apiRequest } from "../api/http";
+import { ApiError, apiBlob, apiRequest } from "../api/http";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button } from "../components/Button";
@@ -50,6 +50,23 @@ export function AdminModelsPage() {
   const [saving, setSaving] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
+
+  /** El CSV se arma en el servidor al pedirlo y no se guarda allí; solo se descarga. */
+  async function downloadValidation() {
+    setDownloading(true); setMessage(""); setError("");
+    try {
+      const blob = await apiBlob("/practice-validation/export.csv", token);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "validacion-practica-agregada.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("No se pudo descargar el resumen de la validación");
+    } finally { setDownloading(false); }
+  }
 
   async function makeDefault(model: LocalModelStatus) {
     setSaving(model.model_id); setMessage(""); setError("");
@@ -97,5 +114,16 @@ export function AdminModelsPage() {
       <p className="muted">La latencia es la del benchmark medido en este servidor; describe el tiempo de respuesta, no la calidad de la estimación.</p>
       <p className="muted">Solo se puede elegir un modelo con admisión vigente. Si el predeterminado la pierde, el sistema usa el otro modelo y lo registra aquí.</p>
     </>}
+    <section className="card form-stack" aria-label="Validación con adultos voluntarios">
+      <h2>Validación con adultos voluntarios</h2>
+      <p>Resumen agregado de las sesiones con el protocolo «Validación con adultos»: por modelo y expresión pedida,
+        cuántos ejercicios terminaron, cuántos se lograron y el tiempo promedio hasta lograrlo.</p>
+      <p className="muted">No incluye códigos de sesión ni nada que identifique a alguien. Mide si el modelo reconoce
+        expresiones producidas a propósito por adultos; no valida su uso con niños por sí solo.</p>
+      <div className="inline-actions">
+        <Button variant="secondary" disabled={downloading} onClick={() => { void downloadValidation(); }}>
+          {downloading ? "Descargando…" : "Descargar resumen (CSV)"}</Button>
+      </div>
+    </section>
   </section>;
 }

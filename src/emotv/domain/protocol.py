@@ -4,8 +4,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from emotv.domain.expression_info import EXPRESSION_KEYS
+
 MAX_EXPOSURE_SECONDS = 120
 MAX_STEPS = 30
+MAX_HOLD_SECONDS = 10
+# Expresiones que se pueden pedir en una práctica: todo el catálogo. Quien arma
+# el protocolo decide; la validación con adultos muestra cuáles se registran mejor
+# (docs/expression-practice.md, §14.1).
+PRACTICE_TARGETS = EXPRESSION_KEYS
 
 
 class ProtocolKind(str, Enum):
@@ -16,24 +23,48 @@ class ProtocolKind(str, Enum):
     EXAM = "exam"
 
 
+class StepKind(str, Enum):
+    """Estímulo: una imagen con su captura automática. Práctica: se pide una
+    expresión y la persona ve una señal que crece al acercarse a ella."""
+
+    STIMULUS = "stimulus"
+    PRACTICE = "practice"
+
+
 @dataclass(frozen=True, slots=True)
 class ProtocolStep:
-    """Un estímulo de la secuencia. capture_after_seconds es el tiempo hasta la
-    captura automática de la expresión estimada, dentro de la exposición.
+    """Un paso de la secuencia.
+
+    En un estímulo, capture_after_seconds es el tiempo hasta la captura
+    automática de la expresión estimada, dentro de la exposición.
     record_verbal_response solo aplica a imágenes abstractas: se registra lo que
     la persona dice ver, sin interpretarlo. shown_before_analyzer (solo
-    abstractas) la muestra antes de la calibración, sin capturas."""
+    abstractas) la muestra antes de la calibración, sin capturas.
 
-    stimulus_id: str
+    En una práctica, target_expression es la expresión pedida, hold_seconds el
+    tiempo que debe sostenerse y exposure_seconds el tiempo máximo. stimulus_id
+    es opcional: una ilustración de apoyo. No hay captura automática, respuesta
+    verbal ni paso antes del analizador (la práctica necesita la cámara).
+    """
+
+    stimulus_id: str | None
     exposure_seconds: int
     capture_after_seconds: int
     record_verbal_response: bool = False
     shown_before_analyzer: bool = False
+    kind: StepKind | str = StepKind.STIMULUS
+    target_expression: str | None = None
+    hold_seconds: int | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.stimulus_id, str) or not self.stimulus_id.strip():
+        kind = StepKind(self.kind)
+        object.__setattr__(self, "kind", kind)
+        stimulus_id = self.stimulus_id.strip() if isinstance(self.stimulus_id, str) else self.stimulus_id
+        if kind is StepKind.STIMULUS and not stimulus_id:
             raise ValueError("Cada paso indica un estímulo")
-        object.__setattr__(self, "stimulus_id", self.stimulus_id.strip())
+        if stimulus_id is not None and not isinstance(stimulus_id, str):
+            raise TypeError("stimulus_id debe ser un texto")
+        object.__setattr__(self, "stimulus_id", stimulus_id or None)
         for name in ("exposure_seconds", "capture_after_seconds"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
@@ -42,6 +73,32 @@ class ProtocolStep:
             raise ValueError(f"La exposición dura entre 1 y {MAX_EXPOSURE_SECONDS} segundos")
         if not 0 <= self.capture_after_seconds <= self.exposure_seconds:
             raise ValueError("La captura automática ocurre durante la exposición")
+        if kind is StepKind.STIMULUS:
+            if self.target_expression is not None or self.hold_seconds is not None:
+                raise ValueError("Un paso de estímulo no tiene expresión pedida ni tiempo de sostén")
+            return
+        if self.target_expression not in PRACTICE_TARGETS:
+            raise ValueError("Una práctica indica la expresión que se pide")
+        if isinstance(self.hold_seconds, bool) or not isinstance(self.hold_seconds, int):
+            raise TypeError("hold_seconds debe ser un entero de segundos")
+        if not 1 <= self.hold_seconds <= MAX_HOLD_SECONDS:
+            raise ValueError(f"La expresión se sostiene entre 1 y {MAX_HOLD_SECONDS} segundos")
+        if self.hold_seconds >= self.exposure_seconds:
+            raise ValueError("El tiempo máximo de la práctica es mayor que el tiempo de sostén")
+        if self.capture_after_seconds != 0:
+            raise ValueError("Una práctica no tiene captura automática")
+        if self.record_verbal_response or self.shown_before_analyzer:
+            raise ValueError("Una práctica no registra respuesta verbal ni va antes del analizador")
+
+    @classmethod
+    def practice(cls, target_expression: str, hold_seconds: int, max_seconds: int,
+                 illustration_id: str | None = None) -> ProtocolStep:
+        return cls(illustration_id, max_seconds, 0, kind=StepKind.PRACTICE,
+                   target_expression=target_expression, hold_seconds=hold_seconds)
+
+    @property
+    def is_practice(self) -> bool:
+        return self.kind is StepKind.PRACTICE
 
 
 @dataclass(frozen=True, slots=True)

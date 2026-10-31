@@ -1,0 +1,635 @@
+# Práctica de producción de expresiones
+
+Estado: diseño aprobado por el desarrollador el 2026-10-30 (sin mediana de
+segundos en las estadísticas) e implementado en la rama
+`bloque-practica-expresiones`. Las secciones 1 a 9 son el diseño tal como se
+aprobó; lo que se construyó y en qué difiere está en las secciones 11 y 12, y lo
+que falta en la 13. Las decisiones del 2026-10-31 (§14) prevalecen sobre las
+secciones anteriores donde las contradicen y fijan lo que falta ajustar en el
+código antes de S2.
+
+## 1. Propósito
+
+Hoy un paso de la sesión guiada muestra una imagen y, a los
+`capture_after_seconds`, guarda una captura de la expresión estimada; las
+métricas la comparan con la `expected_expression` del estímulo. Esa comparación
+es débil: ver una imagen triste no obliga a poner cara triste, y la coincidencia
+no dice nada útil sobre la sesión. Se agrega un paso de otro tipo, la
+**práctica de expresión**: la persona recibe una instrucción ("Muestra
+alegría") y ve en tiempo real una señal simple que crece cuando su expresión
+facial estimada se acerca a la pedida. En este paso, "coincidió con la pedida"
+es exactamente lo que se quiere registrar.
+
+El uso previsto es con niños y niñas a quienes les cuesta producir expresiones a
+pedido o de forma legible (por ejemplo, dentro del espectro autista). Un Usuario
+conduce la sesión desde la web bajo la supervisión de su Docente y con la
+autorización escrita del tutor. Es una actividad guiada, no terapia ni
+evaluación diagnóstica: el sistema describe qué ocurrió en cada ejercicio
+("se logró la expresión pedida en 3 de 5 ejercicios") y nunca valora a la
+persona ni promete efectos.
+
+## 2. Modelo de datos
+
+### Paso del protocolo
+
+Se sigue la opción preferida: un `ProtocolStep` con tipo de paso. No hace falta
+una entidad nueva de protocolo porque el editor, el versionado, el orden
+(`position`), la validación por público y el avance por el reloj del servidor ya
+funcionan sobre `ProtocolStep`.
+
+```python
+class StepKind(str, Enum):
+    STIMULUS = "stimulus"   # el paso de hoy
+    PRACTICE = "practice"   # práctica de expresión
+
+@dataclass(frozen=True, slots=True)
+class ProtocolStep:
+    stimulus_id: str | None          # obligatorio en stimulus; opcional en practice (ilustración)
+    exposure_seconds: int            # en practice: tiempo máximo del ejercicio
+    capture_after_seconds: int       # en practice: siempre 0 (no hay captura automática)
+    record_verbal_response: bool = False   # siempre False en practice
+    shown_before_analyzer: bool = False    # siempre False en practice
+    kind: StepKind = StepKind.STIMULUS
+    target_expression: str | None = None   # solo practice; una de PRACTICE_TARGETS
+    hold_seconds: int | None = None        # solo practice; 1..10 y menor que exposure_seconds
+```
+
+Reglas del dominio (en `ProtocolStep.__post_init__`):
+
+- `stimulus` exige `stimulus_id` y no admite `target_expression` ni
+  `hold_seconds` (las filas existentes siguen igual).
+- `practice` exige `target_expression` y `hold_seconds`;
+  `exposure_seconds` entre `hold_seconds + 1` y 120 (predeterminado 20);
+  `capture_after_seconds = 0`; no lleva respuesta verbal ni va antes del
+  analizador (necesita la cámara y la calibración).
+- La ilustración (`stimulus_id`) es opcional; si existe debe ser un estímulo
+  `usable` (creación propia o con licencia; las imágenes propias ya pasan por la
+  detección de personas y la revisión del docente) y, en un protocolo para
+  niños, `suitable_for_children`. Su `expected_expression` no se usa.
+- `PRACTICE_TARGETS`: `happiness`, `surprise`, `sadness`,
+  `anger`, `fear`, `disgust` y `neutral`. Se excluye `contempt`: es
+  difícil de pedir a un niño y los dos modelos la estiman con poca
+  frecuencia, así que casi nunca se lograría. **Reemplazado por §14.1:** no
+  hay lista fija; cualquier expresión de `EXPRESSION_KEYS` es elegible.
+- `Protocol`: el mínimo de pasos sigue siendo 1 y el máximo 30, sumando ambos
+  tipos. Un protocolo puede tener solo pasos de práctica. Los exámenes siguen
+  sin pasos.
+
+Migración nueva (`20261030_28_practice_steps.py`, sin editar las existentes):
+
+- `protocol_steps.kind` `String(16)` `NOT NULL DEFAULT 'stimulus'`, con check.
+- `protocol_steps.stimulus_id` pasa a admitir nulo; check
+  `kind = 'practice' OR stimulus_id IS NOT NULL`.
+- `protocol_steps.target_expression` `String(32)` nulo y
+  `hold_seconds` `Integer` nulo; check de que existan juntos solo en `practice`.
+- La restricción `ck_protocol_steps_capture` sigue valiendo (0 ≤ 0 ≤ exposición).
+
+### Resultado de un ejercicio
+
+Se usa una tabla nueva `practice_results` (una fila por paso de
+práctica y sesión) en lugar de escribir el resultado dentro de
+`guided_runs.steps_log` (JSON). Motivos: las métricas, el reporte y las
+estadísticas lo consultan por columna; la eliminación con acta cuenta filas
+por tabla (`postgres_privacy_repositories.py`) y la retención funciona por
+`ON DELETE CASCADE` desde `sessions`, igual que `expression_captures`.
+
+```python
+@dataclass(frozen=True, slots=True)
+class PracticeResult:
+    id: str
+    session_id: str
+    step_index: int
+    target_expression: str
+    outcome: PracticeOutcome      # achieved | timed_out | skipped | stopped
+    seconds_to_achieve: float | None   # solo si achieved
+    peak_level: float             # 0..1, nivel máximo del ejercicio
+    relative_to_calibration: bool # el nivel se calculó respecto de la base neutral
+    feedback_visible: bool        # la señal estuvo visible todo el ejercicio
+    analyzed_frames: int          # cuadros con rostro que actualizaron el nivel
+    flagged_frames: int           # cuadros sin rostro o con problemas de calidad
+    emotion_model_id: str
+    emotion_model_version: str
+    started_at: datetime
+    ended_at: datetime
+```
+
+Restricción única `(session_id, step_index)`. Los pasos de práctica **no** crean
+filas en `expression_captures` (ver §4).
+
+## 3. Algoritmo en vivo
+
+Todo vive en memoria, en el `_Live` de la sesión, como la calibración. Un
+`PracticeTracker` por ejercicio en curso, con estado de tamaño fijo:
+`level`, `last_at`, `peak`, `above_since`, `achieved_at`, `analyzed`,
+`flagged`. Nunca una lista de cuadros.
+
+Por cada cuadro del ejercicio (ver §6 para la carga):
+
+1. Se analiza con `GuidedFrameAnalyzer.assess` (detección YuNet, calidad,
+   modelo local) y la imagen se descarta.
+2. Si el cuadro no tiene rostro o tiene un problema de calidad: `flagged += 1`,
+   el nivel **no se actualiza** y se reinicia el tiempo de sostén
+   (`above_since = None`). Así una cara fuera de cuadro no cuenta como logro ni
+   baja el nivel de golpe.
+3. Probabilidad de la expresión pedida: `p = distribution[target]`.
+4. Valor relativo a la base neutral, cuando existe calibración en memoria y la
+   expresión pedida no es `neutral`:
+   `x = clamp((p - base[target]) / (1 - base[target]), 0, 1)`.
+   Si la base se perdió (reinicio del servidor) o se pide `neutral`, `x = p`, y
+   el resultado guarda `relative_to_calibration = False`. En el caso
+   `neutral`, respecto de una base neutral el aumento sería casi cero, por eso se
+   usa la probabilidad directa.
+5. Promedio móvil exponencial ajustado al tiempo real entre cuadros, para que un
+   cuadro perdido no cambie el ritmo de la señal:
+   `alpha = 1 - exp(-dt / TAU)`, `level += alpha * (x - level)`, con
+   `TAU = 0.8 s` y `dt` acotado a 2 s. `peak = max(peak, level)`.
+   **Reemplazado por §14.2:** cuadros cada 250 ms y alfa nominal 0,4
+   (`TAU ≈ 0,49 s`).
+6. Umbral con histéresis: `PRACTICE_THRESHOLD = 0.6`. Si
+   `level ≥ 0.6` y `above_since` es nulo, `above_since = ahora`; si
+   `level < 0.55`, `above_since = None`. Las constantes van en
+   `domain/guided_session.py`, junto a las del examen; no se piden en el editor.
+7. Logro: `ahora - above_since ≥ hold_seconds`.
+
+Al **lograrlo**: se guarda el `PracticeResult` con `outcome = achieved`,
+`seconds_to_achieve` (desde el inicio del ejercicio hasta el momento del logro,
+no hasta que empezó el sostén), `peak_level` y los contadores. La pantalla
+muestra "¡Lo lograste!" durante `PRACTICE_SUCCESS_SECONDS = 2` y el paso avanza
+solo (se registra en `steps_log` como hoy). En esos 2 s no se analizan más
+cuadros.
+
+Al **vencer el tiempo** (`exposure_seconds` sin logro, detectado por `_tick`
+aunque no lleguen cuadros): `outcome = timed_out`, `seconds_to_achieve = None`,
+`peak_level` y contadores. La pantalla pasa al siguiente paso sin un mensaje de
+fracaso. **Saltar** guarda `skipped`; **parar** la sesión guarda `stopped` para el
+ejercicio en curso.
+
+Lo que se muestra se calcula con el mismo `level`, redondeado a dos decimales.
+
+## 4. Qué se guarda y qué nunca se guarda
+
+Por cada ejercicio, en `practice_results`: expresión pedida, resultado (logrado,
+venció el tiempo, saltado, detenido), segundos hasta lograrlo, nivel máximo, si
+fue relativo a la calibración, si la señal estuvo visible todo el ejercicio,
+cuadros analizados y marcados, modelo y versión, inicio y fin. En `steps_log`, el
+inicio y el fin del paso, como hoy.
+
+Nunca se guarda: ninguna imagen ni cuadro, ninguna lista de niveles o de
+probabilidades por cuadro, la distribución de cada cuadro, la base neutral, ni
+la serie del nivel para dibujarla después. La línea de tiempo muestra el
+ejercicio como un tramo con su resultado, no como una curva. El nivel en vivo
+no sale del servidor salvo hacia las dos pantallas de esa sesión.
+
+## 5. Cambios por pantalla y por contrato
+
+**Vista de la persona (`ParticipantViewPage`).** En un paso de práctica muestra
+solo: la instrucción ("Muestra alegría", con el nombre en español del catálogo
+de expresiones), la ilustración si existe, una barra de nivel de 0 a 1 sin
+números ni colores que valoren, y "¡Lo lograste!" al lograrlo. Si el conductor
+apagó la señal, no hay barra: solo la instrucción. Nunca la expresión
+detectada, probabilidades ni calidad. `ParticipantView` agrega
+`practice: {instruction, level | null, achieved} | null`; `level` es nulo con la
+señal apagada. La imagen de la ilustración usa la ruta de estímulo existente.
+
+**Vista del conductor (`GuidedConductorPage`).** En un ejercicio: "Ejercicio N
+de M · Expresión pedida: alegría", tiempo restante, el mismo nivel que ve la
+persona, un aviso de calidad cuando no se ve el rostro (con los textos de
+`issueNames`), el interruptor "Mostrar la señal a la persona" y "Saltar este
+ejercicio". Al terminar, el resultado en lenguaje descriptivo. Con público
+infantil, el aviso de limitación de §9. Nueva ruta
+`POST /guided-sessions/{id}/practice-feedback` `{visible: bool}` (solo quien
+conduce; se aplica en FastAPI). El estado se guarda en una columna nueva
+`guided_runs.practice_feedback` (por defecto `true`) para que sobreviva a un
+reinicio. El interruptor vale para toda la sesión (no por
+ejercicio) y, si cambia a mitad de un ejercicio, ese ejercicio queda con
+`feedback_visible = False`.
+
+**Editor de protocolos (`ProtocolsPage`).** "Agregar imagen" y "Agregar
+ejercicio de práctica". Un ejercicio pide: expresión pedida (lista de
+`PRACTICE_TARGETS`), segundos para sostenerla (predeterminado 2), tiempo máximo
+(predeterminado 20) e ilustración opcional del banco. La API
+(`stimulus_router.py`, `ProtocolStepRequest`) agrega `kind`,
+`target_expression` y `hold_seconds`. Un protocolo para niños solo acepta
+ilustraciones "Para niños".
+
+**Métricas (`session_metrics.py`).** `stimulus_metrics` salta los pasos de
+práctica en `emotional[]` y `abstract[]` (la coincidencia con la esperada no
+cambia) y agrega `practice[]` (por ejercicio: `step_index`, `target_expression`,
+`outcome`, `seconds_to_achieve`, `peak_level`, `feedback_visible`) y
+`totals.practice_exercises`, `totals.practice_achieved`,
+`totals.practice_sentence`: "Se logró la expresión pedida en 3 de 5
+ejercicios." (los saltados no cuentan en el total; se informan aparte).
+
+**Línea de tiempo (`session_insights_service.py`).** El carril `stimuli` muestra
+el ejercicio con `kind = "practice"` y título "Práctica: alegría"; un carril
+nuevo `practice` con `start`, `end`, `target_expression` y `outcome`.
+
+**Detalle y reporte (`SessionDetailPage`, `SessionReportPage`,
+`web/src/insights`).** Componente nuevo `PracticeMetrics.tsx`: tabla por
+ejercicio y la frase de totales. El reporte ya incrusta `metrics` y `timeline`,
+así que recibe la práctica sin cambiar `report_service.py`, salvo el aviso de
+limitación con niños.
+
+**Estadísticas (`session_statistics_service.py`, `StatisticsPage`).** Bloque
+nuevo `practice`: por expresión pedida, ejercicios, logrados y sesiones en las
+que se aplicó, más el total. Cuenta ejercicios y sesiones, nunca personas;
+no calcula puntajes ni promedios por persona. No incluye la mediana de
+segundos hasta lograrlo.
+
+**Contrato móvil (`docs/mobile-api.md`).** Revisión 5, **compatible**: solo campos
+nuevos de lectura (`Metrics.practice[]`, `Metrics.totals.practice_*`,
+`Timeline.lanes.practice[]`, `Statistics.practice`) y el valor `practice` en la
+enumeración abierta `kind`. Enumeración nueva `practice_outcome` (abierta). No
+sube `MOBILE_MIN_APP_VERSION`. El aplicativo sigue sin conducir sesiones ni
+enviar imágenes.
+
+## 6. Carga
+
+Hoy la pantalla de la persona envía un cuadro cada `FRAME_INTERVAL_MS = 500` ms
+mientras `capture_frames` es verdadero, pero en `STIMULI` el servidor solo
+analiza los cuadros a partir de `next_capture_due` y hasta lograr una captura
+buena: uno o pocos por imagen. Los demás se decodifican y se descartan sin
+pasar por el modelo. La práctica, en cambio, analiza cada cuadro del ejercicio
+(2 por segundo), igual que la calibración y la fase `EXAM`.
+
+Hallazgo: `POST /participant-view/{token}/frames` usa `run_in_threadpool` y
+**no pasa por `AnalysisCapacity`**. Por eso hoy `MAX_CONCURRENT_ANALYSES` no limita
+los cuadros de las sesiones guiadas ni de las estaciones de examen (solo el
+WebSocket del Analizador). Además, el navegador envía con `setInterval` sin
+esperar la respuesta anterior, y un servidor lento acumula peticiones.
+
+Propuesta:
+
+1. `create_guided_router` recibe `analysis_capacity` y el análisis del cuadro
+   corre en `capacity.run(...)`, en el mismo pool que el Analizador. Así un solo
+   límite cubre prácticas, estaciones y lectura en vivo.
+2. Si no hay cupo, el cuadro **se descarta** (sin esperar los 5 s de
+   `busy_wait_seconds`) y la respuesta sigue siendo `{"received": true}`: la
+   persona no recibe ningún resultado ni error. Un intento sin bloqueo en
+   `AnalysisCapacity` (`try_run`). El descarte vale también
+   para el examen: hoy los medios segundos sin cuadro ya se guardan marcados
+   (`EXAM_GAP_SECONDS`), así que el registro muestra el hueco en vez de
+   retrasarse.
+3. `ParticipantViewPage` envía un cuadro solo cuando terminó el anterior (un
+   cuadro en vuelo por pantalla). La demanda máxima es entonces una petición por
+   pantalla que captura, y el EMA ajustado por `dt` tolera los cuadros perdidos.
+4. El servidor solo analiza cuando la fase lo necesita: en `STIMULI` de imagen
+   sigue analizando solo al capturar; en práctica, todos los cuadros; en los 2 s
+   de "¡Lo lograste!", ninguno.
+5. Hardware mínimo (i7-3770, 4 núcleos y 8 hilos, 4 GB, sin GPU útil): fijar
+   `MAX_CONCURRENT_ANALYSES=3` y `ONNX_THREADS_PER_SESSION=1` en ese equipo (el
+   valor por defecto, núcleos lógicos − 1 = 7, satura los 4 núcleos físicos).
+   El modelo se carga una sola vez por proceso (`_assessors` por modelo), así que
+   la memoria no crece con las sesiones. La capacidad real (cuántas pantallas a
+   2 cuadros por segundo caben sin descartes) se medirá con una prueba de carga
+   en ese equipo, con estaciones de examen y prácticas simultáneas, y se anotará
+   en `docs/testing/`. No se dan cifras antes de medir.
+6. Opcional, si la medición lo pide: la práctica puede enviar 320×240 en lugar
+   de 640×480 (el control de calidad usa proporciones, no píxeles).
+
+## 7. Convivencia con las fases actuales
+
+No se agrega ninguna fase. Un ejercicio de práctica es un paso dentro de
+`STIMULI`: `_tick` y `_receive` ramifican por `step.kind`.
+
+- `PRE_QUESTIONNAIRE`, `POST_QUESTIONNAIRE`, `CALIBRATION`: sin cambios. La
+  calibración ya ocurre antes de `STIMULI`, así que la práctica siempre la tiene,
+  salvo tras un reinicio del servidor (§3, paso 4).
+- `BEFORE_ANALYZER`: no admite pasos de práctica (lo valida el dominio).
+- `STIMULI` con pasos de imagen: mismo código y mismas capturas; los pasos de
+  imagen y de práctica pueden alternarse en un protocolo.
+- `LIVE` (sin protocolo): sin pasos, sin práctica. Sin cambios.
+- `WAITING`, `READY`, `EXAM`: un examen no tiene pasos (`Protocol` lo impide),
+  así que nunca llega a la rama de práctica. El único cambio común es el cupo de
+  análisis de §6, que no cambia lo que se guarda en el examen.
+- `FINISHED`, `STOPPED`: al parar con un ejercicio en curso se guarda
+  `outcome = stopped`.
+- El Analizador por WebSocket y la actividad de posturas no cambian.
+- Cuerpo: la práctica usa solo la cara; no se infiere nada desde la postura.
+
+## 8. Archivos por prompt (propuesta)
+
+La división en prompts es mía, a partir de los puntos de este documento; se
+ajusta a S2–S9 cuando los vea.
+
+| Prompt | Contenido | Archivos |
+| --- | --- | --- |
+| S2 | Dominio y esquema de pasos | `domain/protocol.py`, `domain/guided_session.py` (constantes, `PracticeResult`, `PracticeOutcome`), `infrastructure/persistence/models.py`, `postgres_*protocol*`, migración `..._28_practice_steps.py`, `interfaces/web/stimulus_router.py`, pruebas de dominio y repositorio |
+| S3 | Algoritmo puro | `application/practice_tracker.py` (nuevo) y sus pruebas con reloj falso |
+| S4 | Integración en la sesión guiada | `application/guided_session_service.py`, repositorio guiado, tabla `practice_results` y columna `guided_runs.practice_feedback` (migración `..._29_practice_results.py`), `postgres_privacy_repositories.py` (acta), `interfaces/web/guided_router.py` (`ParticipantView.practice`, `practice-feedback`) |
+| S5 | Carga | `interfaces/web/analysis_capacity.py` (`try_run`), `guided_router.py`, `app.py`, `ParticipantViewPage.tsx` (un cuadro en vuelo), pruebas |
+| S6 | Editor de protocolos | `web/src/pages/ProtocolsPage.tsx`, `web/src/api/types.ts`, pruebas vitest |
+| S7 | Pantallas de la sesión | `ParticipantViewPage.tsx`, `GuidedConductorPage.tsx`, CSS, pruebas vitest |
+| S8 | Métricas, línea de tiempo, reporte y estadísticas | `session_metrics.py`, `session_insights_service.py`, `session_statistics_service.py`, `report_service.py` (aviso), `web/src/insights/PracticeMetrics.tsx`, `SessionDetailPage.tsx`, `SessionReportPage.tsx`, `StatisticsPage.tsx` |
+| S9 | Documentación y contrato | `docs/mobile-api.md` (revisión 5), `docs/privacy/` (registro de tratamiento, guía de uso), `docs/testing/manual-checklist.md`, `docs/thesis-evidence/README.md`, este documento |
+| A1 | Android (`EMOtv-android`) | Mostrar `practice[]`, la frase de totales, el carril de práctica y `Statistics.practice`; tolerar `kind = practice` |
+
+## 9. Riesgos
+
+**Precisión con rostros de niños.** FER+ se entrenó con FER2013 y HSEmotion con
+AffectNet: en su mayoría rostros de adultos. Con niños, y más con expresiones
+atípicas o poco marcadas, la estimación puede ser menos precisa y el umbral
+puede no alcanzarse aunque la persona sí haya mostrado la expresión. No se
+entrenan ni se agregan modelos (fuera de alcance). Mitigaciones:
+
+- el nivel se mide respecto de la base neutral de esa misma sesión;
+- el umbral y el sostén son cortos y el conductor puede saltar el ejercicio;
+- el conductor puede apagar la señal si genera frustración;
+- vencer el tiempo no muestra un mensaje de fracaso a la persona;
+- los textos dicen "se logró / no se logró en el sistema", nunca valoran.
+
+Aviso fijo (`PRACTICE_CHILD_NOTICE`) en la vista del conductor, el detalle, el
+reporte y las estadísticas cuando el público es infantil:
+
+> "Los modelos de EMOtv se entrenaron sobre todo con rostros de personas
+> adultas. Con niños y niñas la estimación puede ser menos precisa: que el
+> sistema no registre el logro no significa que la expresión no se haya
+> mostrado. Es un registro descriptivo, no una evaluación."
+
+**Otros riesgos.**
+
+- Carga: analizar 2 cuadros por segundo por pantalla puede saturar el equipo
+  mínimo; se mitiga con §6 y se mide antes del piloto.
+- Interpretación: una tasa de logro baja podría leerse como un juicio sobre el
+  niño. Las frases son descriptivas y las estadísticas cuentan ejercicios y
+  sesiones, nunca personas.
+- Reinicio del servidor a mitad de un ejercicio: el tracker se pierde y el
+  ejercicio vuelve a empezar desde su nivel cero; la base neutral también se
+  pierde (queda `relative_to_calibration = False`).
+- Ilustraciones: una imagen con una cara podría parecer una foto de una persona.
+  Solo se aceptan estímulos del banco con origen y licencia; las imágenes propias
+  ya pasan por la detección de personas y la revisión del docente.
+
+## 10. Validación con adultos voluntarios
+
+Antes de usar la práctica con niños se mide si cada modelo (HSEmotion y FER+)
+reconoce expresiones producidas a propósito. Solo participan adultos voluntarios
+con cuenta de prueba `PRUEBA-NN` y consentimiento firmado en papel
+(`docs/testing/volunteer-protocol.md`). No se guardan imágenes: los cuadros se
+analizan en memoria y se descartan, como en cualquier sesión.
+
+**Protocolo «Validación con adultos».** Para adultos, con un ejercicio de
+práctica por cada expresión de `EXPRESSION_KEYS` menos `contempt`, en el orden del
+catálogo (neutral, alegría, sorpresa, tristeza, enojo, asco, miedo). Cada uno se
+sostiene 2 s, con un máximo de 15 s. Solo aparece con `CONSENT_MODE=demo` y para
+una cuenta con `users.is_test_account` verdadero; en cualquier otro caso el
+servidor no lo ofrece, no lo agrega (`403`) y no deja aplicarlo. El nombre está
+reservado: ninguna otra cuenta puede crear un protocolo con ese nombre.
+
+**Cómo se ejecuta.**
+
+1. Configura `CONSENT_MODE=demo` en `.env` (o `.env.docker`) y reinicia la API.
+2. Crea las cuentas de voluntarios:
+   `python scripts/testdata/create_test_accounts.py --count 3`. Entrega a cada
+   voluntario solo su código y su contraseña.
+3. Con la cuenta del voluntario, en **Protocolos**, pulsa «Agregar «Validación
+   con adultos»». Se agrega una sola vez.
+4. En el **Analizador**, elige ese protocolo y confirma la autorización firmada.
+   Haz la calibración neutral y deja que la persona siga cada instrucción.
+5. Para comparar modelos, repite la sesión con el otro modelo elegido como
+   predeterminado en **Modelos** (cuenta de administración).
+6. Con la cuenta de administración (`superadmin`), en **Modelos**, pulsa
+   «Descargar resumen (CSV)» (`GET /practice-validation/export.csv`).
+7. Al terminar, o como máximo a los 30 días, borra los datos de los voluntarios con
+   `python scripts/testdata/delete_test_data.py` (incluye `practice_results`).
+
+**Qué trae el CSV.** Una fila por modelo, versión del modelo y expresión pedida:
+`modelo`, `version_modelo`, `expresion_pedida`, `ejercicios` (los que llegaron a
+su final: logrados o con el tiempo vencido), `logrados` y
+`tiempo_promedio_hasta_lograrlo_s` (solo de los logrados; vacío si no hubo
+ninguno). Solo cuenta las sesiones del protocolo de validación conducidas por
+cuentas de voluntarios. No lleva códigos de sesión, fechas, correos ni nada que
+identifique a alguien, y los ejercicios saltados o detenidos no cuentan.
+
+El servidor arma el CSV en memoria al pedirlo y no lo guarda. El archivo
+descargado es un resultado de prueba: no se agrega al repositorio (`*.csv` está
+en `.gitignore`) ni se comparte fuera del equipo del proyecto. Con pocos
+voluntarios, una fila puede corresponder a una sola persona: se trata como dato
+de prueba y se borra junto con las cuentas.
+
+**Cómo leerlo.** Describe cuántas veces el modelo registró la expresión pedida
+en adultos que la produjeron a propósito. No prueba que el modelo funcione con
+niños ni dice nada sobre el estado emocional de nadie.
+
+## 11. Lo implementado
+
+| Commit | Contenido |
+| --- | --- |
+| `645841e` | `StepKind`, `ProtocolStep.practice(...)`, `PracticeResult` y `PracticeOutcome`; migración `20261030_28_practice_steps` con las columnas de `protocol_steps` y la tabla `practice_results` |
+| `01b9f8d` | `PracticeTracker` (EMA ajustado por `dt`, histéresis y sostén, con `__slots__`); la sesión guiada lo usa en `STIMULI`; cupo de análisis sin espera (`AnalysisCapacity.try_run`) para los cuadros de práctica; variables `PRACTICE_*` |
+| `7e50f98` | Pantalla de la persona: instrucción, ilustración opcional, señal de 0 a 1 y «¡Lo lograste!»; un cuadro en vuelo; migración `20261030_29_practice_feedback` (`guided_runs.practice_feedback`) |
+| `15da302` | Editor de protocolos con «Agregar ejercicio de práctica»; vista de quien conduce con la expresión pedida, el tiempo restante, el nivel en vivo, «Saltar este ejercicio» y el interruptor de la señal (`POST /guided-sessions/{id}/practice-feedback`) |
+| `6eceb2c` | `metrics.practice`, carril de estímulos con los ejercicios, bloque `practice` de las estadísticas y el aviso fijo `PRACTICE_NOTICE` en detalle, reporte e impresión |
+| `1829773` | Contrato móvil 4.1: `metrics.practice`, campos de práctica en la línea de tiempo y `practice` en `GET /mobile/statistics` |
+| `a4db041` | Protocolo «Validación con adultos» y exportación CSV agregada (§10); el borrado de voluntarios incluye `practice_results` |
+
+**Flujo.** Quien conduce arma en **Protocolos** un protocolo con uno o más
+ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo
+elige en el **Analizador** y confirma la autorización. Tras la calibración
+neutral, cada ejercicio corre en `STIMULI`: la pantalla de la persona envía un
+cuadro cada 250 ms (uno a la vez), el servidor lo analiza en memoria, actualiza
+el nivel y descarta la imagen. Al lograrlo, vencer el tiempo, saltarlo o parar
+la sesión se guarda una fila en `practice_results`. El detalle, el reporte y las
+estadísticas describen lo ocurrido («Logró la expresión pedida en 3 de 5
+ejercicios.») junto al aviso fijo.
+
+**Parámetros.** Se leen del entorno con los valores de §14.2
+(`PRACTICE_THRESHOLD=0.6`, `PRACTICE_RELEASE_THRESHOLD=0.55`,
+`PRACTICE_SMOOTHING_SECONDS=0.49`, `PRACTICE_FRAME_INTERVAL_MS=250`,
+`PRACTICE_STEP_PAUSE_SECONDS=2`, `PRACTICE_HOLD_SECONDS=2`,
+`PRACTICE_MAX_SECONDS=20`); `PRACTICE_SUCCESS_PAUSE_SECONDS` se sigue aceptando
+como nombre anterior de la pausa. La API no arranca si el umbral de salida no es
+menor que el umbral o si el tiempo máximo propuesto no es mayor que el sostén.
+El sostén va de 1 a 10 s y el tiempo máximo hasta 120 s, siempre mayor que el
+sostén. El editor pide los valores propuestos a `GET /protocols/practice-defaults`
+(usuarios y docentes) y cada paso guarda los suyos. La pausa sigue a todo
+ejercicio terminado, logrado o con el tiempo vencido; saltarlo avanza sin pausa.
+
+**Pruebas.** Dominio y persistencia (`test_practice_domain.py`,
+`test_practice_persistence.py`), algoritmo con reloj falso
+(`test_practice_tracker.py`), sesión guiada (`test_practice_sessions.py`),
+API (`test_practice_api.py`), métricas y estadísticas
+(`test_practice_metrics.py`, `test_practice_statistics.py`), contrato móvil
+(`test_mobile_practice.py`), validación (`test_practice_validation.py`),
+vitest de las pantallas y de los resultados, y la e2e
+`web/e2e/practice.spec.ts` (ver §13).
+
+## 12. Diferencias respecto al diseño
+
+- **Reparto de los commits.** No siguió la tabla de §8: la tabla
+  `practice_results` llegó con la migración `_28` y la `_29` solo agrega
+  `guided_runs.practice_feedback`. La carga (§6) entró con la integración en la
+  sesión guiada.
+- **Parámetros configurables.** Umbral, histéresis, suavizado y pausa son
+  variables de entorno con validación de rango (`config.PracticeSettings`), no
+  constantes del dominio. Los valores por defecto son los del diseño.
+- **Tiempo máximo por defecto.** El editor proponía 15 s; desde §14.5 propone
+  20 s, como el diseño.
+- **Aviso.** En lugar de `PRACTICE_CHILD_NOTICE`, solo con público infantil, hay
+  un aviso fijo `PRACTICE_NOTICE` junto a **todo** resultado de práctica, sea
+  cual sea el público: los modelos se entrenaron sobre todo con rostros de
+  adultos, su precisión con niños no está validada y el resultado describe el
+  ejercicio, no el estado emocional.
+- **Métricas.** Un bloque propio `metrics.practice` (`exercises`, `totals`,
+  `by_target`, `notice`) en vez de `practice[]` y `totals.practice_*` dentro de
+  las métricas de estímulos. Agrega los ejercicios a los que la sesión no llegó
+  (`not_reached`), el tiempo promedio hasta lograrla (solo los logrados) y una
+  frase sobre si la señal estuvo visible.
+- **Línea de tiempo.** No hay carril `practice`: el carril `stimuli` lleva cada
+  ejercicio con `kind = "practice"`, `target_expression`, `outcome` y
+  `seconds_to_achieve`.
+- **Estadísticas.** Además de por expresión pedida, se agrupan por protocolo y,
+  para el docente, por cuenta que condujo (`by_user`: el correo del Usuario,
+  nunca un dato de la persona evaluada). Incluyen el tiempo promedio hasta
+  lograrla; sin mediana, como se aprobó. La API móvil no recibe `by_user`.
+- **Componente web.** `PracticeMetrics` vive en
+  `web/src/insights/StimulusMetrics.tsx`, no en un archivo propio.
+- **Contrato móvil.** Revisión 4.1 (menor y compatible), no 5; no sube
+  `MOBILE_MIN_APP_VERSION`.
+- **Vista de quien conduce.** Muestra «Paso N de M · ejercicio de práctica». No
+  muestra el aviso de calidad cuando no se ve el rostro ni el aviso fijo durante
+  el ejercicio (ver §13).
+- **Descarte por falta de cupo.** Se aplica solo a los cuadros de un ejercicio
+  de práctica en curso; los del examen y de las imágenes siguen esperando cupo
+  como antes.
+- **Agregado.** El protocolo «Validación con adultos» y su exportación agregada
+  (§10) no estaban en el diseño.
+- **Resumen del Analizador.** Al elegir un protocolo, el Analizador cuenta
+  imágenes y ejercicios por separado («calibración, 1 ejercicio de práctica»).
+
+## 13. Pendiente
+
+- **Prueba con personas.** La validación con adultos voluntarios (§10) para
+  HSEmotion y FER+, antes de cualquier uso con niños.
+- **E2E con rostro.** `web/e2e/practice.spec.ts` inicia la sesión desde el
+  Analizador y la termina siempre. El recorrido completo (calibración, ejercicio
+  y final) necesita imágenes de rostro en `web/e2e/fixtures/faces/`: sin rostro
+  la calibración no termina y esa prueba se omite. El 2026-10-30 pasó con
+  imágenes propias del desarrollador (no versionadas). Solo comprueba el flujo:
+  el video recorre las imágenes en bucle, así que el ejercicio puede terminar
+  por tiempo; que el modelo reconozca la expresión pedida lo mide la validación
+  con voluntarios (§10).
+- **Carga.** Medir en el equipo mínimo (i7-3770) cuántas pantallas en práctica
+  caben sin descartes (§6, punto 5) y anotarlo en `docs/testing/`.
+- **Vista de quien conduce.** Aviso de calidad cuando no se ve el rostro y aviso
+  fijo durante el ejercicio.
+- **Privacidad y pruebas manuales.** Agregar `practice_results` al registro de
+  tratamiento de `docs/privacy/` y los ejercicios de práctica a
+  `docs/testing/manual-checklist.md`.
+- **Aplicativo Android (A1).** Mostrar `metrics.practice`, los ejercicios en la
+  línea de tiempo y `practice` de las estadísticas (contrato 4.1), en el
+  repositorio `EMOtv-android`.
+
+## 14. Decisiones del desarrollador (2026-10-31)
+
+Se incorporan antes de S2. Donde contradicen las secciones anteriores,
+prevalecen estas; lo que el código todavía no cumple está al final (§14.5).
+
+### 14.1. Expresiones por protocolo
+
+- Quien arma el protocolo (el practicante) elige qué expresiones incluye en los
+  pasos de práctica. Cualquier expresión de `EXPRESSION_KEYS` es elegible,
+  incluida `contempt`.
+- No hay una lista fija en el código: `PRACTICE_TARGETS` deja de excluir
+  expresiones y el editor ofrece todo el catálogo. Elegir una expresión que los
+  modelos estiman poco (como `contempt`) es decisión de quien arma el
+  protocolo; la validación con adultos (§10) mostrará cuáles se registran
+  mejor.
+- En los protocolos para niños basta la revisión del docente que ya existe: la
+  de las imágenes que suben los usuarios (`POST /stimuli/{id}/approve`). Cubre
+  las ilustraciones de los ejercicios; una imagen sin aprobar no se usa. No se
+  vuelve a exigir la aprobación del protocolo (desde `d818c9b`, un protocolo
+  para niños no la necesita y `approved_at` solo se conserva de versiones
+  anteriores), y la elección de expresiones no pasa por ninguna aprobación
+  (decisión del desarrollador, 2026-10-31).
+
+### 14.2. Parámetros iniciales
+
+No existe un valor estándar para estos parámetros. Se usan valores
+conservadores, configurables por variables de entorno y **provisionales hasta
+la validación de S8**:
+
+| Parámetro | Valor inicial | Variable de entorno |
+| --- | --- | --- |
+| Umbral de logro | 0,6 | `PRACTICE_THRESHOLD` (ya existe) |
+| Umbral de salida (histéresis) | 0,55 | `PRACTICE_RELEASE_THRESHOLD` (ya existe) |
+| Sostén | 2 s | `PRACTICE_HOLD_SECONDS` (nueva; valor que propone el editor) |
+| Tiempo máximo por paso | 20 s | `PRACTICE_MAX_SECONDS` (nueva; valor que propone el editor) |
+| Pausa entre pasos | 2 s | `PRACTICE_STEP_PAUSE_SECONDS` (reemplaza a `PRACTICE_SUCCESS_PAUSE_SECONDS`) |
+| Intervalo de cuadros en práctica | 250 ms | `PRACTICE_FRAME_INTERVAL_MS` (nueva; hoy es una constante de 500 ms) |
+| Suavizado | alfa 0,4 con cuadros cada 250 ms | `PRACTICE_SMOOTHING_SECONDS=0.49` (ya existe; hoy vale 0.8) |
+
+El sostén y el tiempo máximo siguen siendo de cada paso: las variables solo
+fijan lo que el editor propone. Los rangos permitidos no cambian: sostén de 1 a
+10 s y tiempo máximo mayor que el sostén, de hasta 120 s.
+
+**Por qué alfa 0,4.** El promedio móvil exponencial
+`level += alpha * (x - level)` pesa el cuadro de hace `k` intervalos con
+`alpha · (1 - alpha)^k`. Se busca que el nivel refleje aproximadamente el
+último segundo, es decir, los últimos 4 cuadros a 250 ms:
+
+- Una media simple de los últimos 4 cuadros tiene una edad media de 1,5
+  intervalos ((0 + 1 + 2 + 3) / 4). La edad media de un EMA es
+  `(1 - alpha) / alpha`; igualarla a 1,5 da `alpha = 2 / (4 + 1) = 0,4`, la
+  equivalencia habitual entre un EMA y una media de `N` cuadros.
+- Con `alpha = 0,4`, los 4 cuadros del último segundo aportan
+  `1 - 0,6^4 ≈ 87 %` del nivel, y lo anterior, alrededor del 13 %. Un cuadro
+  aislado mueve el nivel a lo sumo un 40 %, así que un parpadeo o un gesto
+  breve no basta para cruzar el umbral.
+- Si la expresión pedida aparece de golpe con probabilidad cercana a 1, el
+  nivel pasa de 0 a 0,64 en 2 cuadros (0,5 s), y el sostén de 2 s empieza a
+  contar desde ahí. Si la expresión desaparece, el nivel baja de 0,55 en uno o
+  dos cuadros.
+
+El código aplica el alfa a través de la constante de tiempo,
+`alpha = 1 - exp(-dt / TAU)`, para que un cuadro perdido o descartado por falta
+de cupo no cambie el ritmo de la señal. Con `dt = 0,25 s`,
+`TAU = -0,25 / ln(0,6) ≈ 0,49 s` da `alpha = 0,4`. Si se pierde un cuadro
+(`dt = 0,5 s`), el alfa sube a 0,64, lo mismo que dos pasos seguidos.
+
+Pasar de 500 a 250 ms duplica los cuadros por pantalla (4 por segundo). La
+medición de carga en el equipo mínimo (§6, punto 5) se hace con este
+intervalo.
+
+### 14.3. Quién ve qué
+
+Todo esto ocurre solo en la web. El aplicativo Android no conduce sesiones ni
+usa la cámara.
+
+- **Vista del participante:** la instrucción, la ilustración si existe y una
+  figura que crece con el nivel. Al lograrlo, una confirmación amable («¡Lo
+  lograste!»). Nunca muestra etiquetas de la expresión estimada,
+  probabilidades ni calidad.
+- **Vista del conductor:** la expresión pedida, el nivel, si se logró o no y
+  los marcadores de la sesión.
+- **Señal visual apagada:** el conductor puede apagarla durante la sesión.
+  Entonces el participante ve solo la instrucción y el practicante lo guía de
+  palabra. El ejercicio se analiza y se registra igual, y el resultado indica
+  si la señal estaba activa (`feedback_visible`).
+- **Aplicativo Android:** solo muestra los resultados ya registrados (contrato
+  4.1).
+
+### 14.4. Continuidad entre sesiones
+
+**Opción A: sin vínculo entre sesiones.** Cada sesión muestra solo su propio
+resultado. No se comparan sesiones, no se muestra la evolución de nadie y no se
+guarda nada que permita reconocer que dos sesiones son de la misma persona. Las
+estadísticas siguen siendo agregadas: cuentan ejercicios y sesiones, nunca
+personas.
+
+### 14.5. Ajustes en el código
+
+Aplicados, salvo la prueba de carga:
+
+- Quitar la exclusión de `contempt` en `PRACTICE_TARGETS`
+  (`domain/protocol.py`) y ofrecer todo el catálogo en el editor.
+- Leer del entorno `PRACTICE_HOLD_SECONDS`, `PRACTICE_MAX_SECONDS`,
+  `PRACTICE_STEP_PAUSE_SECONDS` y `PRACTICE_FRAME_INTERVAL_MS`, documentarlas
+  en `.env.example` y cambiar `PRACTICE_SMOOTHING_SECONDS` a 0.49.
+- Hacer que el editor proponga 20 s de tiempo máximo (hoy propone 15).
+- Aplicar la pausa de 2 s entre todos los pasos de práctica, no solo después
+  de un logro.
+- Repetir la prueba de carga con cuadros cada 250 ms. **Pendiente.**
+
+El protocolo «Validación con adultos» (§10) mantiene su lista sin `contempt` y
+15 s por ejercicio: es una lista fija de la validación, no la del editor.

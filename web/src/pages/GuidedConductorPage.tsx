@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiRequest } from "../api/http";
-import type { GuidedPhase, GuidedState, MarkerKind, Questionnaire } from "../api/types";
+import type { GuidedPhase, GuidedPracticeResult, GuidedState, MarkerKind, Questionnaire } from "../api/types";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
+import { Checkbox } from "../components/Checkbox";
 import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
+import { practiceTargetNames } from "../stimuli/labels";
 
 const POLL_MS = 1000;
 const phaseNames: Record<GuidedPhase, string> = {
@@ -41,6 +43,11 @@ const issueNames: Record<string, string> = {
   too_small: "rostro muy lejos", too_dark: "poca luz", too_bright: "demasiada luz", tilted: "cabeza inclinada",
 };
 const stopNames = { participant: "la persona pidió parar", guardian: "el padre, la madre o el tutor pidió parar", conductor: "quien conduce la sesión la terminó" };
+// Describe cómo terminó cada ejercicio, sin valorar a la persona.
+const outcomeNames: Record<GuidedPracticeResult["outcome"], string> = {
+  achieved: "Logró la expresión pedida", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
+};
+const seconds = (value: number) => value.toLocaleString("es-PE", { maximumFractionDigits: 1 });
 const time = (value: string) => new Date(value).toLocaleTimeString("es-PE", { timeStyle: "medium" });
 
 /** Vista de quien conduce una sesión con protocolo: progreso, estado de la captura y marcadores. */
@@ -124,6 +131,10 @@ export function GuidedConductorPage() {
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
+  const isPractice = step?.step_kind === "practice";
+  const hasPractice = state?.steps.some((item) => item.step_kind === "practice") ?? false;
+  const practiceResults = state?.practice_results ?? [];
+  const targetName = (key?: string | null) => practiceTargetNames[key ?? ""] ?? "";
 
   return <section>
     <ButtonLink variant="ghost" className="back-link" to={paths.session(sessionId)}>← Detalle de la sesión</ButtonLink>
@@ -139,6 +150,9 @@ export function GuidedConductorPage() {
         <Button onClick={() => window.open(viewUrl, "emotv-persona", "noopener")}>Abrir la pantalla de la persona</Button>
         <Button variant="ghost" onClick={() => { void navigator.clipboard?.writeText(viewUrl); }}>Copiar enlace</Button>
       </div> : <Button disabled={busy} onClick={() => { void newLink(); }}>Crear el enlace de la pantalla de la persona</Button>}
+      {hasPractice && <Checkbox checked={state.practice_feedback ?? true} disabled={busy}
+        onChange={(event) => { void act("/practice-feedback", { visible: event.target.checked }); }}>
+        Mostrar la señal a la persona en los ejercicios de práctica</Checkbox>}
     </div>}
 
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">
@@ -157,7 +171,23 @@ export function GuidedConductorPage() {
         : <Button variant="primary" disabled={busy} onClick={() => { void act("/calibration"); }}>Iniciar calibración</Button>}
     </div>}
 
-    {step && state && <div className="card form-stack">
+    {step && state && isPractice && <div className="card form-stack">
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica</p>
+      <h2>Expresión pedida: {targetName(step.target_expression)}</h2>
+      <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
+      {state.practice && <>
+        <label>Nivel en vivo
+          <meter min={0} max={1} value={state.practice.level ?? 0}>{Math.round((state.practice.level ?? 0) * 100)} %</meter>
+        </label>
+        <p role="status">{state.practice.achieved
+          ? "Logró la expresión pedida. El ejercicio avanza en un momento."
+          : `Se registra como lograda cuando la sostiene ${step.hold_seconds} s.`}</p>
+      </>}
+      {state.practice_feedback === false && <p className="muted">La persona ve solo la instrucción, sin la señal.</p>}
+      <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar este ejercicio</Button>
+    </div>}
+
+    {step && state && !isPractice && <div className="card form-stack">
       <p className="step-caption">Imagen {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
       <h2>{step.title}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
@@ -199,6 +229,16 @@ export function GuidedConductorPage() {
       {state.phase === "finished" ? "La sesión terminó y quedó registrada." : `La sesión se detuvo: ${stopNames[state.stop_reason ?? "conductor"]}.`}
       {state.session_code && <> Código de la sesión: <strong>{state.session_code}</strong>.</>}
     </Callout>}
+
+    {practiceResults.length > 0 && <section className="card">
+      <h2>Ejercicios de práctica</h2>
+      <p>Logró la expresión pedida en {practiceResults.filter((item) => item.outcome === "achieved").length} de {practiceResults.length} {practiceResults.length === 1 ? "ejercicio" : "ejercicios"}.</p>
+      <ul className="card-list">{practiceResults.map((item) => <li key={item.step_index} className="row-card">
+        <span>Paso {item.step_index + 1} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
+          {item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}
+          {item.feedback_visible ? "" : " · sin la señal visible"}</span>
+      </li>)}</ul>
+    </section>}
 
     {state && state.markers.length > 0 && <section className="card">
       <h2>Registro de marcadores</h2>

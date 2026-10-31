@@ -6,6 +6,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from emotv.domain.protocol import MAX_EXPOSURE_SECONDS, MAX_HOLD_SECONDS
+
 # --- Rutas del Proyecto ---
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -20,6 +22,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip() or None
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 N8N_PRODUCTION_WEBHOOK_URL = "https://emotv.app.n8n.cloud/webhook/emi-chat"
+CHAT_PROVIDERS = ("sim", "n8n")
 DEFAULT_CHAT_RISK_MESSAGE = (
     "Emi no puede ayudarte con este tema. Te pedimos que hables ahora con una "
     "persona de confianza o con un profesional de la salud. Si estás en peligro "
@@ -50,10 +53,15 @@ class LoginLimits:
 
 @dataclass(frozen=True)
 class ChatSettings:
-    """Emi: webhook de n8n, historial, retención, límites de uso y filtro."""
+    """Emi: proveedor del workflow (Sim o n8n), historial, retención, límites de uso y filtro."""
 
+    # sim: workflow desplegado en sim.ai (vigente). n8n: webhook anterior, opcional.
+    provider: str = "sim"
+    sim_workflow_url: str = ""
+    # Obligatoria con Sim: sin ella el chat responde 503. Nunca se escribe en logs.
+    sim_api_key: str = field(default="", repr=False)
     webhook_url: str = N8N_PRODUCTION_WEBHOOK_URL
-    # Obligatoria: sin ella el chat responde 503. Nunca se escribe en logs.
+    # Obligatoria con n8n: sin ella el chat responde 503. Nunca se escribe en logs.
     webhook_key: str = field(default="", repr=False)
     # Cada petición incluye dos llamadas a modelos (clasificación y respuesta).
     timeout_seconds: float = 30.0
@@ -80,10 +88,18 @@ def get_chat_settings(environ: Mapping[str, str] | None = None) -> ChatSettings:
             raise ValueError(f"{name} debe ser al menos {minimum:g}")
         return value
 
+    provider = source.get("CHAT_PROVIDER", "").strip().lower() or defaults.provider
+    if provider not in CHAT_PROVIDERS:
+        raise ValueError("CHAT_PROVIDER debe ser sim o n8n")
+    # N8N_TIMEOUT_SECONDS se acepta como nombre anterior de CHAT_TIMEOUT_SECONDS.
+    timeout_name = "CHAT_TIMEOUT_SECONDS" if source.get("CHAT_TIMEOUT_SECONDS", "").strip() else "N8N_TIMEOUT_SECONDS"
     return ChatSettings(
+        provider=provider,
+        sim_workflow_url=source.get("SIM_WORKFLOW_URL", "").strip(),
+        sim_api_key=source.get("SIM_API_KEY", "").strip(),
         webhook_url=source.get("N8N_WEBHOOK_URL", "").strip() or defaults.webhook_url,
         webhook_key=source.get("N8N_WEBHOOK_KEY", "").strip(),
-        timeout_seconds=number("N8N_TIMEOUT_SECONDS", defaults.timeout_seconds, float, 1),
+        timeout_seconds=number(timeout_name, defaults.timeout_seconds, float, 1),
         history_messages=number("CHAT_HISTORY_MESSAGES", defaults.history_messages, int, 0),
         retention_days=number("CHAT_RETENTION_DAYS", defaults.retention_days),
         window_messages=number("CHAT_LIMIT_WINDOW_MESSAGES", defaults.window_messages),
@@ -122,6 +138,61 @@ def get_live_expression_settings(environ: Mapping[str, str] | None = None) -> Li
             raise ValueError(f"{name} debe estar entre 0 y {maximum:g}")
         values.append(value)
     return LiveExpressionSettings(*values)
+
+
+@dataclass(frozen=True)
+class PracticeSettings:
+    """Paso de práctica de expresiones (docs/expression-practice.md, §14.2).
+
+    El nivel es un promedio móvil exponencial de la expresión pedida, con
+    constante de tiempo smoothing_seconds (0,49 s: alfa 0,4 con cuadros cada
+    frame_interval_ms = 250 ms). Se considera alcanzado al llegar a threshold y
+    deja de estarlo bajo release_threshold (histéresis). Al terminar un ejercicio
+    (logrado o con el tiempo vencido) hay una pausa de step_pause_seconds antes
+    del paso siguiente. hold_seconds y max_seconds son lo que propone el editor;
+    cada paso guarda los suyos. Valores provisionales hasta la validación.
+    """
+
+    threshold: float = 0.6
+    release_threshold: float = 0.55
+    smoothing_seconds: float = 0.49
+    step_pause_seconds: float = 2.0
+    hold_seconds: int = 2
+    max_seconds: int = 20
+    frame_interval_ms: int = 250
+
+
+def get_practice_settings(environ: Mapping[str, str] | None = None) -> PracticeSettings:
+    source = os.environ if environ is None else environ
+    defaults = PracticeSettings()
+    # PRACTICE_SUCCESS_PAUSE_SECONDS se acepta como nombre anterior de PRACTICE_STEP_PAUSE_SECONDS.
+    pause_name = ("PRACTICE_STEP_PAUSE_SECONDS" if source.get("PRACTICE_STEP_PAUSE_SECONDS", "").strip()
+                  or not source.get("PRACTICE_SUCCESS_PAUSE_SECONDS", "").strip() else "PRACTICE_SUCCESS_PAUSE_SECONDS")
+
+    def number(name: str, default, kind, minimum, maximum):
+        raw = source.get(name, "").strip()
+        try:
+            value = kind(raw) if raw else default
+        except ValueError as error:
+            raise ValueError(f"{name} debe ser un número{' entero' if kind is int else ''}") from error
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{name} debe estar entre {minimum:g} y {maximum:g}")
+        return value
+
+    settings = PracticeSettings(
+        threshold=number("PRACTICE_THRESHOLD", defaults.threshold, float, 0.05, 1.0),
+        release_threshold=number("PRACTICE_RELEASE_THRESHOLD", defaults.release_threshold, float, 0.0, 1.0),
+        smoothing_seconds=number("PRACTICE_SMOOTHING_SECONDS", defaults.smoothing_seconds, float, 0.0, 10.0),
+        step_pause_seconds=number(pause_name, defaults.step_pause_seconds, float, 0.0, 10.0),
+        hold_seconds=number("PRACTICE_HOLD_SECONDS", defaults.hold_seconds, int, 1, MAX_HOLD_SECONDS),
+        max_seconds=number("PRACTICE_MAX_SECONDS", defaults.max_seconds, int, 2, MAX_EXPOSURE_SECONDS),
+        frame_interval_ms=number("PRACTICE_FRAME_INTERVAL_MS", defaults.frame_interval_ms, int, 100, 1000),
+    )
+    if settings.release_threshold >= settings.threshold:
+        raise ValueError("PRACTICE_RELEASE_THRESHOLD debe ser menor que PRACTICE_THRESHOLD")
+    if settings.max_seconds <= settings.hold_seconds:
+        raise ValueError("PRACTICE_MAX_SECONDS debe ser mayor que PRACTICE_HOLD_SECONDS")
+    return settings
 
 
 def _default_concurrent_analyses() -> int:

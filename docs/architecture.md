@@ -29,8 +29,8 @@ flowchart LR
     VOL[["volumen emotv_models<br/>YuNet · FER+ · MediaPipe"]]
   end
   subgraph Externo["Servicios externos"]
-    N8N["n8n Cloud<br/>workflow «Version 1.0 EMI»"]
-    GROQ["Groq (LLM)"]
+    N8N["Sim<br/>workflow de Emi"]
+    GROQ["Modelo de lenguaje"]
   end
   SPA -->|"REST /auth /sessions /students ..."| WEB
   SPA -->|"WebSocket /ws/activity<br/>frames JPEG, sin guardar"| WEB
@@ -38,7 +38,7 @@ flowchart LR
   API --> DB
   MOD --> VOL
   VOL -->|solo lectura| API
-  API -->|"POST + X-EMOtv-Key<br/>pregunta, historial, conocimiento"| N8N
+  API -->|"POST + X-API-Key<br/>pregunta, historial, conocimiento"| N8N
   N8N --> GROQ
 ```
 
@@ -128,9 +128,10 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 - `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
   `vision.movement_analysis` (`PostureValidator`, ángulos).
 - `persistence`: adaptadores PostgreSQL y en memoria, modelos ORM y conexión.
-- `chat.N8nWebhookChatGateway` para Emi: llama al workflow EMI de n8n Cloud,
-  que usa Groq. Nunca recibe resultados personales ni identificadores del
-  usuario. Ver [chatbot-emi.md](chatbot-emi.md).
+- `chat.SimChatGateway` para Emi: llama al workflow de Emi desplegado en Sim
+  (`CHAT_PROVIDER=sim`); `chat.N8nWebhookChatGateway` queda para el workflow
+  anterior de n8n. Los dos cumplen el mismo contrato y nunca reciben resultados
+  personales ni identificadores del usuario. Ver [chatbot-emi.md](chatbot-emi.md).
 
 ### Interfaces (`emotv.interfaces.web`)
 
@@ -199,6 +200,36 @@ servidor. Nada de esto cambia el modelo ni el umbral de registro.
   en la página «Modelos». Es solo informativo: no cambia el modelo
   ni bloquea nada. Si HSEmotion queda bloqueado por CPU o RAM, la admisión ya
   hace que la lectura en vivo use FER+.
+
+## Práctica de expresiones
+
+Un ejercicio de práctica es un paso del protocolo (`ProtocolStep` con
+`kind = "practice"`) que corre dentro de la fase `STIMULI` de la sesión guiada.
+Detalle, diferencias con el diseño y pendientes en
+[expression-practice.md](expression-practice.md).
+
+```text
+ParticipantViewPage --(un cuadro a la vez, cada PRACTICE_FRAME_INTERVAL_MS)--> POST /participant-view/{token}/frames
+  -> AnalysisCapacity.try_run (sin cupo: el cuadro se descarta)
+  -> GuidedSessionService: YuNet + modelo local -> distribución (imagen descartada)
+  -> PracticeTracker (nivel EMA, histéresis, sostén; memoria constante)
+  -> al terminar: PracticeResult -> practice_results
+```
+
+- **Capas.** `domain.protocol` define el paso y sus límites;
+  `domain.guided_session`, `PracticeResult`, `PracticeOutcome`, instrucciones y
+  `PRACTICE_NOTICE`. `application.practice_tracker` es puro (sin reloj propio
+  ni repositorios). `GuidedSessionService` mantiene el tracker en memoria, junto
+  a la calibración neutral, y guarda solo el resultado.
+  `session_metrics`, `session_insights_service` y `session_statistics_service`
+  lo resumen sin puntajes ni valoraciones.
+- **Lo que sale del servidor.** El nivel en vivo solo llega a las dos pantallas
+  de la sesión: la persona ve la instrucción, la señal (si quien conduce no la
+  apagó) y el logro; quien conduce ve además el tiempo restante. Nunca la
+  expresión detectada ni probabilidades.
+- **Validación.** `PracticeValidationService` agrega el protocolo «Validación
+  con adultos» a cuentas `PRUEBA-NN` en modo demo y arma en memoria el CSV
+  agregado para administración (`/practice-validation/...`).
 
 ## Sesiones, identidad y autorización
 

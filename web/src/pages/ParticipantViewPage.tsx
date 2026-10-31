@@ -1,10 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiBlob, apiRequest } from "../api/http";
-import type { ParticipantViewState } from "../api/types";
+import type { ParticipantPractice, ParticipantViewState } from "../api/types";
 import { Button } from "../components/Button";
 
 const POLL_MS = 500;
+
+/**
+ * Ejercicio de práctica: la instrucción grande, la ilustración si existe y una
+ * figura que crece con el nivel (sin números ni colores por expresión). Con la
+ * señal apagada, solo la instrucción. Al lograrlo, una confirmación breve; si
+ * vence el tiempo, el ejercicio termina sin mensaje.
+ */
+export function PracticeStage({ practice, imageUrl }: { practice: ParticipantPractice; imageUrl: string | null }) {
+  const level = practice.level == null ? null : Math.min(1, Math.max(0, practice.level));
+  return <div className="participant-practice">
+    <p className="participant-instruction">{practice.instruction}</p>
+    {imageUrl && <img className="participant-illustration" src={imageUrl} alt="Imagen de apoyo" />}
+    {level != null && <div className="practice-signal" role="meter" aria-label="Señal del ejercicio"
+      aria-valuemin={0} aria-valuemax={1} aria-valuenow={level}
+      style={{ "--practice-level": level } as CSSProperties}>
+      <span className="practice-signal-fill" />
+    </div>}
+    <p className="participant-achieved" role="status" aria-live="polite">{practice.achieved ? practice.message : ""}</p>
+  </div>;
+}
 
 /**
  * Pantalla de la persona evaluada, a pantalla completa y sin la navegación de la
@@ -23,6 +43,11 @@ export function ParticipantViewPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const exposure = view?.stimulus?.exposure ?? null;
+  const practice = view?.practice ?? null;
+  // En una práctica se envía el cuadro siguiente solo cuando el servidor recibió el anterior.
+  const interval = practice?.frame_interval_ms ?? view?.frame_interval_ms ?? POLL_MS;
+  const oneAtATime = practice != null;
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,22 +93,26 @@ export function ParticipantViewPage() {
           if (videoRef.current) { videoRef.current.srcObject = streamRef.current; await videoRef.current.play().catch(() => undefined); }
         }
         setCameraError("");
-        timer = window.setInterval(sendFrame, view?.frame_interval_ms ?? POLL_MS);
+        timer = window.setInterval(sendFrame, interval);
       } catch { if (!stopped) setCameraError("No se pudo usar la cámara. Avisa a quien conduce la sesión."); }
     }
     function sendFrame() {
       const video = videoRef.current, canvas = canvasRef.current;
       if (!video || !canvas || video.readyState < 2) return;
+      if (oneAtATime && inFlightRef.current) return;
       canvas.width = 640; canvas.height = 480;
       canvas.getContext("2d")?.drawImage(video, 0, 0, 640, 480);
+      inFlightRef.current = true;
       canvas.toBlob((blob) => {
         // Solo se confirma la recepción: el servidor nunca devuelve resultados aquí.
-        if (blob) void apiRequest(`${base}/frames`, { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg" } }).catch(() => undefined);
+        if (!blob) { inFlightRef.current = false; return; }
+        void apiRequest(`${base}/frames`, { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg" } })
+          .catch(() => undefined).finally(() => { inFlightRef.current = false; });
       }, "image/jpeg", 0.8);
     }
     void start();
     return () => { stopped = true; if (timer) window.clearInterval(timer); };
-  }, [capturing, base, view?.frame_interval_ms]);
+  }, [capturing, base, interval, oneAtATime]);
 
   useEffect(() => () => { streamRef.current?.getTracks().forEach((track) => track.stop()); }, []);
 
@@ -99,7 +128,9 @@ export function ParticipantViewPage() {
     <div className="participant-view-stage">
       {finished
         ? <p className="participant-message">La sesión terminó. Gracias.</p>
-        : imageUrl
+        : practice
+          ? <PracticeStage practice={practice} imageUrl={imageUrl} />
+          : imageUrl
           ? <img className="participant-stimulus" src={imageUrl} alt="Imagen de la sesión" />
           : <p className="participant-message">{view?.message ?? "Espera un momento."}</p>}
       {cameraError && <p className="participant-message">{cameraError}</p>}

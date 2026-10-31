@@ -12,7 +12,7 @@ const api: ProxyOptions = {
 const apiPrefixes = [
   "/auth", "/sessions", "/students", "/users", "/activities", "/analysis", "/expressions", "/recommendations",
   "/chat", "/consent-policy", "/consent-policies", "/health", "/commitment", "/audit", "/admin",
-  "/session-deletions", "/stimuli", "/protocols", "/questionnaires", "/guided-sessions", "/participant-view",
+  "/session-deletions", "/stimuli", "/protocols", "/questionnaires", "/guided-sessions", "/practice-validation", "/participant-view",
   "/reports", "/mobile", "/exams", "/exam-stations", "/statistics", "/own-stimuli", "/notices",
 ];
 

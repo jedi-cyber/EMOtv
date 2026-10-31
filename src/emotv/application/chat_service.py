@@ -1,8 +1,8 @@
-"""Emi: conversaciones, límites de uso y filtros de riesgo e identificadores antes de llamar a n8n.
+"""Emi: conversaciones, límites de uso y filtros de riesgo e identificadores antes de llamar al workflow.
 
 Emi es para usuarios y docentes; las personas evaluadas no tienen cuenta. FastAPI es
 responsable de la autenticación, los límites, los filtros, el historial y la
-retención; n8n clasifica el alcance y genera la respuesta. Al webhook solo
+retención; el workflow (Sim o n8n) clasifica el alcance y genera la respuesta. Al webhook solo
 llegan la pregunta tal como la escribió la persona (sin identificadores
 detectables), el historial de esa conversación dentro de alcance y
 ``knowledge`` (conocimiento general de EMOtv): nunca datos de las personas evaluadas,
@@ -21,7 +21,7 @@ from emotv.application.chat_safety import (IDENTIFIER_CATEGORY, IDENTIFIER_MESSA
                                            has_identifier, is_risky)
 from emotv.application.ports.chat_repository import ChatRepository, StoredChatMessage
 from emotv.config import ChatSettings
-from emotv.infrastructure.chat.n8n_client import ChatGateway, ChatGatewayError, HistoryMessage
+from emotv.infrastructure.chat import ChatGateway, ChatGatewayError, HistoryMessage
 
 logger = logging.getLogger(__name__)
 
@@ -109,13 +109,13 @@ class ChatService:
         if is_risky(text):
             # No se llama al webhook ni se guarda el texto; solo cuenta la categoría.
             self.repository.record_rejection(RISK_CATEGORY, now)
-            logger.info("Emi request_id=%s bloqueada por el filtro de riesgo (sin llamada a n8n)", request_id)
+            logger.info("Emi request_id=%s bloqueada por el filtro de riesgo (sin llamada al workflow)", request_id)
             return ChatAnswer(conversation_id, self.settings.risk_message, False, RISK_CATEGORY, request_id)
 
         if has_identifier(text):
             # Igual que el riesgo: ni webhook ni texto guardado; el contador solo suma la categoría.
             self.repository.record_rejection(IDENTIFIER_CATEGORY, now)
-            logger.info("Emi request_id=%s bloqueada por el filtro de identificadores (sin llamada a n8n)",
+            logger.info("Emi request_id=%s bloqueada por el filtro de identificadores (sin llamada al workflow)",
                         request_id)
             return ChatAnswer(conversation_id, IDENTIFIER_MESSAGE, False, IDENTIFIER_CATEGORY, request_id)
 
@@ -133,14 +133,14 @@ class ChatService:
         try:
             reply = await self.gateway.ask(request_id, text, history, knowledge=self.knowledge())
         except ChatGatewayError as error:
-            logger.warning("Emi request_id=%s n8n_status=%s error=%s", request_id,
+            logger.warning("Emi request_id=%s gateway_status=%s error=%s", request_id,
                            error.status_code if error.status_code is not None else "sin_respuesta", error.kind)
             status, message = GATEWAY_ERRORS.get(error.kind, GATEWAY_ERRORS["unavailable"])
             raise ChatError(status, message) from error
         category = normalize_category(reply.category)
         self.repository.complete_exchange(message_id, conversation_id, reply.answer,
                                           reply.in_scope, category, self.clock())
-        logger.info("Emi request_id=%s n8n_status=%s in_scope=%s", request_id, reply.status_code, reply.in_scope)
+        logger.info("Emi request_id=%s gateway_status=%s in_scope=%s", request_id, reply.status_code, reply.in_scope)
         return ChatAnswer(conversation_id, reply.answer, reply.in_scope, category, request_id)
 
     def _check_limits(self, user_id: str, now: datetime) -> None:

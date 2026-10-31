@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { acceptConsent, readyAccount, signIn, superadminToken, withToken } from "./support/api";
+import { acceptCommitment, acceptConsent, readyAccount, signIn, superadminToken, withToken } from "./support/api";
 import { fakeCamera } from "./support/env";
 
 const camera = fakeCamera();
@@ -7,13 +7,18 @@ const camera = fakeCamera();
 test("la cámara simulada abre en el analizador y cumple el requisito de cámara", async ({ page }) => {
   const student = await readyAccount("student");
   await acceptConsent(student);
+  await acceptCommitment(student);
   await signIn(page, student.email, student.password);
   await page.goto("/analysis");
   await page.getByRole("button", { name: "Probar cámara" }).first().click();
   const requirements = page.getByRole("list", { name: "Requisitos para empezar" });
   await expect(requirements.getByRole("listitem").filter({ hasText: "Cámara" }).getByText("Listo")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
-  await expect(page.getByRole("button", { name: "Reconocer mi expresión" })).toBeEnabled();
+  // Sin protocolo se elige con quién es la sesión antes de empezar.
+  await expect(page.getByRole("button", { name: "Empezar el análisis" })).toBeDisabled();
+  await page.getByText("Conmigo", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: /Conmigo/ })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Empezar el análisis" })).toBeEnabled();
   await page.getByRole("button", { name: "Apagar cámara" }).click();
   await expect(page.locator("video")).toHaveJSProperty("srcObject", null);
 });
@@ -30,6 +35,7 @@ test.describe("análisis con la cámara simulada", () => {
   async function openAnalyzer(page: Page) {
     const student = await readyAccount("student");
     await acceptConsent(student);
+    await acceptCommitment(student);
     await signIn(page, student.email, student.password);
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto("/analysis");
@@ -39,9 +45,15 @@ test.describe("análisis con la cámara simulada", () => {
   /** Prueba la cámara, empieza y registra la expresión mientras el video muestra el rostro. */
   async function recognize(page: Page) {
     await page.getByRole("button", { name: "Probar cámara" }).first().click();
-    const start = page.getByRole("button", { name: "Reconocer mi expresión" });
+    await page.getByText("Conmigo", { exact: true }).click();
+    await expect(page.getByRole("radio", { name: /Conmigo/ })).toBeChecked();
+    const start = page.getByRole("button", { name: "Empezar el análisis" });
     await expect(start).toBeEnabled();
     await start.click();
+    // La única confirmación de la sesión, según su público.
+    const dialog = page.getByRole("dialog", { name: "Antes de empezar" });
+    await dialog.getByRole("checkbox", { name: /Es una sesión mía/ }).check();
+    await dialog.getByRole("button", { name: "Empezar la sesión" }).click();
     const register = page.getByRole("button", { name: "Registrar esta expresión" });
     await expect(register).toBeEnabled({ timeout: camera.face_seconds * 1000 });
     await register.click();

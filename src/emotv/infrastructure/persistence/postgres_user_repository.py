@@ -50,6 +50,16 @@ class PostgresUserRepository:
             rows = db.scalars(select(UserRecord).order_by(UserRecord.created_at, UserRecord.id)).all()
             return tuple(self._domain(row) for row in rows)
 
+    def is_test_account(self, user_id: str) -> bool:
+        """Cuenta de voluntario (PRUEBA-NN), creada por scripts/testdata/create_test_accounts.py."""
+        with self._factory() as db:
+            return bool(db.scalar(select(UserRecord.is_test_account).where(UserRecord.id == user_id)))
+
+    def list_test_account_ids(self) -> tuple[str, ...]:
+        with self._factory() as db:
+            return tuple(db.scalars(select(UserRecord.id).where(UserRecord.is_test_account.is_(True))
+                                    .order_by(UserRecord.id)).all())
+
     @staticmethod
     def _domain(row: UserRecord) -> User:
         created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)

@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { readyAccount, signIn } from "./support/api";
+import { acceptCommitment, readyAccount, signIn } from "./support/api";
 import { env } from "./support/env";
 import { IN_SCOPE_ANSWER, OUT_OF_SCOPE_ANSWER, startFakeN8n, triggers, type FakeN8n } from "./support/fakeN8n";
 
-test.describe("Emi con el workflow de n8n simulado", () => {
-  test.skip(!env.fakeN8n, "Activa E2E_FAKE_N8N=1 y apunta N8N_WEBHOOK_URL del backend al n8n falso (docs/testing/e2e.md).");
+test.describe("Emi con el workflow simulado (Sim o n8n)", () => {
+  test.skip(!env.fakeN8n, "Activa E2E_FAKE_N8N=1 y apunta SIM_WORKFLOW_URL (o N8N_WEBHOOK_URL) del backend al servidor falso (docs/testing/e2e.md).");
 
   let n8n: FakeN8n;
   test.beforeAll(async () => { n8n = await startFakeN8n(env.fakeN8nPort, env.fakeN8nKey); });
@@ -12,6 +12,7 @@ test.describe("Emi con el workflow de n8n simulado", () => {
 
   test("responde dentro y fuera del alcance, y explica cuando el modelo de lenguaje no está disponible", async ({ page }) => {
     const student = await readyAccount("student");
+    await acceptCommitment(student);
     await signIn(page, student.email, student.password);
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.getByRole("button", { name: "Abrir a Emi" }).click();

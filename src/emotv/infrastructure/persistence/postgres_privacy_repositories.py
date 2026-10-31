@@ -18,6 +18,7 @@ from emotv.infrastructure.persistence.models import (
     CommitmentAcceptanceRecord,
     ExpressionCaptureRecord,
     GuidedRunRecord,
+    PracticeResultRecord,
     QuestionnaireResponseRecord,
     ReportCommentRecord,
     ReportEventRecord,
@@ -37,6 +38,7 @@ SESSION_LINKED_RECORDS = (
     ("expression_captures", ExpressionCaptureRecord, ExpressionCaptureRecord.session_id),
     ("session_markers", SessionMarkerRecord, SessionMarkerRecord.session_id),
     ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.session_id),
+    ("practice_results", PracticeResultRecord, PracticeResultRecord.session_id),
     ("guided_runs", GuidedRunRecord, GuidedRunRecord.session_id),
 )
 

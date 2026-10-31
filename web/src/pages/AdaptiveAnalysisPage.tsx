@@ -20,6 +20,7 @@ import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { ExpressionResult } from "../expressions/ExpressionResult";
 import { LiveExpressionPanel, NO_CALIBRATION, percent, type LiveReading } from "../analysis/LiveExpressionPanel";
 import { emotionModelName } from "../sessions/labels";
+import { protocolStepParts } from "../stimuli/labels";
 import { SessionConfirmDialog } from "../sessions/SessionConfirmDialog";
 import { storeViewToken } from "../guided/viewToken";
 import { Button, ButtonLink } from "../components/Button";
@@ -636,7 +637,7 @@ export function AdaptiveAnalysisPage() {
             </option>)}
           </select>
           <p id="adaptive-protocol-help" className="muted">{protocol
-            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", "calibración", `${protocol.steps.length} ${protocol.steps.length === 1 ? "imagen" : "imágenes"}`, protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}.`
+            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", "calibración", ...protocolStepParts(protocol.steps), protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}.`
             : protocols.length > 0 ? "Un protocolo aplica cuestionarios e imágenes guardados. Sin protocolo, solo se analiza la expresión."
               : <>Aún no tienes protocolos. <ButtonLink variant="ghost" size="sm" to={paths.protocols}>Crear un protocolo</ButtonLink></>}</p>
           {!protocol && <fieldset className="audience-choice">

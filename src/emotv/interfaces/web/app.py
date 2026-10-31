@@ -20,7 +20,7 @@ from emotv.application import BrowserActivityService, PoseService
 from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_settings,
                           get_consent_mode,
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
-                          get_live_expression_settings, get_server_load_settings,
+                          get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
                           get_user_image_settings)
 from emotv.infrastructure.persistence import (
@@ -85,6 +85,8 @@ from emotv.application.guided_session_service import GuidedSessionService
 from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
 from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, decode_frame
 from emotv.interfaces.web.guided_router import create_guided_router
+from emotv.interfaces.web.practice_validation_router import create_practice_validation_router
+from emotv.application.practice_validation_service import PracticeValidationService
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
 from emotv.application.session_statistics_service import SessionStatisticsService
@@ -98,7 +100,7 @@ from emotv.interfaces.web.report_router import create_report_router
 from emotv.shared.security.field_encryption import FieldEncryptionError, create_field_cipher
 from emotv.application.recommendation_config_service import RecommendationConfigService
 from emotv.application.expression_catalog_service import ExpressionCatalogService
-from emotv.infrastructure.chat import N8nWebhookChatGateway
+from emotv.infrastructure.chat import N8nWebhookChatGateway, SimChatGateway
 from emotv.application.chat_service import ChatService
 from emotv.application.emi_knowledge import EmiKnowledge
 from emotv.infrastructure.vision.emotion_classifier.emotion_frame_analyzer import (
@@ -211,8 +213,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
     protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
                                        audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service)
     app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
+    practice_settings = get_practice_settings()
     app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
-                                              user_repository))
+                                              user_repository, practice=practice_settings))
     # Imágenes propias: detección de personas en memoria y revisión del docente.
     user_image_service = UserImageService(
         stimulus_service.repository, PostgresNoticeRepository(database_sessions), audit_service, docente_of,
@@ -287,10 +290,20 @@ if DATABASE_URL and JWT_SECRET_KEY:
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
             calibration_min_increase=live_expression.calibration_min_increase,
-            exam_of=exam_repository.get)
+            exam_of=exam_repository.get, practice=practice_settings)
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
-                                            decode_frame=decode_frame))
+                                            decode_frame=decode_frame, capacity=analysis_capacity))
+    # Validación de los modelos con voluntarios: protocolo de ejemplo (demo, PRUEBA-NN)
+    # y exportación agregada para administración.
+    practice_validation = None
+    if guided_service is not None:
+        practice_validation = PracticeValidationService(
+            protocol_service.repository, session_service, guided_service.repository, audit_service,
+            consent_mode, user_repository.is_test_account, user_repository.list_test_account_ids)
+        protocol_service.validation_usable = practice_validation.usable
+    app.include_router(create_practice_validation_router(practice_validation, authentication_service,
+                                                         user_repository))
     # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
     # cada estación se une con el código y usa la pantalla de la persona.
     exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
@@ -374,11 +387,17 @@ if DATABASE_URL and JWT_SECRET_KEY:
         questionnaire_ready=questionnaire_service.pre_completed,
     ))
     chat_gateway = None
-    if chat_settings.webhook_key:
+    if chat_settings.provider == "sim":
+        if chat_settings.sim_workflow_url and chat_settings.sim_api_key:
+            chat_gateway = SimChatGateway(chat_settings.sim_workflow_url, chat_settings.sim_api_key,
+                                          chat_settings.timeout_seconds)
+        else:
+            # El resto de la API arranca igual; POST /chat responde 503.
+            logger.warning("SIM_WORKFLOW_URL o SIM_API_KEY está vacía: Emi responderá 503 hasta configurarla")
+    elif chat_settings.webhook_key:
         chat_gateway = N8nWebhookChatGateway(chat_settings.webhook_url, chat_settings.webhook_key,
                                              chat_settings.timeout_seconds)
     else:
-        # El resto de la API arranca igual; POST /chat responde 503.
         logger.warning("N8N_WEBHOOK_KEY está vacía: Emi responderá 503 hasta configurarla")
     chat_service = ChatService(PostgresChatRepository(database_sessions), chat_gateway, chat_settings,
                                knowledge=emi_knowledge.get)
