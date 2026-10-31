@@ -220,3 +220,32 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
                 db.add(ProtocolStepRecord(**{"id": "x2", "protocol_id": "p1", "position": 9, "exposure_seconds": 10,
                                              "capture_after_seconds": 0, "record_verbal_response": False,
                                              "shown_before_analyzer": False, **values}))
+
+
+# --- Señal de la práctica (20261030_29) -------------------------------------------------
+
+def _run_29(engine, step: str) -> None:
+    path = MIGRATION.with_name("20261030_29_practice_feedback.py")
+    spec = importlib.util.spec_from_file_location("migration_20261030_29", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert (module.revision, module.down_revision) == ("20261030_29", "20261030_28")
+    with engine.connect() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            getattr(module, step)()
+        connection.commit()
+
+
+def test_la_senal_de_la_practica_ida_y_vuelta_y_su_migracion(engine, factory):
+    from emotv.domain.guided_session import GuidedRun
+    guided = PostgresGuidedSessionRepository(factory, FieldCipher([KEY]))
+    run = guided.save_run(GuidedRun(session_id="ses1", owner_user_id="u1", created_at=T0))
+    assert guided.get_run("ses1").practice_feedback is True
+    guided.save_run(replace(run, practice_feedback=False))
+    assert guided.get_run("ses1").practice_feedback is False
+
+    _run_29(engine, "downgrade")
+    assert "practice_feedback" not in {column["name"] for column in inspect(engine).get_columns("guided_runs")}
+    _run_29(engine, "upgrade")
+    # Las sesiones que ya existían quedan con la señal encendida.
+    assert guided.get_run("ses1").practice_feedback is True

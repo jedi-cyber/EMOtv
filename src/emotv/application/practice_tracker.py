@@ -17,7 +17,8 @@ MAX_STEP_SECONDS = 2.0   # un hueco largo entre cuadros pesa como dos segundos
 
 class PracticeTracker:
     __slots__ = ("step_index", "started_at", "hold_seconds", "relative", "threshold", "release_threshold",
-                 "smoothing_seconds", "level", "peak", "above_since", "last_at", "analyzed", "flagged")
+                 "smoothing_seconds", "level", "peak", "above_since", "last_at", "analyzed", "flagged",
+                 "feedback_visible")
 
     def __init__(self, step_index: int, started_at: float, hold_seconds: float, relative: bool, *,
                  threshold: float, release_threshold: float, smoothing_seconds: float) -> None:
@@ -34,6 +35,7 @@ class PracticeTracker:
         self.last_at: float | None = None
         self.analyzed = 0                     # cuadros con rostro que actualizaron el nivel
         self.flagged = 0                      # cuadros sin rostro o con problemas de calidad
+        self.feedback_visible = True          # la persona vio la señal durante todo el ejercicio
 
     def add(self, now: float, value: float | None) -> bool:
         """Suma un cuadro (value entre 0 y 1, o None si no sirvió). Devuelve True

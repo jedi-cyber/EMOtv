@@ -269,6 +269,16 @@ export interface GuidedState {
 }
 
 /** Lo único que recibe la pantalla de la persona evaluada. */
+/** Ejercicio de práctica en la pantalla de la persona: nunca la expresión detectada ni probabilidades. */
+export interface ParticipantPractice {
+  instruction: string;
+  /** Entre 0 y 1; nulo si quien conduce apagó la señal. */
+  level: number | null;
+  achieved: boolean;
+  message: string | null;
+  frame_interval_ms: number;
+}
+
 export interface ParticipantViewState {
   phase: GuidedPhase;
   message: string | null;
@@ -277,6 +287,7 @@ export interface ParticipantViewState {
   capture_frames: boolean;
   frame_interval_ms: number;
   abstract_notice: string | null;
+  practice?: ParticipantPractice | null;
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */

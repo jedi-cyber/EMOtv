@@ -41,6 +41,9 @@ from emotv.domain.guided_session import (
     EXAM_DEBRIEFING,
     EXAM_GAP_SECONDS,
     EXAM_STATION_PHASES,
+    PRACTICE_ACHIEVED_MESSAGE,
+    PRACTICE_FRAME_INTERVAL_MS,
+    PRACTICE_INSTRUCTIONS,
     QUALITY_RETRY_SECONDS,
     CaptureQuality,
     ExpressionCapture,
@@ -416,6 +419,8 @@ class GuidedSessionService:
                 run.step_index, started, step.hold_seconds, relative,
                 threshold=self.practice.threshold, release_threshold=self.practice.release_threshold,
                 smoothing_seconds=self.practice.smoothing_seconds)
+        if not run.practice_feedback:
+            tracker.feedback_visible = False
         return tracker
 
     def _practice_value(self, live: _Live, tracker: PracticeTracker, step: ProtocolStep,
@@ -441,8 +446,7 @@ class GuidedSessionService:
             id=str(uuid4()), session_id=session.id, step_index=run.step_index,
             target_expression=step.target_expression, outcome=outcome, peak_level=round(tracker.peak, 4),
             relative_to_calibration=tracker.relative,
-            # La persona ve la señal mientras no exista el interruptor de quien conduce.
-            feedback_visible=True, analyzed_frames=tracker.analyzed, flagged_frames=tracker.flagged,
+            feedback_visible=tracker.feedback_visible and run.practice_feedback, analyzed_frames=tracker.analyzed, flagged_frames=tracker.flagged,
             emotion_model_id=session.emotion_model_id or "", emotion_model_version=session.emotion_model_version or "",
             started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
             seconds_to_achieve=seconds))
@@ -494,6 +498,39 @@ class GuidedSessionService:
                                      seconds=round(elapsed, 2))
                 # La persona ve el logro durante la pausa; después el paso avanza solo.
                 self.repository.save_run(replace(fresh, next_capture_due=elapsed + self.practice.success_pause_seconds))
+
+    def set_practice_feedback(self, user: User, session_id: str, visible: bool) -> GuidedRun:
+        """Quien conduce enciende o apaga la señal del nivel para toda la sesión.
+        Si cambia a mitad de un ejercicio, ese ejercicio queda con la señal no
+        visible todo el tiempo."""
+        run, session = self._conducted(user, session_id)
+        if not run.active:
+            raise GuidedConflict("La sesión ya terminó")
+        with self._practice_lock:
+            run = self.repository.get_run(session_id) or run
+            step = self._steps(session)[run.step_index] if run.phase is GuidedPhase.STIMULI else None
+            if (step is not None and step.is_practice and run.next_capture_due is None
+                    and bool(visible) != run.practice_feedback):
+                self._practice_tracker(run, session, step).feedback_visible = False
+            run = self.repository.save_run(replace(run, practice_feedback=bool(visible)))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
+
+    def _participant_practice(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
+        """Lo que ve la persona en un ejercicio: la instrucción, un nivel de 0 a 1
+        (nulo con la señal apagada) y si lo logró. Nunca la expresión detectada,
+        probabilidades ni calidad."""
+        achieved = run.next_capture_due is not None
+        level = None
+        if run.practice_feedback:
+            live = self._live.get(run.session_id)
+            tracker = live.practice if live else None
+            current = (tracker is not None and tracker.step_index == run.step_index
+                       and run.step_started_at is not None and tracker.started_at == run.step_started_at.timestamp())
+            level = 1.0 if achieved else round(tracker.level, 2) if current else 0.0
+        return {"instruction": PRACTICE_INSTRUCTIONS[step.target_expression], "level": level, "achieved": achieved,
+                "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
+                "frame_interval_ms": PRACTICE_FRAME_INTERVAL_MS}
 
     def practice_frame_drops_when_busy(self, token: str) -> bool:
         """Si el cuadro de esta pantalla es de un ejercicio de práctica en curso:
@@ -808,10 +845,11 @@ class GuidedSessionService:
             message = EXAM_DEBRIEFING if session.exam_id is not None else "La sesión terminó. Gracias."
             return {"phase": run.phase.value, "message": message, "stimulus": None,
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
-                    "abstract_notice": False}
+                    "abstract_notice": False, "practice": None}
         stimulus = None
         remaining = None
         abstract = False
+        practice = None
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = self._protocol(session).steps[run.step_index]
             item = self.stimuli(step.stimulus_id) if step.stimulus_id else None
@@ -820,7 +858,9 @@ class GuidedSessionService:
             stimulus = ({"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"}
                         if step.stimulus_id else None)
             remaining = max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
-            abstract = item is not None and item.kind is StimulusKind.ABSTRACT
+            abstract = item is not None and item.kind is StimulusKind.ABSTRACT and not step.is_practice
+            if step.is_practice:
+                practice = self._participant_practice(run, step)
         live = self._live.get(run.session_id)
         calibrating = run.phase is GuidedPhase.CALIBRATION and live is not None and live.calibration is not None \
             and live.calibration.state == CALIBRATING
@@ -836,7 +876,7 @@ class GuidedSessionService:
             return {"phase": run.phase.value, "message": station_messages.get(run.phase), "stimulus": None,
                     "remaining_seconds": None,
                     "capture_frames": calibrating or run.phase is GuidedPhase.EXAM,
-                    "frame_interval_ms": FRAME_INTERVAL_MS, "abstract_notice": False}
+                    "frame_interval_ms": FRAME_INTERVAL_MS, "abstract_notice": False, "practice": None}
         messages = {
             GuidedPhase.PRE_QUESTIONNAIRE: "Primero, unas preguntas.",
             GuidedPhase.CALIBRATION: ("Mira a la pantalla con el rostro relajado." if calibrating
@@ -852,6 +892,7 @@ class GuidedSessionService:
             "capture_frames": calibrating or run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE),
             "frame_interval_ms": FRAME_INTERVAL_MS,
             "abstract_notice": abstract,
+            "practice": practice,
         }
 
     def participant_stimulus(self, token: str) -> str:

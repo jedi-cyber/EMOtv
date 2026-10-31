@@ -39,7 +39,8 @@ class PostgresGuidedSessionRepository:
             step_index=row.step_index, step_started_at=_aware(row.step_started_at),
             next_capture_due=row.next_capture_due, steps_log=tuple(row.steps_log or ()),
             calibrated_at=_aware(row.calibrated_at), view_token_hash=row.view_token_hash,
-            ended_at=_aware(row.ended_at), stop_reason=row.stop_reason)
+            ended_at=_aware(row.ended_at), stop_reason=row.stop_reason,
+            practice_feedback=row.practice_feedback is not False)
 
     def save_run(self, run: GuidedRun) -> GuidedRun:
         with self._factory.begin() as db:
@@ -59,6 +60,7 @@ class PostgresGuidedSessionRepository:
             row.view_token_hash = run.view_token_hash
             row.ended_at = run.ended_at
             row.stop_reason = run.stop_reason.value if run.stop_reason else None
+            row.practice_feedback = run.practice_feedback
         return run
 
     def get_run(self, session_id: str) -> GuidedRun | None:

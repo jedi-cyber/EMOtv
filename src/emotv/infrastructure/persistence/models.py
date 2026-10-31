@@ -507,6 +507,8 @@ class GuidedRunRecord(Base):
     view_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stop_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    practice_feedback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                                    server_default=text("true"))
 
 
 class ExpressionCaptureRecord(Base):

@@ -28,6 +28,19 @@ ABSTRACT_CAPTURE_INTERVAL = 3.0    # una imagen abstracta se captura varias vece
 MAX_NOTE_LENGTH = 300
 EXAM_CAPTURE_INTERVAL = 0.5        # una fila cada medio segundo durante el examen
 EXAM_GAP_SECONDS = 1.5             # sin cuadros tras este margen, la fila se guarda marcada
+PRACTICE_FRAME_INTERVAL_MS = 500   # en una práctica se analiza cada cuadro
+
+# Lo que lee la persona en un ejercicio de práctica: corto y sin valorar.
+PRACTICE_INSTRUCTIONS = {
+    "happiness": "Muestra alegría",
+    "surprise": "Muestra sorpresa",
+    "sadness": "Muestra tristeza",
+    "anger": "Muestra enojo",
+    "fear": "Muestra miedo",
+    "disgust": "Muestra asco",
+    "neutral": "Deja la cara tranquila",
+}
+PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
 
 # Debriefing: lo que ve la persona al terminar el examen. Describe qué se
 # registró, sin valorar ni diagnosticar.
@@ -114,6 +127,9 @@ class GuidedRun:
     view_token_hash: str | None = None
     ended_at: datetime | None = None
     stop_reason: StopReason | str | None = None
+    # En los ejercicios de práctica, la persona ve la señal del nivel; quien
+    # conduce puede apagarla para toda la sesión.
+    practice_feedback: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", GuidedPhase(self.phase))

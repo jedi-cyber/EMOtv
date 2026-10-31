@@ -186,6 +186,18 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-notice { margin: var(--space-sm) 0; color: var(--color-slate); font-size: var(--text-body-sm); text-align: center; }
 .participant-actions { display: flex; justify-content: center; gap: var(--space-md); }
 .participant-camera { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Práctica de expresiones: instrucción grande, figura que crece con el nivel
+   (un solo color para todas las expresiones) y el botón de parar siempre a la vista. */
+.participant-practice { display: grid; justify-items: center; gap: var(--space-lg); width: min(100%, 36rem); }
+.participant-instruction { margin: 0; color: var(--color-ink); font-size: var(--text-page-title); font-weight: var(--weight-bold); line-height: var(--leading-page-title); text-wrap: balance; }
+.participant-illustration { max-width: 100%; max-height: 40dvh; object-fit: contain; border-radius: var(--radius-lg); }
+.practice-signal { display: grid; place-items: center; width: min(60vw, 240px); aspect-ratio: 1; border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-lg); background: var(--color-neutral-soft); }
+.practice-signal-fill { width: 100%; height: 100%; border-radius: var(--radius-lg); background: var(--color-primary); transform: scale(max(0.08, var(--practice-level, 0))); }
+.participant-achieved { min-height: 1.5em; margin: 0; color: var(--color-success); font-size: var(--text-section-title); font-weight: var(--weight-bold); }
+.participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
+@media (prefers-reduced-motion: no-preference) {
+  .practice-signal-fill { transition: transform 300ms ease-out; }
+}
 /* Examen simulado: el código grande que escriben las estaciones y la pantalla oscura de la estación. */
 .exam-join { display: grid; gap: var(--space-xs); justify-items: start; margin-bottom: var(--space-lg); }
 .exam-join p { margin: 0; overflow-wrap: anywhere; }

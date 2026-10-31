@@ -164,3 +164,9 @@ def test_resultado_exige_zona_horaria(name):
 def test_resultado_es_inmutable():
     with pytest.raises(AttributeError):
         result().peak_level = 0.1  # type: ignore[misc]
+
+
+def test_cada_expresion_que_se_pide_tiene_su_instruccion():
+    from emotv.domain.guided_session import PRACTICE_INSTRUCTIONS
+    assert set(PRACTICE_INSTRUCTIONS) == set(PRACTICE_TARGETS)
+    assert all(len(text.split()) <= 4 for text in PRACTICE_INSTRUCTIONS.values())

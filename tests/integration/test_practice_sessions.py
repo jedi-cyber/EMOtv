@@ -220,10 +220,81 @@ def test_el_estado_en_memoria_no_crece_con_los_cuadros(env):  # noqa: F811
     assert state(env, session_id)["captures"] == [] and results(env, session_id) == ()
 
 
-def test_la_pantalla_de_la_persona_no_recibe_resultados(env):  # noqa: F811
-    session_id, token = start(env)
-    send(env, token, HAPPY, count=6)
-    shown = view(env, token).json()
+FORBIDDEN = ("happiness", "surprise", "neutral", "emotion", "probab", "confidence", "quality", "distribution",
+             "calibrat", "target", "peak", "analyzed", "flagged")
+
+
+def _no_forbidden(shown) -> None:
     text = str(shown).lower()
-    assert not any(word in text for word in ("happiness", "level", "probab", "confidence", "quality"))
+    assert not any(word in text for word in FORBIDDEN), text
+
+
+def test_la_pantalla_de_la_persona_recibe_solo_la_instruccion_el_nivel_y_el_logro(env):  # noqa: F811
+    session_id, token = start(env)
+    shown = view(env, token).json()
+    assert set(shown) == {"phase", "message", "stimulus", "remaining_seconds", "capture_frames",
+                          "frame_interval_ms", "abstract_notice", "practice"}
+    assert shown["practice"] == {"instruction": "Muestra alegría", "level": 0.0, "achieved": False,
+                                 "message": None, "frame_interval_ms": 500}
+    assert shown["abstract_notice"] is None
+    _no_forbidden(shown)
+    send(env, token, HAPPY, count=2)
+    level = view(env, token).json()["practice"]["level"]
+    assert 0 < level < 1 and round(level, 2) == level
+    send(env, token, HAPPY, count=4)
+    shown = view(env, token).json()
+    assert shown["practice"] == {"instruction": "Muestra alegría", "level": 1.0, "achieved": True,
+                                 "message": "¡Lo lograste!", "frame_interval_ms": 500}
+    _no_forbidden(shown)
     assert frame(env, token).json() == {"received": True}
+
+
+def test_al_vencer_el_tiempo_no_hay_mensaje_de_fracaso(env):  # noqa: F811
+    session_id, token = start(env, ProtocolStep.practice("sadness", 2, 4), ProtocolStep.practice("neutral", 2, 10))
+    send(env, token, SLIGHT, count=9)
+    shown = view(env, token).json()
+    assert shown["practice"]["instruction"] == "Deja la cara tranquila"
+    assert shown["practice"]["achieved"] is False and shown["practice"]["message"] is None
+    assert shown["message"] is None
+
+
+def test_con_la_senal_apagada_solo_la_instruccion(env):  # noqa: F811
+    session_id, token = start(env)
+    send(env, token, HAPPY, count=2)
+    env.guided.set_practice_feedback(env.user_1, session_id, False)
+    shown = view(env, token).json()["practice"]
+    assert shown["level"] is None and shown["instruction"] == "Muestra alegría"
+    send(env, token, HAPPY, count=4)
+    shown = view(env, token).json()["practice"]
+    assert shown["achieved"] is True and shown["level"] is None
+    [item] = results(env, session_id)
+    # La señal se apagó a mitad del ejercicio: no estuvo visible todo el tiempo.
+    assert item.feedback_visible is False
+
+
+def test_la_senal_apagada_se_conserva_en_los_ejercicios_siguientes(env):  # noqa: F811
+    session_id, token = start(env, ProtocolStep.practice("happiness", 2, 20), ProtocolStep.practice("surprise", 2, 4))
+    env.guided.set_practice_feedback(env.user_1, session_id, False)
+    assert env.guided.repository.get_run(session_id).practice_feedback is False
+    assert post(env, session_id, "skip").status_code == 200
+    assert view(env, token).json()["practice"]["level"] is None
+    env.guided.set_practice_feedback(env.user_1, session_id, True)
+    wait(env, 4.1)
+    view(env, token)
+    first, second = results(env, session_id)
+    assert first.feedback_visible is False and second.feedback_visible is False
+
+
+def test_solo_quien_conduce_cambia_la_senal(env):  # noqa: F811
+    import pytest
+    session_id, _ = start(env)
+    with pytest.raises(PermissionError):
+        env.guided.set_practice_feedback(env.docente_a, session_id, False)
+
+
+def test_los_pasos_de_estimulo_no_reciben_practica(env):  # noqa: F811
+    emotional, _ = stimuli(env)
+    session_id, token = start(env, ProtocolStep(emotional["id"], 6, 2))
+    shown = view(env, token).json()
+    # Igual que antes de las prácticas: sin la clave practice.
+    assert "practice" not in shown and shown["stimulus"] is not None

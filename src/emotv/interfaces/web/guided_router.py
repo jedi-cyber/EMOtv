@@ -39,6 +39,17 @@ class VerbalRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_NOTE_LENGTH)
 
 
+class PracticeView(BaseModel):
+    """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
+    está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
+
+    instruction: str
+    level: float | None = Field(default=None, ge=0, le=1)
+    achieved: bool
+    message: str | None
+    frame_interval_ms: int
+
+
 class ParticipantView(BaseModel):
     """Lo único que recibe la pantalla de la persona evaluada."""
 
@@ -49,6 +60,7 @@ class ParticipantView(BaseModel):
     capture_frames: bool
     frame_interval_ms: int
     abstract_notice: str | None
+    practice: PracticeView | None = None
 
 
 def create_guided_router(
@@ -135,10 +147,12 @@ def create_guided_router(
 
     # --- Pantalla de la persona evaluada (enlace propio) ----------------------------------------
 
-    @router.get("/participant-view/{token}", response_model=ParticipantView)
-    def participant_view(token: str) -> ParticipantView:
+    @router.get("/participant-view/{token}")
+    def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
-        return ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
+        view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
+        # practice solo aparece en un ejercicio de práctica: las imágenes y la estación quedan como antes.
+        return view.model_dump(exclude={"practice"} if view.practice is None else set())
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
