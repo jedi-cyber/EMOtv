@@ -85,6 +85,8 @@ from emotv.application.guided_session_service import GuidedSessionService
 from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
 from emotv.infrastructure.vision.capture_quality import GuidedFrameAnalyzer, decode_frame
 from emotv.interfaces.web.guided_router import create_guided_router
+from emotv.interfaces.web.practice_validation_router import create_practice_validation_router
+from emotv.application.practice_validation_service import PracticeValidationService
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
 from emotv.application.session_statistics_service import SessionStatisticsService
@@ -291,6 +293,16 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
                                             decode_frame=decode_frame, capacity=analysis_capacity))
+    # Validación de los modelos con voluntarios: protocolo de ejemplo (demo, PRUEBA-NN)
+    # y exportación agregada para administración.
+    practice_validation = None
+    if guided_service is not None:
+        practice_validation = PracticeValidationService(
+            protocol_service.repository, session_service, guided_service.repository, audit_service,
+            consent_mode, user_repository.is_test_account, user_repository.list_test_account_ids)
+        protocol_service.validation_usable = practice_validation.usable
+    app.include_router(create_practice_validation_router(practice_validation, authentication_service,
+                                                         user_repository))
     # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
     # cada estación se une con el código y usa la pantalla de la persona.
     exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,

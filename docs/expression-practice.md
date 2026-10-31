@@ -351,3 +351,54 @@ reporte y las estadísticas cuando el público es infantil:
 - Ilustraciones: una imagen con una cara podría parecer una foto de una persona.
   Solo se aceptan estímulos del banco con origen y licencia; las imágenes propias
   ya pasan por la detección de personas y la revisión del docente.
+
+## 10. Validación con adultos voluntarios
+
+Antes de usar la práctica con niños se mide si cada modelo (HSEmotion y FER+)
+reconoce expresiones producidas a propósito. Solo participan adultos voluntarios
+con cuenta de prueba `PRUEBA-NN` y consentimiento firmado en papel
+(`docs/testing/volunteer-protocol.md`). No se guardan imágenes: los cuadros se
+analizan en memoria y se descartan, como en cualquier sesión.
+
+**Protocolo «Validación con adultos».** Para adultos, con un ejercicio de
+práctica por cada expresión de `EXPRESSION_KEYS` menos `contempt`, en el orden del
+catálogo (neutral, alegría, sorpresa, tristeza, enojo, asco, miedo). Cada uno se
+sostiene 2 s, con un máximo de 15 s. Solo aparece con `CONSENT_MODE=demo` y para
+una cuenta con `users.is_test_account` verdadero; en cualquier otro caso el
+servidor no lo ofrece, no lo agrega (`403`) y no deja aplicarlo. El nombre está
+reservado: ninguna otra cuenta puede crear un protocolo con ese nombre.
+
+**Cómo se ejecuta.**
+
+1. Configura `CONSENT_MODE=demo` en `.env` (o `.env.docker`) y reinicia la API.
+2. Crea las cuentas de voluntarios:
+   `python scripts/testdata/create_test_accounts.py --count 3`. Entrega a cada
+   voluntario solo su código y su contraseña.
+3. Con la cuenta del voluntario, en **Protocolos**, pulsa «Agregar «Validación
+   con adultos»». Se agrega una sola vez.
+4. En el **Analizador**, elige ese protocolo y confirma la autorización firmada.
+   Haz la calibración neutral y deja que la persona siga cada instrucción.
+5. Para comparar modelos, repite la sesión con el otro modelo elegido como
+   predeterminado en **Modelos** (cuenta de administración).
+6. Con la cuenta de administración (`superadmin`), en **Modelos**, pulsa
+   «Descargar resumen (CSV)» (`GET /practice-validation/export.csv`).
+7. Al terminar, o como máximo a los 30 días, borra los datos de los voluntarios con
+   `python scripts/testdata/delete_test_data.py` (incluye `practice_results`).
+
+**Qué trae el CSV.** Una fila por modelo, versión del modelo y expresión pedida:
+`modelo`, `version_modelo`, `expresion_pedida`, `ejercicios` (los que llegaron a
+su final: logrados o con el tiempo vencido), `logrados` y
+`tiempo_promedio_hasta_lograrlo_s` (solo de los logrados; vacío si no hubo
+ninguno). Solo cuenta las sesiones del protocolo de validación conducidas por
+cuentas de voluntarios. No lleva códigos de sesión, fechas, correos ni nada que
+identifique a alguien, y los ejercicios saltados o detenidos no cuentan.
+
+El servidor arma el CSV en memoria al pedirlo y no lo guarda. El archivo
+descargado es un resultado de prueba: no se agrega al repositorio (`*.csv` está
+en `.gitignore`) ni se comparte fuera del equipo del proyecto. Con pocos
+voluntarios, una fila puede corresponder a una sola persona: se trata como dato
+de prueba y se borra junto con las cuentas.
+
+**Cómo leerlo.** Describe cuántas veces el modelo registró la expresión pedida
+en adultos que la produjeron a propósito. No prueba que el modelo funcione con
+niños ni dice nada sobre el estado emocional de nadie.

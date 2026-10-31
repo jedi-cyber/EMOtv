@@ -15,8 +15,8 @@ Tablas con datos vinculados a un usuario o estudiante:
 - commitment_acceptances;
 - protocols armados por la cuenta y sus protocol_steps;
 - questionnaires de la cuenta y questionnaire_responses de sus sesiones;
-- de sus sesiones guiadas: guided_runs, expression_captures, session_markers y
-  verbal_responses;
+- de sus sesiones guiadas: guided_runs, expression_captures, session_markers,
+  verbal_responses y practice_results (resultados de los ejercicios de práctica);
 - de sus sesiones: session_reports con sus report_comments y report_events;
 - psychologist_assignments (como estudiante asignado o como psicólogo);
 - login_attempts (sin clave foránea: se buscan por el SHA-256 del correo);
@@ -52,6 +52,7 @@ from emotv.infrastructure.persistence.models import (
     GuidedRunRecord,
     LoginAttemptRecord,
     MobileSessionRecord,
+    PracticeResultRecord,
     ProtocolRecord,
     ProtocolStepRecord,
     PsychologistAssignmentRecord,
@@ -81,7 +82,7 @@ REASON_CLOSING = "cierre de pruebas"
 # Orden de borrado: primero las filas que dependen de otras.
 TABLES = ("chat_messages", "chat_conversations", "report_comments", "report_events", "session_reports",
           "questionnaire_responses", "expression_captures",
-          "session_markers", "verbal_responses", "guided_runs", "sessions",
+          "session_markers", "verbal_responses", "practice_results", "guided_runs", "sessions",
           "session_deletion_records", "protocol_steps", "protocols", "questionnaires",
           "commitment_acceptances", "psychologist_assignments", "consents", "login_attempts", "mobile_sessions", "students", "users")
 REFERENCES = ("psychologist_assignments.assigned_by_user_id", "expression_info.reviewed_by_user_id")
@@ -320,6 +321,7 @@ _MODELS = {
     "expression_captures": ExpressionCaptureRecord,
     "session_markers": SessionMarkerRecord,
     "verbal_responses": VerbalResponseRecord,
+    "practice_results": PracticeResultRecord,
     "guided_runs": GuidedRunRecord,
     "sessions": SessionRecord,
     "session_deletion_records": SessionDeletionRecord,
@@ -353,6 +355,7 @@ def _conditions(account: VolunteerAccount) -> dict[str, object]:
         "expression_captures": ExpressionCaptureRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "session_markers": SessionMarkerRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "verbal_responses": VerbalResponseRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
+        "practice_results": PracticeResultRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "guided_runs": GuidedRunRecord.session_id.in_(select(SessionRecord.id).where(sessions)),
         "sessions": sessions,
         "session_deletion_records": or_(SessionDeletionRecord.executed_by_user_id == account.user_id,

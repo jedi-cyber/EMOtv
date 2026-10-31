@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
+from emotv.application.practice_validation_service import VALIDATION_PROTOCOL_NAME, is_validation_protocol
 from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import StimulusNotFound, StimulusService
@@ -62,8 +63,12 @@ class ProtocolService:
         group_user_ids: GroupUserIds,
         questionnaires: QuestionnaireService | None = None,
         clock: Callable[[], datetime] | None = None,
+        validation_usable: Callable[[Protocol], bool] | None = None,
     ) -> None:
         self.repository = repository
+        # El protocolo «Validación con adultos» solo se aplica en modo demo y con
+        # cuentas de voluntarios (PracticeValidationService.usable).
+        self.validation_usable = validation_usable or (lambda protocol: False)
         self.stimuli = stimuli
         self.audit = audit
         self.docente_of = docente_of
@@ -155,8 +160,14 @@ class ProtocolService:
             if step.shown_before_analyzer and stimulus.kind is not StimulusKind.ABSTRACT:
                 raise ValueError("Solo las imágenes abstractas se muestran antes del analizador")
 
+    @staticmethod
+    def _reserved_name(name: str) -> None:
+        if name.strip().casefold() == VALIDATION_PROTOCOL_NAME.casefold():
+            raise ValueError(f"El nombre «{VALIDATION_PROTOCOL_NAME}» está reservado para el protocolo de validación")
+
     def create(self, user: User, draft: ProtocolDraft) -> Protocol:
         self._require_conductor(user)
+        self._reserved_name(draft.name)
         self._validate(user, draft)
         family = str(uuid4())
         protocol = self.repository.add(Protocol(
@@ -176,6 +187,10 @@ class ProtocolService:
             raise PermissionError("Solo quien armó el protocolo puede editarlo")
         if not current.current:
             raise ValueError("Esta versión ya fue reemplazada: edita la versión vigente")
+        if not is_validation_protocol(current):
+            self._reserved_name(draft.name)
+        elif draft.name.strip().casefold() != VALIDATION_PROTOCOL_NAME.casefold():
+            raise ValueError("El protocolo de validación conserva su nombre")
         self._validate(user, draft)
         fields = dict(name=draft.name, description=draft.description, for_children=draft.for_children,
                       steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
@@ -200,6 +215,9 @@ class ProtocolService:
             raise ProtocolUnavailable("Solo se aplican los protocolos que armaste")
         if not protocol.current:
             raise ProtocolUnavailable("Hay una versión más nueva de este protocolo")
+        if is_validation_protocol(protocol) and not self.validation_usable(protocol):
+            raise ProtocolUnavailable("El protocolo de validación solo se aplica en modo demo, con una cuenta "
+                                      "de voluntario")
         for step in protocol.steps:
             if step.stimulus_id is None:
                 continue  # práctica sin ilustración: no necesita imagen

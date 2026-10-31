@@ -52,6 +52,9 @@ export function ProtocolsPage() {
   const stimuliQuery = useApiQuery<Stimulus[]>("/stimuli");
   const questionnairesQuery = useApiQuery<Questionnaire[]>("/questionnaires");
   const questionnaires = questionnairesQuery.data ?? [];
+  // Solo cuentas de voluntarios (PRUEBA-NN) en modo demo: el servidor decide.
+  const validationQuery = useApiQuery<{ available: boolean; protocol_id: string | null }>("/practice-validation/protocol");
+  const validation = validationQuery.data && "available" in validationQuery.data ? validationQuery.data : null;
   const protocols = query.data ?? [];
   const stimuli = stimuliQuery.data ?? [];
   const byId = new Map(stimuli.map((item) => [item.id, item]));
@@ -119,6 +122,16 @@ export function ProtocolsPage() {
     finally { setBusy(false); }
   }
 
+  async function addValidation() {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await apiRequest("/practice-validation/protocol", { method: "POST", token });
+      setMessage("Se agregó el protocolo «Validación con adultos». Úsalo desde el Analizador.");
+      await Promise.all([query.reload(), validationQuery.reload()]);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo agregar el protocolo."); }
+    finally { setBusy(false); }
+  }
+
   function questionnaireSelect(moment: Moment) {
     const field = moment === "pre" ? "pre_questionnaire_id" : "post_questionnaire_id";
     return <div className="inline-actions">
@@ -138,6 +151,11 @@ export function ProtocolsPage() {
     <NoticeList />
     {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}
+    {validation?.available && !validation.protocol_id && <Callout variant="info" role="note">
+      <p>Cuenta de voluntario: puedes agregar el protocolo «Validación con adultos», con un ejercicio por cada expresión.
+        Sirve para medir si el modelo reconoce expresiones producidas a propósito. No se guardan imágenes.</p>
+      <Button disabled={busy} onClick={() => { void addValidation(); }}>Agregar «Validación con adultos»</Button>
+    </Callout>}
 
     <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy}
       footer={<>
