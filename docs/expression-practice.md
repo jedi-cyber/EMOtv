@@ -529,18 +529,13 @@ prevalecen estas; lo que el código todavía no cumple está al final (§14.5).
   modelos estiman poco (como `contempt`) es decisión de quien arma el
   protocolo; la validación con adultos (§10) mostrará cuáles se registran
   mejor.
-- En los protocolos para niños, la selección queda sujeta a la aprobación del
-  docente que ya existe.
-
-**Punto abierto.** Hoy el código no exige la aprobación del docente para un
-protocolo. Desde `d818c9b` (sesiones sin participantes y protocolos con
-público), `Protocol` indica que un protocolo para niños «no necesita aprobación
-del docente», y `approved_at` solo se conserva de versiones anteriores. La
-revisión del docente que sí existe es la de las imágenes que suben los usuarios
-(`POST /stimuli/{id}/approve`). Esa revisión cubre las ilustraciones de los
-ejercicios, pero no la elección de expresiones. Antes de S2 hay que decidir si
-se vuelve a exigir la aprobación del protocolo infantil o si basta con la de
-las imágenes.
+- En los protocolos para niños basta la revisión del docente que ya existe: la
+  de las imágenes que suben los usuarios (`POST /stimuli/{id}/approve`). Cubre
+  las ilustraciones de los ejercicios; una imagen sin aprobar no se usa. No se
+  vuelve a exigir la aprobación del protocolo (desde `d818c9b`, un protocolo
+  para niños no la necesita y `approved_at` solo se conserva de versiones
+  anteriores), y la elección de expresiones no pasa por ninguna aprobación
+  (decisión del desarrollador, 2026-10-31).
 
 ### 14.2. Parámetros iniciales
 
@@ -620,7 +615,6 @@ personas.
 
 - Quitar la exclusión de `contempt` en `PRACTICE_TARGETS`
   (`domain/protocol.py`) y ofrecer todo el catálogo en el editor.
-- Resolver el punto abierto de §14.1 sobre la aprobación del docente.
 - Leer del entorno `PRACTICE_HOLD_SECONDS`, `PRACTICE_MAX_SECONDS`,
   `PRACTICE_STEP_PAUSE_SECONDS` y `PRACTICE_FRAME_INTERVAL_MS`, documentarlas
   en `.env.example` y cambiar `PRACTICE_SMOOTHING_SECONDS` a 0.49.
