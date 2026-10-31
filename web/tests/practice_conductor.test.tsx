@@ -7,6 +7,7 @@ import type { GuidedState } from "../src/api/types";
 import { AuthContext } from "../src/auth/AuthContext";
 import { GuidedConductorPage } from "../src/pages/GuidedConductorPage";
 import { ProtocolsPage } from "../src/pages/ProtocolsPage";
+import { protocolStepParts } from "../src/stimuli/labels";
 
 const data = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../src/api/useApiQuery", () => ({
@@ -90,6 +91,12 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
       ] }];
     withUser(<ProtocolsPage />);
     expect(screen.getByText(/1 imagen · 2 ejercicios/)).toBeInTheDocument();
+  });
+
+  it("el resumen de pasos no llama imagen a un ejercicio", () => {
+    expect(protocolStepParts([{ kind: "practice" }])).toEqual(["1 ejercicio de práctica"]);
+    expect(protocolStepParts([{ kind: "stimulus" }, { kind: "stimulus" }, { kind: "practice" }]))
+      .toEqual(["2 imágenes", "1 ejercicio de práctica"]);
   });
 });
 

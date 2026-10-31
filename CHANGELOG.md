@@ -6,6 +6,34 @@ El repositorio no tenía etiquetas de versión: las versiones anteriores a
 commit de cada grupo. La cronología commit por commit está en
 [docs/thesis-evidence/chronology.md](docs/thesis-evidence/chronology.md).
 
+## [Unreleased]
+
+### Añadido
+- Ejercicios de práctica de expresiones en los protocolos: la persona recibe
+  una instrucción y ve una señal de 0 a 1; se registra si logró la expresión
+  pedida, en cuánto tiempo y si la señal estuvo visible, sin guardar imágenes
+  (`645841e`, `01b9f8d`, `7e50f98`, `15da302`).
+- Métricas, línea de tiempo, reporte y estadísticas de los ejercicios con un
+  aviso fijo sobre la precisión con niños (`6eceb2c`).
+- Contrato móvil 4.1: resultados de práctica en el detalle de la sesión y en
+  las estadísticas, solo con campos opcionales (`1829773`).
+- Protocolo «Validación con adultos» para voluntarios `PRUEBA-NN` en modo demo
+  y exportación CSV agregada para administración (`a4db041`).
+- Variables `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD`,
+  `PRACTICE_SMOOTHING_SECONDS` y `PRACTICE_SUCCESS_PAUSE_SECONDS`.
+- Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
+- Prueba e2e de una sesión con un ejercicio de práctica.
+
+### Cambiado
+- Los cuadros de un ejercicio de práctica pasan por el cupo de análisis y se
+  descartan si no hay cupo; la pantalla de la persona envía un cuadro a la vez.
+- El Analizador cuenta imágenes y ejercicios por separado al elegir un
+  protocolo.
+
+### Corregido
+- El borrado de los datos de voluntarios incluye los resultados de práctica.
+- El proxy de Vite y nginx reenvían `/practice-validation` a la API.
+
 ## [1.0.0-rc.1] - 2026-10-10
 
 Candidata a 1.0.0. La etiqueta `v1.0.0` se creará cuando se cumplan todos los

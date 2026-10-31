@@ -1,4 +1,4 @@
-import type { ImageAudience, Stimulus, StimulusIntensity, StimulusKind } from "../api/types";
+import type { ImageAudience, ProtocolStep, Stimulus, StimulusIntensity, StimulusKind } from "../api/types";
 
 export const stimulusKindNames: Record<StimulusKind, string> = { emotional: "Emocional", abstract: "Abstracta" };
 export const intensityNames: Record<StimulusIntensity, string> = { mild: "Leve", moderate: "Moderada" };
@@ -38,6 +38,16 @@ export function practiceProblem(step: { exposure_seconds: number; hold_seconds?:
     return `La exposición dura entre 1 y ${MAX_STEP_SECONDS} segundos`;
   if (hold >= step.exposure_seconds) return "El tiempo máximo de la práctica es mayor que el tiempo de sostén";
   return null;
+}
+
+/** Qué tiene un protocolo, sin llamar «imagen» a un ejercicio de práctica: ["1 imagen", "2 ejercicios"]. */
+export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[] {
+  const practices = steps.filter((step) => step.kind === "practice").length;
+  const images = steps.length - practices;
+  const parts = [];
+  if (images > 0 || practices === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
+  return parts;
 }
 
 export function stimulusSummary(item: Stimulus): string {

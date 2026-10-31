@@ -8,7 +8,13 @@ para la Facultad de Psicología de la Universidad Nacional Hermilio Valdizán
    FER+ ONNX);
 2. muestra **información educativa** sobre la expresión estimada;
 3. recomienda una **actividad guiada de dos o más posturas** y verifica cada
-   postura con MediaPipe y reglas geométricas.
+   postura con MediaPipe y reglas geométricas;
+4. conduce **protocolos** con imágenes y **ejercicios de práctica de
+   expresiones**: la persona recibe una instrucción («Muestra alegría») y ve
+   una señal de 0 a 1 que crece cuando su expresión estimada se acerca a la
+   pedida. El sistema registra si se logró, en cuánto tiempo y si la señal
+   estuvo visible; no valora a la persona ni guarda imágenes
+   ([práctica de expresiones](docs/expression-practice.md)).
 
 Incluye inicio de sesión con roles, consentimiento configurable, historial de
 sesiones y **Emi**, un chatbot educativo (workflow de n8n Cloud con Groq).
@@ -114,6 +120,8 @@ valores reales.
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY`, `N8N_TIMEOUT_SECONDS` | workflow de Emi; sin clave, el chat responde 503 |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
 | `TEST_DATA_RETENTION_DAYS` | plazo (1 a 30 días) de las cuentas de voluntarios `PRUEBA-NN` |
+| `PRACTICE_THRESHOLD`, `PRACTICE_RELEASE_THRESHOLD` | nivel (0,05 a 1) en que se alcanza la expresión pedida en un ejercicio de práctica y nivel menor en que deja de estarlo (0,6 y 0,55) |
+| `PRACTICE_SMOOTHING_SECONDS`, `PRACTICE_SUCCESS_PAUSE_SECONDS` | constante de tiempo del suavizado de la señal (0,8 s) y pausa con «¡Lo lograste!» antes de avanzar (2 s) |
 | `SSL_CERT_FILE` | CA adicional en redes que inspeccionan HTTPS |
 
 ## Limitaciones conocidas

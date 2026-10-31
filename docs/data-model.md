@@ -180,3 +180,22 @@ erDiagram
   guarda el SHA-256 del correo.
 - **Emi.** `chat_rejection_counts` guarda solo un contador por categoría, sin
   texto ni usuario.
+
+## Práctica de expresiones
+
+Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
+Detalle en [expression-practice.md](expression-practice.md).
+
+| Tabla o columna | Contenido |
+| --- | --- |
+| `protocol_steps.kind` | `stimulus` (imagen) o `practice` (ejercicio); por defecto `stimulus` |
+| `protocol_steps.stimulus_id` | admite nulo solo en un ejercicio (ilustración opcional) |
+| `protocol_steps.target_expression`, `protocol_steps.hold_seconds` | expresión pedida y segundos para sostenerla; existen juntos y solo en un ejercicio. `exposure_seconds` es el tiempo máximo |
+| `guided_runs.practice_feedback` | si la persona ve la señal; por defecto verdadero |
+| `practice_results` | una fila por ejercicio y sesión (`session_id`, `step_index` únicos): expresión pedida, resultado (`achieved`, `timed_out`, `skipped`, `stopped`), segundos hasta lograrla (solo si se logró), nivel máximo (0 a 1), si fue relativo a la calibración, si la señal estuvo visible, cuadros analizados y marcados, modelo y versión, inicio y fin |
+
+- **Borrado.** `practice_results.session_id` borra en cascada con la sesión:
+  la retención y la eliminación con acta la cubren, y
+  `scripts/testdata/delete_test_data.py` la incluye.
+- **Nunca se guarda** ninguna imagen, el nivel o la distribución de cada cuadro
+  ni la base neutral de la calibración.

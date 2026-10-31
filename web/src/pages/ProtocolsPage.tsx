@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, stimulusSummary } from "../stimuli/labels";
+import { MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
 interface Draft {
@@ -33,15 +33,6 @@ const emptyDraft: Draft = { name: "", description: "", for_children: null, steps
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
   return item.active && item.approved && item.audience === "children";
-}
-
-function stepCount(steps: ProtocolStep[]) {
-  const practices = steps.filter((step) => step.kind === "practice").length;
-  const images = steps.length - practices;
-  const parts = [];
-  if (images > 0 || practices === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
-  if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio" : "ejercicios"}`);
-  return parts.join(" · ");
 }
 
 /** Protocolos: recetas guardadas que el Analizador aplica en una sesión. */
@@ -289,7 +280,7 @@ export function ProtocolsPage() {
     {protocols.length > 0 && <ul className="card-list">{protocols.map((item) => <li key={item.id} className="card row-card">
       <div>
         <strong>{item.name}</strong>
-        <span>Versión {item.version} · {stepCount(item.steps)}
+        <span>Versión {item.version} · {protocolStepParts(item.steps).join(" · ")}
           {isDocente && !item.owned_by_me ? " · De un usuario de tu grupo" : ""}</span>
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}

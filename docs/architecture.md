@@ -200,6 +200,36 @@ servidor. Nada de esto cambia el modelo ni el umbral de registro.
   ni bloquea nada. Si HSEmotion queda bloqueado por CPU o RAM, la admisión ya
   hace que la lectura en vivo use FER+.
 
+## Práctica de expresiones
+
+Un ejercicio de práctica es un paso del protocolo (`ProtocolStep` con
+`kind = "practice"`) que corre dentro de la fase `STIMULI` de la sesión guiada.
+Detalle, diferencias con el diseño y pendientes en
+[expression-practice.md](expression-practice.md).
+
+```text
+ParticipantViewPage --(un cuadro a la vez, cada 500 ms)--> POST /participant-view/{token}/frames
+  -> AnalysisCapacity.try_run (sin cupo: el cuadro se descarta)
+  -> GuidedSessionService: YuNet + modelo local -> distribución (imagen descartada)
+  -> PracticeTracker (nivel EMA, histéresis, sostén; memoria constante)
+  -> al terminar: PracticeResult -> practice_results
+```
+
+- **Capas.** `domain.protocol` define el paso y sus límites;
+  `domain.guided_session`, `PracticeResult`, `PracticeOutcome`, instrucciones y
+  `PRACTICE_NOTICE`. `application.practice_tracker` es puro (sin reloj propio
+  ni repositorios). `GuidedSessionService` mantiene el tracker en memoria, junto
+  a la calibración neutral, y guarda solo el resultado.
+  `session_metrics`, `session_insights_service` y `session_statistics_service`
+  lo resumen sin puntajes ni valoraciones.
+- **Lo que sale del servidor.** El nivel en vivo solo llega a las dos pantallas
+  de la sesión: la persona ve la instrucción, la señal (si quien conduce no la
+  apagó) y el logro; quien conduce ve además el tiempo restante. Nunca la
+  expresión detectada ni probabilidades.
+- **Validación.** `PracticeValidationService` agrega el protocolo «Validación
+  con adultos» a cuentas `PRUEBA-NN` en modo demo y arma en memoria el CSV
+  agregado para administración (`/practice-validation/...`).
+
 ## Sesiones, identidad y autorización
 
 ```text

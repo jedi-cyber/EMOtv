@@ -1,7 +1,10 @@
-# Práctica de producción de expresiones (diseño)
+# Práctica de producción de expresiones
 
-Estado: aprobado por el desarrollador el 2026-10-30. Sin mediana de segundos
-en las estadísticas.
+Estado: diseño aprobado por el desarrollador el 2026-10-30 (sin mediana de
+segundos en las estadísticas) e implementado en la rama
+`bloque-practica-expresiones`. Las secciones 1 a 9 son el diseño tal como se
+aprobó; lo que se construyó y en qué difiere está en las secciones 11 y 12, y lo
+que falta en la 13.
 
 ## 1. Propósito
 
@@ -402,3 +405,102 @@ de prueba y se borra junto con las cuentas.
 **Cómo leerlo.** Describe cuántas veces el modelo registró la expresión pedida
 en adultos que la produjeron a propósito. No prueba que el modelo funcione con
 niños ni dice nada sobre el estado emocional de nadie.
+
+## 11. Lo implementado
+
+| Commit | Contenido |
+| --- | --- |
+| `645841e` | `StepKind`, `ProtocolStep.practice(...)`, `PracticeResult` y `PracticeOutcome`; migración `20261030_28_practice_steps` con las columnas de `protocol_steps` y la tabla `practice_results` |
+| `01b9f8d` | `PracticeTracker` (EMA ajustado por `dt`, histéresis y sostén, con `__slots__`); la sesión guiada lo usa en `STIMULI`; cupo de análisis sin espera (`AnalysisCapacity.try_run`) para los cuadros de práctica; variables `PRACTICE_*` |
+| `7e50f98` | Pantalla de la persona: instrucción, ilustración opcional, señal de 0 a 1 y «¡Lo lograste!»; un cuadro en vuelo; migración `20261030_29_practice_feedback` (`guided_runs.practice_feedback`) |
+| `15da302` | Editor de protocolos con «Agregar ejercicio de práctica»; vista de quien conduce con la expresión pedida, el tiempo restante, el nivel en vivo, «Saltar este ejercicio» y el interruptor de la señal (`POST /guided-sessions/{id}/practice-feedback`) |
+| `6eceb2c` | `metrics.practice`, carril de estímulos con los ejercicios, bloque `practice` de las estadísticas y el aviso fijo `PRACTICE_NOTICE` en detalle, reporte e impresión |
+| `1829773` | Contrato móvil 4.1: `metrics.practice`, campos de práctica en la línea de tiempo y `practice` en `GET /mobile/statistics` |
+| `a4db041` | Protocolo «Validación con adultos» y exportación CSV agregada (§10); el borrado de voluntarios incluye `practice_results` |
+
+**Flujo.** Quien conduce arma en **Protocolos** un protocolo con uno o más
+ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo
+elige en el **Analizador** y confirma la autorización. Tras la calibración
+neutral, cada ejercicio corre en `STIMULI`: la pantalla de la persona envía un
+cuadro cada 500 ms (uno a la vez), el servidor lo analiza en memoria, actualiza
+el nivel y descarta la imagen. Al lograrlo, vencer el tiempo, saltarlo o parar
+la sesión se guarda una fila en `practice_results`. El detalle, el reporte y las
+estadísticas describen lo ocurrido («Logró la expresión pedida en 3 de 5
+ejercicios.») junto al aviso fijo.
+
+**Parámetros.** Umbral, umbral de salida, constante de suavizado y pausa tras el
+logro se leen del entorno (`PRACTICE_THRESHOLD=0.6`,
+`PRACTICE_RELEASE_THRESHOLD=0.55`, `PRACTICE_SMOOTHING_SECONDS=0.8`,
+`PRACTICE_SUCCESS_PAUSE_SECONDS=2`); la API no arranca si el umbral de salida no
+es menor que el umbral. El sostén va de 1 a 10 s y el tiempo máximo hasta
+120 s, siempre mayor que el sostén.
+
+**Pruebas.** Dominio y persistencia (`test_practice_domain.py`,
+`test_practice_persistence.py`), algoritmo con reloj falso
+(`test_practice_tracker.py`), sesión guiada (`test_practice_sessions.py`),
+API (`test_practice_api.py`), métricas y estadísticas
+(`test_practice_metrics.py`, `test_practice_statistics.py`), contrato móvil
+(`test_mobile_practice.py`), validación (`test_practice_validation.py`),
+vitest de las pantallas y de los resultados, y la e2e
+`web/e2e/practice.spec.ts` (ver §13).
+
+## 12. Diferencias respecto al diseño
+
+- **Reparto de los commits.** No siguió la tabla de §8: la tabla
+  `practice_results` llegó con la migración `_28` y la `_29` solo agrega
+  `guided_runs.practice_feedback`. La carga (§6) entró con la integración en la
+  sesión guiada.
+- **Parámetros configurables.** Umbral, histéresis, suavizado y pausa son
+  variables de entorno con validación de rango (`config.PracticeSettings`), no
+  constantes del dominio. Los valores por defecto son los del diseño.
+- **Tiempo máximo por defecto.** El editor propone 15 s, no 20.
+- **Aviso.** En lugar de `PRACTICE_CHILD_NOTICE`, solo con público infantil, hay
+  un aviso fijo `PRACTICE_NOTICE` junto a **todo** resultado de práctica, sea
+  cual sea el público: los modelos se entrenaron sobre todo con rostros de
+  adultos, su precisión con niños no está validada y el resultado describe el
+  ejercicio, no el estado emocional.
+- **Métricas.** Un bloque propio `metrics.practice` (`exercises`, `totals`,
+  `by_target`, `notice`) en vez de `practice[]` y `totals.practice_*` dentro de
+  las métricas de estímulos. Agrega los ejercicios a los que la sesión no llegó
+  (`not_reached`), el tiempo promedio hasta lograrla (solo los logrados) y una
+  frase sobre si la señal estuvo visible.
+- **Línea de tiempo.** No hay carril `practice`: el carril `stimuli` lleva cada
+  ejercicio con `kind = "practice"`, `target_expression`, `outcome` y
+  `seconds_to_achieve`.
+- **Estadísticas.** Además de por expresión pedida, se agrupan por protocolo y,
+  para el docente, por cuenta que condujo (`by_user`: el correo del Usuario,
+  nunca un dato de la persona evaluada). Incluyen el tiempo promedio hasta
+  lograrla; sin mediana, como se aprobó. La API móvil no recibe `by_user`.
+- **Componente web.** `PracticeMetrics` vive en
+  `web/src/insights/StimulusMetrics.tsx`, no en un archivo propio.
+- **Contrato móvil.** Revisión 4.1 (menor y compatible), no 5; no sube
+  `MOBILE_MIN_APP_VERSION`.
+- **Vista de quien conduce.** Muestra «Paso N de M · ejercicio de práctica». No
+  muestra el aviso de calidad cuando no se ve el rostro ni el aviso fijo durante
+  el ejercicio (ver §13).
+- **Descarte por falta de cupo.** Se aplica solo a los cuadros de un ejercicio
+  de práctica en curso; los del examen y de las imágenes siguen esperando cupo
+  como antes.
+- **Agregado.** El protocolo «Validación con adultos» y su exportación agregada
+  (§10) no estaban en el diseño.
+- **Resumen del Analizador.** Al elegir un protocolo, el Analizador cuenta
+  imágenes y ejercicios por separado («calibración, 1 ejercicio de práctica»).
+
+## 13. Pendiente
+
+- **Prueba con personas.** La validación con adultos voluntarios (§10) para
+  HSEmotion y FER+, antes de cualquier uso con niños.
+- **E2E con rostro.** `web/e2e/practice.spec.ts` inicia la sesión desde el
+  Analizador y la termina siempre. El recorrido completo (calibración, ejercicio
+  y final) necesita imágenes de rostro en `web/e2e/fixtures/faces/`: sin rostro
+  la calibración no termina y esa prueba se omite.
+- **Carga.** Medir en el equipo mínimo (i7-3770) cuántas pantallas en práctica
+  caben sin descartes (§6, punto 5) y anotarlo en `docs/testing/`.
+- **Vista de quien conduce.** Aviso de calidad cuando no se ve el rostro y aviso
+  fijo durante el ejercicio.
+- **Privacidad y pruebas manuales.** Agregar `practice_results` al registro de
+  tratamiento de `docs/privacy/` y los ejercicios de práctica a
+  `docs/testing/manual-checklist.md`.
+- **Aplicativo Android (A1).** Mostrar `metrics.practice`, los ejercicios en la
+  línea de tiempo y `practice` de las estadísticas (contrato 4.1), en el
+  repositorio `EMOtv-android`.
