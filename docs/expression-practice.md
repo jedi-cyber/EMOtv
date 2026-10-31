@@ -493,7 +493,11 @@ vitest de las pantallas y de los resultados, y la e2e
 - **E2E con rostro.** `web/e2e/practice.spec.ts` inicia la sesión desde el
   Analizador y la termina siempre. El recorrido completo (calibración, ejercicio
   y final) necesita imágenes de rostro en `web/e2e/fixtures/faces/`: sin rostro
-  la calibración no termina y esa prueba se omite.
+  la calibración no termina y esa prueba se omite. El 2026-10-30 pasó con
+  imágenes propias del desarrollador (no versionadas). Solo comprueba el flujo:
+  el video recorre las imágenes en bucle, así que el ejercicio puede terminar
+  por tiempo; que el modelo reconozca la expresión pedida lo mide la validación
+  con voluntarios (§10).
 - **Carga.** Medir en el equipo mínimo (i7-3770) cuántas pantallas en práctica
   caben sin descartes (§6, punto 5) y anotarlo en `docs/testing/`.
 - **Vista de quien conduce.** Aviso de calidad cuando no se ve el rostro y aviso

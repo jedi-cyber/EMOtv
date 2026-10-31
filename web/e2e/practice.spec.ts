@@ -86,8 +86,7 @@ test.describe("ejercicio de práctica con la cámara simulada", () => {
     await expect(page.getByRole("button", { name: "Saltar este ejercicio" })).toBeVisible();
 
     await expect(page.getByText("La sesión terminó y quedó registrada.")).toBeVisible({ timeout: (maxSeconds + 15) * 1000 });
-    const results = page.getByRole("region", { name: "Ejercicios de práctica" }).or(
-      page.locator("section").filter({ has: page.getByRole("heading", { name: "Ejercicios de práctica" }) }));
+    const results = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Ejercicios de práctica" }) });
     await expect(results).toContainText(/Logró la expresión pedida en [01] de 1 ejercicio\./);
     await expect(results).toContainText(/Paso 1 · Alegría · /);
     await expect(participant.getByText("La sesión terminó. Gracias.")).toBeVisible({ timeout: 20_000 });
