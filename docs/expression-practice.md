@@ -4,7 +4,9 @@ Estado: diseño aprobado por el desarrollador el 2026-10-30 (sin mediana de
 segundos en las estadísticas) e implementado en la rama
 `bloque-practica-expresiones`. Las secciones 1 a 9 son el diseño tal como se
 aprobó; lo que se construyó y en qué difiere está en las secciones 11 y 12, y lo
-que falta en la 13.
+que falta en la 13. Las decisiones del 2026-10-31 (§14) prevalecen sobre las
+secciones anteriores donde las contradicen y fijan lo que falta ajustar en el
+código antes de S2.
 
 ## 1. Propósito
 
@@ -67,7 +69,8 @@ Reglas del dominio (en `ProtocolStep.__post_init__`):
 - `PRACTICE_TARGETS`: `happiness`, `surprise`, `sadness`,
   `anger`, `fear`, `disgust` y `neutral`. Se excluye `contempt`: es
   difícil de pedir a un niño y los dos modelos la estiman con poca
-  frecuencia, así que casi nunca se lograría.
+  frecuencia, así que casi nunca se lograría. **Reemplazado por §14.1:** no
+  hay lista fija; cualquier expresión de `EXPRESSION_KEYS` es elegible.
 - `Protocol`: el mínimo de pasos sigue siendo 1 y el máximo 30, sumando ambos
   tipos. Un protocolo puede tener solo pasos de práctica. Los exámenes siguen
   sin pasos.
@@ -140,6 +143,8 @@ Por cada cuadro del ejercicio (ver §6 para la carga):
    cuadro perdido no cambie el ritmo de la señal:
    `alpha = 1 - exp(-dt / TAU)`, `level += alpha * (x - level)`, con
    `TAU = 0.8 s` y `dt` acotado a 2 s. `peak = max(peak, level)`.
+   **Reemplazado por §14.2:** cuadros cada 250 ms y alfa nominal 0,4
+   (`TAU ≈ 0,49 s`).
 6. Umbral con histéresis: `PRACTICE_THRESHOLD = 0.6`. Si
    `level ≥ 0.6` y `above_since` es nulo, `above_since = ahora`; si
    `level < 0.55`, `above_since = None`. Las constantes van en
@@ -508,3 +513,118 @@ vitest de las pantallas y de los resultados, y la e2e
 - **Aplicativo Android (A1).** Mostrar `metrics.practice`, los ejercicios en la
   línea de tiempo y `practice` de las estadísticas (contrato 4.1), en el
   repositorio `EMOtv-android`.
+
+## 14. Decisiones del desarrollador (2026-10-31)
+
+Se incorporan antes de S2. Donde contradicen las secciones anteriores,
+prevalecen estas; lo que el código todavía no cumple está al final (§14.5).
+
+### 14.1. Expresiones por protocolo
+
+- Quien arma el protocolo (el practicante) elige qué expresiones incluye en los
+  pasos de práctica. Cualquier expresión de `EXPRESSION_KEYS` es elegible,
+  incluida `contempt`.
+- No hay una lista fija en el código: `PRACTICE_TARGETS` deja de excluir
+  expresiones y el editor ofrece todo el catálogo. Elegir una expresión que los
+  modelos estiman poco (como `contempt`) es decisión de quien arma el
+  protocolo; la validación con adultos (§10) mostrará cuáles se registran
+  mejor.
+- En los protocolos para niños, la selección queda sujeta a la aprobación del
+  docente que ya existe.
+
+**Punto abierto.** Hoy el código no exige la aprobación del docente para un
+protocolo. Desde `d818c9b` (sesiones sin participantes y protocolos con
+público), `Protocol` indica que un protocolo para niños «no necesita aprobación
+del docente», y `approved_at` solo se conserva de versiones anteriores. La
+revisión del docente que sí existe es la de las imágenes que suben los usuarios
+(`POST /stimuli/{id}/approve`). Esa revisión cubre las ilustraciones de los
+ejercicios, pero no la elección de expresiones. Antes de S2 hay que decidir si
+se vuelve a exigir la aprobación del protocolo infantil o si basta con la de
+las imágenes.
+
+### 14.2. Parámetros iniciales
+
+No existe un valor estándar para estos parámetros. Se usan valores
+conservadores, configurables por variables de entorno y **provisionales hasta
+la validación de S8**:
+
+| Parámetro | Valor inicial | Variable de entorno |
+| --- | --- | --- |
+| Umbral de logro | 0,6 | `PRACTICE_THRESHOLD` (ya existe) |
+| Umbral de salida (histéresis) | 0,55 | `PRACTICE_RELEASE_THRESHOLD` (ya existe) |
+| Sostén | 2 s | `PRACTICE_HOLD_SECONDS` (nueva; valor que propone el editor) |
+| Tiempo máximo por paso | 20 s | `PRACTICE_MAX_SECONDS` (nueva; valor que propone el editor) |
+| Pausa entre pasos | 2 s | `PRACTICE_STEP_PAUSE_SECONDS` (reemplaza a `PRACTICE_SUCCESS_PAUSE_SECONDS`) |
+| Intervalo de cuadros en práctica | 250 ms | `PRACTICE_FRAME_INTERVAL_MS` (nueva; hoy es una constante de 500 ms) |
+| Suavizado | alfa 0,4 con cuadros cada 250 ms | `PRACTICE_SMOOTHING_SECONDS=0.49` (ya existe; hoy vale 0.8) |
+
+El sostén y el tiempo máximo siguen siendo de cada paso: las variables solo
+fijan lo que el editor propone. Los rangos permitidos no cambian: sostén de 1 a
+10 s y tiempo máximo mayor que el sostén, de hasta 120 s.
+
+**Por qué alfa 0,4.** El promedio móvil exponencial
+`level += alpha * (x - level)` pesa el cuadro de hace `k` intervalos con
+`alpha · (1 - alpha)^k`. Se busca que el nivel refleje aproximadamente el
+último segundo, es decir, los últimos 4 cuadros a 250 ms:
+
+- Una media simple de los últimos 4 cuadros tiene una edad media de 1,5
+  intervalos ((0 + 1 + 2 + 3) / 4). La edad media de un EMA es
+  `(1 - alpha) / alpha`; igualarla a 1,5 da `alpha = 2 / (4 + 1) = 0,4`, la
+  equivalencia habitual entre un EMA y una media de `N` cuadros.
+- Con `alpha = 0,4`, los 4 cuadros del último segundo aportan
+  `1 - 0,6^4 ≈ 87 %` del nivel, y lo anterior, alrededor del 13 %. Un cuadro
+  aislado mueve el nivel a lo sumo un 40 %, así que un parpadeo o un gesto
+  breve no basta para cruzar el umbral.
+- Si la expresión pedida aparece de golpe con probabilidad cercana a 1, el
+  nivel pasa de 0 a 0,64 en 2 cuadros (0,5 s), y el sostén de 2 s empieza a
+  contar desde ahí. Si la expresión desaparece, el nivel baja de 0,55 en uno o
+  dos cuadros.
+
+El código aplica el alfa a través de la constante de tiempo,
+`alpha = 1 - exp(-dt / TAU)`, para que un cuadro perdido o descartado por falta
+de cupo no cambie el ritmo de la señal. Con `dt = 0,25 s`,
+`TAU = -0,25 / ln(0,6) ≈ 0,49 s` da `alpha = 0,4`. Si se pierde un cuadro
+(`dt = 0,5 s`), el alfa sube a 0,64, lo mismo que dos pasos seguidos.
+
+Pasar de 500 a 250 ms duplica los cuadros por pantalla (4 por segundo). La
+medición de carga en el equipo mínimo (§6, punto 5) se hace con este
+intervalo.
+
+### 14.3. Quién ve qué
+
+Todo esto ocurre solo en la web. El aplicativo Android no conduce sesiones ni
+usa la cámara.
+
+- **Vista del participante:** la instrucción, la ilustración si existe y una
+  figura que crece con el nivel. Al lograrlo, una confirmación amable («¡Lo
+  lograste!»). Nunca muestra etiquetas de la expresión estimada,
+  probabilidades ni calidad.
+- **Vista del conductor:** la expresión pedida, el nivel, si se logró o no y
+  los marcadores de la sesión.
+- **Señal visual apagada:** el conductor puede apagarla durante la sesión.
+  Entonces el participante ve solo la instrucción y el practicante lo guía de
+  palabra. El ejercicio se analiza y se registra igual, y el resultado indica
+  si la señal estaba activa (`feedback_visible`).
+- **Aplicativo Android:** solo muestra los resultados ya registrados (contrato
+  4.1).
+
+### 14.4. Continuidad entre sesiones
+
+**Opción A: sin vínculo entre sesiones.** Cada sesión muestra solo su propio
+resultado. No se comparan sesiones, no se muestra la evolución de nadie y no se
+guarda nada que permita reconocer que dos sesiones son de la misma persona. Las
+estadísticas siguen siendo agregadas: cuentan ejercicios y sesiones, nunca
+personas.
+
+### 14.5. Lo que falta ajustar en el código
+
+- Quitar la exclusión de `contempt` en `PRACTICE_TARGETS`
+  (`domain/protocol.py`) y ofrecer todo el catálogo en el editor.
+- Resolver el punto abierto de §14.1 sobre la aprobación del docente.
+- Leer del entorno `PRACTICE_HOLD_SECONDS`, `PRACTICE_MAX_SECONDS`,
+  `PRACTICE_STEP_PAUSE_SECONDS` y `PRACTICE_FRAME_INTERVAL_MS`, documentarlas
+  en `.env.example` y cambiar `PRACTICE_SMOOTHING_SECONDS` a 0.49.
+- Hacer que el editor proponga 20 s de tiempo máximo (hoy propone 15).
+- Aplicar la pausa de 2 s entre todos los pasos de práctica, no solo después
+  de un logro.
+- Repetir la prueba de carga con cuadros cada 250 ms.
