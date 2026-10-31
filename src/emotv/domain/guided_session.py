@@ -41,6 +41,10 @@ PRACTICE_INSTRUCTIONS = {
     "neutral": "Deja la cara tranquila",
 }
 PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
+# Aviso fijo junto a todo resultado de práctica.
+PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "
+                   "precisión con niños no está validada. El resultado describe el ejercicio, no el "
+                   "estado emocional de la persona.")
 
 # Debriefing: lo que ve la persona al terminar el examen. Describe qué se
 # registró, sin valorar ni diagnosticar.

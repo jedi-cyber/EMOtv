@@ -17,9 +17,10 @@ from typing import Any, Literal
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.session_insights_service import SessionInsightsService
+from emotv.application.session_metrics import practice_by_target, practice_totals
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.expression_info import EXPRESSION_KEYS
-from emotv.domain.guided_session import CaptureQuality
+from emotv.domain.guided_session import PRACTICE_NOTICE, CaptureQuality, PracticeResult
 from emotv.domain.questionnaire import FACES, QuestionKind
 from emotv.domain.role import Role
 from emotv.domain.session import EmotionalSession
@@ -121,11 +122,15 @@ class SessionStatisticsService:
             "sessions": self._summary(selected),
             "expressions": self._expressions(selected),
             "coincidence": self._coincidence(selected),
+            # Aparte de la coincidencia de estímulos: en un ejercicio se pide la expresión.
+            "practice": self._practice(selected),
             "protocols": self._protocol_options(in_scope),
             **self._questionnaires(selected, filters.questionnaire_id),
         }
         if filters.scope == "group":
             result["by_user"] = self._by_user(selected, owners)
+            if result["practice"] is not None:
+                result["practice"]["by_user"] = self._practice_by_user(selected, owners)
         return result
 
     @staticmethod
@@ -172,6 +177,43 @@ class SessionStatisticsService:
             compared += totals["counted"]
             matched += totals["matched"]
         return {"compared": compared, "matched": matched}
+
+    def _practice_results(self, session: EmotionalSession) -> list[PracticeResult]:
+        return list(self.insights.guided.list_practice_results(session.id)) if session.protocol_id else []
+
+    def _practice(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
+        """Ejercicios de práctica de las sesiones elegidas: totales, por protocolo y
+        por expresión pedida. None si ninguna sesión tuvo ejercicios."""
+        per_session = [(session, self._practice_results(session)) for session in sessions]
+        per_session = [(session, results) for session, results in per_session if results]
+        if not per_session:
+            return None
+        everything = [item for _, results in per_session for item in results]
+        families: dict[str, tuple[str, list[PracticeResult], int]] = {}
+        for session, results in per_session:
+            protocol = self.insights.protocols(session.protocol_id)
+            family = protocol.family_id if protocol else session.protocol_id
+            name, collected, count = families.get(family, (protocol.name if protocol else "", [], 0))
+            families[family] = (name, collected + results, count + 1)
+        by_protocol = [{"family_id": family, "name": name, "sessions": count, **self._practice_row(results)}
+                       for family, (name, results, count) in families.items()]
+        by_protocol.sort(key=lambda row: row["name"].lower())
+        return {"sessions": len(per_session), "totals": practice_totals(everything),
+                "by_protocol": by_protocol, "by_target": practice_by_target(everything), "notice": PRACTICE_NOTICE}
+
+    @staticmethod
+    def _practice_row(results: list[PracticeResult]) -> dict[str, Any]:
+        totals = practice_totals(results)
+        return {key: totals[key] for key in ("applied", "achieved", "skipped", "stopped", "average_seconds_to_achieve")}
+
+    def _practice_by_user(self, sessions: list[EmotionalSession], owners: tuple[str, ...]) -> list[dict[str, Any]]:
+        """Ejercicios por usuario del grupo (quien condujo, por correo), nunca por persona evaluada."""
+        rows = []
+        for owner in owners:
+            results = [item for session in sessions if session.owner_user_id == owner
+                       for item in self._practice_results(session)]
+            rows.append({"email": self.email_of(owner) or "Cuenta eliminada", **self._practice_row(results)})
+        return sorted(rows, key=lambda row: row["email"])
 
     def _protocol_options(self, sessions: list[EmotionalSession]) -> list[dict[str, str]]:
         names: dict[str, tuple[int, str]] = {}

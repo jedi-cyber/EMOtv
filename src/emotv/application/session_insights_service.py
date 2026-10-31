@@ -12,7 +12,7 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import stimulus_metrics
+from emotv.application.session_metrics import practice_metrics, stimulus_metrics
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import GuidedPhase
 from emotv.domain.protocol import Protocol
@@ -68,13 +68,15 @@ class SessionInsightsService:
     def _session_metrics(self, session: EmotionalSession) -> dict[str, Any]:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
-            return stimulus_metrics((), {}, ())
+            return {**stimulus_metrics((), {}, ()), "practice": None}
         stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
                    for step in protocol.steps}
         run = self.guided.get_run(session.id)
         skipped = [item["step_index"] for item in run.steps_log if item.get("skipped")] if run else []
-        return stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
-                                self.guided.list_verbal(session.id), skipped)
+        return {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
+                                   self.guided.list_verbal(session.id), skipped),
+                # Aparte de la coincidencia de estímulos.
+                "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id))}
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
         return self.session_metrics(self._allowed_session(user, session_id, METRICS))
@@ -101,22 +103,32 @@ class SessionInsightsService:
 
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         titles = {}
-        if protocol:
-            for index, step in enumerate(protocol.steps):
-                stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
-                titles[index] = (stimulus.title if stimulus else "", stimulus.kind.value if stimulus else "")
+        steps = protocol.steps if protocol else ()
+        for index, step in enumerate(steps):
+            stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
+            # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
+            kind = "practice" if step.is_practice else stimulus.kind.value if stimulus else ""
+            titles[index] = (stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
+        practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
+
+        def lane_item(index: int, start, end, skipped: bool) -> dict[str, Any]:
+            title, kind = titles.get(index, ("", ""))
+            item = {"step_index": index, "title": title, "kind": kind, "start": start, "end": end, "skipped": skipped}
+            if kind == "practice":
+                result = practice.get(index)
+                item.update(target_expression=steps[index].target_expression,
+                            outcome=result.outcome.value if result else None,
+                            seconds_to_achieve=result.seconds_to_achieve if result else None)
+            return item
+
         stimuli_lane = []
         if run is not None:
             for item in run.steps_log:
-                title, kind = titles.get(item["step_index"], ("", ""))
-                stimuli_lane.append({"step_index": item["step_index"], "title": title, "kind": kind,
-                                     "start": at(item.get("started_at")), "end": at(item.get("ended_at")),
-                                     "skipped": bool(item.get("skipped"))})
+                stimuli_lane.append(lane_item(item["step_index"], at(item.get("started_at")), at(item.get("ended_at")),
+                                              bool(item.get("skipped"))))
             if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) and run.step_started_at:
-                title, kind = titles.get(run.step_index, ("", ""))
-                stimuli_lane.append({"step_index": run.step_index, "title": title, "kind": kind,
-                                     "start": at(run.step_started_at), "end": None, "skipped": False})
+                stimuli_lane.append(lane_item(run.step_index, at(run.step_started_at), None, False))
         questionnaires_lane = []
         for response in (self.questionnaire_responses(session.id) if self.questionnaire_responses else ()):
             questionnaire = self.questionnaires(response.questionnaire_id)
