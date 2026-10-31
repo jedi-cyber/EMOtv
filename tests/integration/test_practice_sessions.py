@@ -20,7 +20,7 @@ NO_FACE = FrameAssessment((QualityIssue.NO_FACE,))
 
 
 def practice_protocol(env, *steps, for_children=False):  # noqa: F811
-    """Protocolo guardado directamente: la API de protocolos aún no crea prácticas."""
+    """Protocolo guardado directamente en el repositorio (la API se prueba en test_practice_api)."""
     item = Protocol(id=str(uuid4()), family_id=str(uuid4()), version=1, owner_user_id=env.user_1.id,
                     name="Práctica", description="", for_children=for_children, created_at=env.clock.now,
                     steps=steps or (ProtocolStep.practice("happiness", 2, 20),))

@@ -39,6 +39,11 @@ class VerbalRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_NOTE_LENGTH)
 
 
+class PracticeFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    visible: bool
+
+
 class PracticeView(BaseModel):
     """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
     está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
@@ -134,6 +139,13 @@ def create_guided_router(
     def marker(session_id: str, request: MarkerRequest, user: User = Depends(current_user)) -> dict[str, str]:
         item = guarded(lambda: service().add_marker(user, session_id, request.kind, request.note))
         return {"id": item.id, "kind": item.kind.value, "occurred_at": item.occurred_at.isoformat()}
+
+    @router.post("/guided-sessions/{session_id}/practice-feedback")
+    def practice_feedback(session_id: str, request: PracticeFeedbackRequest,
+                          user: User = Depends(current_user)) -> dict[str, bool]:
+        """Enciende o apaga la señal del nivel en la pantalla de la persona."""
+        run = guarded(lambda: service().set_practice_feedback(user, session_id, request.visible))
+        return {"practice_feedback": run.practice_feedback}
 
     @router.post("/guided-sessions/{session_id}/verbal-responses", status_code=201)
     def verbal(session_id: str, request: VerbalRequest, user: User = Depends(current_user)) -> dict[str, Any]:

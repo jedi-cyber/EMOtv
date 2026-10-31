@@ -49,12 +49,18 @@ class StimulusActive(BaseModel):
 
 class StepModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    stimulus_id: str = Field(min_length=1, max_length=36)
+    # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
+    # sostiene; la imagen es una ilustración opcional.
+    kind: Literal["stimulus", "practice"] = "stimulus"
+    stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
-    capture_after_seconds: int = Field(ge=0, le=MAX_EXPOSURE_SECONDS)
+    capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
     record_verbal_response: bool = False
     # Solo imágenes abstractas: se muestran antes de la calibración, sin capturas.
     shown_before_analyzer: bool = False
+    target_expression: str | None = Field(default=None, max_length=32)
+    # Los límites los valida el dominio, con sus mensajes en español.
+    hold_seconds: int | None = None
 
 
 class ProtocolRequest(BaseModel):
@@ -129,19 +135,23 @@ def create_stimulus_router(
             description=item.description, for_children=item.for_children,
             pre_questionnaire_id=item.pre_questionnaire_id,
             post_questionnaire_id=item.post_questionnaire_id,
-            steps=[StepModel(stimulus_id=step.stimulus_id, exposure_seconds=step.exposure_seconds,
+            steps=[StepModel(kind=step.kind.value, stimulus_id=step.stimulus_id,
+                             exposure_seconds=step.exposure_seconds,
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response,
-                             shown_before_analyzer=step.shown_before_analyzer) for step in item.steps],
+                             shown_before_analyzer=step.shown_before_analyzer,
+                             target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+                   for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
             needs_image=service.needs_image(item))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
             steps = tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
-                                       step.record_verbal_response, step.shown_before_analyzer)
+                                       step.record_verbal_response, step.shown_before_analyzer, kind=step.kind,
+                                       target_expression=step.target_expression, hold_seconds=step.hold_seconds)
                           for step in request.steps)
-        except ValueError as error:
+        except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,
                              steps=steps, pre_questionnaire_id=request.pre_questionnaire_id,

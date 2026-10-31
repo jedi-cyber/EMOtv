@@ -123,7 +123,7 @@ class ProtocolService:
         """Algún paso nombra una imagen eliminada, sin aprobar, retirada o que ya
         no corresponde al público del protocolo."""
         return any(self._image_problem(protocol, self.stimuli.repository.get(step.stimulus_id)) is not None
-                   for step in protocol.steps)
+                   for step in protocol.steps if step.stimulus_id is not None)
 
     # --- Armado y versiones --------------------------------------------------
 
@@ -141,6 +141,8 @@ class ProtocolService:
             except QuestionnaireNotFound as error:
                 raise ValueError("Un cuestionario indicado no existe o no está disponible") from error
         for step in draft.steps:
+            if step.stimulus_id is None:
+                continue  # Ejercicio de práctica sin ilustración.
             try:
                 stimulus = self.stimuli.get(user, step.stimulus_id)
             except StimulusNotFound as error:

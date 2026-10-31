@@ -532,6 +532,13 @@ class GuidedSessionService:
                 "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
                 "frame_interval_ms": PRACTICE_FRAME_INTERVAL_MS}
 
+    def _conductor_practice(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
+        """Lo que ve quien conduce en un ejercicio: la expresión pedida, el nivel
+        en vivo (aunque la señal de la persona esté apagada) y si se logró."""
+        participant = self._participant_practice(replace(run, practice_feedback=True), step)
+        return {"target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
+                "level": participant["level"], "achieved": participant["achieved"]}
+
     def practice_frame_drops_when_busy(self, token: str) -> bool:
         """Si el cuadro de esta pantalla es de un ejercicio de práctica en curso:
         sin cupo de análisis, ese cuadro se descarta en lugar de esperar."""
@@ -796,7 +803,9 @@ class GuidedSessionService:
                        "kind": stimuli[item.stimulus_id].kind.value if stimuli[item.stimulus_id] else "",
                        "exposure_seconds": item.exposure_seconds, "capture_after_seconds": item.capture_after_seconds,
                        "record_verbal_response": item.record_verbal_response,
-                       "shown_before_analyzer": item.shown_before_analyzer} for index, item in enumerate(steps)],
+                       "shown_before_analyzer": item.shown_before_analyzer,
+                       "step_kind": item.kind.value, "target_expression": item.target_expression,
+                       "hold_seconds": item.hold_seconds} for index, item in enumerate(steps)],
             "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
                                   if step else None),
             "steps_log": list(run.steps_log),
@@ -807,6 +816,9 @@ class GuidedSessionService:
             "pre_questionnaire_id": session.pre_questionnaire_id,
             "post_questionnaire_id": session.post_questionnaire_id,
             "has_abstract": any(item and item.kind is StimulusKind.ABSTRACT for item in stimuli.values()),
+            "practice_feedback": run.practice_feedback,
+            "practice": (self._conductor_practice(run, step)
+                         if step is not None and step.is_practice and run.phase is GuidedPhase.STIMULI else None),
         }
         if include_results:
             summary["captures"] = [{
@@ -820,6 +832,12 @@ class GuidedSessionService:
                 "id": item.id, "kind": item.kind.value, "occurred_at": item.occurred_at.isoformat(),
                 "step_index": item.step_index, "note": item.note,
             } for item in self.repository.list_markers(session.id)]
+            summary["practice_results"] = [{
+                "step_index": item.step_index, "target_expression": item.target_expression,
+                "outcome": item.outcome.value, "seconds_to_achieve": item.seconds_to_achieve,
+                "peak_level": item.peak_level, "relative_to_calibration": item.relative_to_calibration,
+                "feedback_visible": item.feedback_visible,
+            } for item in self.repository.list_practice_results(session.id)]
             summary["verbal_responses"] = [{
                 "step_index": item.step_index, "stimulus_id": item.stimulus_id, "text": item.text,
                 "recorded_at": item.recorded_at.isoformat(),

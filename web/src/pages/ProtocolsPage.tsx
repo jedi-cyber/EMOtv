@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { stimulusSummary } from "../stimuli/labels";
+import { MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
 interface Draft {
@@ -33,6 +33,15 @@ const emptyDraft: Draft = { name: "", description: "", for_children: null, steps
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
   return item.active && item.approved && item.audience === "children";
+}
+
+function stepCount(steps: ProtocolStep[]) {
+  const practices = steps.filter((step) => step.kind === "practice").length;
+  const images = steps.length - practices;
+  const parts = [];
+  if (images > 0 || practices === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio" : "ejercicios"}`);
+  return parts.join(" · ");
 }
 
 /** Protocolos: recetas guardadas que el Analizador aplica en una sesión. */
@@ -57,12 +66,14 @@ export function ProtocolsPage() {
   const [error, setError] = useState("");
   const offered = stimuli.filter((item) => item.active && (!draft.for_children || suitableForChildren(item)));
   const unsuitableSteps = draft.for_children
-    ? draft.steps.filter((step) => { const stimulus = byId.get(step.stimulus_id); return stimulus != null && !suitableForChildren(stimulus); }).length
+    ? draft.steps.filter((step) => { const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined; return stimulus != null && !suitableForChildren(stimulus); }).length
     : 0;
   // Una imagen eliminada por el docente ya no aparece: hay que quitarla y elegir otra.
-  const missingSteps = stimuliQuery.loading ? 0 : draft.steps.filter((step) => !byId.has(step.stimulus_id)).length;
+  // Un ejercicio de práctica sin ilustración no necesita imagen.
+  const missingSteps = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.stimulus_id != null && !byId.has(step.stimulus_id)).length;
+  const practiceProblems = draft.steps.filter((step) => step.kind === "practice" && practiceProblem(step) !== null).length;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
-    && missingSteps === 0;
+    && missingSteps === 0 && practiceProblems === 0;
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -78,6 +89,10 @@ export function ProtocolsPage() {
     if (!choice) return;
     update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
+  }
+  function addPractice() {
+    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness", hold_seconds: 2,
+      exposure_seconds: 15, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
     setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
@@ -159,10 +174,46 @@ export function ProtocolsPage() {
         {questionnaireSelect("pre")}
         <p className="muted">El previo se responde antes de la calibración; el posterior, al terminar. Se aplica la versión vigente de cada cuestionario.</p>
 
-        <h3>Imágenes en orden</h3>
-        {draft.steps.length === 0 && <p className="muted">Agrega al menos una imagen.</p>}
+        <h3>Pasos en orden</h3>
+        {draft.steps.length === 0 && <p className="muted">Agrega al menos una imagen o un ejercicio de práctica.</p>}
         <ol className="card-list">{draft.steps.map((step, index) => {
-          const stimulus = byId.get(step.stimulus_id);
+          const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
+          const order = <>
+            <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
+            <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
+            <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
+          </>;
+          if (step.kind === "practice") {
+            const problem = practiceProblem(step);
+            const unsuitableIllustration = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+            return <li key={`practice-${index}`} className="row-card protocol-step">
+              <div>
+                <strong>{index + 1}. Ejercicio de práctica: {practiceTargetNames[step.target_expression ?? ""] ?? "elige la expresión"}</strong>
+                <span>Se pide la expresión y se espera que la persona la sostenga.</span>
+                {problem && <span role="alert">{problem}.</span>}
+                {unsuitableIllustration && <span>La ilustración no se puede usar con niños: quítala o elige una «Para niños».</span>}
+                {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La ilustración ya no está disponible: elige otra o quítala.</span>}
+              </div>
+              <div className="inline-actions">
+                <label>Expresión pedida<select value={step.target_expression ?? ""}
+                  onChange={(event) => updateStep(index, { target_expression: event.target.value })}>
+                  {Object.entries(practiceTargetNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+                </select></label>
+                <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
+                  onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
+                <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                <label>Ilustración (opcional)<select value={step.stimulus_id ?? ""}
+                  onChange={(event) => updateStep(index, { stimulus_id: event.target.value || null })}>
+                  <option value="">Sin ilustración</option>
+                  {step.stimulus_id && !offered.some((item) => item.id === step.stimulus_id) &&
+                    <option value={step.stimulus_id}>{stimulus?.title ?? "Imagen no disponible"}</option>}
+                  {offered.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                </select></label>
+                {order}
+              </div>
+            </li>;
+          }
           const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
           return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
             <div>
@@ -180,9 +231,7 @@ export function ProtocolsPage() {
                 onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
               {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
                 onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
-              <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
-              <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
-              <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
+              {order}
             </div>
           </li>;
         })}</ol>
@@ -198,6 +247,11 @@ export function ProtocolsPage() {
           <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>
             {isDocente ? "Ir a Estímulos" : "Ir a Imágenes"}</ButtonLink></div>
         </div>}
+        <div className="inline-actions">
+          <Button onClick={addPractice}>Agregar ejercicio de práctica</Button>
+        </div>
+        <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
+          una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
 
         {questionnaireSelect("post")}
       </>}
@@ -217,7 +271,7 @@ export function ProtocolsPage() {
     {protocols.length > 0 && <ul className="card-list">{protocols.map((item) => <li key={item.id} className="card row-card">
       <div>
         <strong>{item.name}</strong>
-        <span>Versión {item.version} · {item.steps.length} {item.steps.length === 1 ? "imagen" : "imágenes"}
+        <span>Versión {item.version} · {stepCount(item.steps)}
           {isDocente && !item.owned_by_me ? " · De un usuario de tu grupo" : ""}</span>
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}

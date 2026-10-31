@@ -91,13 +91,19 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
+export type StepKind = "stimulus" | "practice";
+
 export interface ProtocolStep {
-  stimulus_id: string;
+  /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional. */
+  kind?: StepKind;
+  stimulus_id: string | null;
   exposure_seconds: number;
   capture_after_seconds: number;
   record_verbal_response: boolean;
   /** Solo imágenes abstractas: se muestran antes de la calibración, sin capturas. */
   shown_before_analyzer: boolean;
+  target_expression?: string | null;
+  hold_seconds?: number | null;
 }
 
 export interface Protocol {
@@ -221,13 +227,34 @@ export type MarkerKind = "distracted" | "laughed" | "asked_to_stop" | "cried" | 
 
 export interface GuidedStep {
   index: number;
-  stimulus_id: string;
+  stimulus_id: string | null;
   title: string;
   kind: "emotional" | "abstract" | "";
   exposure_seconds: number;
   capture_after_seconds: number;
   record_verbal_response: boolean;
   shown_before_analyzer: boolean;
+  step_kind?: StepKind;
+  target_expression?: string | null;
+  hold_seconds?: number | null;
+}
+
+/** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
+export interface GuidedPractice {
+  target_expression: string;
+  hold_seconds: number;
+  level: number | null;
+  achieved: boolean;
+}
+
+export interface GuidedPracticeResult {
+  step_index: number;
+  target_expression: string;
+  outcome: "achieved" | "timed_out" | "skipped" | "stopped";
+  seconds_to_achieve: number | null;
+  peak_level: number;
+  relative_to_calibration: boolean;
+  feedback_visible: boolean;
 }
 
 export interface GuidedCapture {
@@ -266,6 +293,10 @@ export interface GuidedState {
   captures: GuidedCapture[];
   markers: { id: string; kind: MarkerKind; occurred_at: string; step_index: number | null; note: string | null }[];
   verbal_responses: { step_index: number; stimulus_id: string; text: string; recorded_at: string }[];
+  /** Si la persona ve la señal del nivel en los ejercicios. */
+  practice_feedback?: boolean;
+  practice?: GuidedPractice | null;
+  practice_results?: GuidedPracticeResult[];
 }
 
 /** Lo único que recibe la pantalla de la persona evaluada. */
