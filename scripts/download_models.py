@@ -148,20 +148,21 @@ BENCHMARKED_MODELS = {
 
 
 def benchmark_is_current(report: Path, model_id: str = "ferplus_onnx") -> bool:
-    """Usa la misma admisión que la API: el informe debe ser de este entorno y vigente."""
+    """Usa la misma admisión que la API: el informe debe ser de este entorno."""
 
     from emotv.infrastructure.vision.emotion_classifier.model_admission import ServerModelAdmission
 
     environ = {**os.environ, BENCHMARKED_MODELS[model_id][1]: str(report)}
-    # "metrics" solo aparece si el informe superó todas las comprobaciones;
-    # un bloqueo por CPU o RAM momentáneos no exige volver a medir.
-    return "metrics" in ServerModelAdmission(environ).evaluate(model_id)
+    # Sin informe válido la API admite el modelo con su rendimiento de referencia,
+    # así que se mira la comprobación del informe y no el estado. Un bloqueo por
+    # CPU o RAM momentáneos tampoco exige volver a medir.
+    return ServerModelAdmission(environ).evaluate(model_id)["checks"]["benchmark_current"]
 
 
 def ensure_benchmark(report: Path, model_id: str = "ferplus_onnx") -> None:
     name = BENCHMARKED_MODELS[model_id][0]
     if benchmark_is_current(report, model_id):
-        print(f"[ok] benchmark {name} vigente para este entorno")
+        print(f"[ok] benchmark {name} ya medido en este entorno")
         return
     from scripts.emotion.run_emotion_models_benchmark import main as run_benchmark
 
@@ -192,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--include-experimental", action="store_true",
                         help="Descargar también hardlyhumans_vit (opcional)")
     parser.add_argument("--ensure-benchmark", type=Path, metavar="INFORME",
-                        help="Medir el benchmark FER+ en este entorno si el informe falta o no es vigente")
+                        help="Medir el benchmark FER+ en este entorno si el informe falta o es de otro entorno")
     parser.add_argument("--ensure-hsemotion-benchmark", type=Path, metavar="INFORME",
                         help="Igual para HSEmotion; si falla, la API usará FER+")
     args = parser.parse_args(argv)

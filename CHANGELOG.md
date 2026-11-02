@@ -36,6 +36,9 @@ commit de cada grupo. La cronología commit por commit está en
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- La medición de rendimiento de los modelos faciales ya no vence a los 30 días
+  y deja de ser requisito: sin ella, HSEmotion y FER+ funcionan con un
+  rendimiento de referencia. Se quita `EMOTION_BENCHMARK_MAX_AGE_DAYS`.
 - Práctica (§14.5): se puede pedir cualquier expresión del catálogo, incluido
   desprecio; el editor propone 20 s; hay una pausa de 2 s tras cada ejercicio,
   logrado o no; cuadros cada 250 ms y suavizado de 0,49 s.

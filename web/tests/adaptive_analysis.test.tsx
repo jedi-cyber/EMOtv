@@ -246,8 +246,8 @@ describe("analizador emoción → recomendación → postura", () => {
     act(() => Socket.instances[0].onopen?.());
     // Sin elección, el servidor usa el predeterminado (o su respaldo) e informa si está bloqueado.
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
-    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Benchmark vencido" }) }));
-    expect(await screen.findByText(/Modelo bloqueado: Benchmark vencido/)).toBeInTheDocument();
+    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Pesos no instalados en el servidor" }) }));
+    expect(await screen.findByText(/Modelo bloqueado: Pesos no instalados/)).toBeInTheDocument();
   });
 
   it("reconoce primero, muestra sugerencia y solo entonces asigna la actividad", async () => {

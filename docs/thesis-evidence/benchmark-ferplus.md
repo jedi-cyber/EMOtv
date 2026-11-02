@@ -62,6 +62,6 @@ memoria del proceso.
   es el uso total del equipo.
 - En Docker, `docs/docker.md` registra un p95 de 18 a 25 ms por predicción en
   el contenedor del mismo equipo.
-- La API solo admite FER+ si existe un benchmark vigente medido en el mismo
-  entorno (`EMOTION_BENCHMARK_MAX_AGE_DAYS`); el servicio `models` lo vuelve a
-  medir en Docker cuando falta o vence.
+- La API usa el benchmark medido en el mismo entorno, sin fecha de
+  vencimiento; si falta, admite FER+ con un rendimiento de referencia. El
+  servicio `models` lo mide en Docker cuando falta o es de otro entorno.

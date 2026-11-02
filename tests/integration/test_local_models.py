@@ -80,7 +80,7 @@ def env():
 
     def admission(model_id):
         state = states[model_id]
-        return dict(model_id=model_id, state=state, reasons=["Benchmark vencido"] if state == "BLOCKED" else [],
+        return dict(model_id=model_id, state=state, reasons=["Pesos no instalados en el servidor"] if state == "BLOCKED" else [],
                     checks=dict(weights_verified=True, benchmark_current=state != "BLOCKED"),
                     metrics=dict(p95_ms=40.0, concurrent_frame_p95_ms={"1": 45.0, "2": 70.0}))
 
@@ -132,7 +132,7 @@ def test_model_without_admission_cannot_be_chosen_as_default(env):
     response = env.client.put("/admin/models/default", headers=env.headers(env.admin),
                               json={"model_id": FERPLUS_MODEL_ID})
     assert response.status_code == 409
-    assert "Benchmark vencido" in response.json()["detail"]
+    assert "Pesos no instalados en el servidor" in response.json()["detail"]
     assert env.settings.get() is None  # sigue el predeterminado inicial
     assert env.client.put("/admin/models/default", headers=env.headers(env.admin),
                           json={"model_id": "hardlyhumans_vit"}).status_code == 422

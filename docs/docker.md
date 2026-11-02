@@ -385,8 +385,9 @@ candado en la barra de direcciones) y que otra aplicación no la esté usando.
 (`https://IP:8443`) esté en `CORS_ORIGINS` y la IP en `TRUSTED_HOSTS`; luego
 `docker compose --env-file .env.docker --profile https up -d`.
 
-**"Modelo bloqueado: Benchmark vencido".** El benchmark de FER+ tiene una
-vigencia de 30 días. Vuelve a medirlo con
+**"Modelo bloqueado".** La medición de los modelos no vence: el bloqueo se
+debe a que faltan los pesos o a que el servidor no tiene CPU o RAM libres en
+ese momento. Si faltan los pesos, vuelve a ejecutar
 `docker compose --env-file .env.docker up -d models`, que se ejecuta y termina
 solo.
 

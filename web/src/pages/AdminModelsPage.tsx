@@ -92,7 +92,7 @@ export function AdminModelsPage() {
         El {dateTime(settings.fallback_at)} el modelo predeterminado no tenía admisión vigente y se usó {emotionModelName(settings.fallback_model_id)} como respaldo.
       </Callout>}
       <div className="table-wrap"><table><thead><tr>
-        <th>Modelo</th><th>Estado</th><th>Pesos verificados</th><th>Medición vigente</th><th>Latencia p95</th><th>Predeterminado</th>
+        <th>Modelo</th><th>Estado</th><th>Pesos verificados</th><th>Medido en este equipo</th><th>Latencia p95</th><th>Predeterminado</th>
       </tr></thead><tbody>
         {settings.models.map((model) => <tr key={model.model_id}>
           <td>{emotionModelName(model.model_id)}<br /><small className="muted">Versión {model.version.slice(0, 12)}</small></td>

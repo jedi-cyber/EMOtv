@@ -97,6 +97,8 @@ docker/certs/*.cer
 reports/chatbot/
 # Actas de eliminación de datos de voluntarios (delete_test_data.py --save).
 reports/deletions/
+# Medición de HSEmotion en el equipo local: cada equipo genera la suya.
+reports/benchmarks/hsemotion-baseline.json
 DESIGN.md
 # Pruebas e2e (Playwright): informes, trazas y la cámara simulada.
 # Las imágenes de rostro son del desarrollador y nunca se suben.
