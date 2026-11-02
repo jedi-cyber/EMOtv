@@ -197,6 +197,9 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 /* Reconocimiento: opciones grandes, fáciles de tocar para un niño. */
 .recognition-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-sm); width: 100%; }
 .recognition-option { min-height: 3.5rem; font-size: var(--text-section-title); }
+/* La opción elegida sigue legible aunque los botones queden deshabilitados. */
+.recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
+.recognition-answer { color: var(--color-ink); }
 .participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
 @media (prefers-reduced-motion: no-preference) {
   .practice-signal-fill { transition: transform 300ms ease-out; }

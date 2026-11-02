@@ -51,7 +51,8 @@ export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
         {option.label}
       </Button>)}
     </div>
-    <p className="participant-achieved" role="status" aria-live="polite">{recognition.message ?? ""}</p>
+    {/* Mismo color con cualquier elección: el nombre de la emoción no indica si coincidió. */}
+    <p className="participant-achieved recognition-answer" role="status" aria-live="polite">{recognition.message ?? ""}</p>
   </div>;
 }
 
