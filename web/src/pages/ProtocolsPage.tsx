@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
@@ -22,6 +22,8 @@ interface Draft {
   description: string;
   /** null hasta que se responde «¿Para adultos o para niños?»: es obligatorio. */
   for_children: boolean | null;
+  /** Pantalla de la persona con pictogramas, botones grandes y pausas más largas. */
+  accessible: boolean;
   steps: ProtocolStep[];
   pre_questionnaire_id: string;
   post_questionnaire_id: string;
@@ -29,7 +31,7 @@ interface Draft {
 
 type Moment = "pre" | "post";
 
-const emptyDraft: Draft = { name: "", description: "", for_children: null, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
+const emptyDraft: Draft = { name: "", description: "", for_children: null, accessible: false, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
 
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
@@ -95,17 +97,20 @@ export function ProtocolsPage() {
   }
   function addRecognition() {
     if (!recognizable(chosen)) return;
-    update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: DEFAULT_RECOGNITION.option_count,
-      exposure_seconds: DEFAULT_RECOGNITION.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+    const defaults = draft.accessible ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
+    update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
+      exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
   function addPractice() {
     update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness",
-      hold_seconds: practiceDefaults.hold_seconds, exposure_seconds: practiceDefaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+      hold_seconds: practiceDefaults.hold_seconds,
+      exposure_seconds: draft.accessible ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
     setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
-    setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children, steps: item.steps,
+    setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children, accessible: item.accessible ?? false, steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
   }
   function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
@@ -192,6 +197,10 @@ export function ProtocolsPage() {
       </fieldset>
 
       {draft.for_children !== null && <>
+        <Checkbox checked={draft.accessible} onChange={(event) => update({ accessible: event.target.checked })}>
+          Modo accesible
+        </Checkbox>
+        <p className="muted">Para quienes se saturan con facilidad: pictogramas junto a cada emoción, botones grandes, nada que se mueva y pausas más largas. Los pasos nuevos proponen menos opciones y más tiempo.</p>
         <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
         <label>Descripción (opcional)<textarea rows={2} maxLength={2000} value={draft.description}
           onChange={(event) => update({ description: event.target.value })} /></label>
@@ -328,6 +337,7 @@ export function ProtocolsPage() {
           {isDocente && !item.owned_by_me ? " · De un usuario de tu grupo" : ""}</span>
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}
+          {item.accessible && <StatusChip tone="neutral">Modo accesible</StatusChip>}
           {item.used && <StatusChip tone="neutral">Usado en sesiones</StatusChip>}
           {item.needs_image && <StatusChip tone="error">Necesita una imagen</StatusChip>}
         </span>

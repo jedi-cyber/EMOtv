@@ -119,6 +119,8 @@ export interface Protocol {
   name: string;
   description: string;
   for_children: boolean;
+  /** Pantalla de la persona con pictogramas, botones grandes y pausas más largas. */
+  accessible?: boolean;
   pre_questionnaire_id: string | null;
   post_questionnaire_id: string | null;
   steps: ProtocolStep[];
@@ -304,6 +306,8 @@ export interface GuidedCapture {
 /** Estado para quien conduce la sesión (nunca llega a la pantalla de la persona). */
 export interface GuidedState {
   session_id: string;
+  /** El protocolo usa el modo accesible. */
+  accessible?: boolean;
   /** Código para anotar en el formato firmado. */
   session_code: string | null;
   phase: GuidedPhase;
@@ -362,6 +366,8 @@ export interface ParticipantViewState {
   abstract_notice: string | null;
   practice?: ParticipantPractice | null;
   recognition?: ParticipantRecognition | null;
+  /** Solo aparece si el protocolo usa el modo accesible. */
+  accessible?: boolean;
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */

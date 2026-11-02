@@ -52,6 +52,7 @@ class ProtocolDraft:
     steps: tuple[ProtocolStep, ...]
     pre_questionnaire_id: str | None = None
     post_questionnaire_id: str | None = None
+    accessible: bool = False
 
 
 class ProtocolService:
@@ -188,7 +189,7 @@ class ProtocolService:
             id=family, family_id=family, version=1, owner_user_id=user.id, name=draft.name,
             description=draft.description, for_children=draft.for_children, created_at=self.clock(),
             steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
-            post_questionnaire_id=draft.post_questionnaire_id))
+            post_questionnaire_id=draft.post_questionnaire_id, accessible=draft.accessible))
         self.audit.record(user, AuditAction.CREATE, RESOURCE, protocol.id)
         return protocol
 
@@ -208,7 +209,7 @@ class ProtocolService:
         draft = self._validate(user, draft)
         fields = dict(name=draft.name, description=draft.description, for_children=draft.for_children,
                       steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
-                      post_questionnaire_id=draft.post_questionnaire_id,
+                      post_questionnaire_id=draft.post_questionnaire_id, accessible=draft.accessible,
                       approved_at=None, approved_by_user_id=None)
         if self.repository.is_used(current.id):
             now = self.clock()

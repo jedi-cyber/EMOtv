@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { ApiError, apiBlob, apiRequest } from "../api/http";
 import type { ParticipantPractice, ParticipantRecognition, ParticipantViewState } from "../api/types";
 import { Button } from "../components/Button";
+import { emotionPictograms } from "../stimuli/labels";
 
 const POLL_MS = 500;
 
@@ -32,8 +33,8 @@ export function PracticeStage({ practice, imageUrl }: { practice: ParticipantPra
  * tiempo) se lee el nombre de la emoción de la imagen; no se dice si la elección
  * coincidió.
  */
-export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
-  recognition: ParticipantRecognition; imageUrl: string | null; onAnswer: (key: string) => Promise<void>;
+export function RecognitionStage({ recognition, imageUrl, onAnswer, accessible = false }: {
+  recognition: ParticipantRecognition; imageUrl: string | null; onAnswer: (key: string) => Promise<void>; accessible?: boolean;
 }) {
   const [sending, setSending] = useState<string | null>(null);
   const done = recognition.message != null;
@@ -50,6 +51,8 @@ export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
       {recognition.options.map((option) => <Button key={option.key} className="recognition-option"
         variant={chosen === option.key ? "primary" : "secondary"} aria-pressed={chosen === option.key}
         disabled={done || sending != null} onClick={() => { void choose(option.key); }}>
+        {/* En modo accesible, un pictograma acompaña al nombre; el nombre sigue siendo la etiqueta. */}
+        {accessible && emotionPictograms[option.key] && <span className="recognition-pictogram" aria-hidden="true">{emotionPictograms[option.key]}</span>}
         {option.label}
       </Button>)}
     </div>
@@ -160,7 +163,7 @@ export function ParticipantViewPage() {
   }
 
   const finished = ended || view?.phase === "finished" || view?.phase === "stopped";
-  return <main className="participant-view">
+  return <main className={`participant-view${view?.accessible ? " participant-view--accessible" : ""}`}>
     <video ref={videoRef} className="participant-camera" playsInline muted aria-hidden="true" />
     <canvas ref={canvasRef} hidden />
     <div className="participant-view-stage">
@@ -170,7 +173,8 @@ export function ParticipantViewPage() {
           ? <PracticeStage practice={practice} imageUrl={imageUrl} />
           : recognition
           // La clave reinicia la elección al pasar a otra imagen.
-          ? <RecognitionStage key={exposure ?? ""} recognition={recognition} imageUrl={imageUrl} onAnswer={answer} />
+          ? <RecognitionStage key={exposure ?? ""} recognition={recognition} imageUrl={imageUrl} onAnswer={answer}
+            accessible={Boolean(view?.accessible)} />
           : imageUrl
           ? <img className="participant-stimulus" src={imageUrl} alt="Imagen de la sesión" />
           : <p className="participant-message">{view?.message ?? "Espera un momento."}</p>}

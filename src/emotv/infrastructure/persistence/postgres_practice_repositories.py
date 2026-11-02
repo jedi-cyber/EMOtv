@@ -160,6 +160,7 @@ class PostgresProtocolRepository:
         row.name = item.name
         row.description = item.description
         row.for_children = item.for_children
+        row.accessible = item.accessible
         row.pre_questionnaire_id = item.pre_questionnaire_id
         row.post_questionnaire_id = item.post_questionnaire_id
         row.created_at = item.created_at
@@ -190,6 +191,7 @@ class PostgresProtocolRepository:
             post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
             superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
+            accessible=bool(row.accessible),
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                      step.record_verbal_response, step.shown_before_analyzer,
                                      kind=step.kind or "stimulus", target_expression=step.target_expression,

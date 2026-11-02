@@ -210,6 +210,7 @@ Migración `20261102_31_recognition_steps`. Detalle en
 | `protocol_steps.kind` | agrega `recognition`: una imagen emocional y «¿Qué emoción es?» |
 | `protocol_steps.target_expression` | en un reconocimiento, la expresión esperada de la imagen (la copia el servidor) |
 | `protocol_steps.option_count` | opciones que se muestran (2 a 4); solo en un reconocimiento |
+| `protocols.accessible` | modo accesible de la pantalla de la persona; falso por defecto (migración `20261102_33_accessible_protocols`) |
 | `protocol_steps.situation` | historia corta opcional de un reconocimiento, hasta 200 caracteres (migración `20261102_32_recognition_situations`) |
 | `recognition_results` | una fila por reconocimiento y sesión (`session_id`, `step_index` únicos): imagen, expresión esperada, opciones mostradas, resultado (`answered`, `timed_out`, `skipped`, `stopped`), opción elegida, segundos hasta responder y quién respondió (`participant` o `conductor`), los tres solo si respondió; inicio y fin |
 

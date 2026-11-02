@@ -71,7 +71,7 @@ from emotv.domain.guided_session import (
     StopReason,
     VerbalResponse,
 )
-from emotv.domain.protocol import Protocol, ProtocolStep
+from emotv.domain.protocol import ACCESSIBLE_PAUSE_FACTOR, Protocol, ProtocolStep
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
 from emotv.domain.stimulus import Stimulus, StimulusKind
@@ -180,6 +180,11 @@ class GuidedSessionService:
         if protocol is None:
             raise GuidedConflict("Esta acción corresponde a una sesión con protocolo")
         return protocol
+
+    def _step_pause(self, protocol: Protocol) -> float:
+        """Pausa tras un ejercicio o un reconocimiento; más larga en modo accesible."""
+        factor = ACCESSIBLE_PAUSE_FACTOR if protocol.accessible else 1
+        return self.practice.step_pause_seconds * factor
 
     def _steps(self, session: EmotionalSession) -> tuple[ProtocolStep, ...]:
         """Los pasos del protocolo; ninguno en una sesión sin protocolo."""
@@ -422,8 +427,9 @@ class GuidedSessionService:
                 else:
                     self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT, ended_at=limit)
                 # También sin lograrlo hay una pausa antes del paso siguiente (§14.5).
-                pause_until = step.exposure_seconds + self.practice.step_pause_seconds
-                if self.practice.step_pause_seconds > 0 and elapsed < pause_until:
+                pause = self._step_pause(protocol)
+                pause_until = step.exposure_seconds + pause
+                if pause > 0 and elapsed < pause_until:
                     return self.repository.save_run(replace(run, next_capture_due=pause_until))
             elif elapsed < run.next_capture_due:
                 return None
@@ -522,7 +528,8 @@ class GuidedSessionService:
                 self._store_practice(fresh, session, step, PracticeOutcome.ACHIEVED, ended_at=self.clock(),
                                      seconds=round(elapsed, 2))
                 # La persona ve el logro durante la pausa; después el paso avanza solo.
-                self.repository.save_run(replace(fresh, next_capture_due=elapsed + self.practice.step_pause_seconds))
+                self.repository.save_run(replace(fresh, next_capture_due=elapsed
+                                                 + self._step_pause(self._protocol(session))))
 
     def set_practice_feedback(self, user: User, session_id: str, visible: bool) -> GuidedRun:
         """Quien conduce enciende o apaga la señal del nivel para toda la sesión.
@@ -562,7 +569,8 @@ class GuidedSessionService:
         exposure_seconds; la de un logro, antes (se logró antes de vencer)."""
         if run.next_capture_due is None:
             return False
-        return run.next_capture_due < step.exposure_seconds + self.practice.step_pause_seconds
+        pause = self._step_pause(self._protocol(self._session(run.session_id)))
+        return run.next_capture_due < step.exposure_seconds + pause
 
     def _conductor_practice(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce en un ejercicio: la expresión pedida, el nivel
@@ -649,7 +657,7 @@ class GuidedSessionService:
             self._store_recognition(fresh, session, step, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
                                     chosen=expression, seconds=round(elapsed, 2), by=by)
             return self.repository.save_run(replace(
-                fresh, next_capture_due=elapsed + self.practice.step_pause_seconds))
+                fresh, next_capture_due=elapsed + self._step_pause(self._protocol(session))))
 
     def participant_answer(self, token: str, expression: str) -> None:
         """La persona tocó una opción en su pantalla."""
@@ -925,6 +933,7 @@ class GuidedSessionService:
         step = steps[run.step_index] if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) else None
         summary: dict[str, Any] = {
             "session_id": session.id,
+            "accessible": session.protocol_id is not None and self._protocol(session).accessible,
             # Código para anotar en el formato firmado.
             "session_code": session.code,
             "phase": run.phase.value,
@@ -1010,7 +1019,8 @@ class GuidedSessionService:
             message = EXAM_DEBRIEFING if session.exam_id is not None else "La sesión terminó. Gracias."
             return {"phase": run.phase.value, "message": message, "stimulus": None,
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
-                    "abstract_notice": False, "practice": None, "recognition": None}
+                    "abstract_notice": False, "practice": None, "recognition": None,
+                    "accessible": session.protocol_id is not None and self._protocol(session).accessible}
         stimulus = None
         remaining = None
         abstract = False
@@ -1065,6 +1075,7 @@ class GuidedSessionService:
             "abstract_notice": abstract,
             "practice": practice,
             "recognition": recognition,
+            "accessible": session.protocol_id is not None and self._protocol(session).accessible,
         }
 
     def participant_stimulus(self, token: str) -> str:

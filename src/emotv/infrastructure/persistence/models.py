@@ -364,6 +364,9 @@ class ProtocolRecord(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
     for_children: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Modo accesible en la pantalla de la persona (migración 20261102_33).
+    accessible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                             server_default=text("false"))
     # Cuestionario previo opcional y, solo si hay previo, uno posterior.
     pre_questionnaire_id: Mapped[str | None] = mapped_column(
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True)

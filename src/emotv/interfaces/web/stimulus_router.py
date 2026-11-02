@@ -81,6 +81,8 @@ class ProtocolRequest(BaseModel):
     pre_questionnaire_id: str | None = Field(default=None, max_length=36)
     post_questionnaire_id: str | None = Field(default=None, max_length=36)
     steps: list[StepModel] = Field(min_length=1, max_length=MAX_STEPS)
+    # Pantalla de la persona con pictogramas, botones grandes y pausas más largas.
+    accessible: bool = False
 
 
 class ProtocolResponse(BaseModel):
@@ -90,6 +92,7 @@ class ProtocolResponse(BaseModel):
     name: str
     description: str
     for_children: bool
+    accessible: bool
     pre_questionnaire_id: str | None
     post_questionnaire_id: str | None
     steps: list[StepModel]
@@ -143,7 +146,7 @@ def create_stimulus_router(
         service = protocol_service()
         return ProtocolResponse(
             id=item.id, family_id=item.family_id, version=item.version, name=item.name,
-            description=item.description, for_children=item.for_children,
+            description=item.description, for_children=item.for_children, accessible=item.accessible,
             pre_questionnaire_id=item.pre_questionnaire_id,
             post_questionnaire_id=item.post_questionnaire_id,
             steps=[StepModel(kind=step.kind.value, stimulus_id=step.stimulus_id,
@@ -170,7 +173,7 @@ def create_stimulus_router(
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,
                              steps=steps, pre_questionnaire_id=request.pre_questionnaire_id,
-                             post_questionnaire_id=request.post_questionnaire_id)
+                             post_questionnaire_id=request.post_questionnaire_id, accessible=request.accessible)
 
     # --- Estímulos -------------------------------------------------------------
 

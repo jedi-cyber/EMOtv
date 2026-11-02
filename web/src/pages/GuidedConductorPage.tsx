@@ -175,7 +175,7 @@ export function GuidedConductorPage() {
     </div>}
 
     {step && state && isPractice && <div className="card form-stack">
-      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica</p>
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica{state.accessible ? " · modo accesible" : ""}</p>
       <h2>Expresión pedida: {targetName(step.target_expression)}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
       {state.practice && <>
@@ -191,7 +191,7 @@ export function GuidedConductorPage() {
     </div>}
 
     {step && state && isRecognition && <div className="card form-stack">
-      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento</p>
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento{state.accessible ? " · modo accesible" : ""}</p>
       <h2>{state.recognition?.situation ? "¿Cómo se siente?" : "¿Qué emoción es?"} · {step.title}</h2>
       {state.recognition?.situation && <p>Situación: {state.recognition.situation}</p>}
       <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. No se analiza la cámara en este paso.</p>

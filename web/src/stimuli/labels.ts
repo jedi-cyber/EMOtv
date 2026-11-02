@@ -36,6 +36,21 @@ export const RECOGNITION_OPTION_COUNTS = [2, 3, 4];
 export const DEFAULT_RECOGNITION = { option_count: 3, max_seconds: 15 };
 // Historia corta de una situación («A Lucía se le cayó su helado»); el servidor valida lo mismo.
 export const MAX_SITUATION_CHARS = 200;
+// Modo accesible: el editor propone menos opciones y más tiempo para cada paso nuevo.
+export const ACCESSIBLE_RECOGNITION = { option_count: 2, max_seconds: 30 };
+export const ACCESSIBLE_TIME_FACTOR = 2;
+// Pictograma que acompaña al nombre de cada emoción en el modo accesible. Es un
+// apoyo visual del nombre, no una imagen de la persona ni de lo detectado.
+export const emotionPictograms: Record<string, string> = {
+  happiness: "😊",
+  sadness: "😢",
+  anger: "😠",
+  fear: "😨",
+  surprise: "😮",
+  disgust: "🤢",
+  neutral: "😐",
+  contempt: "😒",
+};
 
 /** Un reconocimiento usa una imagen emocional con su expresión esperada: esa es la respuesta. */
 export function recognizable(item: Stimulus | undefined): boolean {

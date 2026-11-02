@@ -201,6 +201,13 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 /* La opción elegida sigue legible aunque los botones queden deshabilitados. */
 .recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
 .recognition-answer { color: var(--color-ink); }
+/* Modo accesible: botones y letra más grandes, pictogramas y nada que se mueva. */
+.recognition-pictogram { display: block; font-size: 2.5rem; line-height: 1; }
+.participant-view--accessible .recognition-options { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-md); }
+.participant-view--accessible .recognition-option { min-height: 7rem; font-size: var(--text-page-title); }
+.participant-view--accessible .participant-situation { font-size: var(--text-page-title); }
+.participant-view--accessible .participant-actions .button { min-height: 3.5rem; }
+.participant-view--accessible *, .participant-view--accessible *::before, .participant-view--accessible *::after { animation: none !important; transition: none !important; }
 .participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
 @media (prefers-reduced-motion: no-preference) {
   .practice-signal-fill { transition: transform 300ms ease-out; }

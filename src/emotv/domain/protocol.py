@@ -19,6 +19,8 @@ MAX_RECOGNITION_OPTIONS = 4
 DEFAULT_RECOGNITION_OPTIONS = 3
 # Historia corta de una situación («A Lucía se le cayó su helado»).
 MAX_SITUATION_CHARS = 200
+# Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
+ACCESSIBLE_PAUSE_FACTOR = 2
 
 
 class ProtocolKind(str, Enum):
@@ -165,6 +167,11 @@ class Protocol:
     for_children fija el público de las sesiones que lo aplican. No necesita
     aprobación del docente (approved_at queda de versiones anteriores). Uno
     usado en una sesión no se edita: se crea una versión nueva.
+
+    accessible activa el modo accesible en la pantalla de la persona: botones y
+    letra más grandes, pictogramas junto a cada emoción, sin animaciones y una
+    pausa más larga tras cada ejercicio o reconocimiento. Pensado para quienes
+    se saturan con facilidad.
     """
 
     id: str
@@ -182,6 +189,7 @@ class Protocol:
     approved_by_user_id: str | None = None
     superseded_at: datetime | None = None
     kind: ProtocolKind | str = ProtocolKind.PRACTICE
+    accessible: bool = False
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id", "name"):
@@ -203,6 +211,8 @@ class Protocol:
                 raise ValueError("Un examen no tiene estímulos ni cuestionarios que configurar")
             if self.for_children:
                 raise ValueError("Un examen simulado es solo para personas adultas")
+            if self.accessible:
+                raise ValueError("Un examen simulado no tiene modo accesible")
         elif not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
         if (self.approved_at is None) != (self.approved_by_user_id is None):

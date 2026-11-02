@@ -60,6 +60,25 @@ Debe usar nombres inventados: el servidor rechaza una situación con DNI,
 correos o teléfonos, con el mismo filtro que usa Emi. Los resultados se
 registran igual que en cualquier reconocimiento.
 
+### Modo accesible
+
+Se activa en el protocolo con la casilla **Modo accesible**, debajo del público
+(`protocols.accessible`, migración `20261102_33_accessible_protocols`). Está
+pensado para quienes se saturan con facilidad y cambia solo la presentación:
+
+- La pantalla de la persona muestra un pictograma junto al nombre de cada
+  emoción. El nombre sigue siendo la etiqueta del botón; el pictograma es un
+  apoyo visual, no una imagen de nadie ni de lo detectado.
+- Botones y letra más grandes, y nada se mueve (sin animaciones ni
+  transiciones). La aplicación no usa sonidos.
+- La pausa tras cada reconocimiento o ejercicio dura el doble
+  (`ACCESSIBLE_PAUSE_FACTOR`).
+- En el editor, los pasos nuevos proponen 2 opciones y 30 s para responder, y
+  el doble del tiempo máximo en una práctica. Se pueden cambiar.
+
+Lo que se registra y se reporta no cambia. Quien conduce ve «modo accesible»
+en el encabezado del paso.
+
 ## En la sesión
 
 1. Va después de la calibración, como los demás pasos durante el analizador.

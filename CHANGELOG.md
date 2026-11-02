@@ -20,6 +20,9 @@ commit de cada grupo. La cronología commit por commit está en
   a la ilustración, con la pregunta «¿Cómo se siente?». El servidor rechaza
   situaciones con DNI, correos o teléfonos. Migración
   `20261102_32_recognition_situations`.
+- Modo accesible en los protocolos: pictogramas junto a cada emoción, botones
+  y letra más grandes, sin animaciones y pausas del doble. El editor propone
+  menos opciones y más tiempo. Migración `20261102_33_accessible_protocols`.
 - Ejercicios de práctica de expresiones en los protocolos: la persona recibe
   una instrucción y ve una señal de 0 a 1; se registra si logró la expresión
   pedida, en cuánto tiempo y si la señal estuvo visible, sin guardar imágenes

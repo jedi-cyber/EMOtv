@@ -89,6 +89,8 @@ class ParticipantView(BaseModel):
     abstract_notice: str | None
     practice: PracticeView | None = None
     recognition: RecognitionView | None = None
+    # Modo accesible del protocolo: pictogramas, botones grandes y sin animaciones.
+    accessible: bool = False
 
 
 def create_guided_router(
@@ -193,8 +195,10 @@ def create_guided_router(
     def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
         view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
-        # practice y recognition solo aparecen en su paso: las imágenes y la estación quedan como antes.
-        return view.model_dump(exclude={name for name in ("practice", "recognition") if getattr(view, name) is None})
+        # practice y recognition solo aparecen en su paso, y accessible solo si el protocolo
+        # lo activa: las imágenes y la estación quedan como antes.
+        hidden = {name for name in ("practice", "recognition") if getattr(view, name) is None}
+        return view.model_dump(exclude=hidden | (set() if view.accessible else {"accessible"}))
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
