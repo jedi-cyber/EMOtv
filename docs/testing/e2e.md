@@ -69,8 +69,25 @@ npx playwright test
 ```
 
 Define las variables en la terminal; no las guardes en archivos del
-repositorio. La cuenta debe haber cambiado ya su contraseña provisional y la
-base debe ser de pruebas.
+repositorio. La base debe ser de pruebas.
+
+La cuenta es de superadministrador, así que entra con segundo factor
+([security.md](../security.md#cuentas-de-gestión-superadmin-y-admin)).
+`global-setup.ts` lo resuelve así, sin escribir nada en archivos:
+
+- Si la cuenta todavía debe configurar su aplicación autenticadora (recién
+  creada o tras `scripts/security/reset_mfa.py`), la configura en memoria y
+  pasa la clave a las pruebas por el entorno. Si tiene la contraseña
+  provisional, la cambia por una aleatoria.
+- Si ya la configuró, define también `E2E_ADMIN_TOTP_SECRET` con su clave
+  (base32), o reinícialo antes de cada ejecución con `reset_mfa.py`.
+  `run_isolated.sh` hace esto último.
+
+Cada ingreso gasta un código y el siguiente espera un intervalo de 30 s, así
+que las pruebas reutilizan el token de las cuentas de gestión (15 minutos).
+Como el admin de la Facultad no puede perder su segundo factor desde la
+aplicación, cada ejecución desactiva el admin `e2e-admin-org-*` anterior y
+crea uno nuevo.
 
 - Con el límite por defecto (`LOGIN_MAX_FAILURES_PER_IP=20` en 15 minutos),
   dos o tres ejecuciones seguidas pueden bloquear tu IP, porque cada ejecución

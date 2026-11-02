@@ -23,9 +23,11 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-SRC_DIR = Path(__file__).resolve().parents[2] / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+ROOT_DIR = Path(__file__).resolve().parents[2]
+# src para emotv y la raíz para reutilizar scripts.security al ejecutarlo como script.
+for path in (ROOT_DIR / "src", ROOT_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from sqlalchemy import inspect  # noqa: E402
 
