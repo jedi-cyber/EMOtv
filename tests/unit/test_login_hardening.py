@@ -55,8 +55,8 @@ class System:
         self.app = FastAPI()
         self.app.include_router(create_auth_router(self.auth, self.users, login_throttle=self.throttle))
         now = datetime.now(timezone.utc)
-        self.users.save(User("u1", "ana@ejemplo.local", self.auth.hash_password(GOOD), Role.ADMIN, now))
-        self.users.save(User("u2", "inactiva@ejemplo.local", self.auth.hash_password(GOOD), Role.ADMIN, now,
+        self.users.save(User("u1", "ana@ejemplo.local", self.auth.hash_password(GOOD), Role.PSYCHOLOGIST, now))
+        self.users.save(User("u2", "inactiva@ejemplo.local", self.auth.hash_password(GOOD), Role.PSYCHOLOGIST, now,
                              is_active=False))
 
     def client(self, ip: str = "10.0.0.1") -> TestClient:

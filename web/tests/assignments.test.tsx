@@ -15,6 +15,9 @@ vi.mock("../src/api/useApiQuery", () => ({
 }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
+const CODE = "123456";
+const confirmed = expect.objectContaining({ headers: { "X-Confirmation-Code": CODE } });
+
 const psychologist = { id: "psy-1", email: "psicologia@ejemplo.local", role: "psychologist" as const, is_active: true };
 
 const accounts = ["uno", "dos", "tres"].map((name, index) =>
@@ -52,11 +55,17 @@ describe("grupos de docentes", () => {
     expect(screen.getByText(/pasará a este grupo/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Asignar" })).toBeDisabled();
     await userEvent.click(screen.getByRole("checkbox", { name: "Seleccionar todos" }));
+    // Sin el código de la aplicación autenticadora no se cambia el grupo.
+    expect(screen.getByRole("button", { name: "Asignar 2 usuarios" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Quitar uno@ejemplo.local" })).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/Código de tu aplicación autenticadora/), CODE);
     await userEvent.click(screen.getByRole("button", { name: "Asignar 2 usuarios" }));
+    // Un solo código confirma todas las peticiones de la acción.
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-2", expect.objectContaining({ method: "PUT" }));
-    expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-3", expect.objectContaining({ method: "PUT" }));
+    expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-3", confirmed);
     await userEvent.click(screen.getByRole("button", { name: "Quitar uno@ejemplo.local" }));
     expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-1", expect.objectContaining({ method: "DELETE" }));
+    expect(apiRequest).toHaveBeenCalledWith("/users/psy-1/assigned-students/st-1", confirmed);
   });
 
   it("filtra por correo y deja marcados los que fallaron", async () => {
@@ -65,6 +74,7 @@ describe("grupos de docentes", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: "Buscar por correo o código" }), "tres");
     expect(screen.queryByRole("checkbox", { name: /dos@/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: /tres@/ }));
+    await userEvent.type(screen.getByLabelText(/Código de tu aplicación autenticadora/), CODE);
     await userEvent.click(screen.getByRole("button", { name: "Asignar 1 usuario" }));
     expect(screen.getByText("No se pudo asignar a: tres@ejemplo.local.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /tres@/ })).toBeChecked();
@@ -79,9 +89,12 @@ describe("grupos de docentes", () => {
     const dialog = screen.getByRole("dialog", { name: "Crear cuenta" });
     await userEvent.type(within(dialog).getByLabelText("Correo electrónico"), "nuevo@ejemplo.local");
     await userEvent.selectOptions(within(dialog).getByLabelText("Papel"), "psychologist");
+    expect(within(dialog).getByRole("button", { name: "Crear cuenta de docente" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByLabelText("Código de tu aplicación autenticadora"), CODE);
     await userEvent.click(within(dialog).getByRole("button", { name: "Crear cuenta de docente" }));
     expect(apiRequest).toHaveBeenCalledWith("/users", expect.objectContaining({
       method: "POST", body: JSON.stringify({ email: "nuevo@ejemplo.local", role: "psychologist" }),
+      headers: { "X-Confirmation-Code": CODE },
     }));
     expect(await screen.findByText("provisional-de-prueba")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

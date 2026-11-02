@@ -19,6 +19,15 @@ class User:
     # Fecha del último restablecimiento hecho por otra cuenta; mientras exista,
     # la persona ve el aviso en su siguiente inicio de sesión.
     password_reset_at: datetime | None = None
+    # Segundo factor de las cuentas de gestión: clave TOTP cifrada (nunca en claro),
+    # cuándo se confirmó y el último intervalo aceptado (un código no sirve dos veces).
+    mfa_secret: str | None = None
+    mfa_enabled_at: datetime | None = None
+    mfa_last_step: int | None = None
+
+    @property
+    def mfa_enabled(self) -> bool:
+        return self.mfa_secret is not None and self.mfa_enabled_at is not None
 
     def __post_init__(self) -> None:
         user_id, email = self.id.strip(), self.email.strip().lower()
@@ -31,6 +40,8 @@ class User:
             raise ValueError("created_at debe incluir zona horaria")
         if self.password_reset_at is not None and self.password_reset_at.tzinfo is None:
             raise ValueError("password_reset_at debe incluir zona horaria")
+        if self.mfa_enabled_at is not None and (self.mfa_enabled_at.tzinfo is None or self.mfa_secret is None):
+            raise ValueError("mfa_enabled_at requiere zona horaria y una clave configurada")
         object.__setattr__(self, "id", user_id)
         object.__setattr__(self, "email", email)
         object.__setattr__(self, "role", role)

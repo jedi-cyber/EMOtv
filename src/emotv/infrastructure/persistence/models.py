@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, String, Integer, LargeBinary, Text, UniqueConstraint, Index, JSON, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, String, Integer, LargeBinary, Text, UniqueConstraint, Index, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -158,6 +158,10 @@ class UserRecord(Base):
     is_test_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Último restablecimiento hecho por otra cuenta: muestra un aviso al siguiente ingreso.
     password_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Segundo factor (TOTP) de las cuentas de gestión: clave cifrada, confirmación y último intervalo usado.
+    mfa_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_last_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class PsychologistAssignmentRecord(Base):

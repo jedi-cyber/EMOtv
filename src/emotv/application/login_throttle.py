@@ -34,11 +34,13 @@ class LoginThrottle:
     def window(self) -> timedelta:
         return timedelta(minutes=self.limits.window_minutes)
 
-    def is_blocked(self, email: str, ip: str) -> bool:
+    def is_blocked(self, email: str, ip: str, *, max_account_failures: int | None = None) -> bool:
+        """``max_account_failures`` endurece el límite de una cuenta (las de gestión)."""
         since = self.clock() - self.window
+        account_limit = min(self.limits.max_failures_per_account,
+                            max_account_failures or self.limits.max_failures_per_account)
         return (self.repository.count_ip_failures(ip, since) >= self.limits.max_failures_per_ip
-                or self.repository.count_account_failures(hash_email(email), ip, since)
-                >= self.limits.max_failures_per_account)
+                or self.repository.count_account_failures(hash_email(email), ip, since) >= account_limit)
 
     def record(self, email: str, ip: str, success: bool) -> None:
         now = self.clock()

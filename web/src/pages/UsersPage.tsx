@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { apiRequest } from "../api/http";
+import { ApiError, apiRequest } from "../api/http";
+import { CONFIRMATION_HEADER } from "../auth/types";
 import type { CurrentUser, UserRole } from "../auth/types";
 import { useAuth } from "../auth/useAuth";
 import { roleNames } from "../auth/roles";
@@ -11,6 +12,7 @@ import { AssignmentsPanel } from "../components/AssignmentsPanel";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { ConfirmationCodeField, isConfirmationCode } from "../components/ConfirmationCodeField";
 
 type CreatedUser = CurrentUser & { temporary_password: string | null };
 
@@ -36,36 +38,45 @@ export function UsersPage() {
   const [resetting, setResetting] = useState<CurrentUser | null>(null);
   const [toggling, setToggling] = useState<CurrentUser | null>(null);
   const [creating, setCreating] = useState(false);
+  // Código del momento de la aplicación autenticadora: el servidor lo pide para cambiar cuentas.
+  const [confirmation, setConfirmation] = useState("");
+  const confirmed = isConfirmationCode(confirmation);
+  const confirmHeaders = () => ({ [CONFIRMATION_HEADER]: confirmation.replace(/\s/g, "") });
+  function failed(reason: unknown, fallback: string) {
+    // Un código rechazado (vencido o equivocado) se borra para escribir el nuevo.
+    if (reason instanceof ApiError && reason.status === 403) setConfirmation("");
+    setError(reason instanceof Error ? reason.message : fallback);
+  }
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(""); setCreated(null);
     try {
       const result = await apiRequest<CreatedUser>("/users", {
-        method: "POST", token,
+        method: "POST", token, headers: confirmHeaders(),
         body: JSON.stringify({ email: email.trim(), role, ...(role === "student" ? { student_code: code.trim() } : {}) }),
       });
       setCreated(result); setEmail(""); setCode(""); setCreating(false);
       await query.reload();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo crear la cuenta."); }
+    } catch (reason) { failed(reason, "No se pudo crear la cuenta."); }
     finally { setBusy(false); }
   }
 
   async function resetPassword(item: CurrentUser) {
     setBusy(true); setError(""); setCreated(null);
     try {
-      const result = await apiRequest<CreatedUser>(`/users/${encodeURIComponent(item.id)}/reset-password`, { method: "POST", token });
+      const result = await apiRequest<CreatedUser>(`/users/${encodeURIComponent(item.id)}/reset-password`, { method: "POST", token, headers: confirmHeaders() });
       setCreated(result);
       await query.reload();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo restablecer la contraseña."); }
+    } catch (reason) { failed(reason, "No se pudo restablecer la contraseña."); }
     finally { setBusy(false); setResetting(null); }
   }
 
   async function toggleActive(item: CurrentUser) {
     setBusy(true); setError("");
     try {
-      await apiRequest(`/users/${encodeURIComponent(item.id)}`, { method: "PATCH", token, body: JSON.stringify({ is_active: !item.is_active }) });
+      await apiRequest(`/users/${encodeURIComponent(item.id)}`, { method: "PATCH", token, headers: confirmHeaders(), body: JSON.stringify({ is_active: !item.is_active }) });
       await query.reload();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo cambiar el estado de la cuenta."); }
+    } catch (reason) { failed(reason, "No se pudo cambiar el estado de la cuenta."); }
     finally { setBusy(false); setToggling(null); }
   }
 
@@ -79,7 +90,7 @@ export function UsersPage() {
     <Modal open={creating} title="Crear cuenta" onClose={() => setCreating(false)} busy={busy}
       footer={<>
         <Button variant="secondary" type="button" disabled={busy} onClick={() => setCreating(false)}>Cancelar</Button>
-        <Button variant="primary" type="submit" form="create-account-form" disabled={busy}>{busy ? "Creando…" : `Crear cuenta de ${roleNames[role].toLowerCase()}`}</Button>
+        <Button variant="primary" type="submit" form="create-account-form" disabled={busy || !confirmed}>{busy ? "Creando…" : `Crear cuenta de ${roleNames[role].toLowerCase()}`}</Button>
       </>}>
     <form id="create-account-form" className="form-stack" onSubmit={(event) => { void create(event); }}>
       <p>Se generará una contraseña provisional única. La persona deberá cambiarla en su primer acceso.</p>
@@ -89,6 +100,7 @@ export function UsersPage() {
         {options.map((item) => <option key={item} value={item}>{roleNames[item]}</option>)}
       </select></label>}
       {role === "student" && <label>Código de usuario<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>}
+      <ConfirmationCodeField value={confirmation} onChange={setConfirmation} disabled={busy} />
     </form>
     </Modal>
     {created?.temporary_password && <Callout variant="info">
@@ -112,12 +124,16 @@ export function UsersPage() {
     </tbody></table></div>}
     <ConfirmDialog open={resetting != null} title="Restablecer clave"
       message={`¿Restablecer la contraseña de ${resetting?.email ?? ""}? Se cerrarán sus sesiones, verá un aviso al ingresar y el cambio quedará en la auditoría.`}
-      confirming={busy} confirmLabel="Restablecer clave" onCancel={() => setResetting(null)}
-      onConfirm={() => { if (resetting) void resetPassword(resetting); }} />
+      confirming={busy} confirmLabel="Restablecer clave" onCancel={() => setResetting(null)} confirmDisabled={!confirmed}
+      onConfirm={() => { if (resetting) void resetPassword(resetting); }}>
+      <ConfirmationCodeField value={confirmation} onChange={setConfirmation} disabled={busy} />
+    </ConfirmDialog>
     <ConfirmDialog open={toggling != null} title={toggling?.is_active ? "Desactivar cuenta" : "Reactivar cuenta"}
       message={toggling?.is_active ? `¿Desactivar la cuenta de ${toggling.email}? No podrá ingresar hasta que la reactives.` : `¿Reactivar la cuenta de ${toggling?.email ?? ""}?`}
       confirming={busy} confirmLabel={toggling?.is_active ? "Desactivar" : "Reactivar"} onCancel={() => setToggling(null)}
-      onConfirm={() => { if (toggling) void toggleActive(toggling); }} />
+      confirmDisabled={!confirmed} onConfirm={() => { if (toggling) void toggleActive(toggling); }}>
+      <ConfirmationCodeField value={confirmation} onChange={setConfirmation} disabled={busy} />
+    </ConfirmDialog>
     {assigning && <AssignmentsPanel key={assigning.id} psychologist={assigning} accounts={users} onClose={() => setAssigning(null)} />}
   </section>;
 }

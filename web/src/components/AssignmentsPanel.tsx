@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, apiRequest } from "../api/http";
 import type { AssignedStudent, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
+import { CONFIRMATION_HEADER } from "../auth/types";
 import type { CurrentUser } from "../auth/types";
 import { useAuth } from "../auth/useAuth";
 import { Callout } from "./Callout";
@@ -9,6 +10,7 @@ import { PageState } from "./PageState";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
 import { Modal } from "./Modal";
+import { ConfirmationCodeField, isConfirmationCode } from "./ConfirmationCodeField";
 
 interface Props {
   psychologist: CurrentUser;
@@ -28,6 +30,10 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Un solo código confirma todas las peticiones de una misma acción.
+  const [confirmation, setConfirmation] = useState("");
+  const confirmed = isConfirmationCode(confirmation);
+  const headers = () => ({ [CONFIRMATION_HEADER]: confirmation.replace(/\s/g, "") });
   const emails = new Map(accounts.map((item) => [item.id, item.email]));
   const label = (item: Student) => emails.get(item.user_id) ?? item.student_code;
   const assigned = assignedQuery.data ?? [];
@@ -50,17 +56,20 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
   async function assign() {
     setBusy(true); setError("");
     const failed: Student[] = [];
+    let rejected = "";
     // Una petición por usuario: el servidor valida y audita cada asignación por separado.
     for (const item of available.filter((student) => selected.has(student.id))) {
       try {
-        await apiRequest(`${base}/${encodeURIComponent(item.id)}`, { method: "PUT", token });
-      } catch {
+        await apiRequest(`${base}/${encodeURIComponent(item.id)}`, { method: "PUT", token, headers: headers() });
+      } catch (reason) {
         failed.push(item);
+        if (reason instanceof ApiError && reason.status === 403) rejected = reason.message;
       }
     }
     // Quedan marcados solo los que fallaron, para reintentarlos.
     setSelected(new Set(failed.map((item) => item.id)));
-    if (failed.length) setError(`No se pudo asignar a: ${failed.map(label).join(", ")}.`);
+    if (rejected) setConfirmation("");
+    if (failed.length) setError(rejected || `No se pudo asignar a: ${failed.map(label).join(", ")}.`);
     await assignedQuery.reload();
     setBusy(false);
   }
@@ -68,9 +77,10 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
   async function remove(studentId: string) {
     setBusy(true); setError("");
     try {
-      await apiRequest(`${base}/${encodeURIComponent(studentId)}`, { method: "DELETE", token });
+      await apiRequest(`${base}/${encodeURIComponent(studentId)}`, { method: "DELETE", token, headers: headers() });
       await assignedQuery.reload();
     } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 403) setConfirmation("");
       setError(reason instanceof ApiError ? reason.message : "No se pudo actualizar el grupo.");
     } finally { setBusy(false); }
   }
@@ -79,12 +89,14 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
   return <Modal open title={`Grupo de ${psychologist.email}`} onClose={onClose} busy={busy}
     footer={<>
       <Button variant="secondary" type="button" disabled={busy} onClick={onClose}>Cerrar</Button>
-      <Button variant="primary" type="button" disabled={busy || count === 0} onClick={() => { void assign(); }}>
+      <Button variant="primary" type="button" disabled={busy || count === 0 || !confirmed} onClick={() => { void assign(); }}>
         {busy ? "Asignando…" : count > 0 ? `Asignar ${count} ${count === 1 ? "usuario" : "usuarios"}` : "Asignar"}
       </Button>
     </>}>
     <div className="form-stack">
       <p>El docente verá las sesiones y los resultados de los usuarios de su grupo. Si eliges un usuario que ya tiene otro docente, pasará a este grupo.</p>
+      <ConfirmationCodeField value={confirmation} onChange={setConfirmation} disabled={busy}
+        label="Código de tu aplicación autenticadora (para agregar o quitar)" />
       {error && <Callout variant="error">{error}</Callout>}
       <h3>En el grupo</h3>
       <PageState {...assignedQuery} empty={!assignedQuery.loading && !assignedQuery.error && assigned.length === 0}
@@ -92,7 +104,7 @@ export function AssignmentsPanel({ psychologist, accounts, onClose }: Props) {
       {assigned.length > 0 && <ul className="card-list">{assigned.map((item) =>
         <li className="card row-card" key={item.id}>
           <div><strong>{label(item)}</strong><span>{item.student_code}</span></div>
-          <Button variant="secondary" size="sm" type="button" disabled={busy} aria-label={`Quitar ${label(item)}`}
+          <Button variant="secondary" size="sm" type="button" disabled={busy || !confirmed} aria-label={`Quitar ${label(item)}`}
             onClick={() => { void remove(item.id); }}>Quitar</Button>
         </li>)}</ul>}
       <fieldset>

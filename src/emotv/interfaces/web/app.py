@@ -42,6 +42,7 @@ from emotv.infrastructure.persistence import (
     create_session_factory,
 )
 from emotv.application.login_throttle import LoginThrottle
+from emotv.application.mfa_service import MfaService
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.identity_router import create_identity_router
 from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
@@ -225,10 +226,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_user_image_router(user_image_service, authentication_service, user_repository))
     app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
                                              user_repository))
+    # Segundo factor de superadmin y admin: al ingresar y antes de cambiar cuentas o grupos.
+    mfa_service = MfaService(user_repository, authentication_service, field_cipher, audit_service)
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
                                               consent_repository, consent_policy_service,
                                               assignments=assignment_repository, audit=audit_service,
-                                              privacy=privacy_settings))
+                                              privacy=privacy_settings, confirm_code=mfa_service.confirm))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
@@ -240,7 +243,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         audit_service, docente_of, retention_months=privacy_settings.session_retention_months)
     login_throttle = LoginThrottle(PostgresLoginAttemptRepository(database_sessions), get_login_limits())
     app.include_router(create_auth_router(authentication_service, user_repository,
-                                          login_throttle=login_throttle))
+                                          login_throttle=login_throttle, mfa=mfa_service))
     app.include_router(create_activity_router(
         activity_catalog,
         authentication_service,

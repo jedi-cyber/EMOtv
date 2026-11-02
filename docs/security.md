@@ -89,6 +89,39 @@ Solo funciona si `DATABASE_URL` apunta a `localhost` o a un host listado en
 `ALLOWED_ADMIN_RESET_HOSTS` (en Docker vale `db`). Así no se puede usar por
 error contra una base remota.
 
+## Cuentas de gestión (superadmin y admin)
+
+Superadmin y admin no ven sesiones, pero pueden restablecer la contraseña de
+un docente, cambiarle el correo o moverle usuarios de grupo, y después entrar
+como ese docente. Por eso tienen protecciones propias:
+
+| Protección | Detalle |
+|------------|---------|
+| Segundo factor (TOTP) | Después de la contraseña piden el código de 6 dígitos de una aplicación autenticadora (Google Authenticator, Microsoft Authenticator u otra). La contraseña sola entrega un token de paso de 5 minutos con audiencia propia, que no sirve como token de acceso. El primer ingreso configura la aplicación: la clave se muestra una sola vez y queda guardada cifrada con `SENSITIVE_DATA_KEY`. |
+| Código no reutilizable | Un código aceptado al ingresar no vuelve a servir. Sin `SENSITIVE_DATA_KEY` estas cuentas no pueden ingresar (`503`). |
+| Confirmación de acciones | Crear, cambiar, desactivar o reactivar cuentas, restablecer contraseñas y agregar o quitar usuarios de un grupo exigen la cabecera `X-Confirmation-Code` con el código del momento (`403` sin ella). Un mismo código confirma las peticiones de una misma acción, nunca uno anterior. Con un token robado no se puede tomar ninguna cuenta. |
+| Bloqueo más estricto | 3 fallos por correo + IP (contraseña y código cuentan juntos) en lugar de 5. El acceso correcto se registra al aceptar el código, para que la contraseña correcta no reinicie el contador de códigos. |
+| Sesión corta | El token de acceso dura 15 minutos (30 en las demás cuentas). |
+| Contraseña más larga | Al menos 16 caracteres al cambiarla. |
+| Auditoría | Cada ingreso, cada código fallido, la configuración del segundo factor y cada confirmación rechazada quedan en `access_audit` (recurso `mfa`), sin contenido. |
+| Sin aplicativo móvil | La API `/mobile` rechaza estas cuentas. |
+
+### Si se pierde el celular
+
+El segundo factor no se reinicia desde la aplicación: con una cuenta robada
+se podría quitar. Lo reinicia el soporte técnico en el servidor:
+
+```powershell
+python scripts/security/reset_mfa.py --email admin@ejemplo.local
+# En Docker:
+docker compose --env-file .env.docker exec api python scripts/security/reset_mfa.py --email admin@ejemplo.local
+```
+
+Borra la clave, cierra las sesiones abiertas y, en el siguiente ingreso,
+después de la contraseña, la cuenta vuelve a configurar la aplicación. Tiene
+la misma restricción de host que `reset_admin_password.py`. Al restablecer la
+contraseña del admin, el superadmin no le quita el segundo factor.
+
 ## Inicio de sesión
 
 ### Límite de intentos
@@ -141,7 +174,7 @@ respuesta no revele qué correos están registrados.
 En `/auth/change-password`, que también usa el primer acceso:
 
 - al menos 12 caracteres (el sistema ya exigía 12, que cumple el mínimo de 10
-  pedido para esta etapa);
+  pedido para esta etapa); 16 en las cuentas de superadmin y admin;
 - distinta del correo;
 - distinta de la contraseña anterior.
 

@@ -8,10 +8,14 @@ from pwdlib import PasswordHash
 
 from emotv.config import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM
 from emotv.application.ports.user_repository import UserRepository
+from emotv.domain.role import MANAGEMENT_ROLES
 from emotv.domain.user import User
 
 # El sistema ya exigía 12 caracteres; se mantiene (cumple el mínimo de 10).
 MIN_PASSWORD_LENGTH = 12
+# Las cuentas de gestión (superadmin y admin) piden más: si se pierden, se pierde todo.
+MIN_PRIVILEGED_PASSWORD_LENGTH = 16
+PRIVILEGED_TOKEN_MINUTES = 15
 _DUMMY_HASH: str | None = None
 
 
@@ -36,8 +40,9 @@ class AuthenticationService:
     def validate_new_password(self, user: User, new_password: str) -> None:
         """Política para cambios de contraseña, incluido el primer acceso."""
 
-        if len(new_password) < MIN_PASSWORD_LENGTH:
-            raise ValueError(f"La contraseña debe tener al menos {MIN_PASSWORD_LENGTH} caracteres.")
+        minimum = MIN_PRIVILEGED_PASSWORD_LENGTH if user.role in MANAGEMENT_ROLES else MIN_PASSWORD_LENGTH
+        if len(new_password) < minimum:
+            raise ValueError(f"La contraseña debe tener al menos {minimum} caracteres.")
         if new_password.strip().lower() == user.email.strip().lower():
             raise ValueError("La contraseña no puede ser igual a tu correo.")
         if self.passwords.verify(new_password, user.password_hash):
@@ -67,8 +72,10 @@ class AuthenticationService:
         """Token de acceso. ``claims`` agrega, por ejemplo, la audiencia del
         aplicativo móvil: un token con audiencia no sirve en la web y viceversa."""
         now = self.clock()
+        if minutes is None:
+            minutes = PRIVILEGED_TOKEN_MINUTES if user.role in MANAGEMENT_ROLES else ACCESS_TOKEN_EXPIRE_MINUTES
         payload = {"sub": user.id, "role": user.role.value, "tv": user.token_version, "iat": now,
-                   "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES if minutes is None else minutes)}
+                   "exp": now + timedelta(minutes=minutes)}
         return jwt.encode({**payload, **(claims or {})}, self.secret_key, algorithm=JWT_ALGORITHM)
 
     def decode_access_token(self, token: str, audience: str | None = None) -> dict[str, object]:

@@ -146,6 +146,10 @@ No se guarda en ningún archivo ni en los logs. Al iniciar sesión, EMOtv pedir�
 cambiarla. Si ya existe un administrador activo, el script se niega a crear
 otro (usa `--force` solo si de verdad necesitas una segunda cuenta).
 
+En el primer ingreso, después de la contraseña, EMOtv pide configurar una
+aplicación autenticadora en el celular: superadmin y admin entran siempre con
+contraseña y código ([security.md](security.md#cuentas-de-gestión-superadmin-y-admin)).
+
 Para crear cuentas de prueba de psicología y estudiante (solo pruebas
 técnicas, nunca personas reales):
 

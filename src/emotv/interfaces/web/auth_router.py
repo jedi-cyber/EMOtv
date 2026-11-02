@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from emotv.application import AuthenticationService, AuthorizationService
 from emotv.application.login_throttle import LoginThrottle
+from emotv.application.mfa_service import MfaService, MfaUnavailable, requires_mfa
 from emotv.application.ports import UserRepository
 from emotv.domain import AccessAction, Role, User
 
@@ -16,8 +17,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    # Vacío mientras una cuenta de gestión no escriba el código de su aplicación.
+    access_token: str | None = None
     token_type: str = "bearer"
+    # Cuentas de gestión: "setup" (configurar la aplicación) o "verify" (escribir el código).
+    mfa: str | None = None
+    mfa_token: str | None = None
+
+
+class MfaTokenRequest(BaseModel):
+    mfa_token: str
+
+
+class MfaCodeRequest(BaseModel):
+    mfa_token: str
+    code: str
+
+
+class MfaSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
 
 
 class UserResponse(BaseModel):
@@ -74,6 +93,10 @@ def create_current_user_dependency(
 LOGIN_FAILED_DETAIL = "Correo o contraseña incorrectos"
 # Igual para el límite por correo+IP y por IP: no revela cuál se alcanzó.
 LOGIN_THROTTLED_DETAIL = "Demasiados intentos de inicio de sesión. Espera unos minutos e inténtalo de nuevo."
+# Las cuentas de gestión se bloquean antes: contraseña y código cuentan juntos.
+PRIVILEGED_MAX_FAILURES = 3
+MFA_EXPIRED_DETAIL = "El ingreso venció. Escribe de nuevo tu correo y contraseña."
+MFA_CODE_DETAIL = "Código incorrecto o ya usado. Escribe el código que muestra ahora tu aplicación."
 
 
 def client_ip(request: Request) -> str:
@@ -86,6 +109,7 @@ def create_auth_router(
     users: UserRepository | None,
     authorization: AuthorizationService | None = None,
     login_throttle: LoginThrottle | None = None,
+    mfa: MfaService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["authentication"])
     policy = authorization or AuthorizationService()
@@ -97,18 +121,36 @@ def create_auth_router(
             raise HTTPException(status_code=503, detail="Autenticación no configurada")
         return authentication, users
 
-    @router.post("/token", response_model=TokenResponse)
-    def login(request: Request, form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
-        auth, _ = require_services()
-        ip = client_ip(request)
-        if login_throttle is not None and login_throttle.is_blocked(form.username, ip):
+    def is_privileged(email: str) -> bool:
+        try:
+            account = users.get_by_email(email) if users is not None else None
+        except ValueError:
+            return False
+        return account is not None and requires_mfa(account)
+
+    def check_throttle(email: str, ip: str) -> None:
+        strict = PRIVILEGED_MAX_FAILURES if is_privileged(email) else None
+        if login_throttle is not None and login_throttle.is_blocked(email, ip, max_account_failures=strict):
             raise HTTPException(
                 status_code=429,
                 detail=LOGIN_THROTTLED_DETAIL,
                 headers={"Retry-After": str(int(login_throttle.window.total_seconds()))},
             )
+
+    def require_mfa() -> MfaService:
+        if mfa is None:
+            raise HTTPException(503, "El segundo factor no está configurado en el servidor")
+        return mfa
+
+    @router.post("/token", response_model=TokenResponse, response_model_exclude_none=True)
+    def login(request: Request, form: OAuth2PasswordRequestForm = Depends()) -> TokenResponse:
+        auth, _ = require_services()
+        ip = client_ip(request)
+        check_throttle(form.username, ip)
         user = auth.authenticate(form.username, form.password)
-        if login_throttle is not None:
+        # En una cuenta de gestión el acceso correcto se registra al aceptar el
+        # código: si se registrara aquí, reiniciaría el contador de códigos fallidos.
+        if login_throttle is not None and (user is None or not requires_mfa(user)):
             login_throttle.record(form.username, ip, success=user is not None)
         if user is None:
             raise HTTPException(
@@ -116,7 +158,47 @@ def create_auth_router(
                 detail=LOGIN_FAILED_DETAIL,
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        if requires_mfa(user):
+            try:
+                pending = require_mfa().pending_token(user)
+            except MfaUnavailable as error:
+                raise HTTPException(503, str(error)) from error
+            return TokenResponse(mfa="verify" if user.mfa_enabled else "setup", mfa_token=pending)
         return TokenResponse(access_token=auth.create_access_token(user))
+
+    def pending_user(token: str) -> User:
+        user = require_mfa().pending_user(token)
+        if user is None:
+            raise HTTPException(401, MFA_EXPIRED_DETAIL)
+        return user
+
+    @router.post("/mfa/setup", response_model=MfaSetupResponse)
+    def mfa_setup(request: MfaTokenRequest) -> MfaSetupResponse:
+        """Primera vez: clave para la aplicación autenticadora. Se muestra una sola vez."""
+        service, user = require_mfa(), pending_user(request.mfa_token)
+        try:
+            secret, uri = service.begin_setup(user)
+        except PermissionError as error:
+            raise HTTPException(409, str(error)) from error
+        except MfaUnavailable as error:
+            raise HTTPException(503, str(error)) from error
+        return MfaSetupResponse(secret=secret, otpauth_uri=uri)
+
+    @router.post("/mfa/verify", response_model=TokenResponse, response_model_exclude_none=True)
+    def mfa_verify(request: Request, body: MfaCodeRequest) -> TokenResponse:
+        auth, _ = require_services()
+        service, user = require_mfa(), pending_user(body.mfa_token)
+        ip = client_ip(request)
+        check_throttle(user.email, ip)
+        try:
+            accepted = service.complete_login(user, body.code)
+        except MfaUnavailable as error:
+            raise HTTPException(503, str(error)) from error
+        if login_throttle is not None:
+            login_throttle.record(user.email, ip, success=accepted is not None)
+        if accepted is None:
+            raise HTTPException(401, MFA_CODE_DETAIL)
+        return TokenResponse(access_token=auth.create_access_token(accepted))
 
     @router.get("/me", response_model=UserResponse)
     def me(user: User = Depends(onboarding_user)) -> UserResponse:
