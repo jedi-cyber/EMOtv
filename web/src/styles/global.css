@@ -343,6 +343,8 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .form-grid .wide { grid-column: span 2; }
 .form-stack { display: grid; gap: var(--space-md); margin-top: var(--space-lg); }
 .form-stack label, .form-stack .form-field { display: grid; gap: var(--space-xs); }
+/* Una casilla dentro de un formulario sigue en línea con su texto. */
+.form-stack .checkbox { display: flex; gap: var(--space-sm); }
 .form-stack textarea { resize: vertical; }
 .recommendation-order { display: grid; gap: var(--space-xs); padding-left: var(--space-lg); }
 .recommendation-order li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-xs); }
