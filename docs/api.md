@@ -64,6 +64,8 @@ formato firmado en papel.
 | `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
 | `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo. `for_children` es obligatorio («¿Para adultos o para niños?») |
 | `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
+| `PUT` | `/protocols/{id}/share` | Docente autor: `{shared}` comparte la versión vigente con su grupo como plantilla (`shared_with_group`) o deja de compartirla |
+| `POST` | `/protocols/{id}/copy` | `201`: copia propia de un protocolo propio («Duplicar») o de una plantilla del docente de la cuenta («Copiar y modificar»). La copia no se comparte; un cuestionario que la cuenta no puede usar no se copia |
 
 Un protocolo es una receta guardada: qué aplicar en una sesión. Se guarda sin
 ejecutarlo y no necesita la aprobación del docente. Uno para niños solo admite
@@ -72,6 +74,13 @@ adultos admite los dos. Una imagen propia pendiente no se admite en ninguno
 (`422` al guardarlo y `409` al usarlo si alguno dejó de servir). `needs_image`
 indica que el docente eliminó o reclasificó una imagen del protocolo: hay que
 reemplazarla.
+
+`accessible` activa el modo accesible en la pantalla de la persona. Una
+**plantilla** es un protocolo que el docente comparte con su grupo, por ejemplo
+«Emociones básicas 4 a 6 años»: sus usuarios la ven en `/protocols` con
+`owned_by_me: false` y `shared_with_group: true`, y la copian para editarla y
+aplicarla; la plantilla misma no se edita ni se aplica sin copiarla. Funciona
+igual que las plantillas de cuestionarios.
 
 ### Imágenes propias
 

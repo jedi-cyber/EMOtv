@@ -85,6 +85,11 @@ class ProtocolRequest(BaseModel):
     accessible: bool = False
 
 
+class ProtocolShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shared: bool
+
+
 class ProtocolResponse(BaseModel):
     id: str
     family_id: str
@@ -98,6 +103,8 @@ class ProtocolResponse(BaseModel):
     steps: list[StepModel]
     created_at: datetime
     owned_by_me: bool
+    # Plantilla que el docente comparte con su grupo.
+    shared_with_group: bool
     used: bool
     # Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla.
     needs_image: bool
@@ -157,7 +164,8 @@ def create_stimulus_router(
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                              option_count=step.option_count, situation=step.situation)
                    for step in item.steps],
-            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
+            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
+            shared_with_group=item.shared_with_group, used=service.is_used(item),
             needs_image=service.needs_image(item))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
@@ -246,6 +254,14 @@ def create_stimulus_router(
     @router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def get_protocol(protocol_id: str, user: User = Depends(current_user)):
         return protocol_response(guarded(lambda: protocol_service().get(user, protocol_id)), user)
+
+    @router.post("/protocols/{protocol_id}/copy", response_model=ProtocolResponse, status_code=201)
+    def copy_protocol(protocol_id: str, user: User = Depends(current_user)):
+        return protocol_response(guarded(lambda: protocol_service().copy(user, protocol_id)), user)
+
+    @router.put("/protocols/{protocol_id}/share", response_model=ProtocolResponse)
+    def share_protocol(protocol_id: str, request: ProtocolShareRequest, user: User = Depends(current_user)):
+        return protocol_response(guarded(lambda: protocol_service().share(user, protocol_id, request.shared)), user)
 
     @router.put("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def edit_protocol(protocol_id: str, request: ProtocolRequest, user: User = Depends(current_user)):

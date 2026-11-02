@@ -9,6 +9,10 @@ protocolo. Una versión usada en una sesión no se edita: editarla crea una
 versión nueva. Si el docente elimina o reclasifica una imagen que un protocolo
 usa, el protocolo queda «Necesita una imagen» hasta que se reemplace.
 
+El docente puede compartir un protocolo suyo con su grupo como plantilla: sus
+usuarios lo ven y lo copian como protocolo propio, que editan y aplican. Una
+plantilla no se aplica sin copiarla.
+
 Los protocolos de examen simulado no pasan por aquí: no se listan, no se editan
 ni se aplican desde el Analizador. Los gestiona ExamService.
 """
@@ -86,19 +90,30 @@ class ProtocolService:
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
             raise PermissionError("Los protocolos los arman usuarios y docentes")
 
+    def _shared_by(self, user: User) -> tuple[str, ...]:
+        """Docente cuyas plantillas ve la cuenta."""
+        if user.role is Role.STUDENT:
+            docente = self.docente_of(user.id)
+            return (docente,) if docente else ()
+        return ()
+
     def can_view(self, user: User, protocol: Protocol) -> bool:
-        """Quien lo armó y el docente de esa cuenta. Un examen no es un protocolo de práctica."""
+        """Quien lo armó, el docente de esa cuenta y, si es una plantilla, los
+        usuarios del grupo de su docente. Un examen no es un protocolo de práctica."""
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
             return False
         if protocol.kind is not ProtocolKind.PRACTICE:
             return False
         if protocol.owner_user_id == user.id:
             return True
+        if protocol.shared_with_group and protocol.owner_user_id in self._shared_by(user):
+            return True
         return user.role is Role.PSYCHOLOGIST and self.docente_of(protocol.owner_user_id) == user.id
 
     def list_for(self, user: User) -> tuple[Protocol, ...]:
         self._require_conductor(user)
-        owners = (user.id,) if user.role is Role.STUDENT else (user.id, *self.group_user_ids(user.id))
+        owners = ((user.id, *self._shared_by(user)) if user.role is Role.STUDENT
+                  else (user.id, *self.group_user_ids(user.id)))
         return tuple(item for item in self.repository.list_current(owners) if self.can_view(user, item))
 
     def get(self, user: User, protocol_id: str) -> Protocol:
@@ -219,6 +234,43 @@ class ProtocolService:
             updated = self.repository.replace(replace(current, **fields))
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, updated.id)
         return updated
+
+    def share(self, user: User, protocol_id: str, shared: bool) -> Protocol:
+        """El docente ofrece un protocolo suyo como plantilla a su grupo."""
+        if not user.is_active or user.role is not Role.PSYCHOLOGIST:
+            raise PermissionError("Solo el docente comparte protocolos con su grupo")
+        protocol = self.get(user, protocol_id)
+        if protocol.owner_user_id != user.id or not protocol.current:
+            raise PermissionError("Comparte la versión vigente de un protocolo tuyo")
+        if protocol.shared_with_group == shared:
+            return protocol
+        updated = self.repository.replace(replace(protocol, shared_with_group=shared))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, protocol.id)
+        return updated
+
+    def copy(self, user: User, protocol_id: str) -> Protocol:
+        """Copia propia y editable de un protocolo propio o de una plantilla del
+        docente. La copia no se comparte. Un cuestionario que la cuenta no puede
+        usar (el docente no lo comparte) no se copia."""
+        self._require_conductor(user)
+        source = self.get(user, protocol_id)
+        if source.owner_user_id != user.id and not source.shared_with_group:
+            raise PermissionError("Solo se copian los protocolos propios o las plantillas de tu docente")
+
+        def usable(questionnaire_id: str | None) -> str | None:
+            if questionnaire_id is None or self.questionnaires is None:
+                return None
+            try:
+                self.questionnaires.get(user, questionnaire_id)
+            except QuestionnaireNotFound:
+                return None
+            return questionnaire_id
+
+        pre = usable(source.pre_questionnaire_id)
+        return self.create(user, ProtocolDraft(
+            name=source.name, description=source.description, for_children=source.for_children, steps=source.steps,
+            pre_questionnaire_id=pre, post_questionnaire_id=usable(source.post_questionnaire_id) if pre else None,
+            accessible=source.accessible))
 
     # --- Uso en una sesión ---------------------------------------------------
 

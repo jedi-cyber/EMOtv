@@ -126,6 +126,8 @@ export interface Protocol {
   steps: ProtocolStep[];
   created_at: string;
   owned_by_me: boolean;
+  /** Plantilla que el docente comparte con su grupo; sus usuarios la copian. */
+  shared_with_group?: boolean;
   used: boolean;
   /** Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla. */
   needs_image: boolean;

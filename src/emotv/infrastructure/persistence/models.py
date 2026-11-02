@@ -367,6 +367,9 @@ class ProtocolRecord(Base):
     # Modo accesible en la pantalla de la persona (migración 20261102_33).
     accessible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
                                              server_default=text("false"))
+    # Plantilla que el docente comparte con su grupo (migración 20261102_34).
+    shared_with_group: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                    server_default=text("false"))
     # Cuestionario previo opcional y, solo si hay previo, uno posterior.
     pre_questionnaire_id: Mapped[str | None] = mapped_column(
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True)

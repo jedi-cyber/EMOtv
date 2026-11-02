@@ -133,6 +133,14 @@ export function ProtocolsPage() {
     finally { setBusy(false); }
   }
 
+  /** Copiar una plantilla del docente (o duplicar uno propio) y compartir uno propio con el grupo. */
+  async function run(action: () => Promise<string>) {
+    setBusy(true); setError(""); setMessage("");
+    try { setMessage(await action()); await query.reload(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
+    finally { setBusy(false); }
+  }
+
   async function addValidation() {
     setBusy(true); setError(""); setMessage("");
     try {
@@ -338,6 +346,8 @@ export function ProtocolsPage() {
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}
           {item.accessible && <StatusChip tone="neutral">Modo accesible</StatusChip>}
+          {!item.owned_by_me && item.shared_with_group && <StatusChip tone="neutral">Plantilla de tu docente</StatusChip>}
+          {item.owned_by_me && item.shared_with_group && <StatusChip tone="progress">Compartido con tu grupo</StatusChip>}
           {item.used && <StatusChip tone="neutral">Usado en sesiones</StatusChip>}
           {item.needs_image && <StatusChip tone="error">Necesita una imagen</StatusChip>}
         </span>
@@ -345,6 +355,15 @@ export function ProtocolsPage() {
       <div className="inline-actions">
         {item.owned_by_me && !item.needs_image && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
         {item.owned_by_me && <Button onClick={() => openEditor(item)}>Editar</Button>}
+        {(item.owned_by_me || item.shared_with_group) && <Button variant={item.owned_by_me ? "secondary" : "primary"} disabled={busy}
+          onClick={() => { void run(async () => {
+            await apiRequest(`/protocols/${encodeURIComponent(item.id)}/copy`, { method: "POST", token });
+            return `Se agregó una copia de «${item.name}» a tus protocolos. Puedes editarla y usarla en el Analizador.`;
+          }); }}>{item.owned_by_me ? "Duplicar" : "Copiar y modificar"}</Button>}
+        {isDocente && item.owned_by_me && <Button disabled={busy} onClick={() => { void run(async () => {
+          await apiRequest(`/protocols/${encodeURIComponent(item.id)}/share`, { method: "PUT", token, body: JSON.stringify({ shared: !item.shared_with_group }) });
+          return item.shared_with_group ? "Tu grupo ya no ve este protocolo como plantilla." : "Tu grupo puede copiar este protocolo como plantilla.";
+        }); }}>{item.shared_with_group ? "Dejar de compartir" : "Compartir con mi grupo"}</Button>}
       </div>
     </li>)}</ul>}
   </section>;

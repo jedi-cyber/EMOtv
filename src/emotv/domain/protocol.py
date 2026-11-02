@@ -172,6 +172,9 @@ class Protocol:
     letra más grandes, pictogramas junto a cada emoción, sin animaciones y una
     pausa más larga tras cada ejercicio o reconocimiento. Pensado para quienes
     se saturan con facilidad.
+
+    shared_with_group: el docente lo ofrece como plantilla a los usuarios de su
+    grupo, que lo copian como protocolo propio (como con los cuestionarios).
     """
 
     id: str
@@ -190,6 +193,7 @@ class Protocol:
     superseded_at: datetime | None = None
     kind: ProtocolKind | str = ProtocolKind.PRACTICE
     accessible: bool = False
+    shared_with_group: bool = False
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id", "name"):
@@ -211,8 +215,8 @@ class Protocol:
                 raise ValueError("Un examen no tiene estímulos ni cuestionarios que configurar")
             if self.for_children:
                 raise ValueError("Un examen simulado es solo para personas adultas")
-            if self.accessible:
-                raise ValueError("Un examen simulado no tiene modo accesible")
+            if self.accessible or self.shared_with_group:
+                raise ValueError("Un examen simulado no tiene modo accesible ni se comparte como plantilla")
         elif not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
         if (self.approved_at is None) != (self.approved_by_user_id is None):
