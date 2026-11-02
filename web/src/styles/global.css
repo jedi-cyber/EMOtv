@@ -194,6 +194,9 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .practice-signal { display: grid; place-items: center; width: min(60vw, 240px); aspect-ratio: 1; border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-lg); background: var(--color-neutral-soft); }
 .practice-signal-fill { width: 100%; height: 100%; border-radius: var(--radius-lg); background: var(--color-primary); transform: scale(max(0.08, var(--practice-level, 0))); }
 .participant-achieved { min-height: 1.5em; margin: 0; color: var(--color-success); font-size: var(--text-section-title); font-weight: var(--weight-bold); }
+/* Reconocimiento: opciones grandes, fáciles de tocar para un niño. */
+.recognition-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-sm); width: 100%; }
+.recognition-option { min-height: 3.5rem; font-size: var(--text-section-title); }
 .participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
 @media (prefers-reduced-motion: no-preference) {
   .practice-signal-fill { transition: transform 300ms ease-out; }

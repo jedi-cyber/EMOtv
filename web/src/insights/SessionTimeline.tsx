@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { AnswerValue, MarkerKind, SessionTimeline as Timeline } from "../api/types";
 import { practiceTargetNames } from "../stimuli/labels";
-import { practiceOutcomeNames, secondsText } from "./StimulusMetrics";
+import { practiceOutcomeNames, recognitionOutcomeNames, secondsText } from "./StimulusMetrics";
 
 const WIDTH = 1000;
 const LABEL = 170;
@@ -32,9 +32,19 @@ function answerText(value: AnswerValue | null) {
 /** Un ejercicio de práctica con su resultado, tal como ocurrió. */
 function practiceText(item: Timeline["lanes"]["stimuli"][number]) {
   const target = practiceTargetNames[item.target_expression ?? ""] ?? "expresión pedida";
-  const outcome = item.outcome ? practiceOutcomeNames[item.outcome].toLowerCase() : item.skipped ? "se saltó" : "en curso";
+  const outcome = item.outcome && item.outcome !== "answered" ? practiceOutcomeNames[item.outcome].toLowerCase()
+    : item.skipped ? "se saltó" : "en curso";
   const when = item.outcome === "achieved" && item.seconds_to_achieve != null ? ` a los ${secondsText(item.seconds_to_achieve)}` : "";
   return `${target} · ${outcome}${when}`;
+}
+
+/** Un reconocimiento con la opción elegida, tal como ocurrió. */
+function recognitionText(item: Timeline["lanes"]["stimuli"][number]) {
+  const target = practiceTargetNames[item.target_expression ?? ""] ?? "emoción";
+  if (!item.outcome) return `«${item.title}» (${target}) · ${item.skipped ? "se saltó" : "en curso"}`;
+  const chosen = item.chosen_expression ? `: ${practiceTargetNames[item.chosen_expression] ?? item.chosen_expression}` : "";
+  const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
+  return `«${item.title}» (${target}) · ${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase()}${chosen}${when}`;
 }
 
 interface Event { time: number; text: string }
@@ -62,6 +72,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
     ...questionnaires.map((item) => ({ time: item.time, text: `Cuestionario ${item.moment === "pre" ? "previo" : "posterior"} «${item.title}»: ${item.answers.map((answer) => `${answer.question} ${answerText(answer.answer)}`).join("; ")}` })),
     ...stimuli.map((item) => ({ time: item.start ?? 0, text: item.kind === "practice"
       ? `Ejercicio de práctica: ${practiceText(item)}`
+      : item.kind === "recognition" ? `¿Qué emoción es? ${recognitionText(item)}`
       : `Aparece el estímulo «${item.title}»${item.skipped ? " (se saltó)" : ""}` })),
     ...captures.map((item) => ({ time: item.time, text: `Captura: ${item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "sin expresión estimada"}${item.quality === "flagged" ? ", marcada por calidad" : ""}` })),
     ...said.map((item) => ({ time: item.time, text: `Dijo ver en «${item.title}»: ${item.text}` })),
@@ -77,6 +88,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
       <rect x={x(item.start)} y={y(1) - 12} width={Math.max(4, x(item.end ?? duration) - x(item.start))} height={24} rx={3}
         className={item.skipped ? "timeline-bar timeline-bar-skipped" : "timeline-bar"} />
       <title>{item.kind === "practice" ? `${seconds(item.start ?? 0)} · Ejercicio: ${practiceText(item)}`
+        : item.kind === "recognition" ? `${seconds(item.start ?? 0)} · ¿Qué emoción es? ${recognitionText(item)}`
         : `${seconds(item.start ?? 0)} · ${item.title}${item.kind === "abstract" ? " (abstracta)" : ""}${item.skipped ? " · se saltó" : ""}`}</title>
     </g>),
     captures: captures.map((item, index) => <g key={index}>

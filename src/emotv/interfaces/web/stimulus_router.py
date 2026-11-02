@@ -19,7 +19,7 @@ from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import MAX_EXPOSURE_SECONDS, MAX_STEPS, PRACTICE_TARGETS
+from emotv.domain.protocol import DEFAULT_RECOGNITION_OPTIONS, MAX_EXPOSURE_SECONDS, MAX_STEPS, PRACTICE_TARGETS
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -52,8 +52,9 @@ class StimulusActive(BaseModel):
 class StepModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
-    # sostiene; la imagen es una ilustración opcional.
-    kind: Literal["stimulus", "practice"] = "stimulus"
+    # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
+    # una imagen emocional y la persona elige qué emoción es.
+    kind: Literal["stimulus", "practice", "recognition"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
@@ -63,6 +64,9 @@ class StepModel(BaseModel):
     target_expression: str | None = Field(default=None, max_length=32)
     # Los límites los valida el dominio, con sus mensajes en español.
     hold_seconds: int | None = None
+    # Solo un reconocimiento: cuántas opciones se muestran. Su respuesta
+    # correcta (target_expression) la toma el servidor de la imagen.
+    option_count: int | None = None
 
 
 class ProtocolRequest(BaseModel):
@@ -144,7 +148,8 @@ def create_stimulus_router(
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer,
-                             target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+                             target_expression=step.target_expression, hold_seconds=step.hold_seconds,
+                             option_count=step.option_count)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
             needs_image=service.needs_image(item))
@@ -153,7 +158,9 @@ def create_stimulus_router(
         try:
             steps = tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                        step.record_verbal_response, step.shown_before_analyzer, kind=step.kind,
-                                       target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+                                       target_expression=step.target_expression, hold_seconds=step.hold_seconds,
+                                       option_count=(DEFAULT_RECOGNITION_OPTIONS if step.kind == "recognition"
+                                                     and step.option_count is None else step.option_count))
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

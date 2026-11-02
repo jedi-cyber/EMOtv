@@ -17,10 +17,21 @@ from typing import Any, Literal
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.session_insights_service import SessionInsightsService
-from emotv.application.session_metrics import practice_by_target, practice_totals
+from emotv.application.session_metrics import (
+    practice_by_target,
+    practice_totals,
+    recognition_by_target,
+    recognition_totals,
+)
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.expression_info import EXPRESSION_KEYS
-from emotv.domain.guided_session import PRACTICE_NOTICE, CaptureQuality, PracticeResult
+from emotv.domain.guided_session import (
+    PRACTICE_NOTICE,
+    RECOGNITION_NOTICE,
+    CaptureQuality,
+    PracticeResult,
+    RecognitionResult,
+)
 from emotv.domain.questionnaire import FACES, QuestionKind
 from emotv.domain.role import Role
 from emotv.domain.session import EmotionalSession
@@ -124,6 +135,7 @@ class SessionStatisticsService:
             "coincidence": self._coincidence(selected),
             # Aparte de la coincidencia de estímulos: en un ejercicio se pide la expresión.
             "practice": self._practice(selected),
+            "recognition": self._recognition(selected),
             "protocols": self._protocol_options(in_scope),
             **self._questionnaires(selected, filters.questionnaire_id),
         }
@@ -200,6 +212,19 @@ class SessionStatisticsService:
         by_protocol.sort(key=lambda row: row["name"].lower())
         return {"sessions": len(per_session), "totals": practice_totals(everything),
                 "by_protocol": by_protocol, "by_target": practice_by_target(everything), "notice": PRACTICE_NOTICE}
+
+    def _recognition(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
+        """Reconocimientos de las sesiones elegidas: totales y por emoción de la
+        imagen. None si ninguna sesión tuvo reconocimientos."""
+        per_session: list[list[RecognitionResult]] = [
+            list(self.insights.guided.list_recognition_results(session.id)) if session.protocol_id else []
+            for session in sessions]
+        per_session = [results for results in per_session if results]
+        if not per_session:
+            return None
+        everything = [item for results in per_session for item in results]
+        return {"sessions": len(per_session), "totals": recognition_totals(everything),
+                "by_target": recognition_by_target(everything), "notice": RECOGNITION_NOTICE}
 
     @staticmethod
     def _practice_row(results: list[PracticeResult]) -> dict[str, Any]:

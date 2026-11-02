@@ -449,12 +449,15 @@ class QuestionnaireResponseRecord(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice')"
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition')"
 PROTOCOL_STEP_STIMULUS = "kind = 'practice' OR stimulus_id IS NOT NULL"
 PROTOCOL_STEP_PRACTICE = (
-    "(kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL) OR "
+    "(kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
     "(kind = 'practice' AND target_expression IS NOT NULL AND hold_seconds IS NOT NULL "
-    "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0)")
+    "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0 "
+    "AND option_count IS NULL) OR "
+    "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0)")
 
 
 class ProtocolStepRecord(Base):
@@ -479,6 +482,7 @@ class ProtocolStepRecord(Base):
                                       server_default=text("'stimulus'"))
     target_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    option_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -575,6 +579,37 @@ class VerbalResponseRecord(Base):
     text_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class RecognitionResultRecord(Base):
+    """Resultado de un paso de reconocimiento: opciones mostradas (separadas por
+    comas) y la elegida. Nunca imágenes ni datos de la cámara."""
+
+    __tablename__ = "recognition_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", name="uq_recognition_results_session_step"),
+        CheckConstraint("outcome IN ('answered', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_recognition_results_outcome"),
+        CheckConstraint("(outcome = 'answered') = (chosen_expression IS NOT NULL) "
+                        "AND (outcome = 'answered') = (seconds_to_answer IS NOT NULL) "
+                        "AND (outcome = 'answered') = (answered_by IS NOT NULL)",
+                        name="ck_recognition_results_answered"),
+        CheckConstraint("answered_by IS NULL OR answered_by IN ('participant', 'conductor')",
+                        name="ck_recognition_results_answered_by"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    stimulus_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    target_expression: Mapped[str] = mapped_column(String(32), nullable=False)
+    options: Mapped[str] = mapped_column(String(160), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    chosen_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seconds_to_answer: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answered_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PracticeResultRecord(Base):

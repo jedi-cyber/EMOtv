@@ -9,6 +9,13 @@ commit de cada grupo. La cronología commit por commit está en
 ## [Unreleased]
 
 ### Añadido
+- Paso de reconocimiento «¿Qué emoción es?» en los protocolos. Se muestra una
+  imagen emocional del banco y la persona elige entre 2 y 4 opciones que se
+  eligen solas. Después lee el nombre de la emoción de la imagen. La cámara no
+  se analiza en ese paso. Se registra lo elegido, el tiempo y quién respondió.
+  Incluye métricas, línea de tiempo, reporte, estadísticas y el contrato móvil
+  4.2 ([docs/emotion-recognition.md](docs/emotion-recognition.md)).
+- Migración `20261102_31_recognition_steps`.
 - Ejercicios de práctica de expresiones en los protocolos: la persona recibe
   una instrucción y ve una señal de 0 a 1; se registra si logró la expresión
   pedida, en cuánto tiempo y si la señal estuvo visible, sin guardar imágenes

@@ -13,6 +13,10 @@ MAX_HOLD_SECONDS = 10
 # el protocolo decide; la validación con adultos muestra cuáles se registran mejor
 # (docs/expression-practice.md, §14.1).
 PRACTICE_TARGETS = EXPRESSION_KEYS
+# Opciones de un paso de reconocimiento: la correcta y las distractoras.
+MIN_RECOGNITION_OPTIONS = 2
+MAX_RECOGNITION_OPTIONS = 4
+DEFAULT_RECOGNITION_OPTIONS = 3
 
 
 class ProtocolKind(str, Enum):
@@ -25,10 +29,13 @@ class ProtocolKind(str, Enum):
 
 class StepKind(str, Enum):
     """Estímulo: una imagen con su captura automática. Práctica: se pide una
-    expresión y la persona ve una señal que crece al acercarse a ella."""
+    expresión y la persona ve una señal que crece al acercarse a ella.
+    Reconocimiento: se muestra una imagen emocional y la persona elige qué
+    emoción es entre unas pocas opciones."""
 
     STIMULUS = "stimulus"
     PRACTICE = "practice"
+    RECOGNITION = "recognition"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +52,12 @@ class ProtocolStep:
     tiempo que debe sostenerse y exposure_seconds el tiempo máximo. stimulus_id
     es opcional: una ilustración de apoyo. No hay captura automática, respuesta
     verbal ni paso antes del analizador (la práctica necesita la cámara).
+
+    En un reconocimiento, stimulus_id es una imagen emocional del banco y
+    target_expression su expresión esperada: la respuesta correcta, que copia
+    el servicio de protocolos (quien arma el protocolo no la escribe).
+    option_count es cuántas opciones se muestran y exposure_seconds el tiempo
+    máximo para responder. No analiza la cámara.
     """
 
     stimulus_id: str | None
@@ -55,12 +68,13 @@ class ProtocolStep:
     kind: StepKind | str = StepKind.STIMULUS
     target_expression: str | None = None
     hold_seconds: int | None = None
+    option_count: int | None = None
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
         object.__setattr__(self, "kind", kind)
         stimulus_id = self.stimulus_id.strip() if isinstance(self.stimulus_id, str) else self.stimulus_id
-        if kind is StepKind.STIMULUS and not stimulus_id:
+        if kind in (StepKind.STIMULUS, StepKind.RECOGNITION) and not stimulus_id:
             raise ValueError("Cada paso indica un estímulo")
         if stimulus_id is not None and not isinstance(stimulus_id, str):
             raise TypeError("stimulus_id debe ser un texto")
@@ -74,9 +88,27 @@ class ProtocolStep:
         if not 0 <= self.capture_after_seconds <= self.exposure_seconds:
             raise ValueError("La captura automática ocurre durante la exposición")
         if kind is StepKind.STIMULUS:
-            if self.target_expression is not None or self.hold_seconds is not None:
+            if self.target_expression is not None or self.hold_seconds is not None or self.option_count is not None:
                 raise ValueError("Un paso de estímulo no tiene expresión pedida ni tiempo de sostén")
             return
+        if self.record_verbal_response or self.shown_before_analyzer:
+            raise ValueError("Una práctica o un reconocimiento no registra respuesta verbal ni va antes "
+                             "del analizador")
+        if self.capture_after_seconds != 0:
+            raise ValueError("Una práctica o un reconocimiento no tiene captura automática")
+        if kind is StepKind.RECOGNITION:
+            if self.target_expression is not None and self.target_expression not in EXPRESSION_KEYS:
+                raise ValueError("La expresión de la imagen no es válida")
+            if self.hold_seconds is not None:
+                raise ValueError("Un reconocimiento no tiene tiempo de sostén")
+            if isinstance(self.option_count, bool) or not isinstance(self.option_count, int):
+                raise TypeError("option_count debe ser un entero")
+            if not MIN_RECOGNITION_OPTIONS <= self.option_count <= MAX_RECOGNITION_OPTIONS:
+                raise ValueError(f"Un reconocimiento muestra entre {MIN_RECOGNITION_OPTIONS} y "
+                                 f"{MAX_RECOGNITION_OPTIONS} opciones")
+            return
+        if self.option_count is not None:
+            raise ValueError("Una práctica no tiene opciones")
         if self.target_expression not in PRACTICE_TARGETS:
             raise ValueError("Una práctica indica la expresión que se pide")
         if isinstance(self.hold_seconds, bool) or not isinstance(self.hold_seconds, int):
@@ -85,10 +117,6 @@ class ProtocolStep:
             raise ValueError(f"La expresión se sostiene entre 1 y {MAX_HOLD_SECONDS} segundos")
         if self.hold_seconds >= self.exposure_seconds:
             raise ValueError("El tiempo máximo de la práctica es mayor que el tiempo de sostén")
-        if self.capture_after_seconds != 0:
-            raise ValueError("Una práctica no tiene captura automática")
-        if self.record_verbal_response or self.shown_before_analyzer:
-            raise ValueError("Una práctica no registra respuesta verbal ni va antes del analizador")
 
     @classmethod
     def practice(cls, target_expression: str, hold_seconds: int, max_seconds: int,
@@ -96,9 +124,19 @@ class ProtocolStep:
         return cls(illustration_id, max_seconds, 0, kind=StepKind.PRACTICE,
                    target_expression=target_expression, hold_seconds=hold_seconds)
 
+    @classmethod
+    def recognition(cls, stimulus_id: str, max_seconds: int, option_count: int = DEFAULT_RECOGNITION_OPTIONS,
+                    target_expression: str | None = None) -> ProtocolStep:
+        return cls(stimulus_id, max_seconds, 0, kind=StepKind.RECOGNITION, target_expression=target_expression,
+                   option_count=option_count)
+
     @property
     def is_practice(self) -> bool:
         return self.kind is StepKind.PRACTICE
+
+    @property
+    def is_recognition(self) -> bool:
+        return self.kind is StepKind.RECOGNITION
 
 
 @dataclass(frozen=True, slots=True)

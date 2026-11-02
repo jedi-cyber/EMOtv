@@ -1,9 +1,13 @@
-import type { MetricCapture, PracticeOutcome, SessionMetrics, SessionPractice } from "../api/types";
+import type { MetricCapture, PracticeOutcome, RecognitionOutcome, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
 import { Callout } from "../components/Callout";
 import { practiceTargetNames } from "../stimuli/labels";
 
 export const practiceOutcomeNames: Record<PracticeOutcome, string> = {
   achieved: "Logró la expresión pedida", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
+};
+// Cómo terminó cada reconocimiento: la opción elegida se nombra aparte.
+export const recognitionOutcomeNames: Record<RecognitionOutcome, string> = {
+  answered: "Respondió", timed_out: "Terminó el tiempo sin respuesta", skipped: "Se saltó", stopped: "La sesión se detuvo",
 };
 export const secondsText = (value: number) => `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} s`;
 
@@ -52,6 +56,41 @@ export function PracticeMetrics({ practice }: { practice: SessionPractice }) {
   </section>;
 }
 
+/** Reconocimientos de una sesión («¿Qué emoción es?»): qué se eligió, sin valorar a la persona. */
+export function RecognitionMetrics({ recognition }: { recognition: SessionRecognition }) {
+  const { totals } = recognition;
+  const name = (key: string | null) => (key ? practiceTargetNames[key] ?? key : "—");
+  return <section className="form-stack" aria-label="Reconocimiento de emociones">
+    <h3>Reconocimiento de emociones</h3>
+    <Callout variant="info" role="note">{recognition.notice}</Callout>
+    <p><strong>{totals.sentence}</strong></p>
+    {totals.timed_out > 0 && <p className="muted">{totals.timed_out} {totals.timed_out === 1 ? "terminó" : "terminaron"} sin respuesta y {totals.timed_out === 1 ? "cuenta" : "cuentan"} en el total.</p>}
+    {(totals.skipped > 0 || totals.stopped > 0 || totals.not_reached > 0) && <p className="muted">
+      No cuentan en el total: {[
+        totals.skipped > 0 && `${totals.skipped} ${totals.skipped === 1 ? "se saltó" : "se saltaron"}`,
+        totals.stopped > 0 && `${totals.stopped} quedó a medias al detener la sesión`,
+        totals.not_reached > 0 && `${totals.not_reached} sin aplicar`,
+      ].filter(Boolean).join(", ")}.</p>}
+    <div className="table-wrap"><table><thead><tr>
+      <th>Paso</th><th>Emoción de la imagen</th><th>Opciones</th><th>Resultado</th><th>Eligió</th><th>Hasta responder</th>
+    </tr></thead><tbody>{recognition.exercises.map((item) => <tr key={item.step_index}>
+      <td>{item.step_index + 1}</td>
+      <td>{name(item.target_expression)}</td>
+      <td>{item.options ? item.options.map(name).join(", ") : "—"}</td>
+      <td>{item.outcome ? recognitionOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
+      <td>{name(item.chosen_expression)}{item.answered_by === "conductor" ? <span className="muted"> (registró quien conduce)</span> : null}</td>
+      <td>{item.seconds_to_answer != null ? secondsText(item.seconds_to_answer) : "—"}</td>
+    </tr>)}</tbody></table></div>
+    {recognition.by_target.length > 1 && <div className="table-wrap"><table><thead><tr>
+      <th>Emoción de la imagen</th><th>La eligió</th><th>Eligió en su lugar</th>
+    </tr></thead><tbody>{recognition.by_target.map((row) => <tr key={row.target_expression}>
+      <td>{name(row.target_expression)}</td>
+      <td>{row.matched} de {row.applied}</td>
+      <td>{row.other_choices.length ? row.other_choices.map((item) => `${name(item.expression)} (${item.count})`).join(", ") : "—"}</td>
+    </tr>)}</tbody></table></div>}
+  </section>;
+}
+
 /** Métricas por estímulo: describen lo registrado, no lo interpretan. */
 export function StimulusMetrics({ metrics, expressionLabel }: { metrics: SessionMetrics; expressionLabel: (key: string | null) => string }) {
   return <div className="form-stack">
@@ -86,5 +125,6 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
       </li>)}</ul>
     </>}
     {metrics.practice && <PracticeMetrics practice={metrics.practice} />}
+    {metrics.recognition && <RecognitionMetrics recognition={metrics.recognition} />}
   </div>;
 }

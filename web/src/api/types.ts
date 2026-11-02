@@ -91,10 +91,11 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
-export type StepKind = "stimulus" | "practice";
+export type StepKind = "stimulus" | "practice" | "recognition";
 
 export interface ProtocolStep {
-  /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional. */
+  /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
+   * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es. */
   kind?: StepKind;
   stimulus_id: string | null;
   exposure_seconds: number;
@@ -102,8 +103,11 @@ export interface ProtocolStep {
   record_verbal_response: boolean;
   /** Solo imágenes abstractas: se muestran antes de la calibración, sin capturas. */
   shown_before_analyzer: boolean;
+  /** En un reconocimiento la pone el servidor: la expresión esperada de la imagen. */
   target_expression?: string | null;
   hold_seconds?: number | null;
+  /** Solo un reconocimiento: cuántas opciones se muestran (2 a 4). */
+  option_count?: number | null;
 }
 
 export interface Protocol {
@@ -237,6 +241,7 @@ export interface GuidedStep {
   step_kind?: StepKind;
   target_expression?: string | null;
   hold_seconds?: number | null;
+  option_count?: number | null;
 }
 
 /** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
@@ -255,6 +260,28 @@ export interface GuidedPracticeResult {
   peak_level: number;
   relative_to_calibration: boolean;
   feedback_visible: boolean;
+}
+
+export type RecognitionOutcome = "answered" | "timed_out" | "skipped" | "stopped";
+
+/** Reconocimiento en curso para quien conduce: las opciones, la de la imagen y la elegida. */
+export interface GuidedRecognition {
+  target_expression: string;
+  options: string[];
+  chosen_expression: string | null;
+  outcome: RecognitionOutcome | null;
+}
+
+export interface GuidedRecognitionResult {
+  step_index: number;
+  stimulus_id: string;
+  target_expression: string;
+  options: string[];
+  outcome: RecognitionOutcome;
+  chosen_expression: string | null;
+  matched: boolean | null;
+  seconds_to_answer: number | null;
+  answered_by: "participant" | "conductor" | null;
 }
 
 export interface GuidedCapture {
@@ -297,6 +324,8 @@ export interface GuidedState {
   practice_feedback?: boolean;
   practice?: GuidedPractice | null;
   practice_results?: GuidedPracticeResult[];
+  recognition?: GuidedRecognition | null;
+  recognition_results?: GuidedRecognitionResult[];
 }
 
 /** Lo único que recibe la pantalla de la persona evaluada. */
@@ -310,6 +339,15 @@ export interface ParticipantPractice {
   frame_interval_ms: number;
 }
 
+/** Reconocimiento en la pantalla de la persona: la pregunta, las opciones y, al
+ * terminar, el nombre de la emoción de la imagen (sin decir si acertó). */
+export interface ParticipantRecognition {
+  question: string;
+  options: { key: string; label: string }[];
+  chosen: string | null;
+  message: string | null;
+}
+
 export interface ParticipantViewState {
   phase: GuidedPhase;
   message: string | null;
@@ -319,6 +357,7 @@ export interface ParticipantViewState {
   frame_interval_ms: number;
   abstract_notice: string | null;
   practice?: ParticipantPractice | null;
+  recognition?: ParticipantRecognition | null;
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
@@ -330,8 +369,9 @@ export interface SessionTimeline {
   lanes: {
     questionnaires: { time: number; moment: QuestionnaireMoment; title: string; answers: { question: string; kind: QuestionKind; answer: AnswerValue | null }[] }[];
     stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean;
-      /** Solo en un ejercicio de práctica (kind «practice»). */
-      target_expression?: string | null; outcome?: PracticeOutcome | null; seconds_to_achieve?: number | null }[];
+      /** Solo en un ejercicio de práctica (kind «practice») o un reconocimiento (kind «recognition»). */
+      target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | null;
+      seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null }[];
     captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
     said: { time: number; step_index: number; title: string; text: string }[];
     markers: { time: number; kind: MarkerKind; note: string | null }[];
@@ -386,6 +426,38 @@ export interface SessionPractice {
   notice: string;
 }
 
+/** Totales de reconocimiento: describen las respuestas, sin valorar a la persona. */
+export interface RecognitionTotals {
+  applied: number;
+  matched: number;
+  timed_out: number;
+  skipped: number;
+  stopped: number;
+  average_seconds_to_answer: number | null;
+  sentence: string;
+}
+
+export interface RecognitionRow {
+  target_expression: string;
+  applied: number;
+  matched: number;
+  timed_out: number;
+  skipped: number;
+  stopped: number;
+  /** Lo que se eligió en lugar de la emoción de la imagen, contado. */
+  other_choices: { expression: string; count: number }[];
+}
+
+export interface SessionRecognition {
+  exercises: { step_index: number; stimulus_id: string; target_expression: string; max_seconds: number;
+    /** null: la sesión no llegó a este paso. */
+    options: string[] | null; outcome: RecognitionOutcome | null; chosen_expression: string | null;
+    matched: boolean | null; seconds_to_answer: number | null; answered_by: "participant" | "conductor" | null }[];
+  totals: RecognitionTotals & { exercises: number; not_reached: number };
+  by_target: RecognitionRow[];
+  notice: string;
+}
+
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
@@ -395,6 +467,8 @@ export interface SessionMetrics {
   abstract_notice: string | null;
   /** Ejercicios de práctica, aparte de la coincidencia de estímulos; null si no hubo. */
   practice?: SessionPractice | null;
+  /** Reconocimientos, también aparte; null si no hubo. */
+  recognition?: SessionRecognition | null;
 }
 
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
@@ -469,6 +543,8 @@ export interface SessionStatistics {
     by_user?: (PracticeRow & { email: string })[];
     notice: string;
   } | null;
+  /** Reconocimientos de emociones, aparte; null si no hubo. */
+  recognition?: { sessions: number; totals: RecognitionTotals; by_target: RecognitionRow[]; notice: string } | null;
 }
 
 /** Examen simulado: lo crea un docente; cada estación es una sesión con su código. */

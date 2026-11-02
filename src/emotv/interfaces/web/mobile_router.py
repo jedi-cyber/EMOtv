@@ -320,6 +320,8 @@ def create_mobile_router(
         practice = result.get("practice")
         body["practice"] = ({key: value for key, value in practice.items() if key != "by_user"}
                             if practice else None)
+        # Revisión 4.2: reconocimientos de emociones, aparte; null si no hubo.
+        body["recognition"] = result.get("recognition")
         return body
 
     return router

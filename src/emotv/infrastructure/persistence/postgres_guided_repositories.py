@@ -1,5 +1,6 @@
 """Persistencia de la sesión guiada: estado, capturas, marcadores (nota
-cifrada), lo que la persona dice ver (cifrado) y resultados de las prácticas."""
+cifrada), lo que la persona dice ver (cifrado) y resultados de las prácticas y
+de los reconocimientos."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -7,11 +8,19 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from emotv.domain.guided_session import ExpressionCapture, GuidedRun, PracticeResult, SessionMarker, VerbalResponse
+from emotv.domain.guided_session import (
+    ExpressionCapture,
+    GuidedRun,
+    PracticeResult,
+    RecognitionResult,
+    SessionMarker,
+    VerbalResponse,
+)
 from emotv.infrastructure.persistence.models import (
     ExpressionCaptureRecord,
     GuidedRunRecord,
     PracticeResultRecord,
+    RecognitionResultRecord,
     SessionMarkerRecord,
     VerbalResponseRecord,
 )
@@ -182,3 +191,38 @@ class PostgresGuidedSessionRepository:
                 emotion_model_id=row.emotion_model_id, emotion_model_version=row.emotion_model_version,
                 started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
                 seconds_to_achieve=row.seconds_to_achieve) for row in rows)
+
+    # --- Resultados de los reconocimientos ---------------------------------------------
+
+    def save_recognition_result(self, result: RecognitionResult) -> RecognitionResult:
+        """Uno por paso: guardar de nuevo el mismo paso lo reemplaza."""
+        with self._factory.begin() as db:
+            row = db.scalars(select(RecognitionResultRecord).where(
+                RecognitionResultRecord.session_id == result.session_id,
+                RecognitionResultRecord.step_index == result.step_index)).first()
+            if row is None:
+                row = RecognitionResultRecord(id=result.id, session_id=result.session_id,
+                                              step_index=result.step_index)
+                db.add(row)
+            row.stimulus_id = result.stimulus_id
+            row.target_expression = result.target_expression
+            row.options = ",".join(result.options)
+            row.outcome = result.outcome.value
+            row.chosen_expression = result.chosen_expression
+            row.seconds_to_answer = result.seconds_to_answer
+            row.answered_by = result.answered_by.value if result.answered_by else None
+            row.started_at = result.started_at
+            row.ended_at = result.ended_at
+        return result
+
+    def list_recognition_results(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        with self._factory() as db:
+            rows = db.scalars(select(RecognitionResultRecord)
+                              .where(RecognitionResultRecord.session_id == session_id)
+                              .order_by(RecognitionResultRecord.step_index)).all()
+            return tuple(RecognitionResult(
+                id=row.id, session_id=row.session_id, step_index=row.step_index, stimulus_id=row.stimulus_id,
+                target_expression=row.target_expression, options=tuple(row.options.split(",")),
+                outcome=row.outcome, started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
+                chosen_expression=row.chosen_expression, seconds_to_answer=row.seconds_to_answer,
+                answered_by=row.answered_by) for row in rows)

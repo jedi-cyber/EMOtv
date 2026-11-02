@@ -67,7 +67,9 @@ def test_las_estadisticas_traen_la_practica_sin_desglose_por_usuario(env, mobile
     assert [row["target_expression"] for row in block["by_target"]] == ["happiness", "surprise"]
     # Aparte de la coincidencia de estímulos; las claves de la revisión 4 siguen iguales.
     assert mine["coincidence"] == {"compared": 0, "matched": 0}
-    assert set(mine) == {"scope", "notice", "few_sessions_notice", "sessions", "expressions", "coincidence", "practice"}
+    assert set(mine) == {"scope", "notice", "few_sessions_notice", "sessions", "expressions", "coincidence", "practice",
+                         "recognition"}
+    assert mine["recognition"] is None   # 4.2: sin reconocimientos, null
 
     group = get(mobile, "/mobile/statistics", "docente.a@example.com", scope="group").json()
     assert group["practice"]["totals"] == block["totals"]

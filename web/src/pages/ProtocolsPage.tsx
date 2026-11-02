@@ -13,7 +13,8 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { DEFAULT_PRACTICE, MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts, stimulusSummary } from "../stimuli/labels";
+import { DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+  RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
 interface Draft {
@@ -69,8 +70,13 @@ export function ProtocolsPage() {
   // Un ejercicio de práctica sin ilustración no necesita imagen.
   const missingSteps = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.stimulus_id != null && !byId.has(step.stimulus_id)).length;
   const practiceProblems = draft.steps.filter((step) => step.kind === "practice" && practiceProblem(step) !== null).length;
+  // Un reconocimiento necesita una imagen emocional con su expresión esperada.
+  const recognitionProblems = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.kind === "recognition"
+    && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
+      || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
+  const chosen = choice ? byId.get(choice) : undefined;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
-    && missingSteps === 0 && practiceProblems === 0;
+    && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0;
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -85,6 +91,12 @@ export function ProtocolsPage() {
   function addStep() {
     if (!choice) return;
     update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
+    setChoice("");
+  }
+  function addRecognition() {
+    if (!recognizable(chosen)) return;
+    update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: DEFAULT_RECOGNITION.option_count,
+      exposure_seconds: DEFAULT_RECOGNITION.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
   function addPractice() {
@@ -227,6 +239,27 @@ export function ProtocolsPage() {
             </li>;
           }
           const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+          if (step.kind === "recognition") {
+            const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
+            return <li key={`recognition-${index}`} className="row-card protocol-step">
+              <div>
+                <strong>{index + 1}. ¿Qué emoción es? {stimulus?.title ?? "Imagen no disponible"}</strong>
+                {answerName && <span>La persona elige entre varias emociones. Respuesta: {answerName} (la expresión esperada de la imagen).</span>}
+                {stimulus && !recognizable(stimulus) && <span role="alert">Esta imagen no indica una expresión esperada: elige una imagen emocional que la tenga.</span>}
+                {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+                {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+              </div>
+              <div className="inline-actions">
+                <label>Opciones<select value={step.option_count ?? DEFAULT_RECOGNITION.option_count}
+                  onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
+                  {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
+                </select></label>
+                <label>Tiempo para responder (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                {order}
+              </div>
+            </li>;
+          }
           return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
             <div>
               <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
@@ -253,6 +286,7 @@ export function ProtocolsPage() {
             {offered.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
           </select></label>
           <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
+          <Button disabled={!recognizable(chosen)} onClick={addRecognition}>Agregar como «¿Qué emoción es?»</Button>
         </div> : !stimuliQuery.loading && <div className="empty-state">
           <p>{draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."}
             {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
@@ -264,6 +298,8 @@ export function ProtocolsPage() {
         </div>
         <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
           una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
+        <p className="muted">En «¿Qué emoción es?» se muestra una imagen emocional y la persona elige entre varias emociones;
+          después lee el nombre de la emoción de la imagen. Las opciones se eligen solas. Se registra qué eligió; no evalúa a nadie.</p>
 
         {questionnaireSelect("post")}
       </>}

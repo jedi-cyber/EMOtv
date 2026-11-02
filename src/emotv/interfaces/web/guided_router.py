@@ -44,6 +44,26 @@ class PracticeFeedbackRequest(BaseModel):
     visible: bool
 
 
+class RecognitionAnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expression: str = Field(min_length=1, max_length=32)
+
+
+class RecognitionOption(BaseModel):
+    key: str
+    label: str
+
+
+class RecognitionView(BaseModel):
+    """Un paso de reconocimiento: la pregunta, las opciones y, al terminar, el
+    nombre de la emoción de la imagen. Nunca la expresión detectada."""
+
+    question: str
+    options: list[RecognitionOption]
+    chosen: str | None
+    message: str | None
+
+
 class PracticeView(BaseModel):
     """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
     está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
@@ -66,6 +86,7 @@ class ParticipantView(BaseModel):
     frame_interval_ms: int
     abstract_notice: str | None
     practice: PracticeView | None = None
+    recognition: RecognitionView | None = None
 
 
 def create_guided_router(
@@ -147,6 +168,13 @@ def create_guided_router(
         run = guarded(lambda: service().set_practice_feedback(user, session_id, request.visible))
         return {"practice_feedback": run.practice_feedback}
 
+    @router.post("/guided-sessions/{session_id}/recognition")
+    def recognition(session_id: str, request: RecognitionAnswerRequest,
+                    user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce registra la opción que la persona señaló o dijo."""
+        run = guarded(lambda: service().record_recognition(user, session_id, request.expression))
+        return {"phase": run.phase.value}
+
     @router.post("/guided-sessions/{session_id}/verbal-responses", status_code=201)
     def verbal(session_id: str, request: VerbalRequest, user: User = Depends(current_user)) -> dict[str, Any]:
         item = guarded(lambda: service().record_verbal(user, session_id, request.step_index, request.text))
@@ -163,8 +191,8 @@ def create_guided_router(
     def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
         view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
-        # practice solo aparece en un ejercicio de práctica: las imágenes y la estación quedan como antes.
-        return view.model_dump(exclude={"practice"} if view.practice is None else set())
+        # practice y recognition solo aparecen en su paso: las imágenes y la estación quedan como antes.
+        return view.model_dump(exclude={name for name in ("practice", "recognition") if getattr(view, name) is None})
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
@@ -195,6 +223,13 @@ def create_guided_router(
             await capacity.try_run(receive)
         else:
             await run_in_threadpool(receive)
+        return {"received": True}
+
+    @router.post("/participant-view/{token}/answer")
+    def participant_answer(token: str, request: RecognitionAnswerRequest) -> dict[str, bool]:
+        """La persona tocó una opción. Solo se confirma la recepción: si acertó
+        no se devuelve (la pantalla muestra el nombre de la emoción en su estado)."""
+        guarded(lambda: service().participant_answer(token, request.expression))
         return {"received": True}
 
     @router.post("/participant-view/{token}/stop")

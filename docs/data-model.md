@@ -199,3 +199,19 @@ Detalle en [expression-practice.md](expression-practice.md).
   `scripts/testdata/delete_test_data.py` la incluye.
 - **Nunca se guarda** ninguna imagen, el nivel o la distribución de cada cuadro
   ni la base neutral de la calibración.
+
+## Reconocimiento de emociones
+
+Migración `20261102_31_recognition_steps`. Detalle en
+[emotion-recognition.md](emotion-recognition.md).
+
+| Tabla o columna | Contenido |
+| --- | --- |
+| `protocol_steps.kind` | agrega `recognition`: una imagen emocional y «¿Qué emoción es?» |
+| `protocol_steps.target_expression` | en un reconocimiento, la expresión esperada de la imagen (la copia el servidor) |
+| `protocol_steps.option_count` | opciones que se muestran (2 a 4); solo en un reconocimiento |
+| `recognition_results` | una fila por reconocimiento y sesión (`session_id`, `step_index` únicos): imagen, expresión esperada, opciones mostradas, resultado (`answered`, `timed_out`, `skipped`, `stopped`), opción elegida, segundos hasta responder y quién respondió (`participant` o `conductor`), los tres solo si respondió; inicio y fin |
+
+- **Borrado.** `recognition_results.session_id` borra en cascada con la sesión
+  y la eliminación con acta la cuenta aparte.
+- **Nunca se guarda** ninguna imagen ni dato de la cámara: el paso no la analiza.

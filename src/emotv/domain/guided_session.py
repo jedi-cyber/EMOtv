@@ -18,6 +18,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from emotv.domain.expression_info import EXPRESSION_KEYS
 from emotv.domain.protocol import PRACTICE_TARGETS
 
 # Aviso fijo en cada pantalla y cada reporte con imágenes abstractas.
@@ -45,6 +46,37 @@ PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
 PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "
                    "precisión con niños no está validada. El resultado describe el ejercicio, no el "
                    "estado emocional de la persona.")
+
+# Reconocimiento: la pregunta, el nombre de cada opción y lo que se lee después
+# de responder (o al vencer el tiempo). Solo nombra la emoción de la imagen;
+# no dice si la persona acertó ni la valora.
+RECOGNITION_QUESTION = "¿Qué emoción es?"
+# Aviso fijo junto a todo resultado de reconocimiento.
+RECOGNITION_NOTICE = ("Describe las respuestas de esta práctica. Una sesión breve no permite sacar conclusiones "
+                      "sobre cómo reconoce emociones la persona.")
+RECOGNITION_NAMES = {
+    "happiness": "Alegría",
+    "surprise": "Sorpresa",
+    "sadness": "Tristeza",
+    "anger": "Enojo",
+    "fear": "Miedo",
+    "disgust": "Asco",
+    "neutral": "Cara tranquila",
+    "contempt": "Desprecio",
+}
+RECOGNITION_ANSWERS = {
+    "happiness": "Es alegría",
+    "surprise": "Es sorpresa",
+    "sadness": "Es tristeza",
+    "anger": "Es enojo",
+    "fear": "Es miedo",
+    "disgust": "Es asco",
+    "neutral": "Es una cara tranquila",
+    "contempt": "Es desprecio",
+}
+# Distractoras: las básicas y la cara tranquila. Desprecio solo aparece cuando
+# es la respuesta correcta: es poco común y difícil de nombrar para un niño.
+RECOGNITION_DISTRACTORS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
 
 # Debriefing: lo que ve la persona al terminar el examen. Describe qué se
 # registró, sin valorar ni diagnosticar.
@@ -105,6 +137,18 @@ class PracticeOutcome(str, Enum):
     TIMED_OUT = "timed_out"       # venció el tiempo máximo sin lograrla
     SKIPPED = "skipped"           # quien conduce saltó el ejercicio
     STOPPED = "stopped"           # la sesión se detuvo durante el ejercicio
+
+
+class RecognitionOutcome(str, Enum):
+    ANSWERED = "answered"         # se eligió una opción
+    TIMED_OUT = "timed_out"       # venció el tiempo sin respuesta
+    SKIPPED = "skipped"           # quien conduce saltó el paso
+    STOPPED = "stopped"           # la sesión se detuvo durante el paso
+
+
+class RecognitionAnswerer(str, Enum):
+    PARTICIPANT = "participant"   # tocó la opción en su pantalla
+    CONDUCTOR = "conductor"       # quien conduce registró lo que señaló o dijo
 
 
 class CaptureQuality(str, Enum):
@@ -296,3 +340,57 @@ class PracticeResult:
     @property
     def achieved(self) -> bool:
         return self.outcome is PracticeOutcome.ACHIEVED
+
+
+@dataclass(frozen=True, slots=True)
+class RecognitionResult:
+    """Resultado de un paso de reconocimiento: qué opciones se mostraron, cuál se
+    eligió y en cuánto tiempo. Describe la respuesta; no valora a la persona ni
+    analiza la cámara."""
+
+    id: str
+    session_id: str
+    step_index: int
+    stimulus_id: str
+    target_expression: str
+    options: tuple[str, ...]
+    outcome: RecognitionOutcome | str
+    started_at: datetime
+    ended_at: datetime
+    chosen_expression: str | None = None
+    seconds_to_answer: float | None = None
+    answered_by: RecognitionAnswerer | str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "session_id", "stimulus_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} es obligatorio")
+        outcome = RecognitionOutcome(self.outcome)
+        object.__setattr__(self, "outcome", outcome)
+        if isinstance(self.step_index, bool) or not isinstance(self.step_index, int) or self.step_index < 0:
+            raise ValueError("step_index debe ser un entero no negativo")
+        options = tuple(self.options)
+        object.__setattr__(self, "options", options)
+        if len(set(options)) != len(options) or any(item not in EXPRESSION_KEYS for item in options):
+            raise ValueError("Las opciones son expresiones distintas del catálogo")
+        if self.target_expression not in options:
+            raise ValueError("La expresión de la imagen está entre las opciones")
+        answered = outcome is RecognitionOutcome.ANSWERED
+        if answered != (self.chosen_expression is not None) or answered != (self.seconds_to_answer is not None)                 or answered != (self.answered_by is not None):
+            raise ValueError("Solo un paso respondido registra la opción, los segundos y quién respondió")
+        if self.chosen_expression is not None and self.chosen_expression not in options:
+            raise ValueError("La opción elegida está entre las que se mostraron")
+        if self.answered_by is not None:
+            object.__setattr__(self, "answered_by", RecognitionAnswerer(self.answered_by))
+        if self.seconds_to_answer is not None and self.seconds_to_answer < 0:
+            raise ValueError("Los segundos hasta responder no son negativos")
+        _aware("started_at", self.started_at)
+        _aware("ended_at", self.ended_at)
+        if self.ended_at < self.started_at:
+            raise ValueError("El paso termina después de empezar")
+
+    @property
+    def matched(self) -> bool | None:
+        """Si la opción elegida es la expresión de la imagen; None sin respuesta."""
+        return None if self.chosen_expression is None else self.chosen_expression == self.target_expression

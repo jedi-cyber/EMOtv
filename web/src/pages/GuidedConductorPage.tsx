@@ -9,6 +9,7 @@ import { Checkbox } from "../components/Checkbox";
 import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
+import { recognitionOutcomeNames } from "../insights/StimulusMetrics";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
@@ -132,6 +133,8 @@ export function GuidedConductorPage() {
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
   const isPractice = step?.step_kind === "practice";
+  const isRecognition = step?.step_kind === "recognition";
+  const recognitionResults = state?.recognition_results ?? [];
   const hasPractice = state?.steps.some((item) => item.step_kind === "practice") ?? false;
   const practiceResults = state?.practice_results ?? [];
   const targetName = (key?: string | null) => practiceTargetNames[key ?? ""] ?? "";
@@ -187,7 +190,24 @@ export function GuidedConductorPage() {
       <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar este ejercicio</Button>
     </div>}
 
-    {step && state && !isPractice && <div className="card form-stack">
+    {step && state && isRecognition && <div className="card form-stack">
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento</p>
+      <h2>¿Qué emoción es? · {step.title}</h2>
+      <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. No se analiza la cámara en este paso.</p>
+      <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
+      {state.recognition && (state.recognition.outcome
+        ? <p role="status">{state.recognition.chosen_expression
+          ? `Eligió ${targetName(state.recognition.chosen_expression)}. El paso avanza en un momento.`
+          : "Terminó el tiempo sin respuesta. El paso avanza en un momento."}</p>
+        : <>
+          <p>La persona toca una opción en su pantalla. Si la señala o la dice, regístrala aquí:</p>
+          <div className="inline-actions">{state.recognition.options.map((key) => <Button key={key} disabled={busy}
+            onClick={() => { void act("/recognition", { expression: key }); }}>{targetName(key)}</Button>)}</div>
+        </>)}
+      <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar este paso</Button>
+    </div>}
+
+    {step && state && !isPractice && !isRecognition && <div className="card form-stack">
       <p className="step-caption">Imagen {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
       <h2>{step.title}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
@@ -237,6 +257,16 @@ export function GuidedConductorPage() {
         <span>Paso {item.step_index + 1} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
           {item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}
           {item.feedback_visible ? "" : " · sin la señal visible"}</span>
+      </li>)}</ul>
+    </section>}
+
+    {recognitionResults.length > 0 && <section className="card">
+      <h2>Reconocimiento de emociones</h2>
+      <ul className="card-list">{recognitionResults.map((item) => <li key={item.step_index} className="row-card">
+        <span>Paso {item.step_index + 1} · imagen de {targetName(item.target_expression)} · {recognitionOutcomeNames[item.outcome]}
+          {item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}
+          {item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}
+          {item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}</span>
       </li>)}</ul>
     </section>}
 

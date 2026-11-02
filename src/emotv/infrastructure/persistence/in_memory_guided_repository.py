@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from threading import RLock
 
-from emotv.domain.guided_session import ExpressionCapture, GuidedRun, PracticeResult, SessionMarker, VerbalResponse
+from emotv.domain.guided_session import (
+    ExpressionCapture,
+    GuidedRun,
+    PracticeResult,
+    RecognitionResult,
+    SessionMarker,
+    VerbalResponse,
+)
 
 
 class InMemoryGuidedSessionRepository:
@@ -14,6 +21,7 @@ class InMemoryGuidedSessionRepository:
         self._markers: dict[str, list[SessionMarker]] = {}
         self._verbal: dict[tuple[str, int], VerbalResponse] = {}
         self._practice: dict[tuple[str, int], PracticeResult] = {}
+        self._recognition: dict[tuple[str, int], RecognitionResult] = {}
         self._lock = RLock()
 
     # --- Estado -------------------------------------------------------------------
@@ -71,4 +79,14 @@ class InMemoryGuidedSessionRepository:
     def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]:
         with self._lock:
             return tuple(sorted((item for (owner, _), item in self._practice.items() if owner == session_id),
+                                key=lambda item: item.step_index))
+
+    def save_recognition_result(self, result: RecognitionResult) -> RecognitionResult:
+        with self._lock:
+            self._recognition[(result.session_id, result.step_index)] = result
+        return result
+
+    def list_recognition_results(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        with self._lock:
+            return tuple(sorted((item for (owner, _), item in self._recognition.items() if owner == session_id),
                                 key=lambda item: item.step_index))

@@ -31,6 +31,14 @@ export const practiceTargetNames: Record<string, string> = {
 export const DEFAULT_PRACTICE = { hold_seconds: 2, max_seconds: 20 };
 export const MAX_HOLD_SECONDS = 10;
 export const MAX_STEP_SECONDS = 120;
+// Reconocimiento («¿Qué emoción es?»): opciones y tiempo para responder que propone el editor.
+export const RECOGNITION_OPTION_COUNTS = [2, 3, 4];
+export const DEFAULT_RECOGNITION = { option_count: 3, max_seconds: 15 };
+
+/** Un reconocimiento usa una imagen emocional con su expresión esperada: esa es la respuesta. */
+export function recognizable(item: Stimulus | undefined): boolean {
+  return item != null && item.kind === "emotional" && item.expected_expression != null;
+}
 
 /** Las mismas reglas que valida el servidor, con sus mensajes. */
 export function practiceProblem(step: { exposure_seconds: number; hold_seconds?: number | null; target_expression?: string | null }): string | null {
@@ -43,13 +51,15 @@ export function practiceProblem(step: { exposure_seconds: number; hold_seconds?:
   return null;
 }
 
-/** Qué tiene un protocolo, sin llamar «imagen» a un ejercicio de práctica: ["1 imagen", "2 ejercicios"]. */
+/** Qué tiene un protocolo, sin llamar «imagen» a un ejercicio: ["1 imagen", "2 ejercicios de práctica"]. */
 export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[] {
   const practices = steps.filter((step) => step.kind === "practice").length;
-  const images = steps.length - practices;
+  const recognitions = steps.filter((step) => step.kind === "recognition").length;
+  const images = steps.length - practices - recognitions;
   const parts = [];
-  if (images > 0 || practices === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (images > 0 || practices + recognitions === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
   if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
+  if (recognitions > 0) parts.push(`${recognitions} ${recognitions === 1 ? "reconocimiento" : "reconocimientos"}`);
   return parts;
 }
 

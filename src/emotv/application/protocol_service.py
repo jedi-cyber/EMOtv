@@ -132,7 +132,9 @@ class ProtocolService:
 
     # --- Armado y versiones --------------------------------------------------
 
-    def _validate(self, user: User, draft: ProtocolDraft) -> None:
+    def _validate(self, user: User, draft: ProtocolDraft) -> ProtocolDraft:
+        """Comprueba el borrador y lo devuelve con la respuesta correcta de cada
+        reconocimiento: la expresión esperada de su imagen."""
         target = Protocol(id="validacion", family_id="validacion", version=1, owner_user_id=user.id,
                           name=draft.name or "validacion", description=draft.description,
                           for_children=draft.for_children, created_at=self.clock(), steps=draft.steps)
@@ -145,8 +147,10 @@ class ProtocolService:
                 self.questionnaires.get(user, questionnaire_id)
             except QuestionnaireNotFound as error:
                 raise ValueError("Un cuestionario indicado no existe o no está disponible") from error
+        steps = []
         for step in draft.steps:
             if step.stimulus_id is None:
+                steps.append(step)
                 continue  # Ejercicio de práctica sin ilustración.
             try:
                 stimulus = self.stimuli.get(user, step.stimulus_id)
@@ -159,6 +163,13 @@ class ProtocolService:
                 raise ValueError("Lo que la persona dice ver solo se registra en imágenes abstractas")
             if step.shown_before_analyzer and stimulus.kind is not StimulusKind.ABSTRACT:
                 raise ValueError("Solo las imágenes abstractas se muestran antes del analizador")
+            if step.is_recognition:
+                if stimulus.kind is not StimulusKind.EMOTIONAL or stimulus.expected_expression is None:
+                    raise ValueError(f"Un reconocimiento usa una imagen emocional con su expresión esperada: "
+                                     f"«{stimulus.title}» no la tiene")
+                step = replace(step, target_expression=stimulus.expected_expression)
+            steps.append(step)
+        return replace(draft, steps=tuple(steps))
 
     @staticmethod
     def _reserved_name(name: str) -> None:
@@ -168,7 +179,7 @@ class ProtocolService:
     def create(self, user: User, draft: ProtocolDraft) -> Protocol:
         self._require_conductor(user)
         self._reserved_name(draft.name)
-        self._validate(user, draft)
+        draft = self._validate(user, draft)
         family = str(uuid4())
         protocol = self.repository.add(Protocol(
             id=family, family_id=family, version=1, owner_user_id=user.id, name=draft.name,
@@ -191,7 +202,7 @@ class ProtocolService:
             self._reserved_name(draft.name)
         elif draft.name.strip().casefold() != VALIDATION_PROTOCOL_NAME.casefold():
             raise ValueError("El protocolo de validación conserva su nombre")
-        self._validate(user, draft)
+        draft = self._validate(user, draft)
         fields = dict(name=draft.name, description=draft.description, for_children=draft.for_children,
                       steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
                       post_questionnaire_id=draft.post_questionnaire_id,

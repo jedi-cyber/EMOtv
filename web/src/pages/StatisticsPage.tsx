@@ -114,6 +114,12 @@ export function StatisticsPage() {
         ...stats.practice.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.achieved,
           row.applied, row.average_seconds_to_achieve ?? "", row.skipped]));
     }
+    if (stats.recognition) {
+      rows.push([], ["Reconocimiento de emociones", stats.recognition.totals.sentence], [stats.recognition.notice],
+        ["Emoción de la imagen", "La eligió", "Terminados", "Sin respuesta", "Saltados"],
+        ...stats.recognition.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.matched,
+          row.applied, row.timed_out, row.skipped]));
+    }
     if (stats.by_user) {
       rows.push([], ["Usuario", "Sesiones", "Completadas", "Interrumpidas"],
         ...stats.by_user.map((row) => [row.email, row.sessions, row.completed, row.interrupted]));
@@ -238,6 +244,25 @@ export function StatisticsPage() {
           <h3>Por usuario del grupo</h3>
           <PracticeTable first="Usuario" rows={data.practice.by_user.map((row) => ({ ...row, key: row.email, label: row.email }))} />
         </>}
+      </section>}
+
+      {data.recognition && <section aria-label="Reconocimiento de emociones">
+        <h2 className="stat-heading">Reconocimiento de emociones</h2>
+        <Callout variant="info" role="note">{data.recognition.notice}</Callout>
+        <p>{data.recognition.totals.sentence} En {data.recognition.sessions} {data.recognition.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Se cuentan los pasos que llegaron a su final; los que terminaron sin respuesta cuentan como no elegidos.
+          Van aparte de la coincidencia de estímulos.</p>
+        <h3>Por emoción de la imagen</h3>
+        <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Emoción de la imagen</th><th>La eligió</th><th>Sin respuesta</th><th>Eligió en su lugar</th></tr></thead>
+          <tbody>{data.recognition.by_target.map((row) => <tr key={row.target_expression}>
+            <td>{practiceTargetNames[row.target_expression] ?? row.target_expression}</td>
+            <td>{row.matched} de {row.applied}</td>
+            <td>{row.timed_out}</td>
+            <td>{row.other_choices.length ? row.other_choices.map((item) =>
+              `${practiceTargetNames[item.expression] ?? item.expression} (${item.count})`).join(", ") : "—"}</td>
+          </tr>)}</tbody>
+        </table></div>
       </section>}
 
       {data.by_user && <>

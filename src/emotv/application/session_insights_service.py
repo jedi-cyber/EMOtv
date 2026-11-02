@@ -12,7 +12,7 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import practice_metrics, stimulus_metrics
+from emotv.application.session_metrics import practice_metrics, recognition_metrics, stimulus_metrics
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import GuidedPhase
 from emotv.domain.protocol import Protocol
@@ -68,7 +68,7 @@ class SessionInsightsService:
     def _session_metrics(self, session: EmotionalSession) -> dict[str, Any]:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
-            return {**stimulus_metrics((), {}, ()), "practice": None}
+            return {**stimulus_metrics((), {}, ()), "practice": None, "recognition": None}
         stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
                    for step in protocol.steps}
         run = self.guided.get_run(session.id)
@@ -76,7 +76,9 @@ class SessionInsightsService:
         return {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
                                    self.guided.list_verbal(session.id), skipped),
                 # Aparte de la coincidencia de estímulos.
-                "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id))}
+                "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id)),
+                "recognition": recognition_metrics(protocol.steps,
+                                                   self.guided.list_recognition_results(session.id))}
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
         return self.session_metrics(self._allowed_session(user, session_id, METRICS))
@@ -107,10 +109,13 @@ class SessionInsightsService:
         for index, step in enumerate(steps):
             stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
             # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
-            kind = "practice" if step.is_practice else stimulus.kind.value if stimulus else ""
+            kind = ("practice" if step.is_practice else "recognition" if step.is_recognition
+                    else stimulus.kind.value if stimulus else "")
             titles[index] = (stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
         practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
+        recognition = ({item.step_index: item for item in self.guided.list_recognition_results(session.id)}
+                       if run else {})
 
         def lane_item(index: int, start, end, skipped: bool) -> dict[str, Any]:
             title, kind = titles.get(index, ("", ""))
@@ -120,6 +125,12 @@ class SessionInsightsService:
                 item.update(target_expression=steps[index].target_expression,
                             outcome=result.outcome.value if result else None,
                             seconds_to_achieve=result.seconds_to_achieve if result else None)
+            if kind == "recognition":
+                answer = recognition.get(index)
+                item.update(target_expression=steps[index].target_expression,
+                            outcome=answer.outcome.value if answer else None,
+                            chosen_expression=answer.chosen_expression if answer else None,
+                            seconds_to_answer=answer.seconds_to_answer if answer else None)
             return item
 
         stimuli_lane = []

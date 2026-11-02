@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiBlob, apiRequest } from "../api/http";
-import type { ParticipantPractice, ParticipantViewState } from "../api/types";
+import type { ParticipantPractice, ParticipantRecognition, ParticipantViewState } from "../api/types";
 import { Button } from "../components/Button";
 
 const POLL_MS = 500;
@@ -27,6 +27,35 @@ export function PracticeStage({ practice, imageUrl }: { practice: ParticipantPra
 }
 
 /**
+ * Reconocimiento: la imagen, la pregunta y botones grandes con el nombre de cada
+ * emoción. Al tocar uno (o al vencer el tiempo) se lee el nombre de la emoción de
+ * la imagen; no se dice si la elección coincidió.
+ */
+export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
+  recognition: ParticipantRecognition; imageUrl: string | null; onAnswer: (key: string) => Promise<void>;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  const done = recognition.message != null;
+  const chosen = recognition.chosen ?? sending;
+  async function choose(key: string) {
+    setSending(key);
+    try { await onAnswer(key); } catch { setSending(null); }
+  }
+  return <div className="participant-practice">
+    {imageUrl && <img className="participant-illustration" src={imageUrl} alt="Imagen de la sesión" />}
+    <p className="participant-instruction">{recognition.question}</p>
+    <div className="recognition-options">
+      {recognition.options.map((option) => <Button key={option.key} className="recognition-option"
+        variant={chosen === option.key ? "primary" : "secondary"} aria-pressed={chosen === option.key}
+        disabled={done || sending != null} onClick={() => { void choose(option.key); }}>
+        {option.label}
+      </Button>)}
+    </div>
+    <p className="participant-achieved" role="status" aria-live="polite">{recognition.message ?? ""}</p>
+  </div>;
+}
+
+/**
  * Pantalla de la persona evaluada, a pantalla completa y sin la navegación de la
  * aplicación: solo el estímulo o una indicación, y un botón para parar. No
  * recibe expresiones, probabilidades, calidad ni notas. La cámara se usa solo
@@ -44,6 +73,7 @@ export function ParticipantViewPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const exposure = view?.stimulus?.exposure ?? null;
   const practice = view?.practice ?? null;
+  const recognition = view?.recognition ?? null;
   // En una práctica se envía el cuadro siguiente solo cuando el servidor recibió el anterior.
   const interval = practice?.frame_interval_ms ?? view?.frame_interval_ms ?? POLL_MS;
   const oneAtATime = practice != null;
@@ -116,6 +146,11 @@ export function ParticipantViewPage() {
 
   useEffect(() => () => { streamRef.current?.getTracks().forEach((track) => track.stop()); }, []);
 
+  async function answer(key: string) {
+    await apiRequest(`${base}/answer`, { method: "POST", body: JSON.stringify({ expression: key }) });
+    setView(await apiRequest<ParticipantViewState>(base));
+  }
+
   async function stop() {
     try { await apiRequest(`${base}/stop`, { method: "POST" }); } catch { /* ya terminó */ }
     setEnded(true);
@@ -130,6 +165,9 @@ export function ParticipantViewPage() {
         ? <p className="participant-message">La sesión terminó. Gracias.</p>
         : practice
           ? <PracticeStage practice={practice} imageUrl={imageUrl} />
+          : recognition
+          // La clave reinicia la elección al pasar a otra imagen.
+          ? <RecognitionStage key={exposure ?? ""} recognition={recognition} imageUrl={imageUrl} onAnswer={answer} />
           : imageUrl
           ? <img className="participant-stimulus" src={imageUrl} alt="Imagen de la sesión" />
           : <p className="participant-message">{view?.message ?? "Espera un momento."}</p>}
