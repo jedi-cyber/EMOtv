@@ -159,7 +159,6 @@ test.describe("capturas para la tesis", () => {
     await signIn(page, psychologist.email, psychologist.password);
     await withToken(await loginToken(psychologist.email, psychologist.password), async (api) => {
       await acceptCommitment(api);
-      expect((await api.post("/exams")).status()).toBe(201);
     });
     await page.goto("/students");
     await heading(page);
@@ -170,9 +169,6 @@ test.describe("capturas para la tesis", () => {
     await page.goto("/images/review");
     await heading(page);
     await shot(page, "26-docente-imagenes-por-revisar");
-    await page.goto("/exams");
-    await heading(page);
-    await shot(page, "27-docente-examenes");
     await page.goto("/statistics");
     await heading(page);
     await page.getByRole("radio", { name: "Mi grupo" }).check({ force: true });

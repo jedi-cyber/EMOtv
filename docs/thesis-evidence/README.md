@@ -86,7 +86,6 @@ licencia.
 | `22-cuestionarios.png`, `23-protocolos.png`, `24-imagenes-propias.png` | material del usuario: cuestionarios, protocolos e imágenes propias |
 | `25-analizador-con-quien.png` | analizador con la pregunta «¿Con quién es la sesión?» |
 | `26-docente-imagenes-por-revisar.png` | imágenes de los usuarios que esperan la revisión del docente |
-| `27-docente-examenes.png` | exámenes simulados del docente |
 | `28-docente-estadisticas-grupo.png` | estadísticas del grupo del docente |
 | `29-compromiso-confidencialidad.png` | compromiso de confidencialidad antes de iniciar sesiones |
 

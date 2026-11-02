@@ -22,7 +22,7 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
-                          get_user_image_settings)
+                          get_user_image_settings, get_exams_enabled)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -305,10 +305,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_practice_validation_router(practice_validation, authentication_service,
                                                          user_repository))
     # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
-    # cada estación se une con el código y usa la pantalla de la persona.
-    exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
-                               commitment_service, stations=guided_service)
-    app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
+    # cada estación se une con el código y usa la pantalla de la persona. Está
+    # congelado (no forma parte del objetivo): sin EXAMS_ENABLED=true no se monta.
+    if get_exams_enabled():
+        exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
+                                   commitment_service, stations=guided_service)
+        app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
 
     def actor_student_id(user) -> str | None:
         student = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
@@ -421,7 +423,8 @@ else:
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
     app.include_router(create_statistics_router(None, None, None))
-    app.include_router(create_exam_router(None, None, None))
+    if get_exams_enabled():
+        app.include_router(create_exam_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
 
 

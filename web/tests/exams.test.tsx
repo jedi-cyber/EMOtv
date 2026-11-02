@@ -56,9 +56,10 @@ const view = (changes: Partial<ParticipantViewState> = {}): ParticipantViewState
 beforeEach(() => { vi.mocked(apiRequest).mockReset(); sessionStorage.clear(); });
 
 describe("examen del docente", () => {
-  it("el menú del docente tiene Exámenes y el del usuario no", () => {
-    expect(navigationByRole.psychologist.some((item) => item.label === "Exámenes")).toBe(true);
-    expect(navigationByRole.student.some((item) => item.label === "Exámenes")).toBe(false);
+  it("el examen está congelado: ningún menú muestra Exámenes", () => {
+    for (const items of Object.values(navigationByRole)) {
+      expect(items.some((item) => item.label === "Exámenes")).toBe(false);
+    }
   });
 
   it("muestra el código y las estaciones por código, sin expresiones", async () => {

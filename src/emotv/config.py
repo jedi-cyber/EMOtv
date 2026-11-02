@@ -354,6 +354,16 @@ def get_mobile_min_app_version(environ: Mapping[str, str] | None = None) -> str:
     return value
 
 
+def get_exams_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """El examen simulado está congelado: su API solo se monta con EXAMS_ENABLED=true."""
+
+    source = os.environ if environ is None else environ
+    value = source.get("EXAMS_ENABLED", "").strip().lower() or "false"
+    if value not in {"true", "false"}:
+        raise ValueError("EXAMS_ENABLED debe ser true o false")
+    return value == "true"
+
+
 def get_test_data_retention_days(environ: Mapping[str, str] | None = None) -> int:
     """Días que se conservan las cuentas de voluntarios (PRUEBA-NN).
 
