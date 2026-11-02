@@ -34,6 +34,8 @@ export const MAX_STEP_SECONDS = 120;
 // Reconocimiento («¿Qué emoción es?»): opciones y tiempo para responder que propone el editor.
 export const RECOGNITION_OPTION_COUNTS = [2, 3, 4];
 export const DEFAULT_RECOGNITION = { option_count: 3, max_seconds: 15 };
+// Historia corta de una situación («A Lucía se le cayó su helado»); el servidor valida lo mismo.
+export const MAX_SITUATION_CHARS = 200;
 
 /** Un reconocimiento usa una imagen emocional con su expresión esperada: esa es la respuesta. */
 export function recognizable(item: Stimulus | undefined): boolean {

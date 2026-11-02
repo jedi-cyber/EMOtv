@@ -108,6 +108,8 @@ export interface ProtocolStep {
   hold_seconds?: number | null;
   /** Solo un reconocimiento: cuántas opciones se muestran (2 a 4). */
   option_count?: number | null;
+  /** Solo un reconocimiento: historia corta; la pregunta pasa a «¿Cómo se siente?». */
+  situation?: string | null;
 }
 
 export interface Protocol {
@@ -267,6 +269,7 @@ export type RecognitionOutcome = "answered" | "timed_out" | "skipped" | "stopped
 /** Reconocimiento en curso para quien conduce: las opciones, la de la imagen y la elegida. */
 export interface GuidedRecognition {
   target_expression: string;
+  situation?: string | null;
   options: string[];
   chosen_expression: string | null;
   outcome: RecognitionOutcome | null;
@@ -343,6 +346,7 @@ export interface ParticipantPractice {
  * terminar, el nombre de la emoción de la imagen (sin decir si acertó). */
 export interface ParticipantRecognition {
   question: string;
+  situation?: string | null;
   options: { key: string; label: string }[];
   chosen: string | null;
   message: string | null;

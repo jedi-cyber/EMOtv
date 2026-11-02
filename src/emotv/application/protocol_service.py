@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
+from emotv.application.chat_safety import has_identifier
 from emotv.application.practice_validation_service import VALIDATION_PROTOCOL_NAME, is_validation_protocol
 from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
@@ -163,6 +164,8 @@ class ProtocolService:
                 raise ValueError("Lo que la persona dice ver solo se registra en imágenes abstractas")
             if step.shown_before_analyzer and stimulus.kind is not StimulusKind.ABSTRACT:
                 raise ValueError("Solo las imágenes abstractas se muestran antes del analizador")
+            if step.situation is not None and has_identifier(step.situation):
+                raise ValueError("La situación no puede incluir DNI, correos ni teléfonos: usa nombres inventados")
             if step.is_recognition:
                 if stimulus.kind is not StimulusKind.EMOTIONAL or stimulus.expected_expression is None:
                     raise ValueError(f"Un reconocimiento usa una imagen emocional con su expresión esperada: "

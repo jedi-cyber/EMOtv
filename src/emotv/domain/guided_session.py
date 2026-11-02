@@ -51,6 +51,8 @@ PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con r
 # de responder (o al vencer el tiempo). Solo nombra la emoción de la imagen;
 # no dice si la persona acertó ni la valora.
 RECOGNITION_QUESTION = "¿Qué emoción es?"
+# La misma pregunta cuando el paso cuenta una situación.
+SITUATION_QUESTION = "¿Cómo se siente?"
 # Aviso fijo junto a todo resultado de reconocimiento.
 RECOGNITION_NOTICE = ("Describe las respuestas de esta práctica. Una sesión breve no permite sacar conclusiones "
                       "sobre cómo reconoce emociones la persona.")

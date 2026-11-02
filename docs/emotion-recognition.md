@@ -46,13 +46,29 @@ de la sesión y del paso, así que cada consulta muestra las mismas.
 Con niños rige la misma regla de siempre: solo imágenes «Para niños» leves y
 aprobadas.
 
+### Situaciones
+
+El paso admite una **situación** opcional: una historia corta de hasta 200
+caracteres que acompaña a la ilustración, por ejemplo «A Lucía se le cayó su
+helado al piso». Con ella la pregunta pasa a ser «¿Cómo se siente?». La
+respuesta sigue siendo la expresión esperada de la imagen, así que la
+ilustración debe mostrar la escena con esa emoción.
+
+El texto lo escribe quien arma el protocolo y se guarda con el paso
+(`protocol_steps.situation`, migración `20261102_32_recognition_situations`).
+Debe usar nombres inventados: el servidor rechaza una situación con DNI,
+correos o teléfonos, con el mismo filtro que usa Emi. Los resultados se
+registran igual que en cualquier reconocimiento.
+
 ## En la sesión
 
 1. Va después de la calibración, como los demás pasos durante el analizador.
-2. **Pantalla de la persona.** Muestra la imagen, la pregunta «¿Qué emoción
-   es?» y un botón grande por opción. Al tocar uno se envía
+2. **Pantalla de la persona.** Muestra la imagen, la situación si la hay, la
+   pregunta («¿Qué emoción es?» o «¿Cómo se siente?») y un botón grande por
+   opción. Al tocar uno se envía
    `POST /participant-view/{token}/answer`.
-3. **Quien conduce.** Ve la emoción de la imagen y las mismas opciones. Si la
+3. **Quien conduce.** Ve la emoción de la imagen, la situación y las mismas
+   opciones. Si la
    persona señala o dice su respuesta, la registra con
    `POST /guided-sessions/{id}/recognition`.
 4. Tras la respuesta, o al vencer el tiempo, la persona lee el nombre de la

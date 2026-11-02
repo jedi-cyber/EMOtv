@@ -192,7 +192,8 @@ export function GuidedConductorPage() {
 
     {step && state && isRecognition && <div className="card form-stack">
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento</p>
-      <h2>¿Qué emoción es? · {step.title}</h2>
+      <h2>{state.recognition?.situation ? "¿Cómo se siente?" : "¿Qué emoción es?"} · {step.title}</h2>
+      {state.recognition?.situation && <p>Situación: {state.recognition.situation}</p>}
       <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. No se analiza la cámara en este paso.</p>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
       {state.recognition && (state.recognition.outcome

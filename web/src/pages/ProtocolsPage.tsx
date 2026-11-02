@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
@@ -243,11 +243,16 @@ export function ProtocolsPage() {
             const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
             return <li key={`recognition-${index}`} className="row-card protocol-step">
               <div>
-                <strong>{index + 1}. ¿Qué emoción es? {stimulus?.title ?? "Imagen no disponible"}</strong>
+                <strong>{index + 1}. {step.situation ? "Situación" : "¿Qué emoción es?"} {stimulus?.title ?? "Imagen no disponible"}</strong>
                 {answerName && <span>La persona elige entre varias emociones. Respuesta: {answerName} (la expresión esperada de la imagen).</span>}
                 {stimulus && !recognizable(stimulus) && <span role="alert">Esta imagen no indica una expresión esperada: elige una imagen emocional que la tenga.</span>}
                 {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
                 {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+                {/* Con una historia, la pregunta pasa a «¿Cómo se siente?»; la respuesta sigue siendo la de la imagen. */}
+                <label>Situación (opcional)<textarea rows={2} maxLength={MAX_SITUATION_CHARS} value={step.situation ?? ""}
+                  placeholder="A Lucía se le cayó su helado al piso."
+                  onChange={(event) => updateStep(index, { situation: event.target.value || null })} /></label>
+                <span className="muted">Con una situación, la pregunta es «¿Cómo se siente?». Usa nombres inventados.</span>
               </div>
               <div className="inline-actions">
                 <label>Opciones<select value={step.option_count ?? DEFAULT_RECOGNITION.option_count}

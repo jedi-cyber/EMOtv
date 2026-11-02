@@ -54,6 +54,7 @@ from emotv.domain.guided_session import (
     RECOGNITION_DISTRACTORS,
     RECOGNITION_NAMES,
     RECOGNITION_QUESTION,
+    SITUATION_QUESTION,
     CaptureQuality,
     ExpressionCapture,
     FrameAssessment,
@@ -665,7 +666,8 @@ class GuidedSessionService:
         """Lo que ve la persona: la pregunta, las opciones y, al terminar el paso,
         el nombre de la emoción de la imagen. No dice si acertó."""
         result = self._recognition_result(run)
-        return {"question": RECOGNITION_QUESTION,
+        return {"question": SITUATION_QUESTION if step.situation else RECOGNITION_QUESTION,
+                "situation": step.situation,
                 "options": [{"key": item, "label": RECOGNITION_NAMES[item]}
                             for item in self._recognition_options(run.session_id, run.step_index, step)],
                 "chosen": result.chosen_expression if result else None,
@@ -674,7 +676,7 @@ class GuidedSessionService:
     def _conductor_recognition(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce: las opciones, la de la imagen y la elegida."""
         result = self._recognition_result(run)
-        return {"target_expression": step.target_expression,
+        return {"target_expression": step.target_expression, "situation": step.situation,
                 "options": list(self._recognition_options(run.session_id, run.step_index, step)),
                 "chosen_expression": result.chosen_expression if result else None,
                 "outcome": result.outcome.value if result else None}
@@ -938,7 +940,8 @@ class GuidedSessionService:
                        "record_verbal_response": item.record_verbal_response,
                        "shown_before_analyzer": item.shown_before_analyzer,
                        "step_kind": item.kind.value, "target_expression": item.target_expression,
-                       "hold_seconds": item.hold_seconds, "option_count": item.option_count}
+                       "hold_seconds": item.hold_seconds, "option_count": item.option_count,
+                       "situation": item.situation}
                       for index, item in enumerate(steps)],
             "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
                                   if step else None),

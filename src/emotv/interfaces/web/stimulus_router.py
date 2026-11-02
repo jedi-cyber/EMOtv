@@ -19,7 +19,8 @@ from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import DEFAULT_RECOGNITION_OPTIONS, MAX_EXPOSURE_SECONDS, MAX_STEPS, PRACTICE_TARGETS
+from emotv.domain.protocol import (DEFAULT_RECOGNITION_OPTIONS, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+                                   PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -67,6 +68,8 @@ class StepModel(BaseModel):
     # Solo un reconocimiento: cuántas opciones se muestran. Su respuesta
     # correcta (target_expression) la toma el servidor de la imagen.
     option_count: int | None = None
+    # Solo un reconocimiento: una historia corta; la pregunta pasa a «¿Cómo se siente?».
+    situation: str | None = Field(default=None, max_length=MAX_SITUATION_CHARS)
 
 
 class ProtocolRequest(BaseModel):
@@ -149,7 +152,7 @@ def create_stimulus_router(
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer,
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
-                             option_count=step.option_count)
+                             option_count=step.option_count, situation=step.situation)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
             needs_image=service.needs_image(item))
@@ -160,7 +163,8 @@ def create_stimulus_router(
                                        step.record_verbal_response, step.shown_before_analyzer, kind=step.kind,
                                        target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                                        option_count=(DEFAULT_RECOGNITION_OPTIONS if step.kind == "recognition"
-                                                     and step.option_count is None else step.option_count))
+                                                     and step.option_count is None else step.option_count),
+                                       situation=step.situation)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

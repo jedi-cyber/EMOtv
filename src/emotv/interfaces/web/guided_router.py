@@ -59,6 +59,8 @@ class RecognitionView(BaseModel):
     nombre de la emoción de la imagen. Nunca la expresión detectada."""
 
     question: str
+    # Historia corta del paso, si la tiene.
+    situation: str | None = None
     options: list[RecognitionOption]
     chosen: str | None
     message: str | None

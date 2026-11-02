@@ -451,13 +451,15 @@ class QuestionnaireResponseRecord(Base):
 
 PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition')"
 PROTOCOL_STEP_STIMULUS = "kind = 'practice' OR stimulus_id IS NOT NULL"
+# Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
-    "(kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
+    "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
     "(kind = 'practice' AND target_expression IS NOT NULL AND hold_seconds IS NOT NULL "
     "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0 "
     "AND option_count IS NULL) OR "
     "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
-    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0)")
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0)) "
+    "AND (situation IS NULL OR kind = 'recognition')")
 
 
 class ProtocolStepRecord(Base):
@@ -483,6 +485,8 @@ class ProtocolStepRecord(Base):
     target_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     option_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Historia corta de un reconocimiento («A Lucía se le cayó su helado»).
+    situation: Mapped[str | None] = mapped_column(String(200), nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

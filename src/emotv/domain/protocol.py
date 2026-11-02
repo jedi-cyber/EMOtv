@@ -17,6 +17,8 @@ PRACTICE_TARGETS = EXPRESSION_KEYS
 MIN_RECOGNITION_OPTIONS = 2
 MAX_RECOGNITION_OPTIONS = 4
 DEFAULT_RECOGNITION_OPTIONS = 3
+# Historia corta de una situación («A Lucía se le cayó su helado»).
+MAX_SITUATION_CHARS = 200
 
 
 class ProtocolKind(str, Enum):
@@ -57,7 +59,9 @@ class ProtocolStep:
     target_expression su expresión esperada: la respuesta correcta, que copia
     el servicio de protocolos (quien arma el protocolo no la escribe).
     option_count es cuántas opciones se muestran y exposure_seconds el tiempo
-    máximo para responder. No analiza la cámara.
+    máximo para responder. No analiza la cámara. situation, opcional, es una
+    historia corta que acompaña a la ilustración: con ella la pregunta es
+    «¿Cómo se siente?». La respuesta sigue siendo la expresión de la imagen.
     """
 
     stimulus_id: str | None
@@ -69,10 +73,20 @@ class ProtocolStep:
     target_expression: str | None = None
     hold_seconds: int | None = None
     option_count: int | None = None
+    situation: str | None = None
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
         object.__setattr__(self, "kind", kind)
+        if self.situation is not None:
+            if not isinstance(self.situation, str):
+                raise TypeError("situation debe ser un texto")
+            situation = " ".join(self.situation.split()) or None
+            if situation is not None and kind is not StepKind.RECOGNITION:
+                raise ValueError("Solo un paso «¿Qué emoción es?» lleva una situación")
+            if situation is not None and len(situation) > MAX_SITUATION_CHARS:
+                raise ValueError(f"La situación tiene como máximo {MAX_SITUATION_CHARS} caracteres")
+            object.__setattr__(self, "situation", situation)
         stimulus_id = self.stimulus_id.strip() if isinstance(self.stimulus_id, str) else self.stimulus_id
         if kind in (StepKind.STIMULUS, StepKind.RECOGNITION) and not stimulus_id:
             raise ValueError("Cada paso indica un estímulo")
@@ -126,9 +140,9 @@ class ProtocolStep:
 
     @classmethod
     def recognition(cls, stimulus_id: str, max_seconds: int, option_count: int = DEFAULT_RECOGNITION_OPTIONS,
-                    target_expression: str | None = None) -> ProtocolStep:
+                    target_expression: str | None = None, situation: str | None = None) -> ProtocolStep:
         return cls(stimulus_id, max_seconds, 0, kind=StepKind.RECOGNITION, target_expression=target_expression,
-                   option_count=option_count)
+                   option_count=option_count, situation=situation)
 
     @property
     def is_practice(self) -> bool:

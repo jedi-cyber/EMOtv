@@ -27,9 +27,10 @@ export function PracticeStage({ practice, imageUrl }: { practice: ParticipantPra
 }
 
 /**
- * Reconocimiento: la imagen, la pregunta y botones grandes con el nombre de cada
- * emoción. Al tocar uno (o al vencer el tiempo) se lee el nombre de la emoción de
- * la imagen; no se dice si la elección coincidió.
+ * Reconocimiento: la imagen, la situación si el paso la cuenta, la pregunta y
+ * botones grandes con el nombre de cada emoción. Al tocar uno (o al vencer el
+ * tiempo) se lee el nombre de la emoción de la imagen; no se dice si la elección
+ * coincidió.
  */
 export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
   recognition: ParticipantRecognition; imageUrl: string | null; onAnswer: (key: string) => Promise<void>;
@@ -43,6 +44,7 @@ export function RecognitionStage({ recognition, imageUrl, onAnswer }: {
   }
   return <div className="participant-practice">
     {imageUrl && <img className="participant-illustration" src={imageUrl} alt="Imagen de la sesión" />}
+    {recognition.situation && <p className="participant-situation">{recognition.situation}</p>}
     <p className="participant-instruction">{recognition.question}</p>
     <div className="recognition-options">
       {recognition.options.map((option) => <Button key={option.key} className="recognition-option"
