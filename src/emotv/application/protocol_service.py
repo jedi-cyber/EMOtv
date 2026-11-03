@@ -125,11 +125,12 @@ class ProtocolService:
     def is_used(self, protocol: Protocol) -> bool:
         return self.repository.is_used(protocol.id)
 
-    @staticmethod
-    def _image_problem(protocol: Protocol, stimulus: Stimulus | None) -> str | None:
+    def _image_problem(self, protocol: Protocol, stimulus: Stimulus | None) -> str | None:
         """Por qué una imagen no sirve en este protocolo, o None si sirve."""
         if stimulus is None or stimulus.deleted_at is not None:
             return "Una imagen del protocolo fue eliminada"
+        if stimulus.kind is StimulusKind.ABSTRACT and not self.stimuli.abstract_enabled:
+            return f"Las imágenes abstractas ya no se aplican: reemplaza «{stimulus.title}»"
         if stimulus.scope is StimulusScope.USER and stimulus.owner_user_id != protocol.owner_user_id:
             return "Una imagen propia solo se usa en los protocolos de quien la subió"
         if stimulus.pending:

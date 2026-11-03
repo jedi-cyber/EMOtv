@@ -22,7 +22,7 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
-                          get_user_image_settings, get_exams_enabled)
+                          get_user_image_settings, get_exams_enabled, get_abstract_stimuli_enabled)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -199,7 +199,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
     # Una sola regla de acceso a sesiones (can_access_session) en todos los routers.
     authorization_service = AuthorizationService(assignment_repository.is_assigned, docente_of)
     stimulus_service = StimulusService(PostgresStimulusRepository(database_sessions), audit_service, docente_of,
-                                       sanitize_stimulus_image)
+                                       sanitize_stimulus_image, abstract_enabled=get_abstract_stimuli_enabled())
     def session_access(user, session) -> bool:
         actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization_service.can_access_session(user, session, actor_student_id=actor.id if actor else None)

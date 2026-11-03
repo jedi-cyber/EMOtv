@@ -54,8 +54,12 @@ class StimulusService:
         docente_of: DocenteOf,
         sanitize: ImageSanitizer,
         clock: Callable[[], datetime] | None = None,
+        abstract_enabled: bool = False,
     ) -> None:
         self.repository = repository
+        # Imágenes abstractas congeladas (ABSTRACT_STIMULI_ENABLED): no se suben ni
+        # se ofrecen; las ya registradas se siguen leyendo por get().
+        self.abstract_enabled = abstract_enabled
         self.audit = audit
         self.docente_of = docente_of
         self.sanitize = sanitize
@@ -111,6 +115,8 @@ class StimulusService:
                       if self.can_view(user, item))
         if for_children:
             items = tuple(item for item in items if item.suitable_for_children)
+        if not self.abstract_enabled:
+            items = tuple(item for item in items if item.kind is not StimulusKind.ABSTRACT)
         return items
 
     def get(self, user: User, stimulus_id: str) -> Stimulus:
@@ -138,6 +144,8 @@ class StimulusService:
         if not draft.not_a_participant_photo:
             raise ValueError("Confirma que la imagen no es una fotografía de una persona")
         kind = StimulusKind(draft.kind)
+        if kind is StimulusKind.ABSTRACT and not self.abstract_enabled:
+            raise ValueError("Las imágenes abstractas ya no se agregan: no forman parte del objetivo de EMOtv")
         if kind is StimulusKind.ABSTRACT and not draft.not_a_projective_test:
             raise ValueError("Confirma que la imagen abstracta es de creación propia o con licencia que lo "
                              "permita, y que no es una lámina de una prueba proyectiva publicada")

@@ -364,6 +364,18 @@ def get_exams_enabled(environ: Mapping[str, str] | None = None) -> bool:
     return value == "true"
 
 
+def get_abstract_stimuli_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Las imágenes abstractas («¿qué ves?») están congeladas: sin
+    ABSTRACT_STIMULI_ENABLED=true no se suben ni se aplican nuevas. Las sesiones
+    y los reportes que ya las tienen se siguen mostrando."""
+
+    source = os.environ if environ is None else environ
+    value = source.get("ABSTRACT_STIMULI_ENABLED", "").strip().lower() or "false"
+    if value not in {"true", "false"}:
+        raise ValueError("ABSTRACT_STIMULI_ENABLED debe ser true o false")
+    return value == "true"
+
+
 def get_test_data_retention_days(environ: Mapping[str, str] | None = None) -> int:
     """Días que se conservan las cuentas de voluntarios (PRUEBA-NN).
 

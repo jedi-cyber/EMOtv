@@ -57,6 +57,12 @@ commit de cada grupo. La cronología commit por commit está en
   descartan si no hay cupo; la pantalla de la persona envía un cuadro a la vez.
 - El Analizador cuenta imágenes y ejercicios por separado al elegir un
   protocolo.
+- Las imágenes abstractas con respuesta verbal («¿qué ves?») quedan congeladas
+  y ocultas porque no forman parte del objetivo. Con
+  `ABSTRACT_STIMULI_ENABLED=false` (predeterminado) no se suben, no se ofrecen
+  en el banco ni en el editor, y un protocolo que las usa pide reemplazarlas
+  antes de iniciar una sesión. Las sesiones, reportes y actas que ya las tienen
+  se siguen mostrando.
 
 ### Corregido
 - El borrado de los datos de voluntarios incluye los resultados de práctica.

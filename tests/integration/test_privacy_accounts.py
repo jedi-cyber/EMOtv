@@ -140,7 +140,9 @@ def env():
     erasure = PostgresSessionErasureRepository(factory)
     privacy = SessionPrivacyService(sessions, erasure, authorization, audit, docente_of, retention_months=12,
                                     clock=clock)
-    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
+    # Las imágenes abstractas están congeladas; estas pruebas cubren las ya registradas.
+    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock,
+                              abstract_enabled=True)
     def session_access(user, session):
         actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization.can_access_session(user, session, actor_student_id=actor.id if actor else None)
