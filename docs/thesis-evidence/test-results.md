@@ -1,12 +1,32 @@
 # Resultados de pruebas
 
+## Ejecución del 4 de noviembre de 2026
+
+Rama `cambio-objetivo`, commit `42d367d`, en el equipo de desarrollo (Windows
+11, Docker Desktop, Python 3.12). Son resultados reales de esa ejecución.
+
+| Verificación | Comando | Resultado |
+| --- | --- | --- |
+| Detector de secretos | `python scripts/security/check_secrets.py --all` | sin hallazgos en 661 archivos versionados |
+| Pruebas del backend | `python -m pytest -q` | 1039 pasan, 3 omitidas |
+| Tipos del frontend | `npx tsc -b` | sin errores |
+| Pruebas del frontend | `npx vitest run` | 269 pasan en 40 archivos |
+| Imágenes Docker y stack | `docker compose --env-file .env.docker up -d --build` | correcto; `api` *healthy*, `alembic current` en `20261104_35 (head)` |
+| Pruebas e2e | `bash scripts/e2e/run_isolated.sh` | no se ejecutaron en esta revisión |
+| Pruebas con voluntarios | [manual-checklist.md](../testing/manual-checklist.md) | sin ejecutar (ver más abajo) |
+
+Omitidas en pytest: las dos pruebas del hook de pre-commit que necesitan `sh` y
+`python3` de POSIX y la del modelo experimental HardlyHumans (sin `torch`).
+
+## Ejecución del 10 de octubre de 2026
+
 Ejecución del **10 de octubre de 2026** sobre la rama `chore/version-1.0.0`
 (a partir de `5c11845`), en el equipo de desarrollo: Windows 11, Docker
 Desktop, Python 3.12, Node 24 y Chrome instalado. Son resultados reales de esa
 ejecución. Las cifras cambian con el código: vuelve a ejecutar los comandos
 antes de citarlas.
 
-## Resumen
+### Resumen
 
 | Verificación | Comando | Resultado |
 | --- | --- | --- |
@@ -19,7 +39,7 @@ antes de citarlas.
 | Stack con healthchecks | `docker compose --env-file .env.docker up -d` | `api`, `web` y `db` *healthy*; `/health` responde `database`, `face_detector` y `emotion_model` en `ok` |
 | Pruebas e2e | `bash scripts/e2e/run_isolated.sh` (Chrome, stack aislado) | 8 pasan, 3 omitidas por falta de imágenes de rostro (más las 2 de capturas, que se activan aparte) |
 
-## Detalle
+### Detalle
 
 **pytest.** La falla es
 `tests/unit/test_check_secrets.py::test_project_repository_is_clean`: la

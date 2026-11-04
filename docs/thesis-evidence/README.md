@@ -18,44 +18,55 @@ Mermaid difieren, la fuente de verdad son las migraciones y el código.
 
 ## Criterios de aceptación
 
-Revisión del 10 de octubre de 2026. **Cumplido**: implementado y verificado con
-la evidencia indicada. **Parcial**: implementado, pero falta una verificación
-que la versión exige. **Pendiente**: no verificado.
+Revisión del 4 de noviembre de 2026 (commit `42d367d`). **Cumplido**:
+implementado y verificado con la evidencia indicada. **Parcial**: implementado,
+pero falta una verificación que la versión exige. **Pendiente**: no verificado.
+Las cifras de pruebas están en [test-results.md](test-results.md).
 
 | # | Criterio | Estado | Evidencia |
 | --- | --- | --- | --- |
-| 1 | Aplicación web | Cumplido | React + Vite (`web/`) y FastAPI (`src/emotv/`); `npm run build` correcto; `docker compose up` con `api`, `web` y `db` *healthy*; 8 pruebas e2e pasan contra el stack |
-| 2 | Login seguro | Cumplido | argon2 y JWT con `token_version` (`application/authentication_service.py`); límite de intentos (`application/login_throttle.py`); primer acceso obligatorio; `e2e/auth.spec.ts` (4 pruebas); `tests/unit/test_login_hardening.py`, `tests/integration/test_authentication_api.py` |
-| 3 | Visión facial | Parcial | YuNet + FER+ ONNX cargan con los pesos reales (`tests/integration/test_real_model_weights.py`, `/health` → `face_detector` y `emotion_model` en `ok`). **Falta** verificar la estimación con un rostro: las pruebas e2e con rostro se omiten sin imágenes y la lista manual está sin ejecutar |
-| 4 | Resultado emocional | Parcial | Expresión en español, confianza, información y limitación (`expressions/ExpressionResult.tsx`; `tests/adaptive_analysis.test.tsx`, `tests/session_outcome.test.tsx`). **Falta** la prueba e2e `analysis.spec.ts` con un rostro real o con licencia |
-| 5 | Recomendación de 2 o más posturas | Cumplido | `application/recommendation_config_service.py` y `interfaces/web/activity_router.py` rechazan actividades de un paso; `tests/integration/test_recommendations_api.py`, `tests/unit/test_activity_recommendation_service.py`, `web/tests/admin_recommendations.test.tsx` |
-| 6 | Visión corporal | Cumplido | MediaPipe Pose y `PostureValidator` para las cinco posturas; `tests/unit/test_multiple_postures.py`, `test_posture_models.py`, `test_pose_detector.py`. La verificación con personas está en el criterio 11 |
-| 7 | Secuencia | Cumplido | pasos y repeticiones verificados uno a uno (`application/browser_activity_service.py`); `tests/unit/test_new_sequence_postures.py`, `tests/integration/test_browser_activity_api.py` |
+| 1 | Aplicación web | Cumplido | React + Vite (`web/`) y FastAPI (`src/emotv/`); `docker compose up` con `api`, `web` y `db` *healthy* |
+| 2 | Login seguro | Cumplido | argon2 y JWT con `token_version` (`application/authentication_service.py`); límite de intentos (`application/login_throttle.py`); primer acceso obligatorio; `e2e/auth.spec.ts`; `tests/unit/test_login_hardening.py`, `tests/integration/test_authentication_api.py` |
+| 3 | Visión facial | Parcial | YuNet + HSEmotion (principal) y FER+ (respaldo) cargan con los pesos reales (`tests/integration/test_real_model_weights.py`, `/health`). **Falta** verificar la estimación con un rostro: las pruebas e2e con rostro se omiten sin imágenes y la [lista manual](../testing/manual-checklist.md) está sin ejecutar |
+| 4 | Resultado emocional | Parcial | Expresión estimada en español, confianza, información y limitación (`expressions/ExpressionResult.tsx`; `web/tests/adaptive_analysis.test.tsx`, `web/tests/session_outcome.test.tsx`). **Falta** `e2e/analysis.spec.ts` con un rostro propio o con licencia, o la sección 1 de la lista manual |
+| 5 | Recomendación de 2 o más posturas | Cumplido | `application/recommendation_config_service.py` y `interfaces/web/activity_router.py` rechazan actividades de un paso; `tests/integration/test_recommendations_api.py`, `tests/unit/test_activity_recommendation_service.py` |
+| 6 | Visión corporal | Cumplido | MediaPipe Pose y `PostureValidator` para las cinco posturas; `tests/unit/test_multiple_postures.py`, `test_posture_models.py`, `test_pose_detector.py` |
+| 7 | Secuencia | Cumplido | pasos y repeticiones verificados uno a uno (`application/browser_activity_service.py`); `tests/unit/test_new_sequence_postures.py`, `tests/integration/test_browser_activity_api.py`, `tests/integration/test_activities_freeze.py` |
+| 8 | Persistencia | Cumplido | PostgreSQL + 35 migraciones Alembic, la última `20261104_35_imitation_steps` ([data-model.md](../data-model.md)); cada migración nueva tiene su prueba de ida y vuelta |
+| 9 | Chatbot | Parcial | Emi para usuarios y docentes: límites, filtros de riesgo e identificadores, historial, conocimiento con la guía de uso (`application/chat_service.py`, `application/emi_knowledge.py`; `tests/unit/test_emi_chat.py`, `tests/unit/test_emi_knowledge.py`). **Falta** una conversación contra el workflow publicado en Sim (sección 6 de la lista manual) |
+| 10 | Seguridad y privacidad | Cumplido | detector de secretos sin hallazgos; permisos aplicados en FastAPI; consentimiento por modos; frames solo en memoria; eliminación verificable de voluntarios (`tests/unit/test_volunteer_test_data.py`); [privacy-data-governance.md](../privacy-data-governance.md) |
+| 11 | Prueba completa | Pendiente | El recorrido con cámara y personas reales no se ha ejecutado: [manual-checklist.md](../testing/manual-checklist.md) (secciones 1 a 6) está vacía |
+| 12 | Cuentas y permisos | Cumplido | cuatro papeles, un docente por usuario, administración sin acceso a contenidos y `can_access_session` (`tests/integration/test_privacy_accounts.py`, `tests/integration/test_docente_supervision.py`); [matriz-de-accesos.md](../privacy/matriz-de-accesos.md) |
+| 13 | Sesiones con autorización confirmada | Cumplido | sin confirmación no hay sesión; aviso reforzado para niños; código aleatorio al empezar y al terminar (`tests/integration/test_privacy_accounts.py`: `test_no_session_starts_without_the_confirmation`, `test_the_first_session_with_a_child_requires_the_reinforced_notice`, `test_the_session_code_is_random_and_unique`) |
+| 14 | Cuestionarios | Cumplido | constructor, plantilla inicial y respuestas registradas sin puntajes (`tests/integration/test_questionnaires.py`, `web/tests/questionnaires.test.tsx`) |
+| 15 | Protocolos e imágenes con revisión del docente | Cumplido | protocolos versionados para adultos o niños, plantillas, banco inicial y «Haz la misma cara»; imágenes de usuarios con detección de personas y aprobación del docente (`tests/integration/test_protocols_and_stimuli.py`, `test_protocol_templates.py`, `test_initial_bank.py`, `test_imitation_steps.py`, `test_recognition_sessions.py`) |
+| 16 | Sesión con línea de tiempo y reporte | Cumplido en código | sesión guiada, línea de tiempo, métricas descriptivas y reporte con revisión del docente («Por revisar») (`tests/integration/test_guided_sessions.py`, `test_session_insights.py`, `test_session_reports.py`, `test_docente_supervision.py`). La sesión con una persona real es parte del criterio 11 |
+| 17 | Estadísticas agregadas | Cumplido | cuentan sesiones, nunca personas; las demostraciones del docente no cuentan (`tests/integration/test_session_statistics.py`, `test_practice_statistics.py`) |
+| 18 | Documentación de privacidad | Cumplido | [docs/privacy/](../privacy/README.md): política, registro de tratamiento, matriz de accesos, compromiso de confidencialidad, formato de consentimiento, procedimientos de derechos e incidentes, y guía de uso responsable de datos |
 
 Los criterios 5, 6 y 7 se cumplen en el código y sus pruebas, pero el módulo de
 actividades corporales está congelado y oculto (`ACTIVITIES_ENABLED=false`)
 porque no forma parte del objetivo. Para mostrarlo se arranca la API con
 `ACTIVITIES_ENABLED=true` y se cambia `ACTIVITIES_ENABLED` en
-`web/src/routes/features.ts`.
-| 8 | Persistencia | Cumplido | PostgreSQL + 16 migraciones Alembic ([data-model.md](../data-model.md)); pruebas de integración contra PostgreSQL 16 dentro de los 503 casos que pasan |
-| 9 | Chatbot | Parcial | Emi para usuarios y docentes: límites, filtros de riesgo e identificadores, historial y borrado de la conversación (`application/chat_service.py`; `tests/unit/test_emi_chat.py`); contrato del webhook probado con el n8n falso (`e2e/emi.spec.ts`: dentro y fuera de alcance, 502). **Falta** una conversación contra el workflow publicado en esta revisión (lista manual) |
-| 10 | Seguridad y privacidad | Cumplido | detector de secretos sin hallazgos; permisos aplicados en FastAPI (`e2e/psychologist.spec.ts` comprueba el 403); consentimiento por modos; frames solo en memoria; eliminación verificable de voluntarios (`tests/unit/test_volunteer_test_data.py`); [privacy-data-governance.md](../privacy-data-governance.md) |
-| 11 | Prueba completa | Pendiente | El recorrido completo con cámara y una persona real (análisis, actividad completa, historial y Emi) no se ha ejecutado: [manual-checklist.md](../testing/manual-checklist.md) está vacío |
+`web/src/routes/features.ts` (anexo de la lista manual). El examen simulado y
+las imágenes abstractas también están congelados y no son criterios.
 
 ### Qué falta para etiquetar `v1.0.0`
 
 La etiqueta `v1.0.0` **no se creó**: los criterios 3, 4, 9 y 11 no están
-cumplidos. Para cerrarlos:
+cumplidos, y el 16 espera la sesión con una persona real. Ninguno se cierra
+con más código, sino con pruebas. Para cerrarlos:
 
-1. Agregar imágenes de rostro propias o con licencia en
-   `web/e2e/fixtures/faces/`, generar el video y lograr que pasen las tres
-   pruebas de `e2e/analysis.spec.ts` (criterios 3 y 4).
-2. Completar [manual-checklist.md](../testing/manual-checklist.md) con
-   voluntarios según el [protocolo](../testing/volunteer-protocol.md):
-   iluminación, distancias, las cinco posturas, una secuencia completa y
-   conexión por HTTPS (criterios 3, 4 y 11).
-3. Mantener una conversación con Emi contra el workflow publicado y anotarla
-   en la lista manual (criterio 9).
+1. Completar [manual-checklist.md](../testing/manual-checklist.md) con
+   voluntarios adultos según el [protocolo](../testing/volunteer-protocol.md):
+   cámara, luz y distancia; «Validación con adultos» con los dos modelos;
+   una sesión con protocolo; la supervisión del docente; navegadores y
+   HTTPS (criterios 3, 4, 11 y 16).
+2. Pegar la descripción vigente en el workflow de Sim, mantener una
+   conversación con Emi y anotarla en la sección 6 (criterio 9).
+3. Opcional, para el criterio 4: agregar imágenes de rostro propias o con
+   licencia en `web/e2e/fixtures/faces/` y lograr que pase
+   `e2e/analysis.spec.ts`.
 4. Registrar en [test-results.md](test-results.md) solo los resultados
    agregados y anónimos, y crear la etiqueta.
 
