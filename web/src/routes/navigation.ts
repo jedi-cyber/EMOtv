@@ -1,5 +1,6 @@
 import type { UserRole } from "../auth/types";
 import type { NavIconName } from "../components/NavIcon";
+import { ACTIVITIES_ENABLED } from "./features";
 import { paths } from "./paths";
 
 export interface NavigationItem {
@@ -20,6 +21,11 @@ const material: readonly NavigationItem[] = [
   { to: paths.protocols, label: "Protocolos", icon: "document", group: "Mi material" },
 ];
 
+/** Actividades corporales: congeladas, fuera del menú (routes/features.ts). */
+const activitiesItem: readonly NavigationItem[] = ACTIVITIES_ENABLED
+  ? [{ to: paths.activities, label: "Actividades", icon: "activity" }]
+  : [];
+
 export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   // Toda sesión empieza en el Analizador, con un protocolo o sin él.
   student: [
@@ -27,7 +33,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
     { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
-    { to: paths.activities, label: "Actividades", icon: "activity" },
+    ...activitiesItem,
     ...material,
     { to: paths.images, label: "Imágenes", icon: "document", group: "Mi material" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
@@ -39,7 +45,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
     { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
-    { to: paths.activities, label: "Actividades", icon: "activity" },
+    ...activitiesItem,
     { to: paths.stimuli, label: "Estímulos", icon: "manage" },
     { to: paths.imageReview, label: "Imágenes por revisar", icon: "shield", counter: "imageReview" },
     ...material,
@@ -55,7 +61,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
   superadmin: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
     { to: paths.adminModels, label: "Modelos", icon: "manage" },
-    { to: paths.adminActivities, label: "Administrar actividades", icon: "manage" },
+    ...(ACTIVITIES_ENABLED ? [{ to: paths.adminActivities, label: "Administrar actividades", icon: "manage" } as const] : []),
     { to: paths.adminExpressions, label: "Catálogo de expresiones", icon: "manage" },
     { to: paths.users, label: "Cuenta de administrador", icon: "users" },
     { to: paths.audit, label: "Auditoría", icon: "shield" },

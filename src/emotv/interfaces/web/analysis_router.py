@@ -12,6 +12,7 @@ import jwt
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.exc import SQLAlchemyError
+from emotv.config import ACTIVITIES_FROZEN_MESSAGE
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 from emotv.application import (
@@ -106,7 +107,10 @@ def create_analysis_router(
     capacity: AnalysisCapacity | None = None,
     local_models: LocalModelService | None = None,
     questionnaire_ready: Callable[[EmotionalSession], bool] | None = None,
+    activities_enabled: bool = True,
 ) -> APIRouter:
+    """Con ``activities_enabled`` en False (actividades congeladas) el Analizador
+    termina en el resultado de la expresión: no recomienda ni inicia actividades."""
     router = APIRouter(tags=["analysis"])
     live = live_settings or LiveExpressionSettings()
     load = capacity or AnalysisCapacity()
@@ -202,6 +206,9 @@ def create_analysis_router(
                     await _error(websocket, "El análisis de expresiones no está configurado en el servidor", 1011)
                     return
             else:
+                if not activities_enabled:
+                    await _error(websocket, ACTIVITIES_FROZEN_MESSAGE, 4403)
+                    return
                 if not activity_id or session.activity_id != activity_id:
                     await _error(websocket, "La actividad no coincide con la sesión", 4409)
                     return
@@ -272,6 +279,7 @@ def create_analysis_router(
                 "live_min_confidence": live.min_confidence,
                 "calibration_seconds": live.calibration_seconds,
                 "calibration_min_increase": live.calibration_min_increase,
+                "activities_enabled": activities_enabled,
             })
 
             def require_authorized(*states: SessionState) -> None:
@@ -287,6 +295,17 @@ def create_analysis_router(
                 sessions.require_active_consent(session.student_id)
 
             def recommendation_message(expression: StabilizedEmotion) -> dict[str, object]:
+                if not activities_enabled:
+                    # Sin actividades: solo el resultado y sus textos educativos.
+                    return {
+                        "type": "recommendation", "state": "recognized",
+                        "message": "Expresión registrada",
+                        "emotion": expression.emotion,
+                        "emotion_confidence": expression.confidence,
+                        "activity": None, "activities": [], "activities_enabled": False,
+                        "expression": expression_info(expression.emotion) if expression_info else None,
+                        "notice": None, "progress": 0.0,
+                    }
                 assert recommender is not None
                 notice: str | None = None
                 try:
@@ -313,6 +332,7 @@ def create_analysis_router(
                     "emotion_confidence": expression.confidence,
                     "activity": _activity_payload(recommendation) if recommendation else None,
                     "activities": [_activity_payload(item) for item in activities.list_all()],
+                    "activities_enabled": True,
                     # Texto educativo fijo del catálogo; nunca generado por un LLM.
                     "expression": expression_info(expression.emotion) if expression_info else None,
                     "notice": notice,
@@ -418,7 +438,8 @@ def create_analysis_router(
                         finished = sessions.finish_without_activity(session.id)
                         await websocket.send_json({
                             "type": "completed", "state": "completed",
-                            "message": "Sesión finalizada sin actividad. Tu expresión quedó registrada.",
+                            "message": ("Sesión finalizada sin actividad. Tu expresión quedó registrada."
+                                        if activities_enabled else "Sesión finalizada. Tu expresión quedó registrada."),
                             "emotion": finished.initial_emotion,
                             "emotion_confidence": finished.emotion_confidence,
                             "exercise_result": finished.exercise_result,
@@ -426,6 +447,9 @@ def create_analysis_router(
                         })
                         break
                     if command_type == "select_activity" and adaptive:
+                        if not activities_enabled:
+                            await websocket.send_json({"type": "error", "message": ACTIVITIES_FROZEN_MESSAGE})
+                            continue
                         if recognized is None or processor is not None:
                             await websocket.send_json({"type": "error", "message": "Primero registra una expresión"})
                             continue

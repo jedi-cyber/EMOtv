@@ -136,3 +136,10 @@ def test_editing_activities_or_catalog_invalidates_the_cache():
 
     assert client.delete("/activities/nueva", headers=headers).status_code == 204
     assert "Respiración nueva" not in knowledge.get()
+
+
+def test_con_las_actividades_congeladas_emi_no_las_describe():
+    text = build_knowledge(DEFAULT_ACTIVITIES, seeded_items(), activities_enabled=False)
+    assert "## Posturas" not in text and "## Actividades disponibles" not in text
+    assert "postura" not in text.lower() and "propone actividades" not in text
+    assert "6. Las sesiones anteriores se consultan en Mis sesiones." in text

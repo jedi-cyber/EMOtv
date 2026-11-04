@@ -31,6 +31,12 @@ que la versión exige. **Pendiente**: no verificado.
 | 5 | Recomendación de 2 o más posturas | Cumplido | `application/recommendation_config_service.py` y `interfaces/web/activity_router.py` rechazan actividades de un paso; `tests/integration/test_recommendations_api.py`, `tests/unit/test_activity_recommendation_service.py`, `web/tests/admin_recommendations.test.tsx` |
 | 6 | Visión corporal | Cumplido | MediaPipe Pose y `PostureValidator` para las cinco posturas; `tests/unit/test_multiple_postures.py`, `test_posture_models.py`, `test_pose_detector.py`. La verificación con personas está en el criterio 11 |
 | 7 | Secuencia | Cumplido | pasos y repeticiones verificados uno a uno (`application/browser_activity_service.py`); `tests/unit/test_new_sequence_postures.py`, `tests/integration/test_browser_activity_api.py` |
+
+Los criterios 5, 6 y 7 se cumplen en el código y sus pruebas, pero el módulo de
+actividades corporales está congelado y oculto (`ACTIVITIES_ENABLED=false`)
+porque no forma parte del objetivo. Para mostrarlo se arranca la API con
+`ACTIVITIES_ENABLED=true` y se cambia `ACTIVITIES_ENABLED` en
+`web/src/routes/features.ts`.
 | 8 | Persistencia | Cumplido | PostgreSQL + 16 migraciones Alembic ([data-model.md](../data-model.md)); pruebas de integración contra PostgreSQL 16 dentro de los 503 casos que pasan |
 | 9 | Chatbot | Parcial | Emi para usuarios y docentes: límites, filtros de riesgo e identificadores, historial y borrado de la conversación (`application/chat_service.py`; `tests/unit/test_emi_chat.py`); contrato del webhook probado con el n8n falso (`e2e/emi.spec.ts`: dentro y fuera de alcance, 502). **Falta** una conversación contra el workflow publicado en esta revisión (lista manual) |
 | 10 | Seguridad y privacidad | Cumplido | detector de secretos sin hallazgos; permisos aplicados en FastAPI (`e2e/psychologist.spec.ts` comprueba el 403); consentimiento por modos; frames solo en memoria; eliminación verificable de voluntarios (`tests/unit/test_volunteer_test_data.py`); [privacy-data-governance.md](../privacy-data-governance.md) |

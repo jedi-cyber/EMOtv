@@ -130,14 +130,27 @@ def _expressions_section(expressions: Iterable[ExpressionInfo], limit: int) -> s
     return "\n".join(lines)
 
 
-def build_knowledge(activities: Iterable[Activity], expressions: Iterable[ExpressionInfo]) -> str:
+def _without_activities(intro: str, flow: str) -> tuple[str, str]:
+    """Textos fijos sin las actividades corporales, que están congeladas."""
+    intro = intro.replace(", y propone actividades guiadas de posturas", "").replace(
+        " Las actividades son actividad guiada, no terapia.", "")
+    lines = [line for line in flow.splitlines() if not line.startswith("6. ")]
+    return intro, "\n".join(line.replace("7. ", "6. ", 1) if line.startswith("7. ") else line for line in lines)
+
+
+def build_knowledge(activities: Iterable[Activity], expressions: Iterable[ExpressionInfo],
+                    activities_enabled: bool = True) -> str:
     activities, expressions = tuple(activities), tuple(expressions)
-    postures = "## Posturas\n" + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values())
-    fixed = [INTRO, postures, FLOW, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
+    if activities_enabled:
+        postures = "## Posturas\n" + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values())
+        fixed = [INTRO, postures, FLOW, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
+    else:
+        intro, flow = _without_activities(INTRO, FLOW)
+        fixed = [intro, flow, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
     for limit in (400, 320, 260, 200, 160, 120, 90, 60):
         # Los textos fijos van primero: si hay que recortar, solo se pierde contenido editable.
-        text = "\n\n".join([*fixed, _activities_section(activities, limit),
-                            _expressions_section(expressions, limit)])
+        sections = [_activities_section(activities, limit)] if activities_enabled else []
+        text = "\n\n".join([*fixed, *sections, _expressions_section(expressions, limit)])
         if len(text) <= TARGET_CHARS:
             return text
     marker = "\n[Conocimiento recortado por longitud]"
@@ -153,8 +166,11 @@ class EmiKnowledge:
         expressions: Callable[[], Iterable[ExpressionInfo]],
         cache_seconds: float = CACHE_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        activities_enabled: bool = True,
     ) -> None:
         self._activities = activities
+        # Con las actividades congeladas, Emi no las describe ni las sugiere.
+        self._activities_enabled = activities_enabled
         self._expressions = expressions
         self._cache_seconds = cache_seconds
         self._clock = clock
@@ -171,7 +187,8 @@ class EmiKnowledge:
             if self._text is not None and self._clock() - self._built_at < self._cache_seconds:
                 return self._text
             try:
-                text = build_knowledge(self._activities(), self._expressions())
+                text = build_knowledge(self._activities() if self._activities_enabled else (),
+                                       self._expressions(), self._activities_enabled)
             except Exception:  # la base puede fallar; Emi sigue respondiendo
                 logger.exception("No se pudo regenerar el conocimiento de Emi; se usa el anterior")
                 return self._text or ""

@@ -22,7 +22,8 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
-                          get_user_image_settings, get_exams_enabled, get_abstract_stimuli_enabled)
+                          get_user_image_settings, get_exams_enabled, get_abstract_stimuli_enabled,
+                          get_activities_enabled)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -163,10 +164,16 @@ if DATABASE_URL and JWT_SECRET_KEY:
     assignment_repository = PostgresAssignmentRepository(database_sessions)
     expression_catalog = ExpressionCatalogService(PostgresExpressionInfoRepository(database_sessions))
     # Conocimiento de EMOtv para Emi; se invalida cuando administración edita contenido.
-    emi_knowledge = EmiKnowledge(activity_catalog.list_all, expression_catalog.list_all)
+    # Actividades corporales congeladas (ACTIVITIES_ENABLED): el catálogo solo se
+    # lee para mostrar sesiones anteriores; no se recomiendan ni se inician.
+    activities_enabled = get_activities_enabled()
+    emi_knowledge = EmiKnowledge(activity_catalog.list_all, expression_catalog.list_all,
+                                 activities_enabled=activities_enabled)
     recommendation_repository = PostgresRecommendationRepository(database_sessions)
     recommendation_config = RecommendationConfigService(recommendation_repository, activity_catalog)
-    app.include_router(create_recommendation_router(recommendation_config, authentication_service, user_repository))
+    if activities_enabled:
+        app.include_router(create_recommendation_router(recommendation_config, authentication_service,
+                                                        user_repository))
 
     def expression_label(key: str) -> str:
         info = expression_catalog.get(key)
@@ -251,6 +258,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         recommendations=recommendation_config,
         expression_label=expression_label,
         on_change=emi_knowledge.invalidate,
+        changes_enabled=activities_enabled,
     ))
     app.include_router(create_session_router(
         session_service,
@@ -265,6 +273,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         questionnaires=questionnaire_service,
         privacy=session_privacy_service,
         audit=audit_service,
+        activities_enabled=activities_enabled,
     ))
     exam_repository = PostgresExamRepository(database_sessions)
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
@@ -390,6 +399,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         capacity=analysis_capacity,
         local_models=local_models,
         questionnaire_ready=questionnaire_service.pre_completed,
+        activities_enabled=activities_enabled,
     ))
     chat_gateway = None
     if chat_settings.provider == "sim":
@@ -417,7 +427,8 @@ else:
     app.include_router(create_mobile_router(None, None, production=web_settings.production, api_version=__version__,
                                             min_app_version=get_mobile_min_app_version()))
     app.include_router(create_expression_router(None, None, None))
-    app.include_router(create_recommendation_router(None, None, None))
+    if get_activities_enabled():
+        app.include_router(create_recommendation_router(None, None, None))
     app.include_router(create_model_admin_router(None, None, None))
     app.include_router(create_privacy_router(None, None, None, None))
     app.include_router(create_stimulus_router(None, None, None, None))

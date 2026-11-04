@@ -7,6 +7,7 @@ import { ActivitiesPage } from "./pages/ActivitiesPage";
 import { ActivityDetailPage } from "./pages/ActivityDetailPage";
 import { AdminActivitiesPage } from "./pages/AdminActivitiesPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
+import { ACTIVITIES_ENABLED } from "./routes/features";
 import { ConnectionErrorPage } from "./pages/ConnectionErrorPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -66,8 +67,8 @@ export function App() {
           <Route path={paths.imageReview} element={<RoleRoute allowed={["psychologist"]}><ImageReviewPage /></RoleRoute>} />
           <Route path={paths.deletionCertificatePattern} element={<RoleRoute allowed={["student", "psychologist"]}><DeletionCertificatePage /></RoleRoute>} />
           <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
-          <Route path={paths.activities} element={<ActivitiesPage />} />
-          <Route path={paths.activityPattern} element={<ActivityDetailPage />} />
+          {ACTIVITIES_ENABLED && <Route path={paths.activities} element={<ActivitiesPage />} />}
+          {ACTIVITIES_ENABLED && <Route path={paths.activityPattern} element={<ActivityDetailPage />} />}
           {/* Sesiones y resultados: solo usuarios y docentes; nunca la administración. */}
           <Route path={paths.sessions} element={<RoleRoute allowed={["student", "psychologist"]}><SessionsPage /></RoleRoute>} />
           <Route path={paths.sessionPattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionDetailPage /></RoleRoute>} />
@@ -75,7 +76,7 @@ export function App() {
           <Route path={paths.studentSessionsPattern} element={<RoleRoute allowed={["psychologist"]}><StudentSessionsPage /></RoleRoute>} />
           <Route path={paths.users} element={<RoleRoute allowed={["admin", "superadmin"]}><UsersPage /></RoleRoute>} />
           <Route path={paths.audit} element={<RoleRoute allowed={["admin", "superadmin"]}><AuditPage /></RoleRoute>} />
-          <Route path={paths.adminActivities} element={<RoleRoute allowed={["superadmin"]}><AdminActivitiesPage /></RoleRoute>} />
+          {ACTIVITIES_ENABLED && <Route path={paths.adminActivities} element={<RoleRoute allowed={["superadmin"]}><AdminActivitiesPage /></RoleRoute>} />}
           <Route path={paths.adminExpressions} element={<RoleRoute allowed={["superadmin"]}><AdminExpressionsPage /></RoleRoute>} />
           <Route path={paths.adminModels} element={<RoleRoute allowed={["superadmin"]}><AdminModelsPage /></RoleRoute>} />
           <Route path={paths.unauthorized} element={<UnauthorizedPage />} />

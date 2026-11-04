@@ -8,6 +8,10 @@ import { apiRequest } from "../src/api/http";
 import { AssistantProvider } from "../src/components/AssistantContext";
 import { AssistantWidget } from "../src/components/AssistantWidget";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+const features = vi.hoisted(() => ({ ACTIVITIES_ENABLED: true }));
+vi.mock("../src/routes/features", () => features);
+
 const { admissions, protocols } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[], is_default: true as boolean }] }, protocols: { value: [] as unknown[] } }));
 vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : path === "/protocols" ? protocols.value : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
@@ -357,6 +361,25 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByText("Sesión finalizada sin actividad. Tu expresión quedó registrada.")).toBeInTheDocument();
     expect(screen.getByText(/Expresión registrada:/)).toHaveTextContent("Neutral (70 %)");
     expect(screen.getByRole("button", { name: "Analizar otra expresión" })).toBeInTheDocument();
+  });
+
+  it("con las actividades congeladas termina en el resultado, sin sugerir actividades", async () => {
+    features.ACTIVITIES_ENABLED = false;
+    try {
+      const socket = await openLive();
+      expect(screen.getByText("Paso 1 de 2 · Expresión en vivo")).toBeInTheDocument();
+      recognize(socket, sadnessInfo);
+      expect(screen.getByText("Paso 2 de 2 · Resultado")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Movilidad suave" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Actividad recomendada")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /actividad/i })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Finalizar" }));
+      expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toEqual({ type: "finish_without_activity" });
+      act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", message: "Sesión finalizada", emotion: "sadness", emotion_confidence: .9, exercise_result: "skipped" }) }));
+      expect(screen.getByText("Sesión finalizada. Tu expresión quedó registrada.")).toBeInTheDocument();
+    } finally {
+      features.ACTIVITIES_ENABLED = true;
+    }
   });
 
   it("muestra el resultado educativo en el orden indicado, con la limitación y la nota de borrador", async () => {

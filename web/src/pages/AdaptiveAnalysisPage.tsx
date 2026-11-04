@@ -31,6 +31,7 @@ import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { useConsentStatus } from "../consent/useConsentStatus";
 import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Message = Partial<LiveReading> & {
@@ -659,7 +660,8 @@ export function AdaptiveAnalysisPage() {
               : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
         </>}
         {phase !== "ready" && <>
-          <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
+          <p className="step-caption">{!ACTIVITIES_ENABLED ? (phase === "live" ? "Paso 1 de 2 · Expresión en vivo" : "Paso 2 de 2 · Resultado")
+            : phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
           {phase === "live" && activeModel && <p className="muted">Modelo facial: {emotionModelName(activeModel)}</p>}
           {phase === "live" && <LiveExpressionPanel live={live} />}
@@ -672,6 +674,7 @@ export function AdaptiveAnalysisPage() {
           {phase !== "live" && phase !== "result" && emotion && <p>Expresión registrada: <strong>{expressionLabel(emotion)}</strong>{confidence != null && ` (${percent(confidence)} %)`}</p>}
           {phase === "result" && emotion && <ExpressionResult expressionKey={emotion} confidence={confidence} info={expressionInfo} />}
           {phase === "result" && <>
+            {ACTIVITIES_ENABLED && <>
             {recommendation ? <div className="recommendation-card">
               <p className="step-caption">Actividad recomendada</p>
               <h2>{recommendation.name}</h2>
@@ -703,13 +706,14 @@ export function AdaptiveAnalysisPage() {
             {(recommendation || availableActivities.length > 0) && <Callout variant="info" role="note">
               <strong>Antes de la actividad:</strong> aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, y deja espacio para mover los brazos.
             </Callout>}
+            </>}
             <div className="inline-actions">
-              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</Button>
+              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>{ACTIVITIES_ENABLED ? "Finalizar sin actividad" : "Finalizar"}</Button>
               <Button variant="secondary" type="submit" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</Button>
             </div>
-            <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>
+            {ACTIVITIES_ENABLED && <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>}
           </>}
-          {phase === "completed" && !activity && outcome === "skipped" && <p>Sesión finalizada sin actividad. Tu expresión quedó registrada.</p>}
+          {phase === "completed" && !activity && outcome === "skipped" && <p>{ACTIVITIES_ENABLED ? "Sesión finalizada sin actividad. Tu expresión quedó registrada." : "Sesión finalizada. Tu expresión quedó registrada."}</p>}
           {(phase === "exercise" || phase === "completed") && activity && <>
             <h2>{activity.name}</h2><p>{activity.description}</p>
             {phase === "exercise" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</Button>}

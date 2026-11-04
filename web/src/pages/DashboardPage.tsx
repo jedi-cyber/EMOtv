@@ -11,6 +11,7 @@ import { useConsentStatus } from "../consent/useConsentStatus";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { paths } from "../routes/paths";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 const descriptions: Record<UserRole, string> = {
   student: "Conduce sesiones desde el Analizador, con o sin protocolo, y revisa sus resultados.",
@@ -77,7 +78,7 @@ function StudentNextStep() {
     <dl className="next-step-summary">
       <div><dt>Expresión registrada</dt><dd>{last.initial_emotion ? expressionLabel(last.initial_emotion) : "Sin expresión registrada"}</dd></div>
       <div><dt>Fecha</dt><dd>{formatDate(last.started_at)}</dd></div>
-      <div><dt>Actividad</dt><dd>{last.exercise_result
+      <div><dt>{ACTIVITIES_ENABLED || last.activity_id ? "Actividad" : "Estado"}</dt><dd>{last.exercise_result && (ACTIVITIES_ENABLED || last.activity_id)
         ? <StatusChip tone={last.exercise_result === "completed" ? "success" : "neutral"}>{activityOutcomeName(last.exercise_result)}</StatusChip>
         :<StatusChip tone={toneForSession(last.state)}>{sessionStateName(last.state)}</StatusChip>}</dd></div>
     </dl>

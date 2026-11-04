@@ -63,6 +63,14 @@ commit de cada grupo. La cronología commit por commit está en
   en el banco ni en el editor, y un protocolo que las usa pide reemplazarlas
   antes de iniciar una sesión. Las sesiones, reportes y actas que ya las tienen
   se siguen mostrando.
+- Las actividades corporales (posturas verificadas con MediaPipe) quedan
+  congeladas y ocultas porque no forman parte del objetivo. Con
+  `ACTIVITIES_ENABLED=false` (predeterminado) el Analizador termina en el
+  resultado de la expresión, no se inician ni se recomiendan actividades, el
+  catálogo solo se lee, Emi no las describe y el menú ya no muestra
+  Actividades ni Administrar actividades. Las sesiones anteriores con
+  actividad se siguen mostrando. El código, las pruebas y las tablas se
+  conservan para los criterios 5, 6 y 7.
 
 ### Corregido
 - El borrado de los datos de voluntarios incluye los resultados de práctica.

@@ -41,7 +41,9 @@ describe("rutas y navegación por rol", () => {
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md): toda sesión empieza en el Analizador; Cuestionarios y
     // Protocolos van en el grupo «Mi material»; Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/activities", "/questionnaires", "/protocols", "/images", "/consent"]);
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/questionnaires", "/protocols", "/images", "/consent"]);
+    // Actividades corporales congeladas: fuera del menú de todos los roles.
+    expect(Object.values(navigationByRole).flat().some((item) => item.to.includes("activities"))).toBe(false);
     expect(navigationByRole.student.filter((item) => item.group).map((item) => item.to)).toEqual(["/questionnaires", "/protocols", "/images"]);
     // El usuario sube sus imágenes; su docente las revisa (con contador en el menú).
     expect(navigationByRole.student.some((item) => item.to === "/images/review")).toBe(false);
@@ -61,7 +63,6 @@ describe("rutas y navegación por rol", () => {
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
     // El docente conduce sesiones propias; la gestión nunca ve sesiones.
     expect(navigationByRole.psychologist.some((item) => item.to === "/analysis")).toBe(true);
-    expect(navigationByRole.superadmin.some((item) => item.to === "/admin/activities")).toBe(true);
     expect(navigationByRole.admin.some((item) => item.to === "/admin/activities")).toBe(false);
     for (const role of ["admin", "superadmin"] as const) {
       expect(navigationByRole[role].map((item) => item.to)).toEqual(expect.arrayContaining(["/users", "/audit"]));
@@ -140,7 +141,7 @@ describe("rutas y navegación por rol", () => {
   it("mantiene el foco dentro del menú móvil y lo lleva al contenido tras navegar", async () => {
     render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "token", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}>
       <MemoryRouter initialEntries={["/dashboard"]}><Routes>
-        <Route element={<AppLayout />}><Route path="dashboard" element={<p>Inicio</p>} /><Route path="activities" element={<p>Listado de actividades</p>} /></Route>
+        <Route element={<AppLayout />}><Route path="dashboard" element={<p>Inicio</p>} /><Route path="sessions" element={<p>Listado de sesiones</p>} /></Route>
       </Routes></MemoryRouter>
     </AuthContext.Provider>);
     await userEvent.click(screen.getByRole("button", { name: "Abrir menú" }));
@@ -148,9 +149,9 @@ describe("rutas y navegación por rol", () => {
     brand.focus();
     await userEvent.tab({ shift: true });
     expect(screen.getByRole("link", { name: "Consentimiento" })).toHaveFocus();
-    await userEvent.click(screen.getByRole("link", { name: "Actividades" }));
+    await userEvent.click(screen.getByRole("link", { name: "Mis sesiones" }));
     expect(screen.getByRole("main")).toHaveFocus();
-    expect(screen.getByText("Listado de actividades")).toBeInTheDocument();
+    expect(screen.getByText("Listado de sesiones")).toBeInTheDocument();
   });
   it("muestra el estado del servicio solo después de un fallo y lo retira al recuperarse", () => {
     renderRole("student", ["student"]);

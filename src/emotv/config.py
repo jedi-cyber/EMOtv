@@ -364,6 +364,21 @@ def get_exams_enabled(environ: Mapping[str, str] | None = None) -> bool:
     return value == "true"
 
 
+ACTIVITIES_FROZEN_MESSAGE = "Las actividades corporales están congeladas: no forman parte del objetivo de EMOtv"
+
+
+def get_activities_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    """Las actividades corporales (posturas verificadas con MediaPipe) están
+    congeladas: sin ACTIVITIES_ENABLED=true no se inician ni se recomiendan. Las
+    sesiones que ya tienen una actividad se siguen mostrando."""
+
+    source = os.environ if environ is None else environ
+    value = source.get("ACTIVITIES_ENABLED", "").strip().lower() or "false"
+    if value not in {"true", "false"}:
+        raise ValueError("ACTIVITIES_ENABLED debe ser true o false")
+    return value == "true"
+
+
 def get_abstract_stimuli_enabled(environ: Mapping[str, str] | None = None) -> bool:
     """Las imágenes abstractas («¿qué ves?») están congeladas: sin
     ABSTRACT_STIMULI_ENABLED=true no se suben ni se aplican nuevas. Las sesiones

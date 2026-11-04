@@ -16,6 +16,7 @@ import { Button, ButtonLink } from "../components/Button";
 import { AnswerList, QuestionnaireNote } from "../questionnaires/QuestionnaireForm";
 import { SessionTimeline } from "../insights/SessionTimeline";
 import { StimulusMetrics } from "../insights/StimulusMetrics";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 const dateTime = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
 
@@ -104,13 +105,16 @@ export function SessionDetailPage() {
       <div><dt>Inicio</dt><dd>{dateTime(session.started_at)}</dd></div>
       <div><dt>Finalización</dt><dd>{session.completed_at ? dateTime(session.completed_at) : "—"}</dd></div>
       {!isStudent && <div><dt>Conducida por</dt><dd>{session.student_id ? studentCode : "Tú"}</dd></div>}
-      <div><dt>Actividad</dt><dd>{activityName}</dd></div>
+      {/* Actividades congeladas: solo se muestran en las sesiones que tuvieron una. */}
+      {(ACTIVITIES_ENABLED || session.activity_id) && <div><dt>Actividad</dt><dd>{activityName}</dd></div>}
       {!isStudent && <div><dt>Modelo facial</dt><dd>{emotionModelName(session.emotion_model_id)}{session.emotion_model_version ? ` · versión ${session.emotion_model_version}` : ""}</dd></div>}
       <div><dt>Expresión registrada</dt><dd>{expressionLabel(session.initial_emotion)}</dd></div>
       <div><dt>Expresión registrada el</dt><dd>{session.recognized_at ? dateTime(session.recognized_at) : "—"}</dd></div>
       <div><dt>Confianza del modelo</dt><dd>{session.emotion_confidence == null ? "—" : `${Math.round(session.emotion_confidence * 100)} %`}</dd></div>
+      {(ACTIVITIES_ENABLED || session.activity_id) && <>
       <div><dt>Resultado de la actividad</dt><dd>{activityOutcomeName(session.exercise_result)}</dd></div>
       <div><dt>Duración</dt><dd>{session.exercise_duration_seconds == null ? "—" : `${session.exercise_duration_seconds} s`}</dd></div>
+      </>}
       <div><dt>Pasos completados</dt><dd>{session.exercise_steps_total == null ? "—" : `${session.exercise_steps_completed ?? 0} de ${session.exercise_steps_total}${(session.exercise_repetitions ?? 1) > 1 ? ` (${session.exercise_repetitions} repeticiones)` : ""}`}</dd></div>
     </dl>
     <p className="muted">La expresión registrada es una estimación del modelo sobre el rostro visible; no indica lo que sentías.</p>
