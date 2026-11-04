@@ -7,7 +7,8 @@ class Role(str, Enum):
 
     # Usuario: conduce sesiones propias o con otras personas.
     STUDENT = "student"
-    # Docente: tiene un grupo de usuarios y también conduce sesiones propias.
+    # Docente: supervisa a su grupo (revisa reportes e imágenes) y conduce sesiones
+    # propias solo como demostración, para enseñar a usar EMOtv.
     PSYCHOLOGIST = "psychologist"
     # Administrador: persona con cargo superior en la Facultad; gestiona cuentas y grupos.
     ADMIN = "admin"

@@ -58,6 +58,7 @@ from emotv.infrastructure.persistence import PostgresMobileSessionRepository
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.model_admin_router import create_model_admin_router
 from emotv.application.local_model_service import LocalModelService
 from emotv.application.audit_service import AuditService
@@ -353,6 +354,10 @@ if DATABASE_URL and JWT_SECRET_KEY:
         report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
                                        authorization_service, docente_of, insights_service, audit_service)
     app.include_router(create_report_router(report_service, authentication_service, user_repository))
+    # Por revisar del docente: supervisa después, cuando tiene tiempo, sin estar en cada sesión.
+    app.include_router(create_review_router(
+        create_visible_sessions(session_service, student_repository, assignment_repository, authorization_service),
+        report_service, student_repository, authentication_service, user_repository, audit=audit_service))
     # Aplicativo Android: consulta sesiones, reportes y estadísticas con los mismos
     # servicios y reglas que la web; no conduce sesiones (docs/mobile-api.md).
     app.include_router(create_mobile_router(
@@ -440,6 +445,7 @@ else:
     if get_exams_enabled():
         app.include_router(create_exam_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
+    app.include_router(create_review_router(None, None, None, None, None))
 
 
 def run_retention() -> None:

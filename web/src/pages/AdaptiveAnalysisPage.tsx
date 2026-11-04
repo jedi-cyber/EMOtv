@@ -583,7 +583,10 @@ export function AdaptiveAnalysisPage() {
 
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
-    <PageHeader title="Analizador" description="Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo y después puedes revisar una actividad sugerida." />
+    <PageHeader title="Analizador" description={`Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo${ACTIVITIES_ENABLED ? " y después puedes revisar una actividad sugerida" : " y después ves el resultado"}.`} />
+    {user?.role === "psychologist" && <Callout variant="info" role="note">
+      Tus sesiones son de demostración: sirven para enseñar a tu grupo a usar EMOtv y no cuentan en las estadísticas. Las sesiones de tus usuarios las conducen ellos.
+    </Callout>}
     {session?.code && phase !== "ready" && <p className="session-code" role="status">Código de la sesión: <strong>{session.code}</strong> · Anótalo en el formato firmado.</p>}
     {error && <Callout variant="error">{error}</Callout>}
     {notice && <Callout variant="info">{notice}</Callout>}

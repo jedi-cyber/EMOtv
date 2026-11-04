@@ -36,6 +36,7 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
 export function AppLayout() {
   const { user, logout, token } = useAuth();
   const [reviewCount, setReviewCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const { activeSession } = useActiveSession();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,6 +57,10 @@ export function AppLayout() {
     apiRequest<{ pending: number }>("/own-stimuli/review/count", { token })
       .then((result) => { if (!cancelled) setReviewCount(result.pending); })
       .catch(() => { if (!cancelled) setReviewCount(0); });
+    // Reportes y pedidos de eliminación de su grupo.
+    apiRequest<{ pending: number }>("/reviews/count", { token })
+      .then((result) => { if (!cancelled) setPendingCount(result.pending); })
+      .catch(() => { if (!cancelled) setPendingCount(0); });
     return () => { cancelled = true; };
   }, [user?.role, token, pathname]);
   useEffect(() => {
@@ -108,7 +113,8 @@ export function AppLayout() {
   const section = sectionName(pathname, items) ?? trail.at(-1)?.label ?? "Inicio";
   const navLink = ({ to, label, icon, counter }: NavigationItem) => <NavLink key={to} to={to} end={to === paths.dashboard}
     className={({ isActive }) => isActive ? "active" : undefined}><NavIcon name={icon} /><span>{label}</span>
-    {counter === "imageReview" && reviewCount > 0 && <span className="nav-counter" aria-label={`${reviewCount} por revisar`}>{reviewCount}</span>}</NavLink>;
+    {counter === "imageReview" && reviewCount > 0 && <span className="nav-counter" aria-label={`${reviewCount} por revisar`}>{reviewCount}</span>}
+    {counter === "reviews" && pendingCount > 0 && <span className="nav-counter" aria-label={`${pendingCount} por revisar`}>{pendingCount}</span>}</NavLink>;
   const activeSessionPath = activeSession?.activityId ? paths.analysisForActivity(activeSession.activityId) : paths.analysis;
 
   return (

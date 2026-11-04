@@ -157,7 +157,7 @@ def create_session_starter(
                 raise HTTPException(status_code=403, detail="Tu cuenta de usuario no tiene perfil asociado")
             resource_id, actor_id = request.student_id or actor.id, actor.id
         else:
-            # El docente conduce sesiones propias: sin perfil de usuario asociado.
+            # El docente conduce sesiones propias de demostración: sin perfil de usuario asociado.
             if request.student_id is not None:
                 raise HTTPException(status_code=403, detail="Cada usuario inicia sus sesiones desde su cuenta")
             resource_id, actor_id = None, None

@@ -99,7 +99,8 @@ def test_a_user_sees_only_their_sessions_and_a_docente_only_their_group(env):  #
     assert statistics(env, env.user_2).json()["sessions"]["total"] == 1
     assert statistics(env, env.user_1, scope="group").status_code == 403
     mine = statistics(env, env.docente_a).json()
-    assert mine["sessions"]["total"] == 1 and "by_user" not in mine
+    # Las sesiones del docente son de demostración: no cuentan.
+    assert mine["sessions"]["total"] == 0 and "by_user" not in mine
     group = statistics(env, env.docente_a, scope="group").json()
     assert group["sessions"]["total"] == 2
     assert group["by_user"] == [{"email": "usuario1@example.com", "sessions": 2, "completed": 1, "interrupted": 1}]

@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `superadmin` | Superadministrador | Soporte técnico |
 | `admin` | Administrador | Persona con cargo superior en la Facultad (una cuenta activa por defecto, `MAX_ADMIN_ACCOUNTS=1`) |
-| `psychologist` | Docente | Tiene un grupo de usuarios y también conduce sesiones propias |
+| `psychologist` | Docente | Supervisa a su grupo (reportes, eliminaciones e imágenes) y conduce sesiones propias solo como demostración |
 | `student` | Usuario | Conduce sesiones, propias o con otras personas; tiene un solo docente |
 
 Las **personas evaluadas no se registran ni tienen cuenta**: cada sesión lleva

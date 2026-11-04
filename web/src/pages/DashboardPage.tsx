@@ -15,7 +15,7 @@ import { ACTIVITIES_ENABLED } from "../routes/features";
 
 const descriptions: Record<UserRole, string> = {
   student: "Conduce sesiones desde el Analizador, con o sin protocolo, y revisa sus resultados.",
-  psychologist: "Revisa los resultados de tu grupo y conduce tus propias sesiones.",
+  psychologist: "Supervisa a tu grupo: revisa en «Por revisar» lo que te envían, cuando tengas tiempo. Tus sesiones son de demostración, para enseñar a usar EMOtv.",
   admin: "Gestiona las cuentas de docentes y usuarios, los grupos y la auditoría.",
   superadmin: "Soporte técnico: modelos, configuración, cuenta de administrador y auditoría.",
 };

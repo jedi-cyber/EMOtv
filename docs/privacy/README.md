@@ -60,7 +60,7 @@ servidor (FastAPI); ocultar un botón en la interfaz nunca es la única protecci
 | --- | --- | --- | --- |
 | `superadmin` | Superadministrador | Soporte técnico: modelos, catálogos, políticas, la cuenta de administrador y la auditoría. Restablece solo la contraseña del administrador. | Sesiones, cuestionarios, respuestas y reportes |
 | `admin` | Administrador | Persona con cargo superior en la Facultad: crea y desactiva docentes y usuarios, arma los grupos, restablece sus contraseñas y consulta la auditoría. | Sesiones, cuestionarios, respuestas y reportes |
-| `psychologist` | Docente | Ve las sesiones de los usuarios de su grupo y las suyas, y las elimina con acta. Conduce sesiones propias. | Datos de otros grupos |
+| `psychologist` | Docente | Ve las sesiones de los usuarios de su grupo y las suyas, y las elimina con acta. No conduce las sesiones de su grupo; las suyas son de demostración y no cuentan en las estadísticas. | Datos de otros grupos |
 | `student` | Usuario | Conduce sesiones, propias o con otras personas, y ve solo lo suyo. | Datos de otros usuarios |
 
 - Solo el superadministrador crea o desactiva la cuenta de administrador. Por

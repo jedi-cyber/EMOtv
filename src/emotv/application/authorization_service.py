@@ -17,7 +17,8 @@ ROLE_ACTIONS: dict[Role, frozenset[AccessAction]] = {
         AccessAction.LIST_STUDENT_SESSIONS,
         AccessAction.MANAGE_CONSENT,
     }),
-    # Docente: ve los resultados de su grupo y conduce sesiones propias.
+    # Docente: ve los resultados de su grupo y conduce sesiones propias de
+    # demostración; nunca conduce la sesión de un usuario.
     Role.PSYCHOLOGIST: frozenset({
         AccessAction.START_SESSION,
         AccessAction.CANCEL_SESSION,

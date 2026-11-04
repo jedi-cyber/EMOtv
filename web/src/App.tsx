@@ -37,6 +37,7 @@ import { SessionQuestionnairePage } from "./pages/SessionQuestionnairePage";
 import { StimuliPage } from "./pages/StimuliPage";
 import { ImagesPage } from "./pages/ImagesPage";
 import { ImageReviewPage } from "./pages/ImageReviewPage";
+import { ReviewsPage } from "./pages/ReviewsPage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
@@ -53,7 +54,7 @@ export function App() {
           <Route index element={<Navigate to={paths.dashboard} replace />} />
           <Route path={paths.dashboard} element={<DashboardPage />} />
           <Route path={paths.commitment} element={<RoleRoute allowed={["student", "psychologist"]}><CommitmentPage /></RoleRoute>} />
-          {/* El docente también conduce sesiones propias. */}
+          {/* El docente conduce sesiones propias solo como demostración. */}
           <Route path={paths.analysis} element={<RoleRoute allowed={["student", "psychologist"]}><AnalysisPage /></RoleRoute>} />
           <Route path={paths.sessionReportPattern} element={<RoleRoute allowed={["student", "psychologist"]}><SessionReportPage /></RoleRoute>} />
           <Route path={paths.reportPrintPattern} element={<RoleRoute allowed={["student", "psychologist"]}><ReportPrintPage /></RoleRoute>} />
@@ -65,6 +66,7 @@ export function App() {
           <Route path={paths.images} element={<RoleRoute allowed={["student"]}><ImagesPage /></RoleRoute>} />
           <Route path={paths.statistics} element={<RoleRoute allowed={["student", "psychologist"]}><StatisticsPage /></RoleRoute>} />
           <Route path={paths.imageReview} element={<RoleRoute allowed={["psychologist"]}><ImageReviewPage /></RoleRoute>} />
+          <Route path={paths.reviews} element={<RoleRoute allowed={["psychologist"]}><ReviewsPage /></RoleRoute>} />
           <Route path={paths.deletionCertificatePattern} element={<RoleRoute allowed={["student", "psychologist"]}><DeletionCertificatePage /></RoleRoute>} />
           <Route path={paths.consent} element={<RoleRoute allowed={["student"]}><ConsentPage /></RoleRoute>} />
           {ACTIVITIES_ENABLED && <Route path={paths.activities} element={<ActivitiesPage />} />}

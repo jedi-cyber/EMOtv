@@ -104,7 +104,7 @@ export function SessionDetailPage() {
       <div><dt>Con quién</dt><dd>{sessionTypeName(session.session_type)}</dd></div>
       <div><dt>Inicio</dt><dd>{dateTime(session.started_at)}</dd></div>
       <div><dt>Finalización</dt><dd>{session.completed_at ? dateTime(session.completed_at) : "—"}</dd></div>
-      {!isStudent && <div><dt>Conducida por</dt><dd>{session.student_id ? studentCode : "Tú"}</dd></div>}
+      {!isStudent && <div><dt>Conducida por</dt><dd>{session.student_id ? studentCode : "Tú (demostración)"}</dd></div>}
       {/* Actividades congeladas: solo se muestran en las sesiones que tuvieron una. */}
       {(ACTIVITIES_ENABLED || session.activity_id) && <div><dt>Actividad</dt><dd>{activityName}</dd></div>}
       {!isStudent && <div><dt>Modelo facial</dt><dd>{emotionModelName(session.emotion_model_id)}{session.emotion_model_version ? ` · versión ${session.emotion_model_version}` : ""}</dd></div>}

@@ -80,7 +80,7 @@ export function SessionsPage() {
               <td data-label="Fecha">{formatDate(session.started_at)}</td>
               <td data-label="Estado"><span className="inline-actions"><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip>
                 {session.deletion_requested_at && <StatusChip tone="progress">Eliminación pedida</StatusChip>}</span></td>
-              {!student && <td data-label="Conducida por">{session.student_id ? studentCodes.get(session.student_id) ?? "Usuario de tu grupo" : "Tú"}</td>}
+              {!student && <td data-label="Conducida por">{session.student_id ? studentCodes.get(session.student_id) ?? "Usuario de tu grupo" : "Tú (demostración)"}</td>}
               {ACTIVITIES_ENABLED && <><td data-label="Actividad">{activityName(session.activity_id)}</td>
               <td data-label="Resultado de la actividad">{session.exercise_result ? activityOutcomeName(session.exercise_result) : EMPTY}</td></>}
               <td data-label="Expresión registrada">{session.initial_emotion ? expressionLabel(session.initial_emotion) : EMPTY}</td>

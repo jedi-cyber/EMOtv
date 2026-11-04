@@ -131,9 +131,11 @@ nombres: Alegría, Sorpresa, Tristeza, Enojo, Miedo, Asco y Cara tranquila.
 - **Usuario**: conduce sesiones desde el Analizador (propias o con otras
   personas), arma sus cuestionarios y protocolos, sube imágenes propias y
   redacta reportes. Tiene un solo Docente.
-- **Docente**: tiene un grupo de usuarios, revisa y aprueba sus reportes,
-  aprueba sus imágenes, ejecuta la eliminación de sesiones con acta, conduce
-  sesiones propias y crea exámenes simulados.
+- **Docente**: supervisa a su grupo sin estar presente en cada sesión. Revisa
+  y aprueba los reportes que le envían, aprueba sus imágenes y ejecuta la
+  eliminación de sesiones con acta; lo pendiente aparece en «Por revisar». No
+  conduce las sesiones de sus usuarios: sus sesiones propias son de
+  demostración, para enseñar a usar EMOtv, y no cuentan en las estadísticas.
 - **Administración**: gestiona cuentas y grupos. No accede a sesiones, reportes
   ni resultados. Hay además una cuenta de soporte técnico (superadministrador),
   que tampoco accede a contenidos.

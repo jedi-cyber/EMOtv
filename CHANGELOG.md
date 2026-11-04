@@ -47,6 +47,11 @@ commit de cada grupo. La cronología commit por commit está en
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- El docente supervisa y no conduce las sesiones de su grupo. «Por revisar»
+  (`GET /reviews`, con contador en el menú) reúne, del más antiguo al más
+  nuevo, los reportes enviados y los pedidos de eliminación, para revisarlos
+  cuando tenga tiempo. Sus sesiones propias son de demostración: se marcan así
+  y no cuentan en las estadísticas.
 - La medición de rendimiento de los modelos faciales ya no vence a los 30 días
   y deja de ser requisito: sin ella, HSEmotion y FER+ funcionan con un
   rendimiento de referencia. Se quita `EMOTION_BENCHMARK_MAX_AGE_DAYS`.

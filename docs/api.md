@@ -127,10 +127,12 @@ cuestionarios se pueden armar, pero una sesión no puede aplicar ninguno (`503`)
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias); exige el compromiso aceptado (`428`) |
+| `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias de demostración, que no cuentan en `GET /statistics`); exige el compromiso aceptado (`428`) |
 | `POST` | `/sessions/{id}/cancel` | Solo quien conduce la sesión |
 | `GET` | `/sessions/{id}` | `can_access_session`: quien la condujo y el docente de ese usuario |
 | `GET` | `/sessions` | Propias (usuario) o las propias y las de su grupo (docente) |
+| `GET` | `/reviews` | Solo docente: lo que su grupo dejó esperando su revisión, del más antiguo al más nuevo. Cada elemento trae `kind` (`report` o `deletion`), `session_id`, `session_code`, `user_code`, `waiting_since` y `report_id`. Las sesiones propias del docente (demostración) no aparecen. Auditado |
+| `GET` | `/reviews/count` | Solo docente: `{pending}` para el contador del menú, sin auditar |
 | `GET` | `/sessions?student_id={id}` | Sesiones de un usuario del grupo del docente |
 | `POST` | `/sessions/{id}/deletion-request` | Solo quien condujo la sesión |
 | `POST` | `/sessions/{id}/delete` | Docente: sus sesiones y las de su grupo, terminadas (`409` en curso). Borra todos los registros, verifica que no quede ninguno y devuelve el acta |

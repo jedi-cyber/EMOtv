@@ -92,7 +92,7 @@ DATA = """## Qué se guarda y qué no
 
 ROLES = """## Roles
 - Usuario: conduce sesiones desde el Analizador, arma sus cuestionarios y protocolos, redacta reportes y también analiza su propia expresión.
-- Docente: tiene un grupo de usuarios, revisa y aprueba sus reportes, aprueba las imágenes que suben, ejecuta la eliminación de sesiones y también conduce sesiones propias.
+- Docente: supervisa a su grupo sin estar presente en cada sesión. Revisa y aprueba los reportes que le envían, aprueba las imágenes que suben y ejecuta la eliminación de sesiones; todo lo pendiente aparece en «Por revisar». No conduce las sesiones de sus usuarios: sus sesiones propias son de demostración, para enseñar a usar EMOtv, y no cuentan en las estadísticas.
 - Administración: gestiona cuentas y grupos; no accede a sesiones ni resultados."""
 
 

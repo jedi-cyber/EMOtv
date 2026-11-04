@@ -16,6 +16,7 @@ export const paths = {
   stimuli: "/stimuli",
   images: "/images",
   imageReview: "/images/review",
+  reviews: "/reviews",
   statistics: "/statistics",
   protocols: "/protocols",
   sessions: "/sessions",

@@ -12,7 +12,7 @@ export interface NavigationItem {
   /** Sección plegable del menú a la que pertenece (por ejemplo, "Mi material"). */
   group?: string;
   /** Contador junto al nombre: imágenes pendientes de revisión del docente. */
-  counter?: "imageReview";
+  counter?: "imageReview" | "reviews";
 }
 
 /** Cuestionarios y protocolos: lo que cada cuenta prepara para usar en el Analizador. */
@@ -38,9 +38,10 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.images, label: "Imágenes", icon: "document", group: "Mi material" },
     { to: paths.consent, label: "Consentimiento", icon: "users", placement: "footer" },
   ],
-  // El docente conduce sesiones propias y revisa las de su grupo.
+  // El docente supervisa a su grupo después de cada sesión; sus sesiones son de demostración.
   psychologist: [
     { to: paths.dashboard, label: "Inicio", icon: "home" },
+    { to: paths.reviews, label: "Por revisar", icon: "document", counter: "reviews" },
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
     { to: paths.students, label: "Mi grupo", icon: "users" },

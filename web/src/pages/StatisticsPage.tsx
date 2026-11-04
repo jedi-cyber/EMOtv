@@ -70,8 +70,10 @@ function cell(value: string | number) {
 export function StatisticsPage() {
   const { user } = useAuth();
   const isDocente = user?.role === "psychologist";
-  const [draft, setDraft] = useState<Filters>(emptyFilters);
-  const [applied, setApplied] = useState<Filters>(emptyFilters);
+  // Las sesiones del docente son de demostración: solo ve las de su grupo.
+  const initial: Filters = { ...emptyFilters, scope: isDocente ? "group" : "mine" };
+  const [draft, setDraft] = useState<Filters>(initial);
+  const [applied, setApplied] = useState<Filters>(initial);
   const [questionnaireId, setQuestionnaireId] = useState("");
   const [copied, setCopied] = useState("");
   const result = useApiQuery<SessionStatistics>(query(applied, questionnaireId));
@@ -85,12 +87,6 @@ export function StatisticsPage() {
     event.preventDefault();
     setCopied("");
     setApplied(draft);
-  }
-
-  function changeScope(scope: Scope) {
-    setCopied(""); setQuestionnaireId("");
-    setDraft((current) => ({ ...current, scope, protocol: "" }));
-    setApplied((current) => ({ ...current, scope, protocol: "" }));
   }
 
   /** Los datos visibles, separados por tabulaciones. No se crea ningún archivo. */
@@ -146,20 +142,14 @@ export function StatisticsPage() {
 
   return <section>
     <PageHeader title="Estadísticas"
-      description={isDocente ? "Resumen de tus sesiones o de las de tu grupo." : "Resumen de las sesiones que condujiste."}
+      description={isDocente ? "Resumen de las sesiones que condujo tu grupo." : "Resumen de las sesiones que condujiste."}
       actions={<Button variant="secondary" disabled={!data} onClick={() => { void copy(); }}>Copiar tabla</Button>} />
     <Callout variant="info" role="note">
       Estas estadísticas cuentan sesiones, no personas, y son estimaciones. No permiten sacar conclusiones sobre ninguna persona.
     </Callout>
     {copied && <Callout variant="success">{copied}</Callout>}
 
-    {isDocente && <fieldset className="audience-choice stat-scope">
-      <legend>¿Qué sesiones?</legend>
-      {(["mine", "group"] as const).map((scope) => <label key={scope} className={`audience-option${applied.scope === scope ? " is-selected" : ""}`}>
-        <input type="radio" name="statistics-scope" checked={applied.scope === scope} onChange={() => changeScope(scope)} />
-        <strong>{scope === "mine" ? "Mis sesiones" : "Mi grupo"}</strong>
-      </label>)}
-    </fieldset>}
+    {isDocente && <p className="muted">Sesiones de tu grupo. Tus sesiones de demostración no cuentan.</p>}
 
     <form className="filter-bar stat-filters" onSubmit={apply}>
       <label>Desde<input type="date" value={draft.date_from} onChange={(event) => set("date_from", event.target.value)} /></label>

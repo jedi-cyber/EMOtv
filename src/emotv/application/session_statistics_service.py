@@ -93,6 +93,10 @@ class SessionStatisticsService:
             return tuple(self.group_user_ids(user.id))
         if scope != "mine":
             raise ValueError("Elige «Mis sesiones» o «Mi grupo»")
+        if user.role is Role.PSYCHOLOGIST:
+            # Las sesiones del docente son de demostración, para enseñar a su grupo:
+            # no cuentan en las estadísticas.
+            return ()
         return (user.id,)
 
     def _family(self, session: EmotionalSession) -> str | None:
