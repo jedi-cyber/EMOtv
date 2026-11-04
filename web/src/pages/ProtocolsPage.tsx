@@ -166,7 +166,15 @@ export function ProtocolsPage() {
   return <section>
     <PageHeader title="Protocolos"
       description="Un protocolo es una receta guardada: qué aplicar en una sesión, para usarla cuando quieras."
-      actions={<Button variant="primary" onClick={() => openEditor(null)}>Nuevo protocolo</Button>} />
+      actions={<>
+        <Button disabled={busy} onClick={() => { void run(async () => {
+          await apiRequest("/protocols/starter", { method: "POST", token });
+          return "Se agregó «Emociones básicas 4 a 6 años» a tus protocolos. Puedes editarla y usarla en el Analizador.";
+        }); }}>Usar la plantilla inicial</Button>
+        <Button variant="primary" onClick={() => openEditor(null)}>Nuevo protocolo</Button>
+      </>} />
+    <p className="muted">La plantilla inicial «Emociones básicas 4 a 6 años» es para niños y en modo accesible: seis dibujos
+      del banco inicial, cada uno con dos opciones para elegir qué emoción es.</p>
     <NoticeList />
     {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}

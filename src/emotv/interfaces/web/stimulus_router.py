@@ -213,6 +213,13 @@ def create_stimulus_router(
             not_a_participant_photo=not_a_participant_photo, not_a_projective_test=not_a_projective_test)
         return stimulus_response(guarded(lambda: stimulus_service().create(user, draft_item, data)), user)
 
+    @router.post("/stimuli/initial-bank")
+    def add_initial_bank(user: User = Depends(current_user)) -> dict[str, int]:
+        """Del administrador: agrega los dibujos del banco inicial que falten
+        (seis emociones básicas, tres variantes cada una). Repetirlo no duplica."""
+        added = guarded(lambda: stimulus_service().add_initial_bank(user))
+        return {"added": len(added), "total": len(stimulus_service().initial_bank_present())}
+
     @router.get("/stimuli/{stimulus_id}", response_model=StimulusResponse)
     def get_stimulus(stimulus_id: str, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().get(user, stimulus_id)), user)
@@ -241,6 +248,11 @@ def create_stimulus_router(
     @router.post("/protocols", response_model=ProtocolResponse, status_code=201)
     def create_protocol(request: ProtocolRequest, user: User = Depends(current_user)):
         return protocol_response(guarded(lambda: protocol_service().create(user, draft(request))), user)
+
+    @router.post("/protocols/starter", response_model=ProtocolResponse, status_code=201)
+    def create_starter_protocol(user: User = Depends(current_user)):
+        """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (banco inicial)."""
+        return protocol_response(guarded(lambda: protocol_service().create_starter(user)), user)
 
     @router.get("/protocols/practice-defaults")
     def practice_defaults(user: User = Depends(current_user)) -> dict[str, Any]:

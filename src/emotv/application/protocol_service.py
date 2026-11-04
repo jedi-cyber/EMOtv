@@ -28,7 +28,7 @@ from emotv.application.chat_safety import has_identifier
 from emotv.application.practice_validation_service import VALIDATION_PROTOCOL_NAME, is_validation_protocol
 from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
-from emotv.application.stimulus_service import StimulusNotFound, StimulusService
+from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
 from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep
 from emotv.domain.role import Role
@@ -57,6 +57,16 @@ class ProtocolDraft:
     pre_questionnaire_id: str | None = None
     post_questionnaire_id: str | None = None
     accessible: bool = False
+
+
+# Plantilla inicial: «¿Qué emoción es?» con los dibujos del banco inicial, para
+# niños y en modo accesible. Se copia a la cuenta y cada quien la modifica.
+STARTER_NAME = "Emociones básicas 4 a 6 años"
+STARTER_DESCRIPTION = ("Reconocer seis emociones básicas en dibujos sencillos. Cada dibujo muestra dos "
+                       "opciones; la persona elige y después escucha el nombre de la emoción.")
+STARTER_EXPRESSIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust")
+STARTER_SECONDS = 30
+STARTER_OPTIONS = 2
 
 
 class ProtocolService:
@@ -272,6 +282,23 @@ class ProtocolService:
             name=source.name, description=source.description, for_children=source.for_children, steps=source.steps,
             pre_questionnaire_id=pre, post_questionnaire_id=usable(source.post_questionnaire_id) if pre else None,
             accessible=source.accessible))
+
+    def create_starter(self, user: User) -> Protocol:
+        """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años», armada con
+        el primer dibujo vigente de cada emoción del banco inicial."""
+        self._require_conductor(user)
+        drawings: dict[str, Stimulus] = {}
+        for item in sorted(self.stimuli.list_for(user, for_children=True), key=lambda item: item.title):
+            if (item.scope is StimulusScope.INSTITUTION and item.category == INITIAL_BANK_CATEGORY
+                    and item.expected_expression in STARTER_EXPRESSIONS):
+                drawings.setdefault(item.expected_expression, item)
+        if not drawings:
+            raise ValueError("La plantilla usa el banco inicial de dibujos, que todavía no está en EMOtv: "
+                             "pídele al administrador que lo agregue en «Estímulos institucionales»")
+        steps = tuple(ProtocolStep.recognition(drawings[expression].id, STARTER_SECONDS, STARTER_OPTIONS)
+                      for expression in STARTER_EXPRESSIONS if expression in drawings)
+        return self.create(user, ProtocolDraft(name=STARTER_NAME, description=STARTER_DESCRIPTION,
+                                               for_children=True, steps=steps, accessible=True))
 
     # --- Uso en una sesión ---------------------------------------------------
 

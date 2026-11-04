@@ -20,6 +20,9 @@ const emptyForm = {
   intensity: "mild" as StimulusIntensity, min_age: "6", origin: "", license: "",
 };
 
+/** Categoría de los dibujos de creación propia que trae EMOtv (igual que en el servidor). */
+export const INITIAL_BANK_CATEGORY = "Banco inicial EMOtv";
+
 /** Banco de estímulos: el docente gestiona los de su grupo; el administrador, los institucionales. */
 export function StimuliPage() {
   const { token, user } = useAuth();
@@ -59,6 +62,18 @@ export function StimuliPage() {
     finally { setBusy(false); }
   }
 
+  async function addInitialBank() {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const result = await apiRequest<{ added: number }>("/stimuli/initial-bank", { method: "POST", token });
+      setMessage(result.added > 0
+        ? `Se agregaron ${result.added} dibujos del banco inicial. Ya se pueden usar en los protocolos.`
+        : "El banco inicial ya estaba completo.");
+      await query.reload();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo agregar el banco inicial."); }
+    finally { setBusy(false); }
+  }
+
   async function change(item: Stimulus, action: "approve" | "retire" | "restore") {
     setBusy(true); setError(""); setMessage("");
     try {
@@ -83,6 +98,12 @@ export function StimuliPage() {
     </Callout>
     {message && <Callout variant="success">{message}</Callout>}
     {error && !adding && <Callout variant="error">{error}</Callout>}
+    {isAdmin && !query.loading && !query.error && !items.some((item) => item.category === INITIAL_BANK_CATEGORY) &&
+      <Callout variant="info" role="note">
+        <p>EMOtv trae un banco inicial de 18 dibujos sencillos de creación propia: seis emociones básicas, tres
+          versiones de cada una, aptos para niños desde los 3 años. No son fotografías de personas.</p>
+        <Button disabled={busy} onClick={() => { void addInitialBank(); }}>Agregar el banco inicial</Button>
+      </Callout>}
 
     <Modal open={adding} title="Agregar estímulo" onClose={() => setAdding(false)} busy={busy}
       footer={<>

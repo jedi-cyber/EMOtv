@@ -60,3 +60,12 @@ describe("plantillas de protocolos", () => {
     expect(screen.getAllByRole("button", { name: /Duplicar|Copiar y modificar/ })).toHaveLength(1);
   });
 });
+
+describe("plantilla inicial de protocolos", () => {
+  it("copia «Emociones básicas 4 a 6 años» a los protocolos propios", async () => {
+    page("student", []);
+    await userEvent.click(screen.getByRole("button", { name: "Usar la plantilla inicial" }));
+    expect(apiRequest).toHaveBeenCalledWith("/protocols/starter", expect.objectContaining({ method: "POST" }));
+    expect(await screen.findByText(/Se agregó «Emociones básicas 4 a 6 años» a tus protocolos/)).toBeInTheDocument();
+  });
+});

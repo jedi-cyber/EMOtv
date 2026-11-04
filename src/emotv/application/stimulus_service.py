@@ -10,7 +10,7 @@ relaciona ninguna imagen con una condición.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -25,6 +25,21 @@ from emotv.domain.user import User
 RESOURCE = "stimulus"
 ImageSanitizer = Callable[[bytes], tuple[str, bytes]]
 DocenteOf = Callable[[str], str | None]
+
+# Banco inicial: dibujos esquemáticos de creación propia (seis emociones básicas,
+# tres variantes cada una). El administrador lo agrega una vez y queda como
+# banco institucional, aprobado y apto para niños.
+INITIAL_BANK_CATEGORY = "Banco inicial EMOtv"
+INITIAL_BANK_ORIGIN = "Creación propia de EMOtv: dibujo esquemático generado por el sistema, sin fotos de personas"
+INITIAL_BANK_LICENSE = "Uso libre dentro de EMOtv"
+INITIAL_BANK_MIN_AGE = 3
+
+
+@dataclass(frozen=True, slots=True)
+class InitialDrawing:
+    title: str
+    expected_expression: str
+    image: bytes
 
 
 class StimulusNotFound(LookupError):
@@ -55,8 +70,11 @@ class StimulusService:
         sanitize: ImageSanitizer,
         clock: Callable[[], datetime] | None = None,
         abstract_enabled: bool = False,
+        initial_bank: Callable[[], Iterable[InitialDrawing]] | None = None,
     ) -> None:
         self.repository = repository
+        # Generador de los dibujos del banco inicial (infraestructura).
+        self.initial_bank = initial_bank
         # Imágenes abstractas congeladas (ABSTRACT_STIMULI_ENABLED): no se suben ni
         # se ofrecen; las ya registradas se siguen leyendo por get().
         self.abstract_enabled = abstract_enabled
@@ -160,6 +178,31 @@ class StimulusService:
         self.repository.add(stimulus, data)
         self.audit.record(user, AuditAction.CREATE, RESOURCE, stimulus.id)
         return stimulus
+
+    def initial_bank_present(self) -> tuple[Stimulus, ...]:
+        """Dibujos del banco inicial que ya están en el banco institucional."""
+        return tuple(item for item in self.repository.list_visible(())
+                     if item.scope is StimulusScope.INSTITUTION and item.category == INITIAL_BANK_CATEGORY
+                     and item.deleted_at is None)
+
+    def add_initial_bank(self, user: User) -> tuple[Stimulus, ...]:
+        """Agrega los dibujos del banco inicial que falten; los que ya están (o el
+        administrador retiró) no se repiten. Devuelve los agregados."""
+        if user.role is not Role.ADMIN:
+            raise PermissionError("El banco inicial lo agrega el administrador")
+        if self.initial_bank is None:
+            raise ValueError("El banco inicial no está disponible en este servidor")
+        present = {item.title for item in self.initial_bank_present()}
+        added = []
+        for drawing in self.initial_bank():
+            if drawing.title in present:
+                continue
+            added.append(self.create(user, StimulusDraft(
+                title=drawing.title, kind=StimulusKind.EMOTIONAL.value, category=INITIAL_BANK_CATEGORY,
+                intensity="mild", min_age=INITIAL_BANK_MIN_AGE, origin=INITIAL_BANK_ORIGIN,
+                license=INITIAL_BANK_LICENSE, expected_expression=drawing.expected_expression,
+                not_a_participant_photo=True), drawing.image))
+        return tuple(added)
 
     def _managed(self, user: User, stimulus_id: str) -> Stimulus:
         stimulus = self.repository.get(stimulus_id)

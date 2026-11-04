@@ -57,6 +57,7 @@ from emotv.application.mobile_auth_service import MobileAuthService
 from emotv.infrastructure.persistence import PostgresMobileSessionRepository
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
+from emotv.infrastructure.stimuli.initial_bank import initial_drawings
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
 from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.model_admin_router import create_model_admin_router
@@ -207,7 +208,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
     # Una sola regla de acceso a sesiones (can_access_session) en todos los routers.
     authorization_service = AuthorizationService(assignment_repository.is_assigned, docente_of)
     stimulus_service = StimulusService(PostgresStimulusRepository(database_sessions), audit_service, docente_of,
-                                       sanitize_stimulus_image, abstract_enabled=get_abstract_stimuli_enabled())
+                                       sanitize_stimulus_image, abstract_enabled=get_abstract_stimuli_enabled(),
+                                       initial_bank=initial_drawings)
     def session_access(user, session) -> bool:
         actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization_service.can_access_session(user, session, actor_student_id=actor.id if actor else None)

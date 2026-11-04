@@ -43,6 +43,13 @@ commit de cada grupo. La cronología commit por commit está en
   sigue aceptando), `PRACTICE_HOLD_SECONDS` y `PRACTICE_MAX_SECONDS`.
 - `GET /protocols/practice-defaults`: lo que el editor propone para un
   ejercicio nuevo.
+- Banco inicial de 18 dibujos de creación propia (seis emociones básicas, tres
+  variantes de piel y cabello), generados por el sistema y sin fotos de
+  personas. El administrador lo agrega con un botón en «Estímulos
+  institucionales» (`POST /stimuli/initial-bank`).
+- Plantilla de protocolo «Emociones básicas 4 a 6 años»: para niños, en modo
+  accesible, con un «¿Qué emoción es?» por emoción y dos opciones. Se copia
+  con «Usar la plantilla inicial» en Protocolos (`POST /protocols/starter`).
 - Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
 - Prueba e2e de una sesión con un ejercicio de práctica.
 

@@ -55,6 +55,7 @@ from emotv.interfaces.web.statistics_router import create_statistics_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
+from emotv.infrastructure.stimuli.initial_bank import initial_drawings
 from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.session_router import create_visible_sessions
 from emotv.application.stimulus_service import StimulusService
@@ -144,7 +145,7 @@ def env():
                                     clock=clock)
     # Las imágenes abstractas están congeladas; estas pruebas cubren las ya registradas.
     stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock,
-                              abstract_enabled=True)
+                              abstract_enabled=True, initial_bank=initial_drawings)
     def session_access(user, session):
         actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization.can_access_session(user, session, actor_student_id=actor.id if actor else None)
