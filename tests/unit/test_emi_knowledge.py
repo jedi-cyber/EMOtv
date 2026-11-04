@@ -33,7 +33,8 @@ def test_knowledge_with_current_content_fits_the_workflow_limit():
         assert activity.name in text
     for item in seeded_items():
         assert item.label_es in text
-    for heading in ("Qué es:", "Por qué suele presentarse:", "Cómo se reconoce:", "## Flujo de uso",
+    for heading in ("Qué es:", "Por qué suele presentarse:", "Cómo se reconoce:",
+                    "## Guía de uso (cómo hacer cada tarea)", "### Conducir una sesión (Usuario, Docente)",
                     "## Sesiones y autorizaciones", "## Protocolos",
                     "## Línea de tiempo y métricas de la sesión", "## Reporte de la sesión",
                     "## Limitaciones del reconocimiento facial", "## Qué se guarda y qué no", "## Roles"):
@@ -142,4 +143,9 @@ def test_con_las_actividades_congeladas_emi_no_las_describe():
     text = build_knowledge(DEFAULT_ACTIVITIES, seeded_items(), activities_enabled=False)
     assert "## Posturas" not in text and "## Actividades disponibles" not in text
     assert "postura" not in text.lower() and "propone actividades" not in text
-    assert "6. Las sesiones anteriores se consultan en Mis sesiones." in text
+    # La guía de uso dice cómo hacer cada tarea, con las funciones vigentes.
+    assert "### Supervisar al grupo (Docente)" in text and "«Haz la misma cara»" in text
+    assert len(text) <= MAX_KNOWLEDGE_CHARS
+    # Las expresiones conservan al menos su primera frase completa.
+    for item in seeded_items():
+        assert item.what_it_is.split(". ")[0] in text

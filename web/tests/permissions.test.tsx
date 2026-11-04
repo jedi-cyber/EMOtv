@@ -40,8 +40,8 @@ describe("rutas y navegación por rol", () => {
     });
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md): toda sesión empieza en el Analizador; Cuestionarios y
-    // Protocolos van en el grupo «Mi material»; Consentimiento va abajo y separado.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/questionnaires", "/protocols", "/images", "/consent"]);
+    // Protocolos van en el grupo «Mi material»; Consentimiento y la Guía de uso van abajo y separados.
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/questionnaires", "/protocols", "/images", "/consent", "/guide"]);
     // Actividades corporales congeladas: fuera del menú de todos los roles.
     expect(Object.values(navigationByRole).flat().some((item) => item.to.includes("activities"))).toBe(false);
     expect(navigationByRole.student.filter((item) => item.group).map((item) => item.to)).toEqual(["/questionnaires", "/protocols", "/images"]);
@@ -59,7 +59,7 @@ describe("rutas y navegación por rol", () => {
     expect(navigationByRole.psychologist.map((item) => item.to)).toEqual(expect.arrayContaining(["/protocols", "/stimuli"]));
     expect(navigationByRole.admin.some((item) => item.to === "/stimuli")).toBe(true);
     expect(navigationByRole.superadmin.some((item) => ["/stimuli", "/protocols"].includes(item.to))).toBe(false);
-    expect(navigationByRole.student.filter((item) => item.placement === "footer").map((item) => item.to)).toEqual(["/consent"]);
+    expect(navigationByRole.student.filter((item) => item.placement === "footer").map((item) => item.to)).toEqual(["/consent", "/guide"]);
     expect(navigationByRole.psychologist.some((item) => item.to === "/users")).toBe(false);
     // El docente conduce sesiones propias; la gestión nunca ve sesiones.
     expect(navigationByRole.psychologist.some((item) => item.to === "/analysis")).toBe(true);
@@ -148,7 +148,7 @@ describe("rutas y navegación por rol", () => {
     const brand = screen.getByRole("link", { name: "EMOtv" });
     brand.focus();
     await userEvent.tab({ shift: true });
-    expect(screen.getByRole("link", { name: "Consentimiento" })).toHaveFocus();
+    expect(screen.getByRole("link", { name: "Guía de uso" })).toHaveFocus();
     await userEvent.click(screen.getByRole("link", { name: "Mis sesiones" }));
     expect(screen.getByRole("main")).toHaveFocus();
     expect(screen.getByText("Listado de sesiones")).toBeInTheDocument();

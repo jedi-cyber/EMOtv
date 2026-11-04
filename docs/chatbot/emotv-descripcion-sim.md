@@ -60,6 +60,10 @@ parar en cualquier momento.
 
 ## 3. Otras funciones
 
+- **Guía de uso**: cada cuenta tiene, al final del menú, «Guía de uso» con las
+  tareas de su papel paso a paso. Emi recibe la misma guía en `knowledge`;
+  ante una pregunta de «cómo se hace», responde con esos pasos.
+
 - **Actividades de posturas**: secuencias de dos o más posturas con su tiempo y
   sus repeticiones. La cámara verifica cada postura con MediaPipe y reglas
   geométricas; el tiempo de un paso solo avanza mientras la postura es

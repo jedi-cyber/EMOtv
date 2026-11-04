@@ -56,6 +56,7 @@ from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
 from emotv.infrastructure.stimuli.initial_bank import initial_drawings
+from emotv.interfaces.web.guide_router import create_guide_router
 from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.session_router import create_visible_sessions
 from emotv.application.stimulus_service import StimulusService
@@ -220,6 +221,7 @@ def env():
     app.include_router(create_report_router(e.reports, auth, users))
     app.include_router(create_review_router(create_visible_sessions(sessions, students, assignments, authorization),
                                             e.reports, students, auth, users, audit=audit))
+    app.include_router(create_guide_router(auth, users))
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))

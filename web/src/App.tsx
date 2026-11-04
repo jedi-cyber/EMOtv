@@ -38,6 +38,7 @@ import { StimuliPage } from "./pages/StimuliPage";
 import { ImagesPage } from "./pages/ImagesPage";
 import { ImageReviewPage } from "./pages/ImageReviewPage";
 import { ReviewsPage } from "./pages/ReviewsPage";
+import { GuidePage } from "./pages/GuidePage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
@@ -53,6 +54,7 @@ export function App() {
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to={paths.dashboard} replace />} />
           <Route path={paths.dashboard} element={<DashboardPage />} />
+          <Route path={paths.guide} element={<GuidePage />} />
           <Route path={paths.commitment} element={<RoleRoute allowed={["student", "psychologist"]}><CommitmentPage /></RoleRoute>} />
           {/* El docente conduce sesiones propias solo como demostración. */}
           <Route path={paths.analysis} element={<RoleRoute allowed={["student", "psychologist"]}><AnalysisPage /></RoleRoute>} />

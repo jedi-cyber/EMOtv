@@ -59,6 +59,7 @@ from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
 from emotv.infrastructure.stimuli.initial_bank import initial_drawings
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.interfaces.web.guide_router import create_guide_router
 from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.model_admin_router import create_model_admin_router
 from emotv.application.local_model_service import LocalModelService
@@ -360,6 +361,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_review_router(
         create_visible_sessions(session_service, student_repository, assignment_repository, authorization_service),
         report_service, student_repository, authentication_service, user_repository, audit=audit_service))
+    app.include_router(create_guide_router(authentication_service, user_repository))
     # Aplicativo Android: consulta sesiones, reportes y estadísticas con los mismos
     # servicios y reglas que la web; no conduce sesiones (docs/mobile-api.md).
     app.include_router(create_mobile_router(
@@ -448,6 +450,7 @@ else:
         app.include_router(create_exam_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
     app.include_router(create_review_router(None, None, None, None, None))
+    app.include_router(create_guide_router(None, None))
 
 
 def run_retention() -> None:

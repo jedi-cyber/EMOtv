@@ -55,10 +55,18 @@ commit de cada grupo. La cronología commit por commit está en
   expresión pedida se toma de la imagen y no hay que elegirla. Quien conduce
   ve «Imitar el modelo», y las métricas y la línea de tiempo lo indican.
   Migración `20261104_35_imitation_steps` y contrato móvil 4.3 (`imitate`).
+- Guía de uso: «Guía de uso», al final del menú de cada cuenta, explica paso a
+  paso las tareas de su papel con los nombres de los botones (`GET /guide`).
+  Emi recibe la misma guía de Usuario y Docente. Una prueba verifica que cada
+  nombre citado exista en la interfaz.
 - Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- El conocimiento de Emi reemplaza el «Flujo de uso» por la guía de uso y
+  actualiza los protocolos con los pasos vigentes («¿Qué emoción es?»,
+  práctica y «Haz la misma cara»). Para no pasar el límite, los textos de las
+  expresiones viajan algo más cortos.
 - El docente supervisa y no conduce las sesiones de su grupo. «Por revisar»
   (`GET /reviews`, con contador en el menú) reúne, del más antiguo al más
   nuevo, los reportes enviados y los pedidos de eliminación, para revisarlos
