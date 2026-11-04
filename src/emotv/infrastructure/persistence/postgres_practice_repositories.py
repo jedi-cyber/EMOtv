@@ -178,7 +178,7 @@ class PostgresProtocolRepository:
             record_verbal_response=step.record_verbal_response,
             shown_before_analyzer=step.shown_before_analyzer, kind=step.kind.value,
             target_expression=step.target_expression, hold_seconds=step.hold_seconds,
-            option_count=step.option_count, situation=step.situation)
+            option_count=step.option_count, situation=step.situation, imitate=step.imitate)
             for position, step in enumerate(item.steps))
 
     @staticmethod
@@ -197,7 +197,7 @@ class PostgresProtocolRepository:
                                      step.record_verbal_response, step.shown_before_analyzer,
                                      kind=step.kind or "stimulus", target_expression=step.target_expression,
                                      hold_seconds=step.hold_seconds, option_count=step.option_count,
-                                     situation=step.situation)
+                                     situation=step.situation, imitate=bool(step.imitate))
                          for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:

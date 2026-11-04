@@ -95,7 +95,9 @@ parar en cualquier momento.
   lograste!» al sostenerla. No ve etiquetas, probabilidades ni calidad. Quien
   conduce puede saltar un ejercicio o apagar la señal. El resultado se describe
   («Logró la expresión pedida en 3 de 5 ejercicios») y nunca valora a la
-  persona. Es actividad guiada, no terapia ni evaluación diagnóstica.
+  persona. Es actividad guiada, no terapia ni evaluación diagnóstica. Una
+  variante, «Haz la misma cara», muestra una imagen como modelo y pide la
+  misma expresión que muestra la imagen.
 - **Examen simulado**: un tipo de protocolo para Docentes. El Docente crea el
   examen y EMOtv genera un código de unión; cada estación (una cámara por
   estudiante) se une con ese código, sin cuenta, y muestra el código de su

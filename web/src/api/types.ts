@@ -110,6 +110,9 @@ export interface ProtocolStep {
   option_count?: number | null;
   /** Solo un reconocimiento: historia corta; la pregunta pasa a «¿Cómo se siente?». */
   situation?: string | null;
+  /** Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
+   * y la expresión pedida la pone el servidor, la de la imagen. */
+  imitate?: boolean;
 }
 
 export interface Protocol {
@@ -248,12 +251,14 @@ export interface GuidedStep {
   target_expression?: string | null;
   hold_seconds?: number | null;
   option_count?: number | null;
+  imitate?: boolean;
 }
 
 /** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
 export interface GuidedPractice {
   target_expression: string;
   hold_seconds: number;
+  imitate?: boolean;
   level: number | null;
   achieved: boolean;
 }
@@ -382,7 +387,7 @@ export interface SessionTimeline {
     questionnaires: { time: number; moment: QuestionnaireMoment; title: string; answers: { question: string; kind: QuestionKind; answer: AnswerValue | null }[] }[];
     stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean;
       /** Solo en un ejercicio de práctica (kind «practice») o un reconocimiento (kind «recognition»). */
-      target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | null;
+      target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | null; imitate?: boolean;
       seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null }[];
     captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
     said: { time: number; step_index: number; title: string; text: string }[];
@@ -430,6 +435,8 @@ export interface PracticeRow {
 
 export interface SessionPractice {
   exercises: { step_index: number; target_expression: string; hold_seconds: number; max_seconds: number;
+    /** «Haz la misma cara»: imitó la imagen del modelo. */
+    imitate?: boolean;
     /** null: la sesión no llegó a este ejercicio. */
     outcome: PracticeOutcome | null; seconds_to_achieve: number | null; peak_level: number | null;
     relative_to_calibration: boolean | null; feedback_visible: boolean | null }[];

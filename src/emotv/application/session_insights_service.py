@@ -122,7 +122,7 @@ class SessionInsightsService:
             item = {"step_index": index, "title": title, "kind": kind, "start": start, "end": end, "skipped": skipped}
             if kind == "practice":
                 result = practice.get(index)
-                item.update(target_expression=steps[index].target_expression,
+                item.update(target_expression=steps[index].target_expression, imitate=steps[index].imitate,
                             outcome=result.outcome.value if result else None,
                             seconds_to_achieve=result.seconds_to_achieve if result else None)
             if kind == "recognition":

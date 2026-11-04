@@ -41,7 +41,7 @@ export function PracticeMetrics({ practice }: { practice: SessionPractice }) {
       <th>Paso</th><th>Expresión pedida</th><th>Resultado</th><th>Hasta lograrla</th><th>Señal visual</th>
     </tr></thead><tbody>{practice.exercises.map((item) => <tr key={item.step_index}>
       <td>{item.step_index + 1}</td>
-      <td>{practiceTargetNames[item.target_expression] ?? item.target_expression}</td>
+      <td>{practiceTargetNames[item.target_expression] ?? item.target_expression}{item.imitate ? " (imitando un modelo)" : ""}</td>
       <td>{item.outcome ? practiceOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
       <td>{item.seconds_to_achieve != null ? secondsText(item.seconds_to_achieve) : "—"}</td>
       <td>{item.feedback_visible == null ? "—" : item.feedback_visible ? "Activa" : "Apagada"}</td>

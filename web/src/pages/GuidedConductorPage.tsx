@@ -176,7 +176,8 @@ export function GuidedConductorPage() {
 
     {step && state && isPractice && <div className="card form-stack">
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica{state.accessible ? " · modo accesible" : ""}</p>
-      <h2>Expresión pedida: {targetName(step.target_expression)}</h2>
+      <h2>{step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
+      {step.imitate && <p className="muted">La persona ve la imagen y lee «Haz la misma cara».</p>}
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
       {state.practice && <>
         <label>Nivel en vivo

@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.2 (2026-11-02). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1 y la 4.2 solo agregan campos opcionales a la 4 |
+| Revisión del contrato | 4.3 (2026-11-04). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2 y la 4.3 solo agregan campos opcionales a la 4 |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile` |
 | Formato | JSON en UTF-8 |
@@ -654,7 +654,7 @@ Columna «Nulo»: **sí** si el campo puede ser `null` (siempre viene). Tipos:
 | `session_code` | string | sí | |
 | `duration_seconds` | number | no | Último tiempo registrado |
 | `lanes.questionnaires[]` | objeto | no | `time` (number, nulo), `moment` (`pre`/`post`), `title`, `answers[]` con `question`, `kind` y `answer` (cualquier tipo JSON, nulo si no respondió) |
-| `lanes.stimuli[]` | objeto | no | `step_index` (int), `title`, `kind` ([`kind`](#valores-enumerados)), `start` y `end` (number, nulos), `skipped` (boolean). Con `kind` `practice` (4.1): `target_expression` (string), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si el ejercicio sigue en curso) y `seconds_to_achieve` (number, nulo). Con `kind` `recognition` (4.2): `target_expression` (string), `outcome` ([`recognition_outcome`](#valores-enumerados), nulo si sigue en curso), `chosen_expression` (string, nulo) y `seconds_to_answer` (number, nulo) |
+| `lanes.stimuli[]` | objeto | no | `step_index` (int), `title`, `kind` ([`kind`](#valores-enumerados)), `start` y `end` (number, nulos), `skipped` (boolean). Con `kind` `practice` (4.1): `target_expression` (string), `imitate` (boolean, desde 4.3: imitó la imagen de un modelo; puede faltar en un servidor anterior), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si el ejercicio sigue en curso) y `seconds_to_achieve` (number, nulo). Con `kind` `recognition` (4.2): `target_expression` (string), `outcome` ([`recognition_outcome`](#valores-enumerados), nulo si sigue en curso), `chosen_expression` (string, nulo) y `seconds_to_answer` (number, nulo) |
 | `lanes.captures[]` | objeto | no | `time` (number), `step_index` (int, nulo), `emotion` (string, nulo: expresión **estimada**), `probability` (number, nulo), `quality` ([`quality`](#valores-enumerados)) |
 | `lanes.said[]` | objeto | no | Lo que la persona dijo ver en una imagen abstracta: `time`, `step_index`, `title`, `text` |
 | `lanes.markers[]` | objeto | no | `time`, `kind` ([`marker`](#valores-enumerados)), `note` (nulo) |
@@ -685,7 +685,7 @@ aplicados se informan aparte.
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
-| `exercises[]` | objeto | no | Por ejercicio, en orden: `step_index` (int), `target_expression` (string), `hold_seconds` (int), `max_seconds` (int), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si la sesión no llegó a él), `seconds_to_achieve` (number, nulo), `peak_level` (number de 0 a 1, nulo), `relative_to_calibration` (boolean, nulo), `feedback_visible` (boolean, nulo) |
+| `exercises[]` | objeto | no | Por ejercicio, en orden: `step_index` (int), `target_expression` (string), `hold_seconds` (int), `max_seconds` (int), `imitate` (boolean, desde 4.3; puede faltar en un servidor anterior: tratarlo como `false`), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si la sesión no llegó a él), `seconds_to_achieve` (number, nulo), `peak_level` (number de 0 a 1, nulo), `relative_to_calibration` (boolean, nulo), `feedback_visible` (boolean, nulo) |
 | `totals` | [`PracticeTotals`](#practicetotals) | no | Además: `exercises` (int, todos los del protocolo) y `not_reached` (int) |
 | `by_target[]` | [`PracticeRow`](#practicerow) | no | Por expresión pedida, con `target_expression` |
 | `notice` | string | no | Aviso fijo: se muestra siempre junto a los ejercicios |
@@ -876,6 +876,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.3 | 2026-11-04 | Compatible con la 4, la 4.1 y la 4.2: solo un campo nuevo y opcional. `imitate` (boolean) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio fue «Haz la misma cara», con la imagen como modelo. No hay rutas nuevas |
 | 4.2 | 2026-11-02 | Compatible con la 4 y la 4.1: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.recognition` ([`Recognition`](#recognition)) y, en `lanes.stimuli`, los pasos con `kind` `recognition`, `chosen_expression` y `seconds_to_answer`. `GET /mobile/statistics` agrega `recognition` ([`StatisticsRecognition`](#statisticsrecognition)). Nueva enumeración `recognition_outcome`. No hay rutas nuevas |
 | 4.1 | 2026-10-30 | Compatible con la 4: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.practice` ([`Practice`](#practice)) y, en `lanes.stimuli`, los ejercicios con `kind` `practice`, `target_expression`, `outcome` y `seconds_to_achieve`. `GET /mobile/statistics` agrega `practice` ([`StatisticsPractice`](#statisticspractice)), sin desglose por usuario. Los reportes (`metrics`) traen el mismo bloque. Nuevas enumeraciones `practice_outcome` y `target_expression`. No hay rutas nuevas: el aplicativo sigue sin conducir sesiones ni enviar imágenes |
 | 4 | 2026-10-29 | **Incompatible**: el aplicativo deja de conducir sesiones, para que ninguna captura del rostro salga del teléfono. Se quitan `GET /mobile/protocols`, `POST /mobile/sessions`, `next`, cuestionarios, `advance`, `calibration`, `frames`, `skip`, `finish`, `stop` y las imágenes de estímulos. `Summary` quita `protocols` y `audiences` y agrega `pending_reviews`; incluye las sesiones del grupo del Docente. `SessionSummary` quita `guided_phase` y agrega `mine` y `report_status`. Nuevos: `GET /mobile/sessions`, `GET /mobile/sessions/{id}` (línea de tiempo y métricas), reporte (`GET`/`POST /mobile/sessions/{id}/report`, `GET`/`PUT /mobile/reports/{id}`, `submit`, `comments`, `return`, `approve`), `GET /mobile/reviews` y `GET /mobile/statistics`. `services` agrega `reports` y `statistics`. Se quitan los errores `413`, `415`, `428` y `invalid_or_expired_url` |

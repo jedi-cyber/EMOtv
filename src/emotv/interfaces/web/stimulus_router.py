@@ -70,6 +70,9 @@ class StepModel(BaseModel):
     option_count: int | None = None
     # Solo un reconocimiento: una historia corta; la pregunta pasa a «¿Cómo se siente?».
     situation: str | None = Field(default=None, max_length=MAX_SITUATION_CHARS)
+    # Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
+    # y la expresión pedida la toma el servidor de la imagen.
+    imitate: bool = False
 
 
 class ProtocolRequest(BaseModel):
@@ -162,7 +165,7 @@ def create_stimulus_router(
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer,
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
-                             option_count=step.option_count, situation=step.situation)
+                             option_count=step.option_count, situation=step.situation, imitate=step.imitate)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
@@ -175,7 +178,7 @@ def create_stimulus_router(
                                        target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                                        option_count=(DEFAULT_RECOGNITION_OPTIONS if step.kind == "recognition"
                                                      and step.option_count is None else step.option_count),
-                                       situation=step.situation)
+                                       situation=step.situation, imitate=step.imitate)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

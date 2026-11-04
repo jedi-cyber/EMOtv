@@ -65,7 +65,14 @@ Reglas del dominio (en `ProtocolStep.__post_init__`):
 - La ilustración (`stimulus_id`) es opcional; si existe debe ser un estímulo
   `usable` (creación propia o con licencia; las imágenes propias ya pasan por la
   detección de personas y la revisión del docente) y, en un protocolo para
-  niños, `suitable_for_children`. Su `expected_expression` no se usa.
+  niños, `suitable_for_children`. Su `expected_expression` no se usa, salvo
+  al imitar un modelo.
+- **Imitar un modelo** (`imitate`, migración `20261104_35_imitation_steps`):
+  una práctica con imagen en la que la imagen es el modelo. La persona lee
+  «Haz la misma cara» junto a la imagen y ve la misma señal de 0 a 1. La
+  expresión pedida la copia el servidor de la `expected_expression` de la
+  imagen, que debe ser emocional y tenerla. Solo una práctica con imagen puede
+  imitar.
 - `PRACTICE_TARGETS`: `happiness`, `surprise`, `sadness`,
   `anger`, `fear`, `disgust` y `neutral`. Se excluye `contempt`: es
   difícil de pedir a un niño y los dos modelos la estiman con poca
@@ -422,6 +429,7 @@ niños ni dice nada sobre el estado emocional de nadie.
 | `6eceb2c` | `metrics.practice`, carril de estímulos con los ejercicios, bloque `practice` de las estadísticas y el aviso fijo `PRACTICE_NOTICE` en detalle, reporte e impresión |
 | `1829773` | Contrato móvil 4.1: `metrics.practice`, campos de práctica en la línea de tiempo y `practice` en `GET /mobile/statistics` |
 | `a4db041` | Protocolo «Validación con adultos» y exportación CSV agregada (§10); el borrado de voluntarios incluye `practice_results` |
+| (imitar) | «Haz la misma cara»: `ProtocolStep.imitate`, migración `20261104_35_imitation_steps`, botón «Agregar como «Haz la misma cara»» en el editor, «Imitar el modelo» para quien conduce, `imitate` en métricas y línea de tiempo (contrato móvil 4.3) |
 
 **Flujo.** Quien conduce arma en **Protocolos** un protocolo con uno o más
 ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo

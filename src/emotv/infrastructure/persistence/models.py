@@ -465,7 +465,9 @@ PROTOCOL_STEP_PRACTICE = (
     "AND option_count IS NULL) OR "
     "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0)) "
-    "AND (situation IS NULL OR kind = 'recognition')")
+    "AND (situation IS NULL OR kind = 'recognition') "
+    # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
+    "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL))")
 
 
 class ProtocolStepRecord(Base):
@@ -493,6 +495,8 @@ class ProtocolStepRecord(Base):
     option_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Historia corta de un reconocimiento («A Lucía se le cayó su helado»).
     situation: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Práctica que imita la imagen («Haz la misma cara»).
+    imitate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

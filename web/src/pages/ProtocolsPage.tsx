@@ -77,6 +77,8 @@ export function ProtocolsPage() {
     && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
       || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
   const chosen = choice ? byId.get(choice) : undefined;
+  // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
+  const imitable = recognizable(chosen) && (chosen?.expected_expression ?? "") in practiceTargetNames;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
     && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0;
 
@@ -100,6 +102,14 @@ export function ProtocolsPage() {
     const defaults = draft.accessible ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
     update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
       exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+    setChoice("");
+  }
+  function addImitation() {
+    if (!imitable || !chosen) return;
+    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true,
+      target_expression: chosen.expected_expression, hold_seconds: practiceDefaults.hold_seconds,
+      exposure_seconds: draft.accessible ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
   function addPractice() {
@@ -232,6 +242,27 @@ export function ProtocolsPage() {
             <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
             <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
           </>;
+          if (step.kind === "practice" && step.imitate) {
+            const problem = practiceProblem(step);
+            const unsuitableModel = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+            const modelName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
+            return <li key={`imitation-${index}`} className="row-card protocol-step">
+              <div>
+                <strong>{index + 1}. Haz la misma cara: {stimulus?.title ?? "Imagen no disponible"}</strong>
+                {modelName && <span>La persona ve la imagen y hace la misma cara. Expresión pedida: {modelName} (la expresión esperada de la imagen).</span>}
+                {problem && <span role="alert">{problem}.</span>}
+                {unsuitableModel && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+                {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+              </div>
+              <div className="inline-actions">
+                <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
+                  onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
+                <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                {order}
+              </div>
+            </li>;
+          }
           if (step.kind === "practice") {
             const problem = practiceProblem(step);
             const unsuitableIllustration = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
@@ -317,6 +348,7 @@ export function ProtocolsPage() {
           </select></label>
           <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
           <Button disabled={!recognizable(chosen)} onClick={addRecognition}>Agregar como «¿Qué emoción es?»</Button>
+          <Button disabled={!imitable} onClick={addImitation}>Agregar como «Haz la misma cara»</Button>
         </div> : !stimuliQuery.loading && <div className="empty-state">
           <p>{draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."}
             {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
@@ -330,6 +362,8 @@ export function ProtocolsPage() {
           una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
         <p className="muted">En «¿Qué emoción es?» se muestra una imagen emocional y la persona elige entre varias emociones;
           después lee el nombre de la emoción de la imagen. Las opciones se eligen solas. Se registra qué eligió; no evalúa a nadie.</p>
+        <p className="muted">En «Haz la misma cara» la imagen es un modelo: la persona la ve y hace la misma cara, con la misma
+          señal simple de la práctica. La expresión pedida es la de la imagen. Se registra si la logró; no evalúa a nadie.</p>
 
         {questionnaireSelect("post")}
       </>}

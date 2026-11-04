@@ -193,7 +193,7 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
         item = by_step.get(index)
         exercises.append({
             "step_index": index, "target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
-            "max_seconds": step.exposure_seconds,
+            "max_seconds": step.exposure_seconds, "imitate": step.imitate,
             # None: la sesión no llegó a este ejercicio.
             "outcome": item.outcome.value if item else None,
             "seconds_to_achieve": item.seconds_to_achieve if item else None,

@@ -198,6 +198,11 @@ class ProtocolService:
                     raise ValueError(f"Un reconocimiento usa una imagen emocional con su expresión esperada: "
                                      f"«{stimulus.title}» no la tiene")
                 step = replace(step, target_expression=stimulus.expected_expression)
+            if step.imitate:
+                if stimulus.kind is not StimulusKind.EMOTIONAL or stimulus.expected_expression is None:
+                    raise ValueError(f"«Haz la misma cara» usa una imagen emocional con su expresión esperada: "
+                                     f"«{stimulus.title}» no la tiene")
+                step = replace(step, target_expression=stimulus.expected_expression)
             steps.append(step)
         return replace(draft, steps=tuple(steps))
 

@@ -41,6 +41,8 @@ PRACTICE_INSTRUCTIONS = {
     "neutral": "Deja la cara tranquila",
     "contempt": "Muestra desprecio",
 }
+# Imitar un modelo: la ilustración muestra la cara que se pide.
+IMITATION_INSTRUCTION = "Haz la misma cara"
 PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
 # Aviso fijo junto a todo resultado de práctica.
 PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "

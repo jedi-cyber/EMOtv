@@ -35,7 +35,7 @@ function practiceText(item: Timeline["lanes"]["stimuli"][number]) {
   const outcome = item.outcome && item.outcome !== "answered" ? practiceOutcomeNames[item.outcome].toLowerCase()
     : item.skipped ? "se saltó" : "en curso";
   const when = item.outcome === "achieved" && item.seconds_to_achieve != null ? ` a los ${secondsText(item.seconds_to_achieve)}` : "";
-  return `${target} · ${outcome}${when}`;
+  return `${item.imitate ? `Imitar ${target.toLowerCase()}` : target} · ${outcome}${when}`;
 }
 
 /** Un reconocimiento con la opción elegida, tal como ocurrió. */

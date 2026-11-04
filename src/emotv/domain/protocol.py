@@ -56,6 +56,9 @@ class ProtocolStep:
     tiempo que debe sostenerse y exposure_seconds el tiempo máximo. stimulus_id
     es opcional: una ilustración de apoyo. No hay captura automática, respuesta
     verbal ni paso antes del analizador (la práctica necesita la cámara).
+    Con imitate, la ilustración es un modelo: la persona lee «Haz la misma
+    cara» y target_expression es la expresión esperada de esa imagen, que copia
+    el servicio de protocolos.
 
     En un reconocimiento, stimulus_id es una imagen emocional del banco y
     target_expression su expresión esperada: la respuesta correcta, que copia
@@ -76,10 +79,17 @@ class ProtocolStep:
     hold_seconds: int | None = None
     option_count: int | None = None
     situation: str | None = None
+    imitate: bool = False
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
         object.__setattr__(self, "kind", kind)
+        if not isinstance(self.imitate, bool):
+            raise TypeError("imitate debe ser verdadero o falso")
+        if self.imitate and kind is not StepKind.PRACTICE:
+            raise ValueError("Solo un ejercicio de práctica imita un modelo")
+        if self.imitate and not (isinstance(self.stimulus_id, str) and self.stimulus_id.strip()):
+            raise ValueError("«Haz la misma cara» necesita la imagen del modelo")
         if self.situation is not None:
             if not isinstance(self.situation, str):
                 raise TypeError("situation debe ser un texto")
@@ -136,9 +146,9 @@ class ProtocolStep:
 
     @classmethod
     def practice(cls, target_expression: str, hold_seconds: int, max_seconds: int,
-                 illustration_id: str | None = None) -> ProtocolStep:
+                 illustration_id: str | None = None, imitate: bool = False) -> ProtocolStep:
         return cls(illustration_id, max_seconds, 0, kind=StepKind.PRACTICE,
-                   target_expression=target_expression, hold_seconds=hold_seconds)
+                   target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate)
 
     @classmethod
     def recognition(cls, stimulus_id: str, max_seconds: int, option_count: int = DEFAULT_RECOGNITION_OPTIONS,

@@ -50,6 +50,11 @@ commit de cada grupo. La cronología commit por commit está en
 - Plantilla de protocolo «Emociones básicas 4 a 6 años»: para niños, en modo
   accesible, con un «¿Qué emoción es?» por emoción y dos opciones. Se copia
   con «Usar la plantilla inicial» en Protocolos (`POST /protocols/starter`).
+- «Haz la misma cara»: un ejercicio de práctica que muestra una imagen como
+  modelo. La persona lee «Haz la misma cara» y ve la misma señal de 0 a 1. La
+  expresión pedida se toma de la imagen y no hay que elegirla. Quien conduce
+  ve «Imitar el modelo», y las métricas y la línea de tiempo lo indican.
+  Migración `20261104_35_imitation_steps` y contrato móvil 4.3 (`imitate`).
 - Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
 - Prueba e2e de una sesión con un ejercicio de práctica.
 

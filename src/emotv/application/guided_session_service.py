@@ -48,6 +48,7 @@ from emotv.domain.guided_session import (
     EXAM_GAP_SECONDS,
     EXAM_STATION_PHASES,
     PRACTICE_ACHIEVED_MESSAGE,
+    IMITATION_INSTRUCTION,
     PRACTICE_INSTRUCTIONS,
     QUALITY_RETRY_SECONDS,
     RECOGNITION_ANSWERS,
@@ -560,7 +561,8 @@ class GuidedSessionService:
             current = (tracker is not None and tracker.step_index == run.step_index
                        and run.step_started_at is not None and tracker.started_at == run.step_started_at.timestamp())
             level = 1.0 if achieved else round(tracker.level, 2) if current else 0.0
-        return {"instruction": PRACTICE_INSTRUCTIONS[step.target_expression], "level": level, "achieved": achieved,
+        instruction = IMITATION_INSTRUCTION if step.imitate else PRACTICE_INSTRUCTIONS[step.target_expression]
+        return {"instruction": instruction, "level": level, "achieved": achieved,
                 "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
                 "frame_interval_ms": self.practice.frame_interval_ms}
 
@@ -577,7 +579,7 @@ class GuidedSessionService:
         en vivo (aunque la señal de la persona esté apagada) y si se logró."""
         participant = self._participant_practice(replace(run, practice_feedback=True), step)
         return {"target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
-                "level": participant["level"], "achieved": participant["achieved"]}
+                "imitate": step.imitate, "level": participant["level"], "achieved": participant["achieved"]}
 
     def practice_frame_drops_when_busy(self, token: str) -> bool:
         """Si el cuadro de esta pantalla es de un ejercicio de práctica en curso:
@@ -950,7 +952,7 @@ class GuidedSessionService:
                        "shown_before_analyzer": item.shown_before_analyzer,
                        "step_kind": item.kind.value, "target_expression": item.target_expression,
                        "hold_seconds": item.hold_seconds, "option_count": item.option_count,
-                       "situation": item.situation}
+                       "situation": item.situation, "imitate": item.imitate}
                       for index, item in enumerate(steps)],
             "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
                                   if step else None),
