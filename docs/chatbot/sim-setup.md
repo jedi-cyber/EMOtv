@@ -54,6 +54,23 @@ Content-Type: application/json
 
 El workflow no guarda conversaciones: el historial lo manda EMOtv.
 
+### Al cambiar la descripción o las categorías
+
+El export del workflow (JSON de Sim) no se versiona aquí. Cuando cambia
+`emotv-descripcion-sim.md` o las categorías, en el export se actualizan:
+
+- el mensaje de sistema del bloque **Emi**: el texto entre las líneas `---` y
+  el alcance (Usuarios y Docentes; Psicología general y uso de EMOtv; las
+  funciones congeladas no se explican);
+- el bloque **Clasificador de alcance** y la lista `CATS` de **Validar
+  clasificacion**, con las categorías de
+  [chatbot-emi.md](../chatbot-emi.md#categorías);
+- la respuesta fija del bloque **Rechazo**.
+
+Las etiquetas del historial son «Usuario» y «Emi». La clave del modelo queda
+como `{{GROQ_API_KEY}}` (variable de entorno de Sim), nunca escrita en el
+export. Después se importa el JSON en Sim y se vuelve a **desplegar**.
+
 ## Cómo interpreta EMOtv la respuesta
 
 La API v2 de Sim envuelve el resultado: `{"data": {"status", "output", "error", ...}}`.

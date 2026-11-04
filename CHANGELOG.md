@@ -55,6 +55,9 @@ commit de cada grupo. La cronología commit por commit está en
   expresión pedida se toma de la imagen y no hay que elegirla. Quien conduce
   ve «Imitar el modelo», y las métricas y la línea de tiempo lo indican.
   Migración `20261104_35_imitation_steps` y contrato móvil 4.3 (`imitate`).
+- La «Guía de uso» es interactiva: buscador sin tildes, índice de temas,
+  temas plegables, pasos que se marcan como hechos (solo en ese navegador),
+  enlace a la pantalla de cada tema y «Preguntar a Emi».
 - Guía de uso: «Guía de uso», al final del menú de cada cuenta, explica paso a
   paso las tareas de su papel con los nombres de los botones (`GET /guide`).
   Emi recibe la misma guía de Usuario y Docente. Una prueba verifica que cada
@@ -63,6 +66,12 @@ commit de cada grupo. La cronología commit por commit está en
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- La descripción fija de Emi (`docs/chatbot/emotv-descripcion-sim.md`) sigue el
+  objetivo vigente: agrega «¿Qué emoción es?», plantillas, modo accesible,
+  banco inicial y «Haz la misma cara», y quita las posturas, el examen simulado
+  y las imágenes abstractas (congelados). `sim-setup.md` explica qué cambiar en
+  el workflow de Sim. Contrato móvil 4.4 (solo documentación): las
+  estadísticas del Docente se piden con `scope=group`.
 - El conocimiento de Emi reemplaza el «Flujo de uso» por la guía de uso y
   actualiza los protocolos con los pasos vigentes («¿Qué emoción es?»,
   práctica y «Haz la misma cara»). Para no pasar el límite, los textos de las

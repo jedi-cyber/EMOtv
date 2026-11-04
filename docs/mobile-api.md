@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.3 (2026-11-04). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2 y la 4.3 solo agregan campos opcionales a la 4 |
+| Revisión del contrato | 4.4 (2026-11-04). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2 y la 4.3 solo agregan campos opcionales a la 4, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile` |
 | Formato | JSON en UTF-8 |
@@ -530,7 +530,7 @@ Con token.
 
 | Parámetro | Tipo | Por defecto | Uso |
 | --- | --- | --- | --- |
-| `scope` | `mine` o `group` | `mine` | `group` solo para el Docente: las sesiones de su grupo (`403` para el Usuario) |
+| `scope` | `mine` o `group` | `mine` | `group` solo para el Docente: las sesiones de su grupo (`403` para el Usuario). Para el Docente, `mine` siempre da cero sesiones: ver la nota de abajo |
 | `date_from` | `YYYY-MM-DD` | sin límite | Desde (inclusive) |
 | `date_to` | `YYYY-MM-DD` | sin límite | Hasta (inclusive). Anterior a `date_from`: `422 invalid` |
 
@@ -564,6 +564,10 @@ Con token.
 
 - `notice` se muestra siempre; `few_sessions_notice` cuando no es `null`.
 - No hay filas por usuario ni por persona.
+- Las sesiones propias del Docente son de demostración, para enseñar a usar
+  EMOtv, y no cuentan en las estadísticas: con `scope=mine`, el Docente recibe
+  `sessions.total` 0. El aplicativo pide `scope=group` para el Docente y no le
+  ofrece «Mis sesiones» en las estadísticas.
 - Desde la revisión 4.1, `practice` trae los ejercicios de práctica agregados
   ([`StatisticsPractice`](#statisticspractice)), aparte de `coincidence`; es
   `null` si ninguna sesión tuvo ejercicios. `practice.notice` se muestra siempre
@@ -636,7 +640,7 @@ Columna «Nulo»: **sí** si el campo puede ser `null` (siempre viene). Tipos:
 | `state` | string | no | [`state`](#valores-enumerados) |
 | `audience` | string | no | [`audience`](#valores-enumerados) |
 | `protocol_name` | string | sí | `null` sin protocolo |
-| `mine` | boolean | no | `true` si la condujo esta cuenta; `false` en las del grupo del Docente |
+| `mine` | boolean | no | `true` si la condujo esta cuenta; `false` en las del grupo del Docente. Para el Docente, `true` es una sesión de demostración: el aplicativo la rotula «Tú (demostración)», como la web |
 | `report_status` | string | sí | [`report_status`](#valores-enumerados) del reporte vigente; `null` si no tiene |
 
 ### `SessionDetail`
@@ -876,6 +880,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.4 | 2026-11-04 | Solo documentación; la API no cambió. Las sesiones propias del Docente son de demostración: `GET /mobile/statistics?scope=mine` le devuelve cero sesiones, así que el aplicativo usa `scope=group` para el Docente, y `SessionSummary.mine=true` del Docente se rotula «Tú (demostración)» |
 | 4.3 | 2026-11-04 | Compatible con la 4, la 4.1 y la 4.2: solo un campo nuevo y opcional. `imitate` (boolean) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio fue «Haz la misma cara», con la imagen como modelo. No hay rutas nuevas |
 | 4.2 | 2026-11-02 | Compatible con la 4 y la 4.1: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.recognition` ([`Recognition`](#recognition)) y, en `lanes.stimuli`, los pasos con `kind` `recognition`, `chosen_expression` y `seconds_to_answer`. `GET /mobile/statistics` agrega `recognition` ([`StatisticsRecognition`](#statisticsrecognition)). Nueva enumeración `recognition_outcome`. No hay rutas nuevas |
 | 4.1 | 2026-10-30 | Compatible con la 4: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.practice` ([`Practice`](#practice)) y, en `lanes.stimuli`, los ejercicios con `kind` `practice`, `target_expression`, `outcome` y `seconds_to_achieve`. `GET /mobile/statistics` agrega `practice` ([`StatisticsPractice`](#statisticspractice)), sin desglose por usuario. Los reportes (`metrics`) traen el mismo bloque. Nuevas enumeraciones `practice_outcome` y `target_expression`. No hay rutas nuevas: el aplicativo sigue sin conducir sesiones ni enviar imágenes |
