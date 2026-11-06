@@ -34,6 +34,8 @@ export const paths = {
   guidedSessionPattern: "/guided/:sessionId",
   participantView: (token: string) => `/participant-view/${encodeURIComponent(token)}`,
   participantViewPattern: "/participant-view/:token",
+  // Actividad de dibujo: a pantalla completa, sin sesión ni registro.
+  drawing: "/drawing",
   // Examen simulado congelado (docs/escenario-examen.md): sin rutas ni menú.
   exams: "/exams",
   exam: (id: string) => `/exams/${encodeURIComponent(id)}`,

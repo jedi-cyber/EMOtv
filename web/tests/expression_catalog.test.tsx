@@ -85,6 +85,19 @@ describe("administración del catálogo", () => {
     expect(await screen.findByText("Texto guardado y marcado como revisado.")).toBeInTheDocument();
   });
 
+  it("edita la explicación sencilla y, si queda vacía, no la envía", async () => {
+    vi.mocked(apiRequest).mockResolvedValue({ ...sadness } as never);
+    renderAs("admin", <RoleRoute allowed={["admin"]}><AdminExpressionsPage /></RoleRoute>, "/admin/expressions");
+    await userEvent.click(screen.getByRole("button", { name: "Editar Tristeza revisada" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+    expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[0][1]?.body))).not.toHaveProperty("child_explanation");
+    const field = within(screen.getByRole("form", { name: "Editar Tristeza revisada" })).getByLabelText("Explicación sencilla");
+    await userEvent.type(field, "En la tristeza, la boca baja.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Guardar" }));
+    expect(JSON.parse(String(vi.mocked(apiRequest).mock.calls[1][1]?.body)).child_explanation).toBe("En la tristeza, la boca baja.");
+  });
+
   it("valida la longitud antes de enviar", async () => {
     renderAs("admin", <RoleRoute allowed={["admin"]}><AdminExpressionsPage /></RoleRoute>, "/admin/expressions");
     await userEvent.click(screen.getByRole("button", { name: "Editar Tristeza revisada" }));

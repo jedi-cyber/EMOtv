@@ -11,7 +11,7 @@ from emotv.domain.guided_session import (
     RecognitionOutcome,
 )
 from tests.integration.test_guided_sessions import (
-    calibrate,
+    begin_steps,
     frame,
     guided,
     post,
@@ -39,9 +39,9 @@ def sad_stimulus(env):  # noqa: F811
 
 
 def start(env, *steps):  # noqa: F811
-    """Sesión calibrada en el primer paso."""
+    """Sesión en el primer paso (calibrada si algún paso usa la cámara)."""
     session_id, token = guided(env, protocol(env, list(steps)))
-    calibrate(env, session_id, token)
+    begin_steps(env, session_id, token)
     current = state(env, session_id)
     assert current["phase"] == "stimuli" and current["step_index"] == 0
     return session_id, token

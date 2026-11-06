@@ -1,4 +1,4 @@
-import type { MetricCapture, PracticeOutcome, RecognitionOutcome, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
+import type { MetricCapture, PracticeOutcome, RecognitionOutcome, SessionDrawing, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
 import { Callout } from "../components/Callout";
 import { practiceTargetNames } from "../stimuli/labels";
 
@@ -91,6 +91,25 @@ export function RecognitionMetrics({ recognition }: { recognition: SessionRecogn
   </section>;
 }
 
+/** Dibujos de una sesión: solo la emoción que la persona señaló, sin compararla con nada. */
+export function DrawingMetrics({ drawing }: { drawing: SessionDrawing }) {
+  const { totals } = drawing;
+  const name = (key: string | null) => (key ? practiceTargetNames[key] ?? key : "—");
+  return <section className="form-stack" aria-label="Dibujos">
+    <h3>Dibujos</h3>
+    <Callout variant="info" role="note">{drawing.notice}</Callout>
+    <p><strong>{totals.sentence}</strong></p>
+    <div className="table-wrap"><table><thead><tr>
+      <th>Paso</th><th>Resultado</th><th>Emoción que señaló</th><th>Hasta responder</th>
+    </tr></thead><tbody>{drawing.exercises.map((item) => <tr key={item.step_index}>
+      <td>{item.step_index + 1}</td>
+      <td>{item.outcome ? recognitionOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
+      <td>{name(item.chosen_expression)}{item.answered_by === "conductor" ? <span className="muted"> (registró quien conduce)</span> : null}</td>
+      <td>{item.seconds_to_answer != null ? secondsText(item.seconds_to_answer) : "—"}</td>
+    </tr>)}</tbody></table></div>
+  </section>;
+}
+
 /** Métricas por estímulo: describen lo registrado, no lo interpretan. */
 export function StimulusMetrics({ metrics, expressionLabel }: { metrics: SessionMetrics; expressionLabel: (key: string | null) => string }) {
   return <div className="form-stack">
@@ -126,5 +145,6 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
     </>}
     {metrics.practice && <PracticeMetrics practice={metrics.practice} />}
     {metrics.recognition && <RecognitionMetrics recognition={metrics.recognition} />}
+    {metrics.drawing && <DrawingMetrics drawing={metrics.drawing} />}
   </div>;
 }

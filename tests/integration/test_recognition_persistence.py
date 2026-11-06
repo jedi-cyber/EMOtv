@@ -133,6 +133,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):  # noqa: F811
 
     _run(engine, "upgrade")
     assert "recognition_results" in inspect(engine).get_table_names()
+    # La tabla recreada por esta migración recibe también la de los intentos (20261106_39).
+    from tests.integration.test_step_attempts import bring_to_current
+    bring_to_current(engine, "recognition_results")
     item = with_recognition(factory)
     assert PostgresProtocolRepository(factory).get("p1") == item
     guided = PostgresGuidedSessionRepository(factory, FieldCipher([KEY]))

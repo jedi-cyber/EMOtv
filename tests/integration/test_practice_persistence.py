@@ -203,6 +203,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
 
     _run(engine, "upgrade")
     assert "practice_results" in inspect(engine).get_table_names()
+    # La tabla recreada por esta migración recibe también la de los intentos (20261106_39).
+    from tests.integration.test_step_attempts import bring_to_current
+    bring_to_current(engine, "practice_results")
     assert {"kind", "target_expression", "hold_seconds"} <= _step_columns(engine)
     found = PostgresProtocolRepository(factory).get("p1")
     # Los pasos existentes quedan como estímulos, igual que antes.

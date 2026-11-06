@@ -31,6 +31,7 @@ Tabla `expression_info` (migración `20261008_12`), una fila por clase de FER+:
 | `facial_cues` | Cómo se reconoce en el rostro: cejas, ojos, boca y duración típica |
 | `practice_tip` | Sugerencia breve para practicar reconocerla o producirla |
 | `limitation_note` | Limitación específica de esa expresión |
+| `child_explanation` | Explicación sencilla para la actividad «¿Qué emoción es?»: una oración que describe la cara (10 a 200 caracteres; migración `20261106_37`) |
 | `review_status` | `draft` o `reviewed`; con `reviewed` se registran `reviewed_by_user_id` y `reviewed_at` |
 
 Bajo los textos se muestra siempre la limitación común:

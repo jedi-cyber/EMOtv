@@ -128,6 +128,28 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeInTheDocument();
   });
 
+  it("con protocolo no pide probar la cámara aquí: la pide la pantalla de la persona solo si hace falta", async () => {
+    const getUserMedia = camera();
+    protocols.value = [
+      { id: "p1", name: "Reconocer", for_children: false, owned_by_me: true, steps: [{ kind: "recognition" }],
+        pre_questionnaire_id: null, post_questionnaire_id: null, uses_camera: false },
+      { id: "p2", name: "Mixto", for_children: false, owned_by_me: true, steps: [{ kind: "recognition" }, { kind: "practice" }],
+        pre_questionnaire_id: null, post_questionnaire_id: null, uses_camera: true },
+    ];
+    page();
+    await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p1");
+    const requirements = screen.getByRole("list", { name: "Requisitos para empezar" });
+    expect(within(requirements).queryByText("Cámara")).not.toBeInTheDocument();
+    expect(screen.getByText(/No usa la cámara\./)).toBeInTheDocument();
+    expect(screen.getByText(/Sigue sus pasos/).textContent).not.toMatch(/calibración/);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled());
+    await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p2");
+    expect(screen.getByText(/Sigue sus pasos/).textContent).toMatch(/calibración/);
+    expect(screen.getByText(/si no está disponible, siguen los pasos sin cámara/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled();
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
   it("sin protocolos ofrece crear uno", () => {
     page();
     expect(screen.getByRole("link", { name: "Crear un protocolo" })).toHaveAttribute("href", "/protocols");

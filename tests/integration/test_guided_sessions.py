@@ -92,6 +92,16 @@ def calibrate(env, session_id, token):  # noqa: F811
     frame(env, token)
 
 
+def begin_steps(env, session_id, token):  # noqa: F811
+    """Lleva la sesión a su primer paso: calibra si el protocolo usa la cámara;
+    uno solo de reconocimientos espera «Empezar»."""
+    phase = state(env, session_id)["phase"]
+    if phase == "calibration":
+        calibrate(env, session_id, token)
+    elif phase == "ready":
+        assert post(env, session_id, "start").status_code == 200
+
+
 # --- Inicio y orden de la sesión -----------------------------------------------------
 
 def test_the_confirmation_happens_once_at_the_start(env):  # noqa: F811

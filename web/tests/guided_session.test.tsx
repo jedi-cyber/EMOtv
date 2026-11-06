@@ -84,3 +84,77 @@ describe("sesión con protocolo", () => {
     expect(await screen.findByText("La sesión terminó. Gracias.")).toBeInTheDocument();
   });
 });
+
+describe("sesión sin cámara (solo reconocimientos)", () => {
+  const ready: GuidedState = { ...baseState, phase: "ready", uses_camera: false, abstract_notice: null };
+
+  it("quien conduce no ve la calibración y empieza el primer paso con «Empezar»", async () => {
+    conductor(ready);
+    const start = await screen.findByRole("button", { name: "Empezar" });
+    expect(screen.getByText(/no usa la cámara: no hay calibración/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Iniciar calibración" })).not.toBeInTheDocument();
+    await userEvent.click(start);
+    expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/start", expect.objectContaining({ method: "POST" }));
+    expect(apiRequest).not.toHaveBeenCalledWith("/guided-sessions/s1/calibration", expect.anything());
+  });
+
+  it("con cámara sigue mostrando la calibración", async () => {
+    conductor(baseState);
+    expect(await screen.findByRole("button", { name: "Iniciar calibración" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Empezar" })).not.toBeInTheDocument();
+  });
+
+  it("la pantalla de la persona espera sin pedir la cámara", async () => {
+    const getUserMedia = vi.fn();
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    const { container } = participant({ phase: "ready", message: "En un momento empezamos.", stimulus: null,
+      remaining_seconds: null, capture_frames: false, frame_interval_ms: 500, abstract_notice: null, uses_camera: false });
+    expect(await screen.findByText("En un momento empezamos.")).toBeInTheDocument();
+    expect(container.querySelector("video")).toBeNull();
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+});
+
+describe("sin cámara en una sesión que la usa", () => {
+  const participantView: ParticipantViewState = { phase: "calibration", message: "Mira a la pantalla con el rostro relajado.",
+    stimulus: null, remaining_seconds: null, capture_frames: true, frame_interval_ms: 500, abstract_notice: null };
+
+  it("si se niega el permiso, la persona sabe qué puede seguir haciendo y quien conduce recibe el motivo", async () => {
+    const getUserMedia = vi.fn().mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    participant(participantView);
+    expect(await screen.findByText(/puedes seguir con las actividades de elegir emociones/)).toBeInTheDocument();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/participant-view/tok/camera-problem",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ reason: "denied" }) })));
+  });
+
+  it("la cámara se libera cuando deja de hacer falta", async () => {
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    let current: ParticipantViewState = participantView;
+    vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/participant-view/tok" ? current : {}) as never);
+    render(<MemoryRouter initialEntries={["/participant-view/tok"]}>
+      <Routes><Route path="/participant-view/:token" element={<ParticipantViewPage />} /></Routes>
+    </MemoryRouter>);
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    // Un paso «¿Qué emoción es?»: ya no se envían cuadros y la cámara se apaga.
+    current = { ...participantView, phase: "stimuli", capture_frames: false, message: null };
+    await waitFor(() => expect(stop).toHaveBeenCalled(), { timeout: 2000 });
+  });
+
+  it("quien conduce ve por qué no hay cámara y puede seguir sin ella", async () => {
+    conductor({ ...baseState, uses_camera: true, camera_problem: "denied", camera_off: false });
+    expect(await screen.findByText(/no pudo usar la cámara: se negó el permiso/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Continuar sin cámara" }));
+    expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/continue-without-camera", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("tras seguir sin cámara, quien conduce lo ve y no se ofrece de nuevo", async () => {
+    conductor({ ...baseState, phase: "stimuli", step_index: 0, remaining_seconds: 4, uses_camera: true, camera_off: true });
+    expect(await screen.findByText(/La sesión sigue sin cámara/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continuar sin cámara" })).not.toBeInTheDocument();
+  });
+});

@@ -27,6 +27,8 @@ ABSTRACT_NOTICE = "Registro descriptivo. Una sesión breve no permite sacar conc
 QUALITY_RETRY_SECONDS = 3.0        # reintento antes de guardar una captura marcada
 ABSTRACT_CAPTURE_INTERVAL = 3.0    # una imagen abstracta se captura varias veces
 MAX_NOTE_LENGTH = 300
+# Intentos de un reconocimiento o un ejercicio: el primero y hasta dos repeticiones.
+MAX_STEP_ATTEMPTS = 3
 EXAM_CAPTURE_INTERVAL = 0.5        # una fila cada medio segundo durante el examen
 EXAM_GAP_SECONDS = 1.5             # sin cuadros tras este margen, la fila se guarda marcada
 
@@ -53,8 +55,9 @@ PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con r
 # de responder (o al vencer el tiempo). Solo nombra la emoción de la imagen;
 # no dice si la persona acertó ni la valora.
 RECOGNITION_QUESTION = "¿Qué emoción es?"
-# La misma pregunta cuando el paso cuenta una situación.
-SITUATION_QUESTION = "¿Cómo se siente?"
+# Con una situación se pregunta por la cara de la imagen, no por lo que alguien
+# siente: una situación no tiene una única respuesta emocional.
+SITUATION_QUESTION = "¿Qué emoción muestra la cara?"
 # Aviso fijo junto a todo resultado de reconocimiento.
 RECOGNITION_NOTICE = ("Describe las respuestas de esta práctica. Una sesión breve no permite sacar conclusiones "
                       "sobre cómo reconoce emociones la persona.")
@@ -78,9 +81,41 @@ RECOGNITION_ANSWERS = {
     "neutral": "Es una cara tranquila",
     "contempt": "Es desprecio",
 }
+# Lo que se lee al terminar un paso con situación: la expresión de la imagen y
+# que otras personas podrían sentir algo distinto.
+SITUATION_ANSWERS = {
+    "happiness": "La cara de la imagen muestra alegría.",
+    "surprise": "La cara de la imagen muestra sorpresa.",
+    "sadness": "La cara de la imagen muestra tristeza.",
+    "anger": "La cara de la imagen muestra enojo.",
+    "fear": "La cara de la imagen muestra miedo.",
+    "disgust": "La cara de la imagen muestra asco.",
+    "neutral": "La cara de la imagen está tranquila.",
+    "contempt": "La cara de la imagen muestra desprecio.",
+}
+SITUATION_NOTE = "En una situación así, cada persona puede sentir algo distinto."
 # Distractoras: las básicas y la cara tranquila. Desprecio solo aparece cuando
 # es la respuesta correcta: es poco común y difícil de nombrar para un niño.
 RECOGNITION_DISTRACTORS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
+# Paso de dibujo: la persona dibuja en su pantalla y después señala qué emoción
+# quiso representar. El dibujo no sale del dispositivo y no se interpreta: solo
+# se registra la emoción que señaló y los tiempos.
+DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción."
+DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?"
+# Aviso fijo junto a todo resultado de dibujo.
+DRAWING_NOTICE = ("Describe la emoción que la persona señaló en cada dibujo. EMOtv no ve ni interpreta los "
+                  "dibujos: se quedan en la pantalla de la persona y se borran al terminar el paso.")
+DRAWING_OPTIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
+# Describe lo que la persona eligió; no se compara con el dibujo.
+DRAWING_ANSWERS = {
+    "happiness": "Dibujaste alegría.",
+    "sadness": "Dibujaste tristeza.",
+    "anger": "Dibujaste enojo.",
+    "fear": "Dibujaste miedo.",
+    "surprise": "Dibujaste sorpresa.",
+    "disgust": "Dibujaste asco.",
+    "neutral": "Dibujaste una cara tranquila.",
+}
 
 # Debriefing: lo que ve la persona al terminar el examen. Describe qué se
 # registró, sin valorar ni diagnosticar.
@@ -102,7 +137,7 @@ class GuidedPhase(str, Enum):
     POST_QUESTIONNAIRE = "post_questionnaire"
     LIVE = "live"                         # sin protocolo (móvil): registro periódico hasta terminar
     WAITING = "waiting"                   # estación de examen sin consentimiento: no se analiza nada
-    READY = "ready"                       # estación calibrada: espera que el docente inicie
+    READY = "ready"                       # estación calibrada, o sesión sin cámara: espera que se inicie
     EXAM = "exam"                         # examen en curso: una fila cada medio segundo
     FINISHED = "finished"
     STOPPED = "stopped"
@@ -155,6 +190,12 @@ class RecognitionAnswerer(str, Enum):
     CONDUCTOR = "conductor"       # quien conduce registró lo que señaló o dijo
 
 
+# Motivos que informa la pantalla de la persona cuando no puede usar la cámara.
+CAMERA_PROBLEMS = frozenset({"denied", "busy", "not_found", "insecure", "unknown"})
+# Motivo en steps_log de un paso que se saltó porque la sesión siguió sin cámara.
+NO_CAMERA_SKIP = "no_camera"
+
+
 class CaptureQuality(str, Enum):
     GOOD = "good"
     FLAGGED = "flagged"           # se guardó con un problema de calidad
@@ -182,9 +223,15 @@ class GuidedRun:
     # En los ejercicios de práctica, la persona ve la señal del nivel; quien
     # conduce puede apagarla para toda la sesión.
     practice_feedback: bool = True
+    # Quien conduce siguió sin cámara (permiso denegado, sin cámara o falla): desde
+    # entonces no se calibra y los pasos que la necesitan se saltan.
+    camera_off_at: datetime | None = None
+    # Intento del paso en curso: 1 al empezarlo; «Repetir este paso» lo aumenta.
+    step_attempt: int = 1
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", GuidedPhase(self.phase))
+        _check_attempt(self.step_attempt)
         if self.stop_reason is not None:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))
         if (self.phase is GuidedPhase.STOPPED) != (self.stop_reason is not None):
@@ -285,6 +332,11 @@ class VerbalResponse:
         object.__setattr__(self, "text", text)
 
 
+def _check_attempt(value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_STEP_ATTEMPTS:
+        raise ValueError(f"El intento está entre 1 y {MAX_STEP_ATTEMPTS}")
+
+
 def _aware(name: str, value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} debe incluir zona horaria")
@@ -316,6 +368,8 @@ class PracticeResult:
     started_at: datetime
     ended_at: datetime
     seconds_to_achieve: float | None = None
+    # 1 es el primero; las métricas y las estadísticas cuentan solo ese.
+    attempt: int = 1
 
     def __post_init__(self) -> None:
         for name in ("id", "session_id"):
@@ -340,6 +394,7 @@ class PracticeResult:
             raise ValueError("Solo un ejercicio logrado registra los segundos hasta lograrlo")
         if self.seconds_to_achieve is not None and self.seconds_to_achieve < 0:
             raise ValueError("Los segundos hasta lograrlo no son negativos")
+        _check_attempt(self.attempt)
 
     @property
     def achieved(self) -> bool:
@@ -364,6 +419,8 @@ class RecognitionResult:
     chosen_expression: str | None = None
     seconds_to_answer: float | None = None
     answered_by: RecognitionAnswerer | str | None = None
+    # 1 es el primero; las métricas y las estadísticas cuentan solo ese.
+    attempt: int = 1
 
     def __post_init__(self) -> None:
         for name in ("id", "session_id", "stimulus_id"):
@@ -393,8 +450,53 @@ class RecognitionResult:
         _aware("ended_at", self.ended_at)
         if self.ended_at < self.started_at:
             raise ValueError("El paso termina después de empezar")
+        _check_attempt(self.attempt)
 
     @property
     def matched(self) -> bool | None:
         """Si la opción elegida es la expresión de la imagen; None sin respuesta."""
         return None if self.chosen_expression is None else self.chosen_expression == self.target_expression
+
+
+@dataclass(frozen=True, slots=True)
+class DrawingResult:
+    """Resultado de un paso de dibujo: la emoción que la persona señaló y en
+    cuánto tiempo. El dibujo nunca llega al servidor; no hay respuesta correcta
+    ni se compara la emoción elegida con el dibujo."""
+
+    id: str
+    session_id: str
+    step_index: int
+    outcome: RecognitionOutcome | str
+    started_at: datetime
+    ended_at: datetime
+    chosen_expression: str | None = None
+    seconds_to_answer: float | None = None
+    answered_by: RecognitionAnswerer | str | None = None
+    # 1 es el primero; un paso repetido guarda cada intento.
+    attempt: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ("id", "session_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} es obligatorio")
+        outcome = RecognitionOutcome(self.outcome)
+        object.__setattr__(self, "outcome", outcome)
+        if isinstance(self.step_index, bool) or not isinstance(self.step_index, int) or self.step_index < 0:
+            raise ValueError("step_index debe ser un entero no negativo")
+        answered = outcome is RecognitionOutcome.ANSWERED
+        if answered != (self.chosen_expression is not None) or answered != (self.seconds_to_answer is not None) \
+                or answered != (self.answered_by is not None):
+            raise ValueError("Solo un paso respondido registra la emoción, los segundos y quién respondió")
+        if self.chosen_expression is not None and self.chosen_expression not in DRAWING_OPTIONS:
+            raise ValueError("La emoción elegida está entre las que se muestran")
+        if self.answered_by is not None:
+            object.__setattr__(self, "answered_by", RecognitionAnswerer(self.answered_by))
+        if self.seconds_to_answer is not None and self.seconds_to_answer < 0:
+            raise ValueError("Los segundos hasta responder no son negativos")
+        _aware("started_at", self.started_at)
+        _aware("ended_at", self.ended_at)
+        if self.ended_at < self.started_at:
+            raise ValueError("El paso termina después de empezar")
+        _check_attempt(self.attempt)

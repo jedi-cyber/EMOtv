@@ -129,6 +129,7 @@ describe("Emi", () => {
   it.each([
     ["la vista del participante", "/participant-view/token-de-prueba"],
     ["la sesión guiada con un participante", "/guided/s-1"],
+    ["la actividad de dibujo", "/drawing"],
   ])("no carga a Emi en %s", (_, path) => {
     serve(() => empty);
     render(<Harness path={path} />);

@@ -39,6 +39,8 @@ export const MAX_SITUATION_CHARS = 200;
 // Modo accesible: el editor propone menos opciones y más tiempo para cada paso nuevo.
 export const ACCESSIBLE_RECOGNITION = { option_count: 2, max_seconds: 30 };
 export const ACCESSIBLE_TIME_FACTOR = 2;
+// Dibujo: tiempo para dibujar que propone el editor (el máximo en el modo accesible).
+export const DRAWING_SECONDS = 90;
 // Pictograma que acompaña al nombre de cada emoción en el modo accesible. Es un
 // apoyo visual del nombre, no una imagen de la persona ni de lo detectado.
 export const emotionPictograms: Record<string, string> = {
@@ -72,11 +74,13 @@ export function practiceProblem(step: { exposure_seconds: number; hold_seconds?:
 export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[] {
   const practices = steps.filter((step) => step.kind === "practice").length;
   const recognitions = steps.filter((step) => step.kind === "recognition").length;
-  const images = steps.length - practices - recognitions;
+  const drawings = steps.filter((step) => step.kind === "drawing").length;
+  const images = steps.length - practices - recognitions - drawings;
   const parts = [];
-  if (images > 0 || practices + recognitions === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (images > 0 || practices + recognitions + drawings === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
   if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
   if (recognitions > 0) parts.push(`${recognitions} ${recognitions === 1 ? "reconocimiento" : "reconocimientos"}`);
+  if (drawings > 0) parts.push(`${drawings} ${drawings === 1 ? "dibujo" : "dibujos"}`);
   return parts;
 }
 

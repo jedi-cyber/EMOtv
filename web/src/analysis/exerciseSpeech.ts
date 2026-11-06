@@ -19,7 +19,8 @@ export function speakStep(
   return speakText(`Paso ${index + 1} de ${count}.${round} ${step.instruction}. Mantén la postura durante ${step.duration_seconds} segundos.`);
 }
 
-function speakText(instruction: string): boolean {
+/** Lee un texto con la voz del navegador; corta lo que se estuviera leyendo. */
+export function speakText(instruction: string): boolean {
   if (!speechAvailable()) return false;
   const synth = window.speechSynthesis;
   const utterance = new SpeechSynthesisUtterance(instruction);

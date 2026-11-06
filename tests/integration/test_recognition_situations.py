@@ -62,16 +62,20 @@ def test_el_protocolo_guarda_la_situacion_y_rechaza_identificadores(env):  # noq
     assert response.status_code == 422
 
 
-def test_con_situacion_la_pregunta_es_como_se_siente(env):  # noqa: F811
+def test_con_situacion_se_pregunta_por_la_cara_de_la_imagen(env):  # noqa: F811
     sad = sad_stimulus(env)
     session_id, token = start(env, situation(sad), recognition(sad))
     block = view(env, token).json()["recognition"]
     assert block["question"] == SITUATION_QUESTION and block["situation"] == STORY
     conductor = state(env, session_id)
     assert conductor["recognition"]["situation"] == STORY and conductor["steps"][0]["situation"] == STORY
-    # La respuesta sigue siendo la expresión de la imagen y se lee igual.
+    assert block["question"] == "¿Qué emoción muestra la cara?" and block["note"] is None
+    # Al terminar se lee la expresión de la imagen, no lo que alguien siente, y
+    # que en una situación así cada persona puede sentir algo distinto.
     assert answer(env, token, "sadness").json() == {"received": True}
-    assert view(env, token).json()["recognition"]["message"] == "Es tristeza"
+    block = view(env, token).json()["recognition"]
+    assert block["message"] == "La cara de la imagen muestra tristeza."
+    assert block["note"] == "En una situación así, cada persona puede sentir algo distinto."
 
 
 def test_sin_situacion_la_pregunta_no_cambia(env):  # noqa: F811

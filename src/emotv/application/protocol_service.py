@@ -30,7 +30,7 @@ from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
-from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep
+from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
@@ -57,6 +57,8 @@ class ProtocolDraft:
     pre_questionnaire_id: str | None = None
     post_questionnaire_id: str | None = None
     accessible: bool = False
+    # Si se indica, manda sobre accessible.
+    supports: ProtocolSupports | None = None
 
 
 # Plantilla inicial: «¿Qué emoción es?» con los dibujos del banco inicial, para
@@ -220,7 +222,8 @@ class ProtocolService:
             id=family, family_id=family, version=1, owner_user_id=user.id, name=draft.name,
             description=draft.description, for_children=draft.for_children, created_at=self.clock(),
             steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
-            post_questionnaire_id=draft.post_questionnaire_id, accessible=draft.accessible))
+            post_questionnaire_id=draft.post_questionnaire_id, accessible=draft.accessible,
+            supports=draft.supports))
         self.audit.record(user, AuditAction.CREATE, RESOURCE, protocol.id)
         return protocol
 
@@ -241,7 +244,7 @@ class ProtocolService:
         fields = dict(name=draft.name, description=draft.description, for_children=draft.for_children,
                       steps=draft.steps, pre_questionnaire_id=draft.pre_questionnaire_id,
                       post_questionnaire_id=draft.post_questionnaire_id, accessible=draft.accessible,
-                      approved_at=None, approved_by_user_id=None)
+                      supports=draft.supports, approved_at=None, approved_by_user_id=None)
         if self.repository.is_used(current.id):
             now = self.clock()
             updated = self.repository.add_version(current.id, now, replace(
@@ -286,7 +289,7 @@ class ProtocolService:
         return self.create(user, ProtocolDraft(
             name=source.name, description=source.description, for_children=source.for_children, steps=source.steps,
             pre_questionnaire_id=pre, post_questionnaire_id=usable(source.post_questionnaire_id) if pre else None,
-            accessible=source.accessible))
+            accessible=source.accessible, supports=source.supports))
 
     def create_starter(self, user: User) -> Protocol:
         """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años», armada con

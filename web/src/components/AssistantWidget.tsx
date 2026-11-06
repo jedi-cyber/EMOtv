@@ -9,7 +9,7 @@ import { NavIcon } from "./NavIcon";
 /** Emi es para usuarios y docentes; FastAPI rechaza al resto con 403. */
 export const EMI_ROLES: ReadonlySet<string> = new Set(["student", "psychologist"]);
 /** Pantallas donde hay una persona evaluada delante: Emi no aparece. */
-const PARTICIPANT_SCREENS = [paths.participantViewPattern, paths.guidedSessionPattern];
+const PARTICIPANT_SCREENS = [paths.participantViewPattern, paths.guidedSessionPattern, paths.drawing];
 
 export function AssistantWidget() {
   const { user, token, loading } = useAuth();

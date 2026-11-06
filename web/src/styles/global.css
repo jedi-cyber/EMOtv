@@ -197,7 +197,11 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-achieved { min-height: 1.5em; margin: 0; color: var(--color-success); font-size: var(--text-section-title); font-weight: var(--weight-bold); }
 /* Reconocimiento: opciones grandes, fáciles de tocar para un niño. */
 .recognition-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-sm); width: 100%; }
-.recognition-option { min-height: 3.5rem; font-size: var(--text-section-title); }
+.recognition-option { min-height: 3.5rem; flex-direction: column; gap: var(--space-xs); font-size: var(--text-section-title); touch-action: manipulation; }
+.recognition-chosen { display: block; font-size: var(--text-body-md); font-weight: var(--weight-semibold); }
+.recognition-feedback { display: grid; gap: var(--space-xs); justify-items: center; text-align: center; }
+.recognition-note, .recognition-explanation { max-width: 40ch; margin: 0; color: var(--color-ink); line-height: 1.4; text-wrap: pretty; }
+.recognition-listen { min-height: 3rem; touch-action: manipulation; }
 /* La opción elegida sigue legible aunque los botones queden deshabilitados. */
 .recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
 .recognition-answer { color: var(--color-ink); }
@@ -209,6 +213,32 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-view--accessible .participant-actions .button { min-height: 3.5rem; }
 .participant-view--accessible *, .participant-view--accessible *::before, .participant-view--accessible *::after { animation: none !important; transition: none !important; }
 .participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
+/* Dibujo táctil: el lienzo ocupa el ancho disponible; el dedo sobre él nunca
+   desplaza ni amplía la página. Hoja siempre blanca, para que todo color se vea. */
+.drawing-view { overscroll-behavior: contain; }
+.drawing-stage { align-content: start; }
+.drawing-activity { display: grid; justify-items: center; gap: var(--space-md); width: min(100%, 56rem); }
+.drawing-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-sm); }
+.drawing-tools { display: grid; gap: var(--space-sm); width: 100%; }
+.drawing-group { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-xs); }
+.drawing-swatch, .drawing-size { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 2.75rem; padding: 0 var(--space-sm); border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); cursor: pointer; font: inherit; font-size: var(--text-body-md); touch-action: manipulation; }
+/* La elección se marca con borde grueso y texto en negrita, no solo con color. */
+.drawing-swatch[aria-pressed="true"], .drawing-size[aria-pressed="true"] { border-color: var(--color-primary); box-shadow: inset 0 0 0 2px var(--color-primary); font-weight: var(--weight-bold); }
+.drawing-swatch-color { width: 1.25rem; height: 1.25rem; border: 1px solid var(--color-hairline-strong); border-radius: 50%; }
+.drawing-size-dot { border-radius: 50%; background: var(--color-ink); }
+.drawing-surface { width: 100%; }
+.drawing-canvas { display: block; width: 100%; height: min(60dvh, 34rem); border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-lg); background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.drawing-canvas[data-locked] { cursor: default; }
+.drawing-activity--full .drawing-canvas { height: 78dvh; }
+.drawing-finish { flex-direction: column; align-items: center; }
+.drawing-done { display: grid; justify-items: center; gap: var(--space-sm); }
+/* En un teléfono: consigna más corta de alto, lienzo casi del ancho y herramientas compactas. */
+@media (max-width: 40rem) {
+  .drawing-view { padding: var(--space-sm); }
+  .drawing-header .participant-instruction { font-size: var(--text-section-title); }
+  .drawing-canvas { height: 52dvh; }
+  .drawing-swatch, .drawing-size { min-height: 2.75rem; padding: 0 var(--space-xs); font-size: var(--text-body-sm); }
+}
 @media (prefers-reduced-motion: no-preference) {
   .practice-signal-fill { transition: transform 300ms ease-out; }
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { apiRequest } from "../api/http";
-import type { Protocol, ProtocolStep, Questionnaire, Stimulus } from "../api/types";
+import type { PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_PRACTICE, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_PRACTICE, DRAWING_SECONDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
@@ -22,8 +22,8 @@ interface Draft {
   description: string;
   /** null hasta que se responde «¿Para adultos o para niños?»: es obligatorio. */
   for_children: boolean | null;
-  /** Pantalla de la persona con pictogramas, botones grandes y pausas más largas. */
-  accessible: boolean;
+  /** Apoyos de la pantalla de la persona; «Modo accesible» es un preajuste. */
+  supports: ProtocolSupports;
   steps: ProtocolStep[];
   pre_questionnaire_id: string;
   post_questionnaire_id: string;
@@ -31,7 +31,16 @@ interface Draft {
 
 type Moment = "pre" | "post";
 
-const emptyDraft: Draft = { name: "", description: "", for_children: null, accessible: false, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
+const noSupports: ProtocolSupports = { pictograms: false, large_controls: false, read_aloud: false, no_time_limit: false, pause: "normal" };
+const emptyDraft: Draft = { name: "", description: "", for_children: null, supports: noSupports, steps: [], pre_questionnaire_id: "", post_questionnaire_id: "" };
+const pauseNames: Record<PauseMode, string> = {
+  normal: "Normal", long: "Larga (el doble)", wait: "Esperar a que quien conduce pulse «Seguir»",
+};
+/** El modo accesible de siempre: pictogramas, botones grandes y pausa larga. */
+function accessibleOn(supports: ProtocolSupports) { return supports.pictograms && supports.large_controls; }
+function anySupport(supports: ProtocolSupports) {
+  return supports.pictograms || supports.large_controls || supports.read_aloud || supports.no_time_limit || supports.pause !== "normal";
+}
 
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
@@ -76,11 +85,13 @@ export function ProtocolsPage() {
   const recognitionProblems = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.kind === "recognition"
     && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
       || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
+  const drawingProblems = draft.steps.filter((step) => step.kind === "drawing"
+    && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
   const chosen = choice ? byId.get(choice) : undefined;
   // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
   const imitable = recognizable(chosen) && (chosen?.expected_expression ?? "") in practiceTargetNames;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
-    && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0;
+    && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0 && drawingProblems === 0;
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -99,7 +110,7 @@ export function ProtocolsPage() {
   }
   function addRecognition() {
     if (!recognizable(chosen)) return;
-    const defaults = draft.accessible ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
+    const defaults = accessibleOn(draft.supports) ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
     update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
       exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
@@ -108,19 +119,26 @@ export function ProtocolsPage() {
     if (!imitable || !chosen) return;
     update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true,
       target_expression: chosen.expected_expression, hold_seconds: practiceDefaults.hold_seconds,
-      exposure_seconds: draft.accessible ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
+      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice("");
   }
   function addPractice() {
     update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness",
       hold_seconds: practiceDefaults.hold_seconds,
-      exposure_seconds: draft.accessible ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
+      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+  }
+  function addDrawing() {
+    // Sin imagen ni opciones: la persona dibuja y señala la emoción que quiso representar.
+    update({ steps: [...draft.steps, { kind: "drawing", stimulus_id: null,
+      exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS,
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
     setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
-    setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children, accessible: item.accessible ?? false, steps: item.steps,
+    setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children,
+      supports: item.supports ?? (item.accessible ? { ...noSupports, pictograms: true, large_controls: true, pause: "long" } : noSupports), steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
   }
   function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
@@ -131,7 +149,7 @@ export function ProtocolsPage() {
     setBusy(true); setError(""); setMessage("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
-        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, pre_questionnaire_id: draft.pre_questionnaire_id || null,
+        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
           post_questionnaire_id: draft.post_questionnaire_id || null }),
       });
       setMessage(editing && saved.id !== editing.id
@@ -223,10 +241,32 @@ export function ProtocolsPage() {
       </fieldset>
 
       {draft.for_children !== null && <>
-        <Checkbox checked={draft.accessible} onChange={(event) => update({ accessible: event.target.checked })}>
+        <Checkbox checked={accessibleOn(draft.supports)} onChange={(event) => update({ supports: event.target.checked
+          ? { ...draft.supports, pictograms: true, large_controls: true, pause: "long" }
+          : { ...draft.supports, pictograms: false, large_controls: false, pause: "normal" } })}>
           Modo accesible
         </Checkbox>
         <p className="muted">Para quienes se saturan con facilidad: pictogramas junto a cada emoción, botones grandes, nada que se mueva y pausas más largas. Los pasos nuevos proponen menos opciones y más tiempo.</p>
+        <fieldset className="form-stack">
+          <legend>Apoyos uno por uno</legend>
+          <Checkbox checked={draft.supports.pictograms} onChange={(event) => update({ supports: { ...draft.supports, pictograms: event.target.checked } })}>
+            Pictogramas junto a cada emoción
+          </Checkbox>
+          <Checkbox checked={draft.supports.large_controls} onChange={(event) => update({ supports: { ...draft.supports, large_controls: event.target.checked } })}>
+            Botones y letra grandes, sin animaciones
+          </Checkbox>
+          <Checkbox checked={draft.supports.read_aloud} onChange={(event) => update({ supports: { ...draft.supports, read_aloud: event.target.checked } })}>
+            Leer la consigna en voz alta al empezar cada paso
+          </Checkbox>
+          <Checkbox checked={draft.supports.no_time_limit} onChange={(event) => update({ supports: { ...draft.supports, no_time_limit: event.target.checked } })}>
+            Sin límite de tiempo en «¿Qué emoción es?» y en la práctica
+          </Checkbox>
+          <label>Pausa tras cada paso<select value={draft.supports.pause}
+            onChange={(event) => update({ supports: { ...draft.supports, pause: event.target.value as PauseMode } })}>
+            {(Object.keys(pauseNames) as PauseMode[]).map((key) => <option key={key} value={key}>{pauseNames[key]}</option>)}
+          </select></label>
+          <p className="muted">Sin límite de tiempo, el paso termina al responder, al lograrlo o cuando lo saltas. Cambian el ritmo y la pantalla, no lo que se registra.</p>
+        </fieldset>
         <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
         <label>Descripción (opcional)<textarea rows={2} maxLength={2000} value={draft.description}
           onChange={(event) => update({ description: event.target.value })} /></label>
@@ -294,6 +334,19 @@ export function ProtocolsPage() {
               </div>
             </li>;
           }
+          if (step.kind === "drawing") {
+            return <li key={`drawing-${index}`} className="row-card protocol-step">
+              <div>
+                <strong>{index + 1}. Dibujo: una cara con una emoción</strong>
+                <span>La persona dibuja en su pantalla y después señala qué emoción quiso dibujar. El dibujo no se envía ni se guarda.</span>
+              </div>
+              <div className="inline-actions">
+                <label>Tiempo para dibujar (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                {order}
+              </div>
+            </li>;
+          }
           const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
           if (step.kind === "recognition") {
             const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
@@ -304,11 +357,11 @@ export function ProtocolsPage() {
                 {stimulus && !recognizable(stimulus) && <span role="alert">Esta imagen no indica una expresión esperada: elige una imagen emocional que la tenga.</span>}
                 {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
                 {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
-                {/* Con una historia, la pregunta pasa a «¿Cómo se siente?»; la respuesta sigue siendo la de la imagen. */}
+                {/* Con una historia, se pregunta por la cara de la imagen: una situación no tiene una única emoción posible. */}
                 <label>Situación (opcional)<textarea rows={2} maxLength={MAX_SITUATION_CHARS} value={step.situation ?? ""}
                   placeholder="A Lucía se le cayó su helado al piso."
                   onChange={(event) => updateStep(index, { situation: event.target.value || null })} /></label>
-                <span className="muted">Con una situación, la pregunta es «¿Cómo se siente?». Usa nombres inventados.</span>
+                <span className="muted">Con una situación, la pregunta es «¿Qué emoción muestra la cara?» y al final se aclara que cada persona puede sentir algo distinto. Usa nombres inventados.</span>
               </div>
               <div className="inline-actions">
                 <label>Opciones<select value={step.option_count ?? DEFAULT_RECOGNITION.option_count}
@@ -357,6 +410,7 @@ export function ProtocolsPage() {
         </div>}
         <div className="inline-actions">
           <Button onClick={addPractice}>Agregar ejercicio de práctica</Button>
+          <Button onClick={addDrawing}>Agregar dibujo</Button>
         </div>
         <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
           una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
@@ -364,6 +418,9 @@ export function ProtocolsPage() {
           después lee el nombre de la emoción de la imagen. Las opciones se eligen solas. Se registra qué eligió; no evalúa a nadie.</p>
         <p className="muted">En «Haz la misma cara» la imagen es un modelo: la persona la ve y hace la misma cara, con la misma
           señal simple de la práctica. La expresión pedida es la de la imagen. Se registra si la logró; no evalúa a nadie.</p>
+        <p className="muted">En un dibujo la persona dibuja una cara en su pantalla y después señala qué emoción quiso
+          representar. El dibujo se queda en su pantalla y se borra al terminar el paso: solo se registra la emoción que
+          señaló. EMOtv no mira ni interpreta el dibujo.</p>
 
         {questionnaireSelect("post")}
       </>}
@@ -387,7 +444,7 @@ export function ProtocolsPage() {
           {isDocente && !item.owned_by_me ? " · De un usuario de tu grupo" : ""}</span>
         <span className="inline-actions">
           {item.for_children ? <StatusChip tone="progress">Para niños</StatusChip> : <StatusChip tone="neutral">Para adultos</StatusChip>}
-          {item.accessible && <StatusChip tone="neutral">Modo accesible</StatusChip>}
+          {item.accessible && <StatusChip tone="neutral">{item.supports && !accessibleOn(item.supports) ? "Con apoyos" : "Modo accesible"}</StatusChip>}
           {!item.owned_by_me && item.shared_with_group && <StatusChip tone="neutral">Plantilla de tu docente</StatusChip>}
           {item.owned_by_me && item.shared_with_group && <StatusChip tone="progress">Compartido con tu grupo</StatusChip>}
           {item.used && <StatusChip tone="neutral">Usado en sesiones</StatusChip>}

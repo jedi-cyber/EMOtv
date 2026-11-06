@@ -1,6 +1,6 @@
 """Persistencia de la sesión guiada: estado, capturas, marcadores (nota
 cifrada), lo que la persona dice ver (cifrado) y resultados de las prácticas y
-de los reconocimientos."""
+de los reconocimientos y los dibujos (nunca el dibujo)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from emotv.domain.guided_session import (
+    DrawingResult,
     ExpressionCapture,
     GuidedRun,
     PracticeResult,
@@ -17,6 +18,7 @@ from emotv.domain.guided_session import (
     VerbalResponse,
 )
 from emotv.infrastructure.persistence.models import (
+    DrawingResultRecord,
     ExpressionCaptureRecord,
     GuidedRunRecord,
     PracticeResultRecord,
@@ -49,7 +51,8 @@ class PostgresGuidedSessionRepository:
             next_capture_due=row.next_capture_due, steps_log=tuple(row.steps_log or ()),
             calibrated_at=_aware(row.calibrated_at), view_token_hash=row.view_token_hash,
             ended_at=_aware(row.ended_at), stop_reason=row.stop_reason,
-            practice_feedback=row.practice_feedback is not False)
+            practice_feedback=row.practice_feedback is not False, camera_off_at=_aware(row.camera_off_at),
+            step_attempt=row.step_attempt or 1)
 
     def save_run(self, run: GuidedRun) -> GuidedRun:
         with self._factory.begin() as db:
@@ -70,6 +73,8 @@ class PostgresGuidedSessionRepository:
             row.ended_at = run.ended_at
             row.stop_reason = run.stop_reason.value if run.stop_reason else None
             row.practice_feedback = run.practice_feedback
+            row.camera_off_at = run.camera_off_at
+            row.step_attempt = run.step_attempt
         return run
 
     def get_run(self, session_id: str) -> GuidedRun | None:
@@ -156,13 +161,14 @@ class PostgresGuidedSessionRepository:
     # --- Resultados de las prácticas ---------------------------------------------------
 
     def save_practice_result(self, result: PracticeResult) -> PracticeResult:
-        """Uno por paso: guardar de nuevo el mismo paso lo reemplaza."""
+        """Uno por paso e intento: guardar de nuevo el mismo intento lo reemplaza."""
         with self._factory.begin() as db:
             row = db.scalars(select(PracticeResultRecord).where(
                 PracticeResultRecord.session_id == result.session_id,
-                PracticeResultRecord.step_index == result.step_index)).first()
+                PracticeResultRecord.step_index == result.step_index,
+                PracticeResultRecord.attempt == result.attempt)).first()
             if row is None:
-                row = PracticeResultRecord(id=result.id, session_id=result.session_id,
+                row = PracticeResultRecord(id=result.id, session_id=result.session_id, attempt=result.attempt,
                                            step_index=result.step_index)
                 db.add(row)
             row.target_expression = result.target_expression
@@ -180,9 +186,19 @@ class PostgresGuidedSessionRepository:
         return result
 
     def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]:
+        """El primer intento de cada paso: lo que cuentan métricas y estadísticas."""
+        return self._practice(session_id, first_only=True)
+
+    def list_practice_attempts(self, session_id: str) -> tuple[PracticeResult, ...]:
+        """Todos los intentos, por paso e intento."""
+        return self._practice(session_id, first_only=False)
+
+    def _practice(self, session_id: str, first_only: bool) -> tuple[PracticeResult, ...]:
+        query = select(PracticeResultRecord).where(PracticeResultRecord.session_id == session_id)
+        if first_only:
+            query = query.where(PracticeResultRecord.attempt == 1)
         with self._factory() as db:
-            rows = db.scalars(select(PracticeResultRecord).where(PracticeResultRecord.session_id == session_id)
-                              .order_by(PracticeResultRecord.step_index)).all()
+            rows = db.scalars(query.order_by(PracticeResultRecord.step_index, PracticeResultRecord.attempt)).all()
             return tuple(PracticeResult(
                 id=row.id, session_id=row.session_id, step_index=row.step_index,
                 target_expression=row.target_expression, outcome=row.outcome, peak_level=row.peak_level,
@@ -190,18 +206,19 @@ class PostgresGuidedSessionRepository:
                 analyzed_frames=row.analyzed_frames, flagged_frames=row.flagged_frames,
                 emotion_model_id=row.emotion_model_id, emotion_model_version=row.emotion_model_version,
                 started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
-                seconds_to_achieve=row.seconds_to_achieve) for row in rows)
+                seconds_to_achieve=row.seconds_to_achieve, attempt=row.attempt) for row in rows)
 
     # --- Resultados de los reconocimientos ---------------------------------------------
 
     def save_recognition_result(self, result: RecognitionResult) -> RecognitionResult:
-        """Uno por paso: guardar de nuevo el mismo paso lo reemplaza."""
+        """Uno por paso e intento: guardar de nuevo el mismo intento lo reemplaza."""
         with self._factory.begin() as db:
             row = db.scalars(select(RecognitionResultRecord).where(
                 RecognitionResultRecord.session_id == result.session_id,
-                RecognitionResultRecord.step_index == result.step_index)).first()
+                RecognitionResultRecord.step_index == result.step_index,
+                RecognitionResultRecord.attempt == result.attempt)).first()
             if row is None:
-                row = RecognitionResultRecord(id=result.id, session_id=result.session_id,
+                row = RecognitionResultRecord(id=result.id, session_id=result.session_id, attempt=result.attempt,
                                               step_index=result.step_index)
                 db.add(row)
             row.stimulus_id = result.stimulus_id
@@ -216,13 +233,63 @@ class PostgresGuidedSessionRepository:
         return result
 
     def list_recognition_results(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        """El primer intento de cada paso: lo que cuentan métricas y estadísticas."""
+        return self._recognition(session_id, first_only=True)
+
+    def list_recognition_attempts(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        """Todos los intentos, por paso e intento."""
+        return self._recognition(session_id, first_only=False)
+
+    def _recognition(self, session_id: str, first_only: bool) -> tuple[RecognitionResult, ...]:
+        query = select(RecognitionResultRecord).where(RecognitionResultRecord.session_id == session_id)
+        if first_only:
+            query = query.where(RecognitionResultRecord.attempt == 1)
         with self._factory() as db:
-            rows = db.scalars(select(RecognitionResultRecord)
-                              .where(RecognitionResultRecord.session_id == session_id)
-                              .order_by(RecognitionResultRecord.step_index)).all()
+            rows = db.scalars(query.order_by(RecognitionResultRecord.step_index,
+                                             RecognitionResultRecord.attempt)).all()
             return tuple(RecognitionResult(
                 id=row.id, session_id=row.session_id, step_index=row.step_index, stimulus_id=row.stimulus_id,
                 target_expression=row.target_expression, options=tuple(row.options.split(",")),
                 outcome=row.outcome, started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
                 chosen_expression=row.chosen_expression, seconds_to_answer=row.seconds_to_answer,
-                answered_by=row.answered_by) for row in rows)
+                answered_by=row.answered_by, attempt=row.attempt) for row in rows)
+
+    # --- Resultados de los dibujos (la emoción señalada, nunca el dibujo) ---------------
+
+    def save_drawing_result(self, result: DrawingResult) -> DrawingResult:
+        """Uno por paso e intento: guardar de nuevo el mismo intento lo reemplaza."""
+        with self._factory.begin() as db:
+            row = db.scalars(select(DrawingResultRecord).where(
+                DrawingResultRecord.session_id == result.session_id,
+                DrawingResultRecord.step_index == result.step_index,
+                DrawingResultRecord.attempt == result.attempt)).first()
+            if row is None:
+                row = DrawingResultRecord(id=result.id, session_id=result.session_id, attempt=result.attempt,
+                                          step_index=result.step_index)
+                db.add(row)
+            row.outcome = result.outcome.value
+            row.chosen_expression = result.chosen_expression
+            row.seconds_to_answer = result.seconds_to_answer
+            row.answered_by = result.answered_by.value if result.answered_by else None
+            row.started_at = result.started_at
+            row.ended_at = result.ended_at
+        return result
+
+    def list_drawing_results(self, session_id: str) -> tuple[DrawingResult, ...]:
+        """El primer intento de cada paso."""
+        return self._drawing(session_id, first_only=True)
+
+    def list_drawing_attempts(self, session_id: str) -> tuple[DrawingResult, ...]:
+        return self._drawing(session_id, first_only=False)
+
+    def _drawing(self, session_id: str, first_only: bool) -> tuple[DrawingResult, ...]:
+        query = select(DrawingResultRecord).where(DrawingResultRecord.session_id == session_id)
+        if first_only:
+            query = query.where(DrawingResultRecord.attempt == 1)
+        with self._factory() as db:
+            rows = db.scalars(query.order_by(DrawingResultRecord.step_index, DrawingResultRecord.attempt)).all()
+            return tuple(DrawingResult(
+                id=row.id, session_id=row.session_id, step_index=row.step_index, outcome=row.outcome,
+                started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
+                chosen_expression=row.chosen_expression, seconds_to_answer=row.seconds_to_answer,
+                answered_by=row.answered_by, attempt=row.attempt) for row in rows)

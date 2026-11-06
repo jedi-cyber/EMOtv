@@ -31,6 +31,7 @@ from emotv.infrastructure.persistence import (
     PostgresAuditRepository,
     PostgresCommitmentRepository,
     PostgresConsentRepository,
+    PostgresExpressionInfoRepository,
     PostgresSessionErasureRepository,
     PostgresSessionRepository,
     PostgresStudentRepository,
@@ -191,13 +192,17 @@ def env():
         return e.frame_result
 
     exam_repository = PostgresExamRepository(factory)
+    # Catálogo de expresiones vacío; cada prueba agrega las filas que necesita.
+    e.expressions = PostgresExpressionInfoRepository(factory)
     guided = GuidedSessionService(
         PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
         protocols=protocols.repository.get, stimuli=stimuli.repository.get,
         questionnaire_answered=questionnaires.answered,
         resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
         assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
-        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get)
+        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get,
+        explanation_of=lambda key: (info.child_explanation or None)
+        if (info := e.expressions.get(key)) else None)
     app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
                                             decode_frame=lambda data: data or None))
     e.guided = guided
@@ -568,7 +573,7 @@ def test_deleting_a_session_leaves_zero_records_and_produces_the_certificate(env
     certificate = response.json()
     assert certificate["session_code"] == session["code"] and certificate["verified"] is True
     assert certificate["counts"] == {"questionnaire_responses": 0, "expression_captures": 0, "session_markers": 1,
-                                     "verbal_responses": 0, "practice_results": 0, "recognition_results": 0,
+                                     "verbal_responses": 0, "practice_results": 0, "recognition_results": 0, "drawing_results": 0,
                                      "guided_runs": 0,
                                      "report_comments": 0,
                                      "report_events": 0, "session_reports": 0, "sessions": 1}

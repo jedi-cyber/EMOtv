@@ -306,7 +306,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
             calibration_min_increase=live_expression.calibration_min_increase,
-            exam_of=exam_repository.get, practice=practice_settings)
+            exam_of=exam_repository.get, practice=practice_settings,
+            explanation_of=lambda key: (info.child_explanation or None)
+            if (info := expression_catalog.get(key)) else None)
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
                                             decode_frame=decode_frame, capacity=analysis_capacity))

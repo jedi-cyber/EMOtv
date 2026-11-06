@@ -5,7 +5,8 @@ estímulos la expresión estimada coincidió con la esperada") y nunca valoran a
 persona. Los ejercicios de práctica se resumen aparte ("logró la expresión
 pedida en 2 de 3 ejercicios") y nunca se mezclan con la coincidencia de estímulos.
 Los reconocimientos también van aparte ("eligió la emoción de la imagen en 3 de 4
-ejercicios"). Las capturas de mala calidad se muestran, pero no cuentan en los
+ejercicios"). De los dibujos solo se describe la emoción que la persona señaló:
+el dibujo no llega al servidor y no hay respuesta correcta. Las capturas de mala calidad se muestran, pero no cuentan en los
 totales. Las imágenes abstractas no tienen métricas de coincidencia.
 """
 from __future__ import annotations
@@ -15,7 +16,9 @@ from typing import Any
 
 from emotv.domain.guided_session import (
     ABSTRACT_NOTICE,
+    DRAWING_NOTICE,
     PRACTICE_NOTICE,
+    DrawingResult,
     CaptureQuality,
     ExpressionCapture,
     RECOGNITION_NOTICE,
@@ -70,8 +73,8 @@ def stimulus_metrics(
     skipped = set(skipped)
     emotional, abstract = [], []
     for index, step in enumerate(steps):
-        if step.is_practice or step.is_recognition:
-            continue  # ilustración o pregunta: no cuenta en las coincidencias de expresión
+        if step.is_timed:
+            continue  # ilustración, pregunta o dibujo: no cuenta en las coincidencias de expresión
         stimulus = stimuli.get(step.stimulus_id)
         if stimulus is None:
             continue
@@ -263,6 +266,39 @@ def recognition_by_target(results: Iterable[RecognitionResult]) -> list[dict[str
                          "other_choices": [{"expression": key, "count": chosen[key]}
                                            for key in EXPRESSION_KEYS if key in chosen]})
     return rows
+
+
+def drawing_metrics(steps: Sequence[ProtocolStep], results: Iterable[DrawingResult]) -> dict[str, Any] | None:
+    """Dibujos de una sesión; None si el protocolo no tiene ninguno. Solo la
+    emoción que la persona señaló, sin compararla con nada."""
+    drawing_steps = [index for index, step in enumerate(steps) if step.is_drawing]
+    if not drawing_steps:
+        return None
+    by_step = {item.step_index: item for item in results}
+    exercises = []
+    for index in drawing_steps:
+        item = by_step.get(index)
+        exercises.append({
+            "step_index": index, "max_seconds": steps[index].exposure_seconds,
+            # None: la sesión no llegó a este paso.
+            "outcome": item.outcome.value if item else None,
+            "chosen_expression": item.chosen_expression if item else None,
+            "seconds_to_answer": item.seconds_to_answer if item else None,
+            "answered_by": item.answered_by.value if item and item.answered_by else None,
+        })
+    count = {outcome: sum(1 for item in exercises if item["outcome"] == outcome.value)
+             for outcome in RecognitionOutcome}
+    answered = count[RecognitionOutcome.ANSWERED]
+    return {
+        "exercises": exercises,
+        "totals": {"exercises": len(exercises), "answered": answered,
+                   "timed_out": count[RecognitionOutcome.TIMED_OUT], "skipped": count[RecognitionOutcome.SKIPPED],
+                   "stopped": count[RecognitionOutcome.STOPPED],
+                   "not_reached": sum(1 for item in exercises if item["outcome"] is None),
+                   "sentence": f"Señaló una emoción en {answered} de {len(exercises)} "
+                               f"{'dibujo' if len(exercises) == 1 else 'dibujos'}."},
+        "notice": DRAWING_NOTICE,
+    }
 
 
 def recognition_metrics(steps: Sequence[ProtocolStep],

@@ -7,6 +7,7 @@ import { ActivitiesPage } from "./pages/ActivitiesPage";
 import { ActivityDetailPage } from "./pages/ActivityDetailPage";
 import { AdminActivitiesPage } from "./pages/AdminActivitiesPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
+import { DrawingPage } from "./pages/DrawingPage";
 import { ACTIVITIES_ENABLED } from "./routes/features";
 import { ConnectionErrorPage } from "./pages/ConnectionErrorPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -51,6 +52,8 @@ export function App() {
       <Route path={paths.participantViewPattern} element={<ParticipantViewPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path={paths.firstAccess} element={<FirstAccessPage />} />
+        {/* Sin el menú de la aplicación, como la pantalla de la persona. */}
+        <Route path={paths.drawing} element={<RoleRoute allowed={["student", "psychologist"]}><DrawingPage /></RoleRoute>} />
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to={paths.dashboard} replace />} />
           <Route path={paths.dashboard} element={<DashboardPage />} />

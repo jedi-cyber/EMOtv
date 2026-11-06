@@ -19,7 +19,7 @@ from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import (DEFAULT_RECOGNITION_OPTIONS, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+from emotv.domain.protocol import (DEFAULT_RECOGNITION_OPTIONS, ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
                                    PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
@@ -54,8 +54,9 @@ class StepModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
     # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
-    # una imagen emocional y la persona elige qué emoción es.
-    kind: Literal["stimulus", "practice", "recognition"] = "stimulus"
+    # una imagen emocional y la persona elige qué emoción es. «drawing»: la
+    # persona dibuja una cara y señala qué emoción quiso representar.
+    kind: Literal["stimulus", "practice", "recognition", "drawing"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
@@ -68,11 +69,27 @@ class StepModel(BaseModel):
     # Solo un reconocimiento: cuántas opciones se muestran. Su respuesta
     # correcta (target_expression) la toma el servidor de la imagen.
     option_count: int | None = None
-    # Solo un reconocimiento: una historia corta; la pregunta pasa a «¿Cómo se siente?».
+    # Solo un reconocimiento: una historia corta; la pregunta pasa a «¿Qué emoción muestra la cara?».
     situation: str | None = Field(default=None, max_length=MAX_SITUATION_CHARS)
     # Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
     # y la expresión pedida la toma el servidor de la imagen.
     imitate: bool = False
+
+
+class SupportsModel(BaseModel):
+    """Apoyos de la pantalla de la persona (ProtocolSupports)."""
+
+    model_config = ConfigDict(extra="forbid")
+    pictograms: bool = False
+    large_controls: bool = False
+    read_aloud: bool = False
+    no_time_limit: bool = False
+    pause: Literal["normal", "long", "wait"] = "normal"
+
+    @classmethod
+    def of(cls, item: ProtocolSupports) -> "SupportsModel":
+        return cls(pictograms=item.pictograms, large_controls=item.large_controls, read_aloud=item.read_aloud,
+                   no_time_limit=item.no_time_limit, pause=item.pause.value)
 
 
 class ProtocolRequest(BaseModel):
@@ -84,8 +101,10 @@ class ProtocolRequest(BaseModel):
     pre_questionnaire_id: str | None = Field(default=None, max_length=36)
     post_questionnaire_id: str | None = Field(default=None, max_length=36)
     steps: list[StepModel] = Field(min_length=1, max_length=MAX_STEPS)
-    # Pantalla de la persona con pictogramas, botones grandes y pausas más largas.
+    # Preajuste: pictogramas, botones grandes y pausas más largas. Si llegan los
+    # apoyos (supports), mandan sobre accessible.
     accessible: bool = False
+    supports: SupportsModel | None = None
 
 
 class ProtocolShareRequest(BaseModel):
@@ -111,6 +130,9 @@ class ProtocolResponse(BaseModel):
     used: bool
     # Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla.
     needs_image: bool
+    # Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara.
+    uses_camera: bool = True
+    supports: SupportsModel = Field(default_factory=SupportsModel)
 
 
 def create_stimulus_router(
@@ -169,7 +191,8 @@ def create_stimulus_router(
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
-            needs_image=service.needs_image(item))
+            needs_image=service.needs_image(item), uses_camera=item.uses_camera,
+            supports=SupportsModel.of(item.supports))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
@@ -184,7 +207,8 @@ def create_stimulus_router(
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,
                              steps=steps, pre_questionnaire_id=request.pre_questionnaire_id,
-                             post_questionnaire_id=request.post_questionnaire_id, accessible=request.accessible)
+                             post_questionnaire_id=request.post_questionnaire_id, accessible=request.accessible,
+                             supports=ProtocolSupports(**request.supports.model_dump()) if request.supports else None)
 
     # --- Estímulos -------------------------------------------------------------
 

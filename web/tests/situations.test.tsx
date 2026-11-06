@@ -52,11 +52,11 @@ describe("situaciones en el paso «¿Qué emoción es?»", () => {
     expect(JSON.parse(String(init?.body)).steps[0]).toMatchObject({ kind: "recognition", stimulus_id: "sad", situation: STORY });
   });
 
-  it("la persona lee la situación y la pregunta «¿Cómo se siente?»", async () => {
+  it("la persona lee la situación y la pregunta por la cara de la imagen", async () => {
     const view: ParticipantViewState = {
       phase: "stimuli", message: null, stimulus: { exposure: "0-1" }, remaining_seconds: 10, capture_frames: false,
       frame_interval_ms: 500, abstract_notice: null,
-      recognition: { question: "¿Cómo se siente?", situation: STORY, chosen: null, message: null,
+      recognition: { question: "¿Qué emoción muestra la cara?", situation: STORY, chosen: null, message: null,
         options: [{ key: "sadness", label: "Tristeza" }, { key: "happiness", label: "Alegría" }] },
     };
     vi.mocked(apiBlob).mockResolvedValue(new Blob(["png"], { type: "image/png" }));
@@ -65,7 +65,7 @@ describe("situaciones en el paso «¿Qué emoción es?»", () => {
     vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/participant-view/tok" ? view : { received: true }) as never);
     withUser(<ParticipantViewPage />, "/participant-view/tok");
     expect(await screen.findByText(STORY)).toBeInTheDocument();
-    expect(screen.getByText("¿Cómo se siente?")).toBeInTheDocument();
+    expect(screen.getByText("¿Qué emoción muestra la cara?")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Tristeza" }));
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/participant-view/tok/answer",
       expect.objectContaining({ body: JSON.stringify({ expression: "sadness" }) })));
@@ -85,7 +85,7 @@ describe("situaciones en el paso «¿Qué emoción es?»", () => {
     };
     vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/guided-sessions/s1" ? state : {}) as never);
     withUser(<GuidedConductorPage />, "/guided/s1");
-    expect(await screen.findByRole("heading", { name: "¿Cómo se siente? · Niña con helado" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "¿Qué emoción muestra la cara? · Niña con helado" })).toBeInTheDocument();
     expect(screen.getByText(`Situación: ${STORY}`)).toBeInTheDocument();
   });
 });

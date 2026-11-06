@@ -50,9 +50,13 @@ aprobadas.
 
 El paso admite una **situación** opcional: una historia corta de hasta 200
 caracteres que acompaña a la ilustración, por ejemplo «A Lucía se le cayó su
-helado al piso». Con ella la pregunta pasa a ser «¿Cómo se siente?». La
+helado al piso». Con ella la pregunta pasa a ser «¿Qué emoción muestra la
+cara?»: se pregunta por la expresión de la ilustración, no por lo que alguien
+siente, porque una situación no tiene una única respuesta emocional. La
 respuesta sigue siendo la expresión esperada de la imagen, así que la
-ilustración debe mostrar la escena con esa emoción.
+ilustración debe mostrar la escena con esa emoción. Al terminar se lee «La cara
+de la imagen muestra tristeza.» y «En una situación así, cada persona puede
+sentir algo distinto.».
 
 El texto lo escribe quien arma el protocolo y se guarda con el paso
 (`protocol_steps.situation`, migración `20261102_32_recognition_situations`).
@@ -70,7 +74,8 @@ pensado para quienes se saturan con facilidad y cambia solo la presentación:
   emoción. El nombre sigue siendo la etiqueta del botón; el pictograma es un
   apoyo visual, no una imagen de nadie ni de lo detectado.
 - Botones y letra más grandes, y nada se mueve (sin animaciones ni
-  transiciones). La aplicación no usa sonidos.
+  transiciones). La aplicación no reproduce sonidos por sí sola: «Escuchar» lee
+  el texto solo cuando alguien lo pulsa.
 - La pausa tras cada reconocimiento o ejercicio dura el doble
   (`ACCESSIBLE_PAUSE_FACTOR`).
 - En el editor, los pasos nuevos proponen 2 opciones y 30 s para responder, y
@@ -83,16 +88,19 @@ en el encabezado del paso.
 
 1. Va después de la calibración, como los demás pasos durante el analizador.
 2. **Pantalla de la persona.** Muestra la imagen, la situación si la hay, la
-   pregunta («¿Qué emoción es?» o «¿Cómo se siente?») y un botón grande por
-   opción. Al tocar uno se envía
+   pregunta («¿Qué emoción es?» o «¿Qué emoción muestra la cara?»), un botón
+   grande por opción y «Escuchar», que lee la consigna con la voz del
+   navegador. Al tocar una opción se envía
    `POST /participant-view/{token}/answer`.
 3. **Quien conduce.** Ve la emoción de la imagen, la situación y las mismas
    opciones. Si la
    persona señala o dice su respuesta, la registra con
    `POST /guided-sessions/{id}/recognition`.
 4. Tras la respuesta, o al vencer el tiempo, la persona lee el nombre de la
-   emoción durante la pausa (`PRACTICE_STEP_PAUSE_SECONDS`, 2 s por defecto) y
-   el paso avanza solo.
+   emoción y su explicación sencilla (`expression_info.child_explanation`, del
+   catálogo revisable; nunca la genera un LLM) durante la pausa
+   (`PRACTICE_STEP_PAUSE_SECONDS`, 2 s por defecto) y el paso avanza solo. La
+   opción elegida muestra «✓ Tu elección», sin decir si coincidió.
 5. Saltar el paso o detener la sesión queda registrado como tal.
 
 ## Qué se guarda

@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 
 from emotv.domain.protocol import Protocol, ProtocolKind
 from emotv.infrastructure.persistence.postgres_practice_repositories import PostgresProtocolRepository
-from tests.integration.test_guided_sessions import calibrate, guided, state, view, wait
+from tests.integration.test_guided_sessions import begin_steps, guided, state, view, wait
 from tests.integration.test_practice_persistence import T0, engine, factory  # noqa: F401
 from tests.integration.test_practice_persistence import protocol as stored_protocol
 from tests.integration.test_privacy_accounts import env, headers  # noqa: F401
@@ -31,7 +31,7 @@ def accessible_protocol(env, steps, accessible=True):  # noqa: F811
 
 def start(env, item):  # noqa: F811
     session_id, token = guided(env, item)
-    calibrate(env, session_id, token)
+    begin_steps(env, session_id, token)
     return session_id, token
 
 

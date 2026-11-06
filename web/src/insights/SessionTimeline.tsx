@@ -35,7 +35,19 @@ function practiceText(item: Timeline["lanes"]["stimuli"][number]) {
   const outcome = item.outcome && item.outcome !== "answered" ? practiceOutcomeNames[item.outcome].toLowerCase()
     : item.skipped ? "se saltó" : "en curso";
   const when = item.outcome === "achieved" && item.seconds_to_achieve != null ? ` a los ${secondsText(item.seconds_to_achieve)}` : "";
-  return `${item.imitate ? `Imitar ${target.toLowerCase()}` : target} · ${outcome}${when}`;
+  return `${item.imitate ? `Imitar ${target.toLowerCase()}` : target} · ${outcome}${when}${repeatsText(item)}`;
+}
+
+/** Las repeticiones de un paso, después de su primer intento. */
+function repeatsText(item: Timeline["lanes"]["stimuli"][number]) {
+  return (item.repeats ?? []).map((repeat) => {
+    const outcome = item.kind === "practice"
+      ? practiceOutcomeNames[repeat.outcome as keyof typeof practiceOutcomeNames].toLowerCase()
+      : recognitionOutcomeNames[repeat.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+    const chosen = repeat.chosen_expression ? `: ${practiceTargetNames[repeat.chosen_expression] ?? repeat.chosen_expression}` : "";
+    const seconds = item.kind === "practice" ? repeat.seconds_to_achieve : repeat.seconds_to_answer;
+    return ` · ${repeat.attempt}.º intento: ${outcome}${chosen}${seconds != null ? ` a los ${secondsText(seconds)}` : ""}`;
+  }).join("");
 }
 
 /** Un reconocimiento con la opción elegida, tal como ocurrió. */
@@ -44,7 +56,17 @@ function recognitionText(item: Timeline["lanes"]["stimuli"][number]) {
   if (!item.outcome) return `«${item.title}» (${target}) · ${item.skipped ? "se saltó" : "en curso"}`;
   const chosen = item.chosen_expression ? `: ${practiceTargetNames[item.chosen_expression] ?? item.chosen_expression}` : "";
   const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
-  return `«${item.title}» (${target}) · ${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase()}${chosen}${when}`;
+  return `«${item.title}» (${target}) · ${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase()}${chosen}${when}${repeatsText(item)}`;
+}
+
+/** Un dibujo: solo la emoción que la persona señaló (el dibujo no se guarda). */
+function drawingText(item: Timeline["lanes"]["stimuli"][number]) {
+  if (!item.outcome) return item.skipped ? "se saltó" : "en curso";
+  const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
+  const outcome = item.chosen_expression
+    ? `señaló ${(practiceTargetNames[item.chosen_expression] ?? item.chosen_expression).toLowerCase()}`
+    : recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+  return `${outcome}${when}${repeatsText(item)}`;
 }
 
 interface Event { time: number; text: string }
@@ -73,6 +95,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
     ...stimuli.map((item) => ({ time: item.start ?? 0, text: item.kind === "practice"
       ? `Ejercicio de práctica: ${practiceText(item)}`
       : item.kind === "recognition" ? `¿Qué emoción es? ${recognitionText(item)}`
+      : item.kind === "drawing" ? `Dibujo: ${drawingText(item)}`
       : `Aparece el estímulo «${item.title}»${item.skipped ? " (se saltó)" : ""}` })),
     ...captures.map((item) => ({ time: item.time, text: `Captura: ${item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "sin expresión estimada"}${item.quality === "flagged" ? ", marcada por calidad" : ""}` })),
     ...said.map((item) => ({ time: item.time, text: `Dijo ver en «${item.title}»: ${item.text}` })),
@@ -89,6 +112,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
         className={item.skipped ? "timeline-bar timeline-bar-skipped" : "timeline-bar"} />
       <title>{item.kind === "practice" ? `${seconds(item.start ?? 0)} · Ejercicio: ${practiceText(item)}`
         : item.kind === "recognition" ? `${seconds(item.start ?? 0)} · ¿Qué emoción es? ${recognitionText(item)}`
+        : item.kind === "drawing" ? `${seconds(item.start ?? 0)} · Dibujo: ${drawingText(item)}`
         : `${seconds(item.start ?? 0)} · ${item.title}${item.kind === "abstract" ? " (abstracta)" : ""}${item.skipped ? " · se saltó" : ""}`}</title>
     </g>),
     captures: captures.map((item, index) => <g key={index}>

@@ -21,6 +21,11 @@ Un paso de reconocimiento muestra una imagen emocional y pregunta «¿Qué emoci
 es?». La persona toca una opción en su pantalla (o quien conduce registra lo que
 señaló); después lee unos segundos el nombre de la emoción de la imagen y el
 paso avanza solo. Ese paso no analiza la cámara.
+
+Un paso de dibujo pide dibujar una cara y después «¿Qué emoción quisiste
+dibujar?». El dibujo vive solo en la pantalla de la persona: aquí llega la
+emoción que señaló (o la que registra quien conduce), nunca el dibujo. No hay
+respuesta correcta y no analiza la cámara.
 """
 from __future__ import annotations
 
@@ -55,8 +60,18 @@ from emotv.domain.guided_session import (
     RECOGNITION_DISTRACTORS,
     RECOGNITION_NAMES,
     RECOGNITION_QUESTION,
+    SITUATION_ANSWERS,
+    SITUATION_NOTE,
     SITUATION_QUESTION,
+    CAMERA_PROBLEMS,
+    DRAWING_ANSWERS,
+    DRAWING_INSTRUCTION,
+    DRAWING_OPTIONS,
+    DRAWING_QUESTION,
+    MAX_STEP_ATTEMPTS,
+    NO_CAMERA_SKIP,
     CaptureQuality,
+    DrawingResult,
     ExpressionCapture,
     FrameAssessment,
     GuidedPhase,
@@ -72,7 +87,8 @@ from emotv.domain.guided_session import (
     StopReason,
     VerbalResponse,
 )
-from emotv.domain.protocol import ACCESSIBLE_PAUSE_FACTOR, Protocol, ProtocolStep
+from emotv.domain.protocol import (ACCESSIBLE_PAUSE_FACTOR, NO_TIME_LIMIT_SECONDS, WAIT_PAUSE_SECONDS, PauseMode,
+                                   Protocol, ProtocolStep)
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
 from emotv.domain.stimulus import Stimulus, StimulusKind
@@ -100,9 +116,15 @@ class GuidedRepository(Interface):
     # Uno por paso de práctica: guardar de nuevo el mismo paso lo reemplaza.
     def save_practice_result(self, result: PracticeResult) -> PracticeResult: ...
     def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]: ...
+    def list_practice_attempts(self, session_id: str) -> tuple[PracticeResult, ...]: ...
     # Uno por paso de reconocimiento: guardar de nuevo el mismo paso lo reemplaza.
     def save_recognition_result(self, result: RecognitionResult) -> RecognitionResult: ...
     def list_recognition_results(self, session_id: str) -> tuple[RecognitionResult, ...]: ...
+    def list_recognition_attempts(self, session_id: str) -> tuple[RecognitionResult, ...]: ...
+    # Uno por paso de dibujo e intento: solo la emoción señalada y los tiempos.
+    def save_drawing_result(self, result: DrawingResult) -> DrawingResult: ...
+    def list_drawing_results(self, session_id: str) -> tuple[DrawingResult, ...]: ...
+    def list_drawing_attempts(self, session_id: str) -> tuple[DrawingResult, ...]: ...
 
 
 class GuidedNotFound(LookupError):
@@ -123,6 +145,7 @@ class _Live:
     pending: FrameAssessment | None = None
     practice: PracticeTracker | None = None
     analyzing: bool = False   # un cuadro de práctica se está analizando
+    camera_problem: str | None = None  # motivo que informó la pantalla de la persona
 
 
 def hash_token(token: str) -> str:
@@ -146,6 +169,7 @@ class GuidedSessionService:
         clock: Callable[[], datetime] | None = None,
         exam_of: Callable[[str], Exam | None] | None = None,
         practice: PracticeSettings | None = None,
+        explanation_of: Callable[[str], str | None] | None = None,
     ) -> None:
         self.repository = repository
         self.sessions = sessions
@@ -162,6 +186,8 @@ class GuidedSessionService:
         # Examen simulado de una estación; sin él no hay estaciones.
         self.exam_of = exam_of
         self.practice = practice or PracticeSettings()
+        # Explicación sencilla y revisable de cada emoción (catálogo de expresiones).
+        self.explanation_of = explanation_of
         self._live: dict[str, _Live] = {}
         # Protege el nivel de la práctica: los cuadros llegan en hilos distintos.
         self._practice_lock = threading.Lock()
@@ -183,9 +209,32 @@ class GuidedSessionService:
         return protocol
 
     def _step_pause(self, protocol: Protocol) -> float:
-        """Pausa tras un ejercicio o un reconocimiento; más larga en modo accesible."""
-        factor = ACCESSIBLE_PAUSE_FACTOR if protocol.accessible else 1
+        """Pausa tras un ejercicio o un reconocimiento según el apoyo del protocolo:
+        la normal, el doble o hasta que quien conduce pulse «Seguir» (con tope)."""
+        pause = protocol.supports.pause
+        if pause is PauseMode.WAIT:
+            return float(WAIT_PAUSE_SECONDS)
+        factor = ACCESSIBLE_PAUSE_FACTOR if pause is PauseMode.LONG else 1
         return self.practice.step_pause_seconds * factor
+
+    @staticmethod
+    def _limit(protocol: Protocol, step: ProtocolStep) -> float:
+        """Segundos máximos del paso. Sin límite de tiempo, un reconocimiento o un
+        ejercicio solo termina al responder, al lograrlo o al saltarlo (con tope)."""
+        timed = step.is_timed
+        return float(NO_TIME_LIMIT_SECONDS) if timed and protocol.supports.no_time_limit else step.exposure_seconds
+
+    def _unlimited(self, session: EmotionalSession, step: ProtocolStep | None) -> bool:
+        return (step is not None and step.is_timed and session.protocol_id is not None
+                and self._protocol(session).supports.no_time_limit)
+
+    def _uses_camera(self, session: EmotionalSession) -> bool:
+        """Sin protocolo (registro en vivo) siempre; con protocolo, según sus pasos."""
+        return session.protocol_id is None or self._protocol(session).uses_camera
+
+    def _camera_active(self, run: GuidedRun, session: EmotionalSession) -> bool:
+        """Si la sesión usa la cámara desde ahora: no si quien conduce siguió sin ella."""
+        return run.camera_off_at is None and self._uses_camera(session)
 
     def _steps(self, session: EmotionalSession) -> tuple[ProtocolStep, ...]:
         """Los pasos del protocolo; ninguno en una sesión sin protocolo."""
@@ -212,27 +261,59 @@ class GuidedSessionService:
     def _first_due(self, step: ProtocolStep, phase: GuidedPhase) -> float | None:
         # En una práctica o un reconocimiento, next_capture_due solo marca cuándo
         # avanzar tras lograrla o responder.
-        timed = step.is_practice or step.is_recognition
+        timed = step.is_timed
         return float(step.capture_after_seconds) if phase is GuidedPhase.STIMULI and not timed else None
 
     def _start_step(self, run: GuidedRun, protocol: Protocol, phase: GuidedPhase, index: int) -> GuidedRun:
         step = protocol.steps[index]
         return replace(run, phase=phase, step_index=index, step_started_at=self.clock(),
-                       next_capture_due=self._first_due(step, phase))
+                       next_capture_due=self._first_due(step, phase), step_attempt=1)
 
-    def _log_step(self, run: GuidedRun, skipped: bool) -> GuidedRun:
+    def _log_step(self, run: GuidedRun, skipped: bool, reason: str | None = None) -> GuidedRun:
+        # Un paso repetido se registra desde su primer intento.
+        started = min((item.started_at for item in self._step_attempts(run.session_id, run.step_index)),
+                      default=run.step_started_at)
+        if run.step_started_at is not None and started is not None:
+            started = min(started, run.step_started_at)
         entry = {"step_index": run.step_index, "phase": run.phase.value,
-                 "started_at": run.step_started_at.isoformat() if run.step_started_at else None,
+                 "started_at": started.isoformat() if started else None,
                  "ended_at": self.clock().isoformat(), "skipped": skipped}
+        if reason:
+            entry["reason"] = reason
         return replace(run, steps_log=(*run.steps_log, entry))
+
+    def _start_during(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol,
+                      candidates: list[int]) -> GuidedRun:
+        """Empieza el primero de los pasos indicados. Sin cámara, los que la
+        necesitan se registran como saltados (motivo no_camera) sin empezar."""
+        for index in candidates:
+            if run.camera_off_at is not None and protocol.steps[index].uses_camera:
+                now = self.clock().isoformat()
+                run = replace(run, steps_log=(*run.steps_log, {
+                    "step_index": index, "phase": GuidedPhase.STIMULI.value, "started_at": now, "ended_at": now,
+                    "skipped": True, "reason": NO_CAMERA_SKIP}))
+                continue
+            return self._start_step(run, protocol, GuidedPhase.STIMULI, index)
+        return self._after_stimuli(run, session)
 
     # --- Avance entre fases ----------------------------------------------------------
 
-    def _after_pre(self, run: GuidedRun, protocol: Protocol) -> GuidedRun:
+    def _after_pre(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol) -> GuidedRun:
         before = self._group(protocol, True)
         if before:
             return self._start_step(run, protocol, GuidedPhase.BEFORE_ANALYZER, before[0])
-        return replace(run, phase=GuidedPhase.CALIBRATION, step_started_at=None, next_capture_due=None)
+        return self._to_analyzer(run, session, protocol)
+
+    def _to_analyzer(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol) -> GuidedRun:
+        """Con cámara, la calibración neutral; sin cámara (solo reconocimientos),
+        la sesión queda lista (ready) hasta que quien conduce pulsa «Empezar»: no
+        se calibra ni se envían cuadros, y el tiempo del primer paso no corre antes."""
+        if self._camera_active(run, session):
+            return replace(run, phase=GuidedPhase.CALIBRATION, step_started_at=None, next_capture_due=None)
+        return replace(run, phase=GuidedPhase.READY, step_started_at=None, next_capture_due=None)
+
+    def _first_step(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol) -> GuidedRun:
+        return self._start_during(run, session, protocol, self._group(protocol, False))
 
     def _after_stimuli(self, run: GuidedRun, session: EmotionalSession) -> GuidedRun:
         if session.post_questionnaire_id:
@@ -358,15 +439,16 @@ class GuidedSessionService:
         if run is not None:
             self._tick(run)
 
-    def _next_step(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol, skipped: bool) -> GuidedRun:
-        run = self._log_step(run, skipped)
+    def _next_step(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol, skipped: bool,
+                   reason: str | None = None) -> GuidedRun:
+        run = self._log_step(run, skipped, reason)
         group = self._group(protocol, run.phase is GuidedPhase.BEFORE_ANALYZER)
         later = [index for index in group if index > run.step_index]
+        if run.phase is GuidedPhase.STIMULI:
+            return self._start_during(run, session, protocol, later)
         if later:
             return self._start_step(run, protocol, run.phase, later[0])
-        if run.phase is GuidedPhase.BEFORE_ANALYZER:
-            return replace(run, phase=GuidedPhase.CALIBRATION, step_started_at=None, next_capture_due=None)
-        return self._after_stimuli(run, session)
+        return self._to_analyzer(run, session, protocol)
 
     def _tick(self, run: GuidedRun) -> GuidedRun:
         """Avanza según el reloj del servidor: fin de exposición y capturas sin cuadros."""
@@ -384,7 +466,7 @@ class GuidedSessionService:
         while run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = protocol.steps[run.step_index]
             elapsed = self._seconds(run.step_started_at)
-            if step.is_practice or step.is_recognition:
+            if step.is_timed:
                 advanced = self._tick_timed(run, session, protocol, step, elapsed)
                 if advanced is None:
                     break
@@ -402,13 +484,92 @@ class GuidedSessionService:
             changed = True
         return self.repository.save_run(run) if changed else run
 
+    # --- Apoyos del protocolo ----------------------------------------------------------------
+
+    @staticmethod
+    def _supports_payload(protocol: Protocol) -> dict[str, Any]:
+        supports = protocol.supports
+        return {"pictograms": supports.pictograms, "large_controls": supports.large_controls,
+                "read_aloud": supports.read_aloud, "no_time_limit": supports.no_time_limit,
+                "pause": supports.pause.value}
+
+    def _screen_supports(self, session: EmotionalSession) -> dict[str, bool] | None:
+        """Lo que la pantalla de la persona necesita saber de los apoyos."""
+        if session.protocol_id is None:
+            return None
+        supports = self._protocol(session).supports
+        shown = {"pictograms": supports.pictograms, "large_controls": supports.large_controls,
+                 "read_aloud": supports.read_aloud}
+        return shown if any(shown.values()) else None
+
+    def _waiting_for_conductor(self, run: GuidedRun, session: EmotionalSession) -> bool:
+        if run.phase is not GuidedPhase.STIMULI or run.next_capture_due is None or session.protocol_id is None:
+            return False
+        protocol = self._protocol(session)
+        step = protocol.steps[run.step_index]
+        return (protocol.supports.pause is PauseMode.WAIT and step.is_timed
+                and self._seconds(run.step_started_at) < run.next_capture_due)
+
+    # --- Repetir un paso ---------------------------------------------------------------------
+
+    def _step_attempts(self, session_id: str,
+                       step_index: int) -> list[PracticeResult | RecognitionResult | DrawingResult]:
+        """Los intentos ya guardados de un paso, de cualquier tipo."""
+        items: list[PracticeResult | RecognitionResult | DrawingResult] = [
+            *self.repository.list_practice_attempts(session_id), *self.repository.list_recognition_attempts(session_id),
+            *self.repository.list_drawing_attempts(session_id)]
+        return [item for item in items if item.step_index == step_index]
+
+    def _can_repeat(self, run: GuidedRun, session: EmotionalSession) -> bool:
+        """En la pausa tras responder, lograrlo o vencer el tiempo, y con intentos libres."""
+        if run.phase is not GuidedPhase.STIMULI or run.next_capture_due is None or session.protocol_id is None:
+            return False
+        step = self._protocol(session).steps[run.step_index]
+        return (step.is_timed
+                and self._seconds(run.step_started_at) < run.next_capture_due
+                and run.step_attempt < MAX_STEP_ATTEMPTS)
+
+    def repeat_step(self, user: User, session_id: str) -> GuidedRun:
+        """«Repetir este paso»: el mismo reconocimiento o ejercicio empieza otra vez,
+        con las mismas opciones. Cada intento se guarda; las métricas cuentan el primero."""
+        run, session = self._conducted(user, session_id)
+        if not run.active:
+            raise GuidedConflict("La sesión ya terminó")
+        run = self._tick(run)
+        with self._practice_lock:
+            fresh = self.repository.get_run(session_id) or run
+            if not self._can_repeat(fresh, session):
+                raise GuidedConflict("Este paso no se puede repetir ahora")
+            self._live_of(session_id).practice = None
+            run = self.repository.save_run(replace(fresh, step_started_at=self.clock(), next_capture_due=None,
+                                                   step_attempt=fresh.step_attempt + 1))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
+
+    def continue_after_pause(self, user: User, session_id: str) -> GuidedRun:
+        """«Seguir»: con la pausa «esperar a quien conduce», pasa al paso siguiente."""
+        run, session = self._conducted(user, session_id)
+        if not run.active:
+            raise GuidedConflict("La sesión ya terminó")
+        run = self._tick(run)
+        with self._practice_lock:
+            fresh = self.repository.get_run(session_id) or run
+            if not self._waiting_for_conductor(fresh, session):
+                raise GuidedConflict("No hay un paso esperando para seguir")
+            elapsed = self._seconds(fresh.step_started_at)
+            self.repository.save_run(replace(fresh, next_capture_due=elapsed))
+        run = self._tick(self.repository.get_run(session_id) or fresh)
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
+
     # --- Práctica de expresiones ----------------------------------------------------------
 
     def _tick_timed(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol,
                     step: ProtocolStep, elapsed: float) -> GuidedRun | None:
         """Avanza un ejercicio o un reconocimiento por el reloj: tras la pausa del
         logro o de la respuesta, o al vencer el tiempo máximo. None si sigue."""
-        if run.next_capture_due is None and elapsed < step.exposure_seconds:
+        limit_seconds = self._limit(protocol, step)
+        if run.next_capture_due is None and elapsed < limit_seconds:
             return None
         if run.next_capture_due is not None and elapsed < run.next_capture_due:
             return None
@@ -420,16 +581,18 @@ class GuidedSessionService:
                 return fresh
             run = fresh
             if run.next_capture_due is None:
-                if elapsed < step.exposure_seconds:
+                if elapsed < limit_seconds:
                     return None
-                limit = run.step_started_at + timedelta(seconds=step.exposure_seconds)
+                limit = run.step_started_at + timedelta(seconds=limit_seconds)
                 if step.is_recognition:
                     self._store_recognition(run, session, step, RecognitionOutcome.TIMED_OUT, ended_at=limit)
+                elif step.is_drawing:
+                    self._store_drawing(run, session, RecognitionOutcome.TIMED_OUT, ended_at=limit)
                 else:
                     self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT, ended_at=limit)
                 # También sin lograrlo hay una pausa antes del paso siguiente (§14.5).
                 pause = self._step_pause(protocol)
-                pause_until = step.exposure_seconds + pause
+                pause_until = limit_seconds + pause
                 if pause > 0 and elapsed < pause_until:
                     return self.repository.save_run(replace(run, next_capture_due=pause_until))
             elif elapsed < run.next_capture_due:
@@ -481,7 +644,7 @@ class GuidedSessionService:
             feedback_visible=tracker.feedback_visible and run.practice_feedback, analyzed_frames=tracker.analyzed, flagged_frames=tracker.flagged,
             emotion_model_id=session.emotion_model_id or "", emotion_model_version=session.emotion_model_version or "",
             started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
-            seconds_to_achieve=seconds))
+            seconds_to_achieve=seconds, attempt=run.step_attempt))
         live.practice = None
 
     def _end_practice(self, run: GuidedRun, session: EmotionalSession, outcome: PracticeOutcome) -> None:
@@ -496,7 +659,7 @@ class GuidedSessionService:
             fresh = self.repository.get_run(run.session_id) or run
             if fresh.next_capture_due is not None or fresh.step_started_at != run.step_started_at:
                 return
-            limit = run.step_started_at + timedelta(seconds=step.exposure_seconds)
+            limit = run.step_started_at + timedelta(seconds=self._limit(self._protocol(session), step))
             if self.clock() >= limit:
                 self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT, ended_at=limit)
             else:
@@ -505,7 +668,8 @@ class GuidedSessionService:
     def _practice_frame(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep, frame) -> None:
         """Cada cuadro del ejercicio actualiza el nivel. Si ya hay un cuadro de esta
         sesión en análisis, este se descarta: el nivel tolera cuadros perdidos."""
-        if run.next_capture_due is not None or self._seconds(run.step_started_at) >= step.exposure_seconds:
+        limit_seconds = self._limit(self._protocol(session), step)
+        if run.next_capture_due is not None or self._seconds(run.step_started_at) >= limit_seconds:
             return  # logrado (en pausa) o vencido: no se analiza
         live = self._live_of(run.session_id)
         with self._practice_lock:
@@ -522,7 +686,7 @@ class GuidedSessionService:
                     or fresh.step_started_at != run.step_started_at or fresh.next_capture_due is not None):
                 return  # el paso cambió mientras se analizaba
             elapsed = self._seconds(fresh.step_started_at)
-            if elapsed >= step.exposure_seconds:
+            if elapsed >= limit_seconds:
                 return
             tracker = self._practice_tracker(fresh, session, step)
             if tracker.add(self.clock().timestamp(), self._practice_value(live, tracker, step, assessment)):
@@ -571,8 +735,8 @@ class GuidedSessionService:
         exposure_seconds; la de un logro, antes (se logró antes de vencer)."""
         if run.next_capture_due is None:
             return False
-        pause = self._step_pause(self._protocol(self._session(run.session_id)))
-        return run.next_capture_due < step.exposure_seconds + pause
+        protocol = self._protocol(self._session(run.session_id))
+        return run.next_capture_due < self._limit(protocol, step) + self._step_pause(protocol)
 
     def _conductor_practice(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce en un ejercicio: la expresión pedida, el nivel
@@ -604,9 +768,9 @@ class GuidedSessionService:
 
     def _recognition_result(self, run: GuidedRun) -> RecognitionResult | None:
         """El resultado del paso en curso, si ya terminó (respondido o vencido)."""
-        return next((item for item in self.repository.list_recognition_results(run.session_id)
-                     if item.step_index == run.step_index and run.step_started_at is not None
-                     and item.started_at == run.step_started_at), None)
+        return next((item for item in self.repository.list_recognition_attempts(run.session_id)
+                     if item.step_index == run.step_index and item.attempt == run.step_attempt
+                     and run.step_started_at is not None), None)
 
     def _store_recognition(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep,
                            outcome: RecognitionOutcome, ended_at: datetime, chosen: str | None = None,
@@ -616,7 +780,8 @@ class GuidedSessionService:
             target_expression=step.target_expression,
             options=self._recognition_options(session.id, run.step_index, step), outcome=outcome,
             started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
-            chosen_expression=chosen, seconds_to_answer=seconds, answered_by=by))
+            chosen_expression=chosen, seconds_to_answer=seconds, answered_by=by,
+            attempt=run.step_attempt))
 
     def _end_recognition(self, run: GuidedRun, session: EmotionalSession, outcome: RecognitionOutcome) -> None:
         """Saltar o detener un reconocimiento sin respuesta: se registra cómo
@@ -625,17 +790,18 @@ class GuidedSessionService:
         if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
             return
         step = self._protocol(session).steps[run.step_index]
-        if not step.is_recognition or run.next_capture_due is not None:
+        if not (step.is_recognition or step.is_drawing) or run.next_capture_due is not None:
             return
         with self._practice_lock:
             fresh = self.repository.get_run(run.session_id) or run
             if fresh.next_capture_due is not None or fresh.step_started_at != run.step_started_at:
                 return
-            limit = run.step_started_at + timedelta(seconds=step.exposure_seconds)
-            if self.clock() >= limit:
-                self._store_recognition(run, session, step, RecognitionOutcome.TIMED_OUT, ended_at=limit)
+            limit = run.step_started_at + timedelta(seconds=self._limit(self._protocol(session), step))
+            ended = (RecognitionOutcome.TIMED_OUT, limit) if self.clock() >= limit else (outcome, self.clock())
+            if step.is_drawing:
+                self._store_drawing(run, session, ended[0], ended_at=ended[1])
             else:
-                self._store_recognition(run, session, step, outcome, ended_at=self.clock())
+                self._store_recognition(run, session, step, ended[0], ended_at=ended[1])
 
     def _answer(self, run: GuidedRun, expression: str, by: RecognitionAnswerer) -> GuidedRun:
         """Registra la opción elegida. Después, la persona lee el nombre de la
@@ -644,9 +810,10 @@ class GuidedSessionService:
         if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
             raise GuidedConflict("No hay un reconocimiento en curso")
         step = self._protocol(session).steps[run.step_index]
-        if not step.is_recognition:
+        if not (step.is_recognition or step.is_drawing):
             raise GuidedConflict("No hay un reconocimiento en curso")
-        if expression not in self._recognition_options(session.id, run.step_index, step):
+        options = DRAWING_OPTIONS if step.is_drawing else self._recognition_options(session.id, run.step_index, step)
+        if expression not in options:
             raise ValueError("Esa opción no se mostró en este paso")
         with self._practice_lock:
             fresh = self.repository.get_run(run.session_id) or run
@@ -654,10 +821,14 @@ class GuidedSessionService:
                                                                            run.step_started_at):
                 raise GuidedConflict("El paso cambió")
             elapsed = self._seconds(fresh.step_started_at)
-            if fresh.next_capture_due is not None or elapsed >= step.exposure_seconds:
+            if fresh.next_capture_due is not None or elapsed >= self._limit(self._protocol(session), step):
                 raise GuidedConflict("Este paso ya terminó")
-            self._store_recognition(fresh, session, step, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
+            if step.is_drawing:
+                self._store_drawing(fresh, session, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
                                     chosen=expression, seconds=round(elapsed, 2), by=by)
+            else:
+                self._store_recognition(fresh, session, step, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
+                                        chosen=expression, seconds=round(elapsed, 2), by=by)
             return self.repository.save_run(replace(
                 fresh, next_capture_due=elapsed + self._step_pause(self._protocol(session))))
 
@@ -676,18 +847,61 @@ class GuidedSessionService:
         """Lo que ve la persona: la pregunta, las opciones y, al terminar el paso,
         el nombre de la emoción de la imagen. No dice si acertó."""
         result = self._recognition_result(run)
+        target = step.target_expression
+        answers = SITUATION_ANSWERS if step.situation else RECOGNITION_ANSWERS
+        explanation = self.explanation_of(target) if result and self.explanation_of else None
         return {"question": SITUATION_QUESTION if step.situation else RECOGNITION_QUESTION,
                 "situation": step.situation,
                 "options": [{"key": item, "label": RECOGNITION_NAMES[item]}
                             for item in self._recognition_options(run.session_id, run.step_index, step)],
                 "chosen": result.chosen_expression if result else None,
-                "message": RECOGNITION_ANSWERS[step.target_expression] if result else None}
+                "message": answers[target] if result else None,
+                # Solo al terminar el paso: la explicación del catálogo y, con una
+                # situación, que otras personas podrían sentir algo distinto.
+                "explanation": explanation or None,
+                "note": SITUATION_NOTE if result and step.situation else None}
 
     def _conductor_recognition(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce: las opciones, la de la imagen y la elegida."""
         result = self._recognition_result(run)
         return {"target_expression": step.target_expression, "situation": step.situation,
                 "options": list(self._recognition_options(run.session_id, run.step_index, step)),
+                "chosen_expression": result.chosen_expression if result else None,
+                "outcome": result.outcome.value if result else None}
+
+    # --- Dibujo: solo la emoción señalada, nunca el dibujo -------------------------------
+
+    def _drawing_result(self, run: GuidedRun) -> DrawingResult | None:
+        """El resultado del intento en curso, si ya terminó (respondido o vencido)."""
+        return next((item for item in self.repository.list_drawing_attempts(run.session_id)
+                     if item.step_index == run.step_index and item.attempt == run.step_attempt
+                     and run.step_started_at is not None), None)
+
+    def _store_drawing(self, run: GuidedRun, session: EmotionalSession, outcome: RecognitionOutcome,
+                       ended_at: datetime, chosen: str | None = None, seconds: float | None = None,
+                       by: RecognitionAnswerer | None = None) -> None:
+        self.repository.save_drawing_result(DrawingResult(
+            id=str(uuid4()), session_id=session.id, step_index=run.step_index, outcome=outcome,
+            started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
+            chosen_expression=chosen, seconds_to_answer=seconds, answered_by=by, attempt=run.step_attempt))
+
+    def _participant_drawing(self, run: GuidedRun) -> dict[str, Any]:
+        """Lo que ve la persona: la consigna, la pregunta, las emociones para
+        señalar y, al terminar, la que eligió. No se compara con el dibujo."""
+        result = self._drawing_result(run)
+        chosen = result.chosen_expression if result else None
+        return {"instruction": DRAWING_INSTRUCTION, "question": DRAWING_QUESTION,
+                "options": [{"key": item, "label": RECOGNITION_NAMES[item]} for item in DRAWING_OPTIONS],
+                # Cambia con cada intento: la pantalla empieza un lienzo nuevo.
+                "round": f"{run.step_index}-{run.step_attempt}",
+                "finished": result is not None,
+                "chosen": chosen,
+                "message": DRAWING_ANSWERS[chosen] if chosen else None}
+
+    def _conductor_drawing(self, run: GuidedRun) -> dict[str, Any]:
+        """Lo que ve quien conduce: las emociones para registrar y la elegida."""
+        result = self._drawing_result(run)
+        return {"options": list(DRAWING_OPTIONS),
                 "chosen_expression": result.chosen_expression if result else None,
                 "outcome": result.outcome.value if result else None}
 
@@ -760,8 +974,10 @@ class GuidedSessionService:
             raise GuidedConflict("La sesión empieza con la confirmación de la autorización")
         if self.repository.get_run(session_id) is not None:
             raise GuidedConflict("La sesión guiada ya está preparada")
-        model_id, version = self.resolve_model()
-        session = self.sessions.record_emotion_model(session.id, model_id, version)
+        if protocol is None or protocol.uses_camera:
+            # Sin cámara no se analiza ningún cuadro: no se necesita el modelo facial.
+            model_id, version = self.resolve_model()
+            session = self.sessions.record_emotion_model(session.id, model_id, version)
         token = secrets.token_urlsafe(32)
         run = GuidedRun(session_id=session.id, owner_user_id=user.id, created_at=self.clock(),
                         confirmed_at=session.authorization_confirmed_at, view_token_hash=hash_token(token))
@@ -770,7 +986,7 @@ class GuidedSessionService:
         elif session.pre_questionnaire_id:
             run = replace(run, phase=GuidedPhase.PRE_QUESTIONNAIRE)
         else:
-            run = self._after_pre(run, protocol)
+            run = self._after_pre(run, session, protocol)
         run = self.repository.save_run(run)
         self.audit.record(user, AuditAction.CREATE, RESOURCE, session.id)
         return run, token
@@ -790,15 +1006,61 @@ class GuidedSessionService:
         if run.phase is GuidedPhase.PRE_QUESTIONNAIRE:
             if not self.questionnaire_answered(session.id, "pre"):
                 raise GuidedConflict("Falta responder el cuestionario previo")
-            return self.repository.save_run(self._after_pre(run, self._protocol(session)))
+            return self.repository.save_run(self._after_pre(run, session, self._protocol(session)))
         if run.phase is GuidedPhase.POST_QUESTIONNAIRE:
             if not self.questionnaire_answered(session.id, "post"):
                 raise GuidedConflict("Falta responder el cuestionario posterior")
             return self.repository.save_run(self._finish(run, session))
         raise GuidedConflict("No hay nada que continuar en esta fase")
 
+    def start(self, user: User, session_id: str) -> GuidedRun:
+        """«Empezar» en una sesión sin cámara: el tiempo del primer paso corre desde ahora."""
+        run, session = self._conducted(user, session_id)
+        if session.exam_id is not None or self._camera_active(run, session):
+            raise GuidedConflict("Esta sesión empieza con la calibración")
+        if run.phase is not GuidedPhase.READY:
+            raise GuidedConflict("La sesión ya empezó o todavía tiene el cuestionario previo")
+        return self.repository.save_run(self._first_step(run, session, self._protocol(session)))
+
+    def continue_without_camera(self, user: User, session_id: str) -> GuidedRun:
+        """La cámara no está disponible (permiso denegado, sin cámara o falla): la
+        sesión sigue sin ella. Desde ahora no se calibra; si se estaba calibrando,
+        empieza el primer paso. Un paso en curso que la necesita se salta, y los
+        siguientes que la necesitan se saltan sin empezar. Los reconocimientos siguen."""
+        run, session = self._conducted(user, session_id)
+        run = self._tick(run)
+        if session.exam_id is not None or session.protocol_id is None:
+            raise GuidedConflict("Esta sesión necesita la cámara")
+        if not self._uses_camera(session):
+            raise GuidedConflict("Esta sesión no usa la cámara")
+        if not run.active:
+            raise GuidedConflict("La sesión ya terminó")
+        if run.camera_off_at is not None:
+            return run
+        live = self._live_of(session_id)
+        live.calibration, live.calibration_notice, live.pending = None, None, None
+        protocol = self._protocol(session)
+        run = replace(run, camera_off_at=self.clock())
+        if run.phase is GuidedPhase.CALIBRATION:
+            run = self._first_step(run, session, protocol)
+        elif run.phase is GuidedPhase.STIMULI and protocol.steps[run.step_index].uses_camera:
+            self._end_practice(run, session, PracticeOutcome.SKIPPED)
+            run = self._next_step(replace(run, next_capture_due=None), session, protocol, skipped=True,
+                                  reason=NO_CAMERA_SKIP)
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return self.repository.save_run(run)
+
+    def participant_camera_problem(self, token: str, reason: str) -> None:
+        """La pantalla de la persona no pudo usar la cámara: quien conduce lo ve y decide."""
+        if reason not in CAMERA_PROBLEMS:
+            raise ValueError("Motivo no válido")
+        run = self._by_token(token)
+        self._live_of(run.session_id).camera_problem = reason
+
     def start_calibration(self, user: User, session_id: str) -> GuidedRun:
-        run, _ = self._conducted(user, session_id)
+        run, session = self._conducted(user, session_id)
+        if not self._camera_active(run, session):
+            raise GuidedConflict("Esta sesión no usa la cámara: no se calibra")
         if run.phase is not GuidedPhase.CALIBRATION:
             raise GuidedConflict("La calibración va antes de las imágenes y después del cuestionario previo")
         self._begin_calibration(session_id)
@@ -941,6 +1203,10 @@ class GuidedSessionService:
             "phase": run.phase.value,
             "audience": session.session_type.value,
             "has_protocol": session.protocol_id is not None,
+            "uses_camera": self._uses_camera(session),
+            # Quien conduce siguió sin cámara, y el motivo que informó la pantalla de la persona.
+            "camera_off": run.camera_off_at is not None,
+            "camera_problem": live.camera_problem if live else None,
             "stop_reason": run.stop_reason.value if run.stop_reason else None,
             "step_index": run.step_index if step else None,
             "step_count": len(steps),
@@ -954,8 +1220,17 @@ class GuidedSessionService:
                        "hold_seconds": item.hold_seconds, "option_count": item.option_count,
                        "situation": item.situation, "imitate": item.imitate}
                       for index, item in enumerate(steps)],
+            # Nulo sin límite de tiempo: el paso no vence.
             "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
-                                  if step else None),
+                                  if step and not self._unlimited(session, step) else None),
+            "supports": (self._supports_payload(self._protocol(session)) if session.protocol_id else None),
+            # «Esperar a quien conduce»: el paso terminó y sigue cuando pulse «Seguir».
+            "waiting_for_conductor": self._waiting_for_conductor(run, session),
+            # Intento del paso en curso (1 el primero) y si se puede repetir ahora.
+            "attempt": run.step_attempt if step is not None and step.is_timed
+            and run.phase is GuidedPhase.STIMULI else None,
+            "can_repeat": self._can_repeat(run, session),
+            "max_attempts": MAX_STEP_ATTEMPTS,
             "steps_log": list(run.steps_log),
             "calibration": {"state": calibration.state if calibration else ("calibrated" if run.calibrated_at else "none"),
                             "progress": round(calibration.progress, 2) if calibration else (1.0 if run.calibrated_at else 0.0),
@@ -970,6 +1245,8 @@ class GuidedSessionService:
             "recognition": (self._conductor_recognition(run, step)
                             if step is not None and step.is_recognition and run.phase is GuidedPhase.STIMULI
                             else None),
+            "drawing": (self._conductor_drawing(run)
+                        if step is not None and step.is_drawing and run.phase is GuidedPhase.STIMULI else None),
         }
         if include_results:
             summary["captures"] = [{
@@ -996,6 +1273,29 @@ class GuidedSessionService:
                 "matched": item.matched, "seconds_to_answer": item.seconds_to_answer,
                 "answered_by": item.answered_by.value if item.answered_by else None,
             } for item in self.repository.list_recognition_results(session.id)]
+            # Solo la emoción que la persona señaló; el dibujo nunca llega al servidor.
+            summary["drawing_results"] = [{
+                "step_index": item.step_index, "outcome": item.outcome.value,
+                "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,
+                "answered_by": item.answered_by.value if item.answered_by else None,
+            } for item in self.repository.list_drawing_results(session.id)]
+            # Las repeticiones (intento 2 en adelante), aparte: no cuentan en las métricas.
+            summary["repeated_attempts"] = sorted([
+                *({"step_index": item.step_index, "attempt": item.attempt, "step_kind": "practice",
+                   "target_expression": item.target_expression, "outcome": item.outcome.value,
+                   "seconds_to_achieve": item.seconds_to_achieve}
+                  for item in self.repository.list_practice_attempts(session.id) if item.attempt > 1),
+                *({"step_index": item.step_index, "attempt": item.attempt, "step_kind": "recognition",
+                   "target_expression": item.target_expression, "outcome": item.outcome.value,
+                   "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,
+                   "answered_by": item.answered_by.value if item.answered_by else None}
+                  for item in self.repository.list_recognition_attempts(session.id) if item.attempt > 1),
+                *({"step_index": item.step_index, "attempt": item.attempt, "step_kind": "drawing",
+                   "target_expression": None, "outcome": item.outcome.value,
+                   "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,
+                   "answered_by": item.answered_by.value if item.answered_by else None}
+                  for item in self.repository.list_drawing_attempts(session.id) if item.attempt > 1),
+            ], key=lambda item: (item["step_index"], item["attempt"]))
             summary["verbal_responses"] = [{
                 "step_index": item.step_index, "stimulus_id": item.stimulus_id, "text": item.text,
                 "recorded_at": item.recorded_at.isoformat(),
@@ -1021,26 +1321,32 @@ class GuidedSessionService:
             message = EXAM_DEBRIEFING if session.exam_id is not None else "La sesión terminó. Gracias."
             return {"phase": run.phase.value, "message": message, "stimulus": None,
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
-                    "abstract_notice": False, "practice": None, "recognition": None,
-                    "accessible": session.protocol_id is not None and self._protocol(session).accessible}
+                    "abstract_notice": False, "practice": None, "recognition": None, "drawing": None,
+                    "accessible": False,
+                    "uses_camera": self._camera_active(run, session)}
         stimulus = None
         remaining = None
         abstract = False
         practice = None
         recognition = None
+        drawing = None
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = self._protocol(session).steps[run.step_index]
             item = self.stimuli(step.stimulus_id) if step.stimulus_id else None
             # Un identificador de exposición, no el del estímulo, para pedir la imagen.
             # Una práctica sin ilustración no muestra imagen.
-            stimulus = ({"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"}
+            stimulus = ({"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp()) if run.step_started_at else 0}"
+                                     + (f"-{run.step_attempt}" if run.step_attempt > 1 else "")}
                         if step.stimulus_id else None)
-            remaining = max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
+            remaining = (None if self._unlimited(session, step)
+                         else max(0.0, step.exposure_seconds - self._seconds(run.step_started_at)))
             abstract = item is not None and item.kind is StimulusKind.ABSTRACT and not step.is_practice
             if step.is_practice:
                 practice = self._participant_practice(run, step)
             if step.is_recognition:
                 recognition = self._participant_recognition(run, step)
+            if step.is_drawing:
+                drawing = self._participant_drawing(run)
         live = self._live.get(run.session_id)
         calibrating = run.phase is GuidedPhase.CALIBRATION and live is not None and live.calibration is not None \
             and live.calibration.state == CALIBRATING
@@ -1057,12 +1363,13 @@ class GuidedSessionService:
                     "remaining_seconds": None,
                     "capture_frames": calibrating or run.phase is GuidedPhase.EXAM,
                     "frame_interval_ms": FRAME_INTERVAL_MS, "abstract_notice": False, "practice": None,
-                    "recognition": None}
+                    "recognition": None, "drawing": None}
         messages = {
             GuidedPhase.PRE_QUESTIONNAIRE: "Primero, unas preguntas.",
             GuidedPhase.CALIBRATION: ("Mira a la pantalla con el rostro relajado." if calibrating
                                       else "En un momento empieza la calibración."),
             GuidedPhase.POST_QUESTIONNAIRE: "Para terminar, unas preguntas.",
+            GuidedPhase.READY: "En un momento empezamos.",
             GuidedPhase.LIVE: "Mira a la pantalla con naturalidad.",
         }
         return {
@@ -1070,14 +1377,22 @@ class GuidedSessionService:
             "message": messages.get(run.phase),
             "stimulus": stimulus,
             "remaining_seconds": remaining,
-            # Un reconocimiento no analiza la cámara: la pantalla no envía cuadros.
-            "capture_frames": calibrating or (run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE)
-                                              and recognition is None),
+            # Un reconocimiento o un dibujo no analiza la cámara: la pantalla no envía cuadros.
+            "capture_frames": self._camera_active(run, session) and (
+                calibrating or (run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE)
+                                and recognition is None and drawing is None)),
             "frame_interval_ms": FRAME_INTERVAL_MS,
             "abstract_notice": abstract,
             "practice": practice,
             "recognition": recognition,
-            "accessible": session.protocol_id is not None and self._protocol(session).accessible,
+            "drawing": drawing,
+            # Pantalla accesible: algún apoyo que cambia la pantalla.
+            "accessible": bool(supports := self._screen_supports(session))
+            and (supports["pictograms"] or supports["large_controls"]),
+            # Solo los apoyos que cambian la pantalla; nulo si no hay ninguno.
+            "supports": supports,
+            # Sin cámara, la pantalla no la pide (o deja de pedirla si se siguió sin ella).
+            "uses_camera": self._camera_active(run, session),
         }
 
     def participant_stimulus(self, token: str) -> str:
@@ -1119,6 +1434,8 @@ class GuidedSessionService:
         if frame is None:
             return
         session = self._session(run.session_id)
+        if not self._camera_active(run, session):
+            return  # sin cámara: el cuadro se descarta sin analizarlo
         live = self._live_of(run.session_id)
         if run.phase is GuidedPhase.CALIBRATION:
             calibration = live.calibration
@@ -1140,10 +1457,7 @@ class GuidedSessionService:
                     run = replace(run, phase=GuidedPhase.LIVE, step_index=0, step_started_at=self.clock(),
                                   next_capture_due=0.0)
                 else:
-                    protocol = self._protocol(session)
-                    during = self._group(protocol, False)
-                    run = (self._start_step(run, protocol, GuidedPhase.STIMULI, during[0]) if during
-                           else self._after_stimuli(run, session))
+                    run = self._first_step(run, session, self._protocol(session))
                 self.repository.save_run(run)
             return
         if run.phase is GuidedPhase.EXAM:
@@ -1159,8 +1473,8 @@ class GuidedSessionService:
             if step.is_practice:
                 self._practice_frame(run, session, step, frame)
                 return
-            if step.is_recognition:
-                return  # un reconocimiento no analiza la cámara
+            if step.is_recognition or step.is_drawing:
+                return  # un reconocimiento o un dibujo no analiza la cámara
         if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE) or run.next_capture_due is None:
             return
         elapsed = self._seconds(run.step_started_at)

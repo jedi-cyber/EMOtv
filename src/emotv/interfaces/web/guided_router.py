@@ -49,6 +49,10 @@ class RecognitionAnswerRequest(BaseModel):
     expression: str = Field(min_length=1, max_length=32)
 
 
+class CameraProblemRequest(BaseModel):
+    reason: str = Field(max_length=16)
+
+
 class RecognitionOption(BaseModel):
     key: str
     label: str
@@ -62,6 +66,25 @@ class RecognitionView(BaseModel):
     # Historia corta del paso, si la tiene.
     situation: str | None = None
     options: list[RecognitionOption]
+    chosen: str | None
+    message: str | None
+    # Al terminar el paso: explicación sencilla de la emoción de la imagen y, con
+    # una situación, que cada persona puede sentir algo distinto.
+    explanation: str | None = None
+    note: str | None = None
+
+
+class DrawingView(BaseModel):
+    """Un paso de dibujo: la consigna, la pregunta y las emociones para señalar.
+    El dibujo se queda en la pantalla de la persona; aquí solo vuelve la emoción
+    que eligió, sin compararla con el dibujo."""
+
+    instruction: str
+    question: str
+    options: list[RecognitionOption]
+    # Cambia con cada intento: la pantalla empieza un lienzo nuevo.
+    round: str
+    finished: bool
     chosen: str | None
     message: str | None
 
@@ -89,8 +112,14 @@ class ParticipantView(BaseModel):
     abstract_notice: str | None
     practice: PracticeView | None = None
     recognition: RecognitionView | None = None
+    drawing: DrawingView | None = None
     # Modo accesible del protocolo: pictogramas, botones grandes y sin animaciones.
     accessible: bool = False
+    # Falso en un protocolo solo de reconocimientos: la pantalla no pide la cámara.
+    uses_camera: bool = True
+    # Apoyos que cambian la pantalla (pictogramas, botones grandes, lectura en voz
+    # alta); solo aparece si el protocolo tiene alguno.
+    supports: dict[str, bool] | None = None
 
 
 def create_guided_router(
@@ -148,6 +177,26 @@ def create_guided_router(
     def advance(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
         return {"phase": guarded(lambda: service().advance(user, session_id)).phase.value}
 
+    @router.post("/guided-sessions/{session_id}/start")
+    def start(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """Empieza el primer paso de una sesión sin cámara."""
+        return {"phase": guarded(lambda: service().start(user, session_id)).phase.value}
+
+    @router.post("/guided-sessions/{session_id}/continue")
+    def continue_after_pause(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """«Seguir»: con la pausa «esperar a quien conduce», pasa al paso siguiente."""
+        return {"phase": guarded(lambda: service().continue_after_pause(user, session_id)).phase.value}
+
+    @router.post("/guided-sessions/{session_id}/repeat")
+    def repeat_step(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """«Repetir este paso»: el reconocimiento o el ejercicio que acaba de terminar empieza otra vez."""
+        return {"phase": guarded(lambda: service().repeat_step(user, session_id)).phase.value}
+
+    @router.post("/guided-sessions/{session_id}/continue-without-camera")
+    def continue_without_camera(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """La cámara no está disponible: siguen los pasos que no la necesitan."""
+        return {"phase": guarded(lambda: service().continue_without_camera(user, session_id)).phase.value}
+
     @router.post("/guided-sessions/{session_id}/calibration")
     def calibrate(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
         return {"phase": guarded(lambda: service().start_calibration(user, session_id)).phase.value}
@@ -195,10 +244,13 @@ def create_guided_router(
     def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
         view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
-        # practice y recognition solo aparecen en su paso, y accessible solo si el protocolo
-        # lo activa: las imágenes y la estación quedan como antes.
-        hidden = {name for name in ("practice", "recognition") if getattr(view, name) is None}
-        return view.model_dump(exclude=hidden | (set() if view.accessible else {"accessible"}))
+        # practice, recognition y drawing solo aparecen en su paso, accessible solo si el protocolo
+        # lo activa y uses_camera solo cuando es falso: las sesiones con cámara quedan como antes.
+        hidden = {name for name in ("practice", "recognition", "drawing") if getattr(view, name) is None}
+        hidden |= set() if view.accessible else {"accessible"}
+        hidden |= {"uses_camera"} if view.uses_camera else set()
+        hidden |= {"supports"} if view.supports is None else set()
+        return view.model_dump(exclude=hidden)
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
@@ -209,6 +261,12 @@ def create_guided_router(
             raise HTTPException(404, "Estímulo no disponible")
         content_type, data = found
         return Response(content=data, media_type=content_type)
+
+    @router.post("/participant-view/{token}/camera-problem")
+    def participant_camera_problem(token: str, request: CameraProblemRequest) -> dict[str, bool]:
+        """La pantalla de la persona no pudo usar la cámara; solo informa el motivo."""
+        guarded(lambda: service().participant_camera_problem(token, request.reason))
+        return {"received": True}
 
     @router.post("/participant-view/{token}/frames")
     async def participant_frame(token: str, request: Request) -> dict[str, bool]:

@@ -11,6 +11,8 @@ export interface ExpressionInfo {
   facial_cues: string;
   practice_tip: string;
   limitation_note: string;
+  /** Explicación sencilla para la actividad «¿Qué emoción es?». */
+  child_explanation?: string;
   common_limitation: string;
   review_status: "draft" | "reviewed";
   reviewed_by_user_id: string | null;

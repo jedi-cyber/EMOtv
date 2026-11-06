@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { useBlocker } from "react-router-dom";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
-export function AnalysisNavigationGuard({ onLeave }: { onLeave(): Promise<boolean> }) {
+/** Confirma antes de salir de la página, dentro de la aplicación o al cerrarla o recargarla. */
+export function AnalysisNavigationGuard({
+  onLeave,
+  title = "Salir del análisis",
+  message = "Si sales, se cancelará la sesión activa y se apagará la cámara. ¿Quieres continuar?",
+  confirmLabel = "Cancelar sesión y salir",
+}: { onLeave(): Promise<boolean>; title?: string; message?: string; confirmLabel?: string }) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search,
   );
@@ -21,5 +27,5 @@ export function AnalysisNavigationGuard({ onLeave }: { onLeave(): Promise<boolea
     } finally { setLeaving(false); }
   }
 
-  return <ConfirmDialog open={blocker.state === "blocked"} title="Salir del análisis" message="Si sales, se cancelará la sesión activa y se apagará la cámara. ¿Quieres continuar?" confirming={leaving} confirmLabel="Cancelar sesión y salir" onCancel={() => { if (blocker.state === "blocked") blocker.reset(); }} onConfirm={() => { void confirmLeave(); }} />;
+  return <ConfirmDialog open={blocker.state === "blocked"} title={title} message={message} confirming={leaving} confirmLabel={confirmLabel} onCancel={() => { if (blocker.state === "blocked") blocker.reset(); }} onConfirm={() => { void confirmLeave(); }} />;
 }

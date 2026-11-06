@@ -21,6 +21,54 @@ DEFAULT_RECOGNITION_OPTIONS = 3
 MAX_SITUATION_CHARS = 200
 # Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
 ACCESSIBLE_PAUSE_FACTOR = 2
+# Sin límite de tiempo, un reconocimiento o un ejercicio termina al responder, al
+# lograrlo o cuando quien conduce lo salta; este tope solo evita una sesión colgada.
+NO_TIME_LIMIT_SECONDS = 1800
+# «Esperar a quien conduce»: la pausa dura hasta que pulsa «Seguir», con este tope.
+WAIT_PAUSE_SECONDS = 600
+
+
+class PauseMode(str, Enum):
+    """Pausa tras cada reconocimiento o ejercicio: la normal, el doble o hasta
+    que quien conduce pulse «Seguir»."""
+
+    NORMAL = "normal"
+    LONG = "long"
+    WAIT = "wait"
+
+
+@dataclass(frozen=True, slots=True)
+class ProtocolSupports:
+    """Apoyos de la pantalla de la persona, por protocolo. Cambian la
+    presentación y el ritmo; no cambian lo que se registra.
+
+    - pictograms: un pictograma junto al nombre de cada emoción.
+    - large_controls: botones y letra más grandes, sin animaciones.
+    - read_aloud: la consigna se lee en voz alta al empezar cada paso.
+    - no_time_limit: el reconocimiento y la práctica no vencen por tiempo.
+    - pause: normal, larga (el doble) o hasta que quien conduce pulse «Seguir».
+    """
+
+    pictograms: bool = False
+    large_controls: bool = False
+    read_aloud: bool = False
+    no_time_limit: bool = False
+    pause: PauseMode | str = PauseMode.NORMAL
+
+    def __post_init__(self) -> None:
+        for name in ("pictograms", "large_controls", "read_aloud", "no_time_limit"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"{name} debe ser verdadero o falso")
+        object.__setattr__(self, "pause", PauseMode(self.pause))
+
+    @property
+    def any(self) -> bool:
+        return self != NO_SUPPORTS
+
+
+NO_SUPPORTS = ProtocolSupports()
+# El modo accesible de siempre: pictogramas, botones grandes y pausa larga.
+ACCESSIBLE_PRESET = ProtocolSupports(pictograms=True, large_controls=True, pause=PauseMode.LONG)
 
 
 class ProtocolKind(str, Enum):
@@ -35,11 +83,14 @@ class StepKind(str, Enum):
     """Estímulo: una imagen con su captura automática. Práctica: se pide una
     expresión y la persona ve una señal que crece al acercarse a ella.
     Reconocimiento: se muestra una imagen emocional y la persona elige qué
-    emoción es entre unas pocas opciones."""
+    emoción es entre unas pocas opciones. Dibujo: la persona dibuja una cara
+    en su pantalla y señala qué emoción quiso representar; el dibujo no sale
+    del dispositivo ni se interpreta."""
 
     STIMULUS = "stimulus"
     PRACTICE = "practice"
     RECOGNITION = "recognition"
+    DRAWING = "drawing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +117,11 @@ class ProtocolStep:
     option_count es cuántas opciones se muestran y exposure_seconds el tiempo
     máximo para responder. No analiza la cámara. situation, opcional, es una
     historia corta que acompaña a la ilustración: con ella la pregunta es
-    «¿Cómo se siente?». La respuesta sigue siendo la expresión de la imagen.
+    «¿Qué emoción muestra la cara?». La respuesta sigue siendo la expresión de la imagen.
+
+    En un dibujo no hay estímulo, expresión pedida ni opciones que configurar:
+    exposure_seconds es el tiempo máximo. Solo se registra la emoción que la
+    persona señaló y los tiempos, nunca el dibujo. No analiza la cámara.
     """
 
     stimulus_id: str | None
@@ -122,6 +177,11 @@ class ProtocolStep:
                              "del analizador")
         if self.capture_after_seconds != 0:
             raise ValueError("Una práctica o un reconocimiento no tiene captura automática")
+        if kind is StepKind.DRAWING:
+            if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
+                    or self.option_count is not None):
+                raise ValueError("Un dibujo no tiene imagen, expresión pedida, tiempo de sostén ni opciones")
+            return
         if kind is StepKind.RECOGNITION:
             if self.target_expression is not None and self.target_expression not in EXPRESSION_KEYS:
                 raise ValueError("La expresión de la imagen no es válida")
@@ -156,6 +216,20 @@ class ProtocolStep:
         return cls(stimulus_id, max_seconds, 0, kind=StepKind.RECOGNITION, target_expression=target_expression,
                    option_count=option_count, situation=situation)
 
+    @classmethod
+    def drawing(cls, max_seconds: int) -> ProtocolStep:
+        return cls(None, max_seconds, 0, kind=StepKind.DRAWING)
+
+    @property
+    def is_drawing(self) -> bool:
+        return self.kind is StepKind.DRAWING
+
+    @property
+    def is_timed(self) -> bool:
+        """Termina al lograrlo, al responder o al vencer su tiempo máximo, con pausa
+        después: una práctica, un reconocimiento o un dibujo."""
+        return self.kind in (StepKind.PRACTICE, StepKind.RECOGNITION, StepKind.DRAWING)
+
     @property
     def is_practice(self) -> bool:
         return self.kind is StepKind.PRACTICE
@@ -163,6 +237,11 @@ class ProtocolStep:
     @property
     def is_recognition(self) -> bool:
         return self.kind is StepKind.RECOGNITION
+
+    @property
+    def uses_camera(self) -> bool:
+        """Una imagen con captura o un ejercicio de práctica; un reconocimiento o un dibujo no."""
+        return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,10 +257,9 @@ class Protocol:
     aprobación del docente (approved_at queda de versiones anteriores). Uno
     usado en una sesión no se edita: se crea una versión nueva.
 
-    accessible activa el modo accesible en la pantalla de la persona: botones y
-    letra más grandes, pictogramas junto a cada emoción, sin animaciones y una
-    pausa más larga tras cada ejercicio o reconocimiento. Pensado para quienes
-    se saturan con facilidad.
+    supports son los apoyos de la pantalla de la persona (ProtocolSupports).
+    accessible=True sin supports equivale al preajuste de siempre
+    (ACCESSIBLE_PRESET); después, accessible indica si hay algún apoyo.
 
     shared_with_group: el docente lo ofrece como plantilla a los usuarios de su
     grupo, que lo copian como protocolo propio (como con los cuestionarios).
@@ -204,6 +282,7 @@ class Protocol:
     kind: ProtocolKind | str = ProtocolKind.PRACTICE
     accessible: bool = False
     shared_with_group: bool = False
+    supports: ProtocolSupports | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id", "name"):
@@ -216,6 +295,12 @@ class Protocol:
             raise ValueError("version debe ser un entero positivo")
         kind = ProtocolKind(self.kind)
         object.__setattr__(self, "kind", kind)
+        supports = self.supports if self.supports is not None else (
+            ACCESSIBLE_PRESET if self.accessible else NO_SUPPORTS)
+        if not isinstance(supports, ProtocolSupports):
+            raise ValueError("supports debe ser un ProtocolSupports")
+        object.__setattr__(self, "supports", supports)
+        object.__setattr__(self, "accessible", supports.any)
         steps = tuple(self.steps)
         object.__setattr__(self, "steps", steps)
         for name in ("pre_questionnaire_id", "post_questionnaire_id"):
@@ -226,7 +311,7 @@ class Protocol:
             if self.for_children:
                 raise ValueError("Un examen simulado es solo para personas adultas")
             if self.accessible or self.shared_with_group:
-                raise ValueError("Un examen simulado no tiene modo accesible ni se comparte como plantilla")
+                raise ValueError("Un examen simulado no tiene modo accesible ni apoyos, ni se comparte como plantilla")
         elif not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
         if (self.approved_at is None) != (self.approved_by_user_id is None):
@@ -243,3 +328,10 @@ class Protocol:
     @property
     def current(self) -> bool:
         return self.superseded_at is None
+
+    @property
+    def uses_camera(self) -> bool:
+        """Si la sesión necesita la cámara: un examen, o algún paso con imagen y
+        captura o un ejercicio de práctica. Un protocolo solo de reconocimiento se
+        aplica sin cámara, sin calibración y sin enviar cuadros."""
+        return self.kind is ProtocolKind.EXAM or any(step.uses_camera for step in self.steps)

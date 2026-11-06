@@ -91,11 +91,12 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
-export type StepKind = "stimulus" | "practice" | "recognition";
+export type StepKind = "stimulus" | "practice" | "recognition" | "drawing";
 
 export interface ProtocolStep {
   /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
-   * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es. */
+   * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es.
+   * «drawing»: la persona dibuja una cara y señala qué emoción quiso representar. */
   kind?: StepKind;
   stimulus_id: string | null;
   exposure_seconds: number;
@@ -108,11 +109,23 @@ export interface ProtocolStep {
   hold_seconds?: number | null;
   /** Solo un reconocimiento: cuántas opciones se muestran (2 a 4). */
   option_count?: number | null;
-  /** Solo un reconocimiento: historia corta; la pregunta pasa a «¿Cómo se siente?». */
+  /** Solo un reconocimiento: historia corta; la pregunta pasa a «¿Qué emoción muestra la cara?». */
   situation?: string | null;
   /** Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
    * y la expresión pedida la pone el servidor, la de la imagen. */
   imitate?: boolean;
+}
+
+/** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
+export type PauseMode = "normal" | "long" | "wait";
+
+/** Apoyos de la pantalla de la persona, por protocolo. */
+export interface ProtocolSupports {
+  pictograms: boolean;
+  large_controls: boolean;
+  read_aloud: boolean;
+  no_time_limit: boolean;
+  pause: PauseMode;
 }
 
 export interface Protocol {
@@ -122,8 +135,9 @@ export interface Protocol {
   name: string;
   description: string;
   for_children: boolean;
-  /** Pantalla de la persona con pictogramas, botones grandes y pausas más largas. */
+  /** Tiene algún apoyo (el modo accesible de antes es un preajuste). */
   accessible?: boolean;
+  supports?: ProtocolSupports;
   pre_questionnaire_id: string | null;
   post_questionnaire_id: string | null;
   steps: ProtocolStep[];
@@ -134,6 +148,8 @@ export interface Protocol {
   used: boolean;
   /** Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla. */
   needs_image: boolean;
+  /** Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara. Si falta, se asume verdadero. */
+  uses_camera?: boolean;
 }
 
 /** Imagen propia de un usuario: pendiente («En revisión») hasta que su docente la revisa. */
@@ -284,6 +300,22 @@ export interface GuidedRecognition {
   outcome: RecognitionOutcome | null;
 }
 
+/** Dibujo en curso para quien conduce: las emociones para registrar y la elegida. */
+export interface GuidedDrawing {
+  options: string[];
+  chosen_expression: string | null;
+  outcome: RecognitionOutcome | null;
+}
+
+/** Solo la emoción que la persona señaló; el dibujo nunca llega al servidor. */
+export interface GuidedDrawingResult {
+  step_index: number;
+  outcome: RecognitionOutcome;
+  chosen_expression: string | null;
+  seconds_to_answer: number | null;
+  answered_by: "participant" | "conductor" | null;
+}
+
 export interface GuidedRecognitionResult {
   step_index: number;
   stimulus_id: string;
@@ -313,19 +345,34 @@ export interface GuidedCapture {
 /** Estado para quien conduce la sesión (nunca llega a la pantalla de la persona). */
 export interface GuidedState {
   session_id: string;
-  /** El protocolo usa el modo accesible. */
+  /** El protocolo tiene algún apoyo. */
   accessible?: boolean;
+  supports?: ProtocolSupports | null;
+  /** «Esperar a quien conduce»: el paso terminó y sigue al pulsar «Seguir». */
+  waiting_for_conductor?: boolean;
+  /** Intento del reconocimiento o del ejercicio en curso (1 el primero). */
+  attempt?: number | null;
+  /** El paso terminó y todavía se puede repetir. */
+  can_repeat?: boolean;
+  max_attempts?: number;
   /** Código para anotar en el formato firmado. */
   session_code: string | null;
   phase: GuidedPhase;
   audience: SessionType;
   has_protocol: boolean;
+  /** Falso en un protocolo solo de reconocimientos: no se calibra ni se usa la cámara. Si falta, se asume verdadero. */
+  uses_camera?: boolean;
+  /** Quien conduce siguió sin cámara: no se calibra y se saltan los pasos que la necesitan. */
+  camera_off?: boolean;
+  /** Motivo que informó la pantalla de la persona al no poder usar la cámara. */
+  camera_problem?: "insecure" | "denied" | "busy" | "not_found" | "unknown" | null;
   stop_reason: "participant" | "guardian" | "conductor" | null;
   step_index: number | null;
   step_count: number;
   steps: GuidedStep[];
   remaining_seconds: number | null;
-  steps_log: { step_index: number; skipped: boolean }[];
+  /** reason "no_camera": el paso se saltó porque la sesión siguió sin cámara. */
+  steps_log: { step_index: number; skipped: boolean; reason?: "no_camera" }[];
   calibration: { state: "none" | "calibrating" | "calibrated"; progress: number; notice: string | null };
   capture_status: string[];
   pre_questionnaire_id: string | null;
@@ -340,6 +387,23 @@ export interface GuidedState {
   practice_results?: GuidedPracticeResult[];
   recognition?: GuidedRecognition | null;
   recognition_results?: GuidedRecognitionResult[];
+  drawing?: GuidedDrawing | null;
+  drawing_results?: GuidedDrawingResult[];
+  /** Repeticiones (intento 2 en adelante): se describen aparte y no cuentan en las métricas. */
+  repeated_attempts?: GuidedRepeatedAttempt[];
+}
+
+export interface GuidedRepeatedAttempt {
+  step_index: number;
+  attempt: number;
+  step_kind: "practice" | "recognition" | "drawing";
+  /** Nulo en un dibujo: no hay expresión pedida. */
+  target_expression: string | null;
+  outcome: PracticeOutcome | RecognitionOutcome;
+  seconds_to_achieve?: number | null;
+  chosen_expression?: string | null;
+  seconds_to_answer?: number | null;
+  answered_by?: "participant" | "conductor" | null;
 }
 
 /** Lo único que recibe la pantalla de la persona evaluada. */
@@ -361,6 +425,24 @@ export interface ParticipantRecognition {
   options: { key: string; label: string }[];
   chosen: string | null;
   message: string | null;
+  /** Al terminar el paso: explicación sencilla del catálogo revisable. */
+  explanation?: string | null;
+  /** Al terminar un paso con situación: que cada persona puede sentir algo distinto. */
+  note?: string | null;
+}
+
+/** Dibujo en la pantalla de la persona: el dibujo se queda en el dispositivo;
+ * solo se envía la emoción que eligió. */
+export interface ParticipantDrawing {
+  instruction: string;
+  question: string;
+  options: { key: string; label: string }[];
+  /** Cambia con cada intento: se empieza un lienzo nuevo. */
+  round: string;
+  /** El paso terminó: respondido o sin tiempo. */
+  finished: boolean;
+  chosen: string | null;
+  message: string | null;
 }
 
 export interface ParticipantViewState {
@@ -373,8 +455,13 @@ export interface ParticipantViewState {
   abstract_notice: string | null;
   practice?: ParticipantPractice | null;
   recognition?: ParticipantRecognition | null;
-  /** Solo aparece si el protocolo usa el modo accesible. */
+  drawing?: ParticipantDrawing | null;
+  /** Solo aparece si hay pictogramas o botones grandes. */
   accessible?: boolean;
+  /** Solo aparece, como falso, si la sesión no usa la cámara. */
+  uses_camera?: boolean;
+  /** Solo aparece si el protocolo tiene algún apoyo que cambia la pantalla. */
+  supports?: { pictograms: boolean; large_controls: boolean; read_aloud: boolean };
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
@@ -388,7 +475,10 @@ export interface SessionTimeline {
     stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean;
       /** Solo en un ejercicio de práctica (kind «practice») o un reconocimiento (kind «recognition»). */
       target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | null; imitate?: boolean;
-      seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null }[];
+      seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
+      /** Repeticiones del paso (intento 2 en adelante); el resultado de arriba es el primero. */
+      repeats?: { attempt: number; outcome: PracticeOutcome | RecognitionOutcome; seconds_to_achieve?: number | null;
+        chosen_expression?: string | null; seconds_to_answer?: number | null }[] }[];
     captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
     said: { time: number; step_index: number; title: string; text: string }[];
     markers: { time: number; kind: MarkerKind; note: string | null }[];
@@ -477,6 +567,14 @@ export interface SessionRecognition {
   notice: string;
 }
 
+export interface SessionDrawing {
+  exercises: { step_index: number; max_seconds: number; outcome: RecognitionOutcome | null;
+    chosen_expression: string | null; seconds_to_answer: number | null; answered_by: "participant" | "conductor" | null }[];
+  totals: { exercises: number; answered: number; timed_out: number; skipped: number; stopped: number;
+    not_reached: number; sentence: string };
+  notice: string;
+}
+
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
@@ -488,6 +586,8 @@ export interface SessionMetrics {
   practice?: SessionPractice | null;
   /** Reconocimientos, también aparte; null si no hubo. */
   recognition?: SessionRecognition | null;
+  /** Dibujos: solo la emoción señalada; null si no hubo. */
+  drawing?: SessionDrawing | null;
 }
 
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
