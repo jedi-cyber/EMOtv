@@ -179,9 +179,9 @@ describe("el juego para quien conduce", () => {
         rounds_total: 3, rounds_done: 1, matched: 1, first_try: 1, help_used: 0 }],
     } : {}) as never);
     withUser(<GuidedConductorPage />, "/guided/s1");
-    const section = (await screen.findByRole("heading", { name: "Juegos de emparejar" })).closest("section")!;
+    const section = (await screen.findByRole("heading", { name: "Juegos" })).closest("section")!;
     const items = within(section).getAllByRole("listitem").map((item) => item.textContent);
-    expect(items[0]).toMatch(/^Paso 1 · Completo. Jugó 3 de 3 rondas\. Emparejó 3 imágenes, 2 a la primera; usó la ayuda 1 vez\./);
+    expect(items[0]).toMatch(/^Paso 1 · Juego de emparejar · Completo. Jugó 3 de 3 rondas\. Emparejó 3 imágenes, 2 a la primera; usó la ayuda 1 vez\./);
     expect(items[1]).toBe("2.º intento · Se saltó. Jugó 1 de 3 rondas. Emparejó 1 imagen, 1 a la primera; no usó la ayuda.");
   });
 });
@@ -200,7 +200,7 @@ describe("el juego en el reporte", () => {
           sentence: "Jugó 3 de 3 rondas. Emparejó 2 imágenes, 1 a la primera; usó la ayuda 1 vez." }] },
     };
     render(<StimulusMetrics metrics={metrics} expressionLabel={(key) => key ?? "—"} />);
-    const region = within(screen.getByRole("region", { name: "Juegos de emparejar" }));
+    const region = within(screen.getByRole("region", { name: "Juegos" }));
     expect(region.getAllByText(/Jugó 3 de 3 rondas\. Emparejó 2 imágenes, 1 a la primera; usó la ayuda 1 vez\./).length).toBe(2);
     expect(region.getByText("3 rondas · 2 opciones")).toBeInTheDocument();
 

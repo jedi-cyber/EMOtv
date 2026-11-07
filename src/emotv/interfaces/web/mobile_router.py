@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from emotv.application.audit_service import AuditService
 from emotv.application.mobile_auth_service import MobileAuthService, MobileLoginError, MobileTokens
+from emotv.application.guided_session_service import GuidedNotFound
 from emotv.application.ports import UserRepository
 from emotv.application.report_service import ReportConflict, ReportNotFound, ReportService
 from emotv.application.session_insights_service import InsightsNotFound, SessionInsightsService
@@ -40,6 +41,8 @@ from emotv.interfaces.web.auth_router import client_ip
 CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
          422: "invalid", 429: "too_many_requests", 503: "unavailable"}
 ROLE_NAMES = {"student": "Usuario", "psychologist": "Docente"}
+# Clave fija del límite de intentos al canjear un código (no hay correo).
+PARTICIPATION_KEY = "participacion-android"
 
 
 def fail(status: int, message: str, code: str | None = None, headers: dict[str, str] | None = None) -> HTTPException:
@@ -64,6 +67,11 @@ class NarrativeRequest(BaseModel):
     narrative: str = Field(max_length=8000)
 
 
+class ParticipationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=4, max_length=16)
+
+
 class CommentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     section: ReportSection = ReportSection.GENERAL
@@ -79,6 +87,7 @@ def create_mobile_router(
     insights: SessionInsightsService | None = None,
     reports: ReportService | None = None,
     statistics: SessionStatisticsService | None = None,
+    participation: Callable[[str], str] | None = None,
     production: bool = False,
     api_version: str = "",
     min_app_version: str = "1.0.0",
@@ -170,6 +179,31 @@ def create_mobile_router(
     def logout(found: tuple[User, str] = Depends(current)) -> Response:
         auth_service().logout(*found)
         return Response(status_code=204)
+
+    # --- Pantalla de la persona (sin inicio de sesión) -----------------------------------
+
+    @router.post("/participation")
+    def participation_claim(body: ParticipationRequest, request: Request) -> dict[str, Any]:
+        """Canjea el código que quien conduce pidió en la web por el enlace de la
+        pantalla de la persona. Ese enlace solo abre /participant-view/{token}:
+        ni sesiones, ni reportes, ni estadísticas. Los intentos fallidos se limitan."""
+        if participation is None:
+            raise fail(503, "La pantalla de la persona no está disponible en este servidor")
+        throttle = mobile_auth.throttle if mobile_auth is not None else None
+        ip = client_ip(request)
+        if throttle is not None and throttle.is_blocked(PARTICIPATION_KEY, ip):
+            raise fail(429, "Demasiados códigos equivocados. Espera unos minutos e inténtalo de nuevo.",
+                       "too_many_attempts", {"Retry-After": str(int(throttle.window.total_seconds()))})
+        try:
+            token = participation(body.code)
+        except GuidedNotFound as error:
+            if throttle is not None:
+                throttle.record(PARTICIPATION_KEY, ip, success=False)
+            raise fail(404, "El código no es válido o ya venció. Pide uno nuevo a quien conduce la sesión.",
+                       "invalid_code") from error
+        if throttle is not None:
+            throttle.record(PARTICIPATION_KEY, ip, success=True)
+        return {"participant_token": token, "state_path": f"/participant-view/{token}"}
 
     # --- Sesiones (solo consulta) --------------------------------------------------------
 
@@ -322,6 +356,9 @@ def create_mobile_router(
                             if practice else None)
         # Revisión 4.2: reconocimientos de emociones, aparte; null si no hubo.
         body["recognition"] = result.get("recognition")
+        # Revisión 4.8: dibujos y juegos, aparte y por sesión; null si no hubo.
+        body["drawing"] = result.get("drawing")
+        body["games"] = result.get("games")
         return body
 
     return router

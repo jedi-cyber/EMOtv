@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { apiRequest } from "../api/http";
-import type { PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
+import type { GameType, PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
@@ -135,9 +135,9 @@ export function ProtocolsPage() {
       exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS,
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
-  function addGame() {
+  function addGame(gameType: GameType) {
     // Pocas opciones al empezar. Las imágenes las elige el servidor del banco aprobado.
-    update({ steps: [...draft.steps, { kind: "game", game_type: "matching", stimulus_id: null,
+    update({ steps: [...draft.steps, { kind: "game", game_type: gameType, stimulus_id: null,
       rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
       exposure_seconds: accessibleOn(draft.supports)
         ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds,
@@ -357,11 +357,17 @@ export function ProtocolsPage() {
           }
           if (step.kind === "game") {
             const rounds = step.rounds ?? DEFAULT_GAME.rounds;
+            const similar = step.game_type === "similar";
+            const children = draft.for_children ? " «Para niños»" : "";
             return <li key={`game-${index}`} className="row-card protocol-step">
               <div>
-                <strong>{index + 1}. Juego: empareja la emoción</strong>
-                <span>En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones. Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
-                <span className="muted">EMOtv elige una imagen emocional aprobada por ronda{draft.for_children ? " «Para niños»" : ""}, de emociones distintas, al guardar.</span>
+                <strong>{index + 1}. Juego: {similar ? "busca la misma emoción" : "empareja la emoción"}</strong>
+                <span>{similar
+                  ? "En cada ronda la persona ve una cara y elige, entre otras caras, la que muestra la misma emoción, con botones."
+                  : "En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones."} Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
+                <span className="muted">{similar
+                  ? `EMOtv elige las imágenes emocionales aprobadas${children} al guardar. En cada ronda, la pareja es otra imagen de la misma emoción que se ve distinta (nunca la misma imagen repetida), y las demás caras son de otras emociones y se parecen más a la de arriba: así se elige por la emoción y no por el parecido. Necesita al menos dos imágenes distintas por emoción.`
+                  : `EMOtv elige una imagen emocional aprobada por ronda${children}, de emociones distintas, al guardar.`}</span>
               </div>
               <div className="inline-actions">
                 <label>Rondas<select value={rounds} onChange={(event) => {
@@ -371,7 +377,7 @@ export function ProtocolsPage() {
                   {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
                     .map((count) => <option key={count} value={count}>{count}</option>)}
                 </select></label>
-                <label>Opciones por ronda<select value={step.option_count ?? DEFAULT_GAME.option_count}
+                <label>{similar ? "Caras para elegir" : "Opciones por ronda"}<select value={step.option_count ?? DEFAULT_GAME.option_count}
                   onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
                   {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
                 </select></label>
@@ -445,7 +451,8 @@ export function ProtocolsPage() {
         <div className="inline-actions">
           <Button onClick={addPractice}>Agregar ejercicio de práctica</Button>
           <Button onClick={addDrawing}>Agregar dibujo</Button>
-          <Button onClick={addGame}>Agregar juego de emparejar</Button>
+          <Button onClick={() => addGame("matching")}>Agregar juego de emparejar</Button>
+          <Button onClick={() => addGame("similar")}>Agregar juego: busca la misma emoción</Button>
         </div>
         <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
           una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
@@ -459,6 +466,9 @@ export function ProtocolsPage() {
         <p className="muted">En el juego de emparejar la persona relaciona cada imagen con el nombre de su emoción, tocando
           un botón. Empieza con pocas opciones; sube las rondas o las opciones cuando quieras más dificultad. Se registra
           cuántas rondas jugó, cuántas emparejó y si pidió ayuda; no es un puntaje ni evalúa a nadie.</p>
+        <p className="muted">En «Busca la misma emoción» la persona ve una cara y elige otra cara que muestre la misma
+          emoción. La pareja siempre es otra imagen, para que se resuelva por la emoción y no por reconocer el mismo
+          dibujo. La emoción de cada imagen es la que indicó quien la subió; revisa que se entienda antes de aplicarlo.</p>
 
         {questionnaireSelect("post")}
       </>}

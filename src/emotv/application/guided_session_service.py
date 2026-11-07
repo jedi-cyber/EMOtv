@@ -58,6 +58,9 @@ from emotv.domain.guided_session import (
     EXAM_DEBRIEFING,
     EXAM_GAP_SECONDS,
     EXAM_STATION_PHASES,
+    PAIRING_ALPHABET,
+    PAIRING_LENGTH,
+    PAIRING_SECONDS,
     PRACTICE_ACHIEVED_MESSAGE,
     IMITATION_INSTRUCTION,
     PRACTICE_INSTRUCTIONS,
@@ -79,8 +82,14 @@ from emotv.domain.guided_session import (
     GAME_MISSES_BEFORE_ANSWER,
     GAME_QUESTION,
     GAME_RETRY,
+    GAME_RETRY_HELPED,
     GAME_SHOWN,
     GAME_TIME_UP,
+    SIMILAR_FOUND,
+    SIMILAR_QUESTION,
+    SIMILAR_RETRY,
+    SIMILAR_RETRY_HELPED,
+    SIMILAR_SHOWN,
     MAX_STEP_ATTEMPTS,
     NO_CAMERA_SKIP,
     CaptureQuality,
@@ -102,8 +111,8 @@ from emotv.domain.guided_session import (
     StopReason,
     VerbalResponse,
 )
-from emotv.domain.protocol import (ACCESSIBLE_PAUSE_FACTOR, NO_TIME_LIMIT_SECONDS, WAIT_PAUSE_SECONDS, PauseMode,
-                                   Protocol, ProtocolStep)
+from emotv.domain.protocol import (ACCESSIBLE_PAUSE_FACTOR, GAME_SIMILAR, NO_TIME_LIMIT_SECONDS,
+                                   WAIT_PAUSE_SECONDS, PauseMode, Protocol, ProtocolStep, StepKind)
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
 from emotv.domain.stimulus import Stimulus, StimulusKind
@@ -122,6 +131,7 @@ class GuidedRepository(Interface):
     def save_run(self, run: GuidedRun) -> GuidedRun: ...
     def get_run(self, session_id: str) -> GuidedRun | None: ...
     def get_run_by_token_hash(self, token_hash: str) -> GuidedRun | None: ...
+    def get_run_by_pairing_hash(self, code_hash: str) -> GuidedRun | None: ...
     def add_capture(self, capture: ExpressionCapture) -> ExpressionCapture: ...
     def list_captures(self, session_id: str) -> tuple[ExpressionCapture, ...]: ...
     def add_marker(self, marker: SessionMarker) -> SessionMarker: ...
@@ -942,19 +952,33 @@ class GuidedSessionService:
                 "done": 0, "matched": 0, "first": 0, "help": 0, "by_conductor": 0}
 
     def _game_target(self, step: ProtocolStep, round_index: int) -> str | None:
-        """La emoción de la imagen de la ronda: su expresión esperada en el banco."""
-        item = self.stimuli(step.game_stimulus_ids[round_index]) if round_index < len(step.game_stimulus_ids) else None
+        """La emoción de la imagen de la ronda (la modelo, al buscar la misma
+        emoción): su expresión esperada en el banco."""
+        images = step.round_images(round_index)
+        item = self.stimuli(images[0]) if images else None
         return item.expected_expression if item is not None else None
 
-    @staticmethod
-    def _game_options(run: GuidedRun, step: ProtocolStep, round_index: int, target: str) -> tuple[str, ...]:
-        """La emoción de la imagen y distractoras al azar, en orden al azar. La
-        semilla es la sesión, el paso, el intento y la ronda."""
+    def _game_options(self, run: GuidedRun, step: ProtocolStep, round_index: int,
+                      target: str) -> tuple[tuple[str, str, str | None], ...]:
+        """Las opciones de la ronda como (clave, emoción, imagen), en orden al azar.
+        Al emparejar, la clave es la emoción y no hay imagen; al buscar la misma
+        emoción, la clave es el lugar («1», «2»…) y no dice cuál es. La semilla es
+        la sesión, el paso, el intento y la ronda. Vacío si falta una imagen."""
         chooser = random.Random(f"{run.session_id}:{run.step_index}:{run.step_attempt}:{round_index}")
+        if step.game_type == GAME_SIMILAR:
+            found = []
+            for stimulus_id in step.round_images(round_index)[1:]:
+                item = self.stimuli(stimulus_id)
+                if item is None or item.expected_expression is None:
+                    return ()
+                found.append((item.expected_expression, stimulus_id))
+            chooser.shuffle(found)
+            return tuple((str(slot + 1), expression, stimulus_id)
+                         for slot, (expression, stimulus_id) in enumerate(found))
         pool = [item for item in RECOGNITION_DISTRACTORS if item != target]
         options = [target, *chooser.sample(pool, step.option_count - 1)]
         chooser.shuffle(options)
-        return tuple(options)
+        return tuple((item, item, None) for item in options)
 
     def _game_result(self, run: GuidedRun) -> GameResult | None:
         """El resultado del intento en curso, si ya terminó."""
@@ -996,15 +1020,18 @@ class GuidedSessionService:
             if target is None:
                 raise GuidedConflict("La imagen de esta ronda ya no está disponible: salta el paso")
             options = self._game_options(fresh, step, progress["round"], target)
+            if not options:
+                raise GuidedConflict("Una imagen de esta ronda ya no está disponible: salta el paso")
+            emotion_of = {key: emotion for key, emotion, _ in options}
             playing = progress["state"] in ("playing", "retry")
             if action == "answer":
                 if not playing:
                     raise GuidedConflict("Esta ronda ya terminó")
-                if expression not in options or expression in progress["tried"] or expression == progress["removed"]:
+                if expression not in emotion_of or expression in progress["tried"] or expression == progress["removed"]:
                     raise ValueError("Esa opción no se muestra ahora")
                 if by is RecognitionAnswerer.CONDUCTOR:
                     progress["by_conductor"] += 1
-                if expression == target:
+                if emotion_of[expression] == target:
                     progress.update(state="matched", done=progress["done"] + 1, matched=progress["matched"] + 1)
                     if not progress["tried"]:
                         progress["first"] += 1
@@ -1020,7 +1047,7 @@ class GuidedSessionService:
                 if not progress["helped"]:
                     progress.update(helped=True, help=progress["help"] + 1)
                     # Se quita una opción que no es, si quedan al menos dos a la vista.
-                    wrong = [item for item in options if item != target and item not in progress["tried"]]
+                    wrong = [key for key, emotion, _ in options if emotion != target and key not in progress["tried"]]
                     if len(wrong) >= 2:
                         progress["removed"] = wrong[0]
             elif action == "next":
@@ -1050,8 +1077,8 @@ class GuidedSessionService:
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
         return run
 
-    def _game_round(self, run: GuidedRun, step: ProtocolStep) -> tuple[dict[str, Any], int, str | None,
-                                                                          tuple[str, ...]]:
+    def _game_round(self, run: GuidedRun, step: ProtocolStep) -> tuple[
+            dict[str, Any], int, str | None, tuple[tuple[str, str, str | None], ...]]:
         progress = self._game_progress(run)
         index = min(progress["round"], step.rounds - 1)
         target = self._game_target(step, index)
@@ -1064,22 +1091,29 @@ class GuidedSessionService:
         progress, index, target, options = self._game_round(run, step)
         result = self._game_result(run)
         state = progress["state"] if result is None or result.outcome is GameOutcome.COMPLETED else "ended"
+        similar = step.game_type == GAME_SIMILAR
         answer = RECOGNITION_ANSWERS.get(target or "", "")
+        name = RECOGNITION_NAMES.get(target or "", "")
         messages = {
-            "retry": GAME_RETRY,
-            "matched": GAME_FOUND.format(answer=answer[:1].lower() + answer[1:]),
-            "shown": GAME_SHOWN.format(answer=answer),
+            "retry": ((SIMILAR_RETRY_HELPED if progress["helped"] else SIMILAR_RETRY) if similar
+                      else (GAME_RETRY_HELPED if progress["helped"] else GAME_RETRY)),
+            "matched": (SIMILAR_FOUND.format(answer=name[:1].lower() + name[1:]) if similar
+                        else GAME_FOUND.format(answer=answer[:1].lower() + answer[1:])),
+            "shown": SIMILAR_SHOWN.format(answer=name) if similar else GAME_SHOWN.format(answer=answer),
             "finished": GAME_FINISHED,
             "ended": GAME_TIME_UP if result is not None and result.outcome is GameOutcome.TIMED_OUT else None,
         }
         revealed = state in ("matched", "shown")
         explanation = self.explanation_of(target) if revealed and target and self.explanation_of else None
+        correct = next((key for key, emotion, _ in options if emotion == target), None)
         return {"round": f"{run.step_index}-{run.step_attempt}-{index}", "number": index + 1, "total": step.rounds,
-                "question": GAME_QUESTION, "state": state,
-                "options": [{"key": item, "label": RECOGNITION_NAMES[item],
-                             "available": item not in progress["tried"] and item != progress["removed"]}
-                            for item in options],
-                "answer": target if revealed else None,
+                "game_type": step.game_type, "question": SIMILAR_QUESTION if similar else GAME_QUESTION,
+                "state": state,
+                # Al buscar la misma emoción, cada opción es una imagen: «Cara 1», sin su emoción.
+                "options": [{"key": key, "label": f"Cara {key}" if similar else RECOGNITION_NAMES[key],
+                             "available": key not in progress["tried"] and key != progress["removed"]}
+                            for key, _, _ in options],
+                "answer": correct if revealed else None,
                 "message": messages.get(state),
                 "explanation": explanation or None,
                 "can_help": state in ("playing", "retry") and not progress["helped"],
@@ -1090,8 +1124,14 @@ class GuidedSessionService:
         y los contadores del intento."""
         progress, index, target, options = self._game_round(run, step)
         result = self._game_result(run)
-        return {"round": index + 1, "rounds": step.rounds, "stimulus_id": step.game_stimulus_ids[index],
-                "target_expression": target, "options": list(options), "tried": list(progress["tried"]),
+        images = step.round_images(index)
+        return {"round": index + 1, "rounds": step.rounds, "game_type": step.game_type,
+                "stimulus_id": images[0] if images else None,
+                "target_expression": target, "options": [key for key, _, _ in options],
+                # La emoción y la imagen de cada opción, para quien conduce.
+                "option_details": [{"key": key, "expression": emotion, "stimulus_id": stimulus_id}
+                                   for key, emotion, stimulus_id in options],
+                "tried": list(progress["tried"]),
                 "removed": progress["removed"], "state": progress["state"], "helped": progress["helped"],
                 "rounds_done": progress["done"], "matched": progress["matched"], "first_try": progress["first"],
                 "help_used": progress["help"], "outcome": result.outcome.value if result else None}
@@ -1188,8 +1228,89 @@ class GuidedSessionService:
         if not run.active:
             raise GuidedConflict("La sesión ya terminó")
         token = secrets.token_urlsafe(32)
-        self.repository.save_run(replace(run, view_token_hash=hash_token(token)))
+        self.repository.save_run(replace(run, view_token_hash=hash_token(token), view_device="web",
+                                         pairing_hash=None, pairing_expires_at=None))
         return token
+
+    # --- Pantalla de la persona en Android ----------------------------------------------
+
+    def _android_refusal(self, run: GuidedRun, session: EmotionalSession) -> str | None:
+        """Por qué esta sesión no puede mostrarse en Android, o None si puede."""
+        if not run.active:
+            return "La sesión ya terminó"
+        if session.exam_id is not None:
+            return "Un examen no se abre en Android"
+        if self._camera_active(run, session):
+            # El aplicativo no envía imágenes: solo sesiones sin cámara.
+            return "Esta sesión usa la cámara; en Android solo se abren sesiones sin cámara"
+        return None
+
+    def new_android_code(self, user: User, session_id: str) -> tuple[str, datetime]:
+        """Código de un solo uso para abrir la pantalla de la persona en Android.
+        Reemplaza al anterior; vence a los PAIRING_SECONDS. Solo se guarda su SHA-256."""
+        run, session = self._conducted(user, session_id)
+        run = self._tick(run)
+        refusal = self._android_refusal(run, session)
+        if refusal:
+            raise GuidedConflict(refusal)
+        code = "".join(secrets.choice(PAIRING_ALPHABET) for _ in range(PAIRING_LENGTH))
+        expires = self.clock() + timedelta(seconds=PAIRING_SECONDS)
+        self.repository.save_run(replace(run, pairing_hash=hash_token(code), pairing_expires_at=expires))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return code, expires
+
+    def claim_android_code(self, code: str) -> str:
+        """Canjea el código por el enlace de la pantalla de la persona. El enlace
+        anterior (web o Android) deja de valer y el código no sirve otra vez."""
+        normalized = "".join(code.split()).replace("-", "").upper()
+        run = (self.repository.get_run_by_pairing_hash(hash_token(normalized))
+               if len(normalized) == PAIRING_LENGTH else None)
+        if run is None:
+            raise GuidedNotFound("pairing")
+        run = self._tick(run)
+        session = self._session(run.session_id)
+        if (run.pairing_expires_at is None or run.pairing_expires_at <= self.clock()
+                or self._android_refusal(run, session)):
+            if run.pairing_hash is not None:
+                self.repository.save_run(replace(run, pairing_hash=None, pairing_expires_at=None))
+            raise GuidedNotFound("pairing")
+        token = secrets.token_urlsafe(32)
+        self.repository.save_run(replace(run, view_token_hash=hash_token(token), view_device="android",
+                                         pairing_hash=None, pairing_expires_at=None))
+        self.audit.record(None, AuditAction.UPDATE, RESOURCE, run.session_id)
+        return token
+
+    def _screen(self, run: GuidedRun, session: EmotionalSession) -> dict[str, Any]:
+        """Para quien conduce: dónde está abierta la pantalla de la persona y si
+        hay un código de Android sin canjear."""
+        pending = run.pairing_expires_at is not None and run.pairing_expires_at > self.clock()
+        return {"device": run.view_device if run.view_token_hash else None,
+                "pairing_expires_at": run.pairing_expires_at.isoformat() if pending else None,
+                "can_pair_android": self._android_refusal(run, session) is None}
+
+    def _activity(self, run: GuidedRun, session: EmotionalSession) -> dict[str, Any]:
+        """La actividad que la pantalla muestra ahora, sin respuestas: su tipo,
+        su nombre y en qué paso va."""
+        steps = self._steps(session)
+        total = len(steps) or None
+        if not run.active:
+            return {"kind": "finished", "name": "La sesión terminó", "number": None, "total": total}
+        if run.phase in (GuidedPhase.PRE_QUESTIONNAIRE, GuidedPhase.POST_QUESTIONNAIRE):
+            return {"kind": "questionnaire", "name": "Unas preguntas", "number": None, "total": total}
+        if run.phase is GuidedPhase.LIVE:
+            return {"kind": "live", "name": "Registro de la expresión", "number": None, "total": None}
+        if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI) and steps:
+            step = steps[run.step_index]
+            if step.is_game:
+                kind, name = "game", ("Busca la misma emoción" if step.game_type == GAME_SIMILAR
+                                      else "Empareja la emoción")
+            else:
+                kind, name = {StepKind.RECOGNITION: ("recognition", "¿Qué emoción es?"),
+                              StepKind.DRAWING: ("drawing", "Dibuja una cara"),
+                              StepKind.PRACTICE: ("practice", "Práctica de expresiones")}.get(
+                    step.kind, ("stimulus", "Mira la imagen"))
+            return {"kind": kind, "name": name, "number": run.step_index + 1, "total": total}
+        return {"kind": "waiting", "name": "En un momento empezamos", "number": None, "total": total}
 
     def advance(self, user: User, session_id: str) -> GuidedRun:
         """Continúa tras un cuestionario: el previo debe estar respondido."""
@@ -1418,6 +1539,7 @@ class GuidedSessionService:
             "supports": (self._supports_payload(self._protocol(session)) if session.protocol_id else None),
             # «Esperar a quien conduce»: el paso terminó y sigue cuando pulse «Seguir».
             "waiting_for_conductor": self._waiting_for_conductor(run, session),
+            "screen": self._screen(run, session),
             # Intento del paso en curso (1 el primero) y si se puede repetir ahora.
             "attempt": run.step_attempt if step is not None and step.is_timed
             and run.phase is GuidedPhase.STIMULI else None,
@@ -1528,7 +1650,8 @@ class GuidedSessionService:
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
                     "abstract_notice": False, "practice": None, "recognition": None, "drawing": None,
                     "game": None, "accessible": False,
-                    "uses_camera": self._camera_active(run, session)}
+                    "uses_camera": self._camera_active(run, session),
+                    "activity": self._activity(run, session)}
         stimulus = None
         remaining = None
         abstract = False
@@ -1604,6 +1727,7 @@ class GuidedSessionService:
             "supports": supports,
             # Sin cámara, la pantalla no la pide (o deja de pedirla si se siguió sin ella).
             "uses_camera": self._camera_active(run, session),
+            "activity": self._activity(run, session),
         }
 
     def participant_stimulus(self, token: str) -> str:
@@ -1615,7 +1739,26 @@ class GuidedSessionService:
         step = self._protocol(session).steps[run.step_index]
         stimulus_id = step.stimulus_id
         if step.is_game:
-            stimulus_id = step.game_stimulus_ids[min(self._game_progress(run)["round"], step.rounds - 1)]
+            images = step.round_images(min(self._game_progress(run)["round"], step.rounds - 1))
+            stimulus_id = images[0] if images else None
+        if stimulus_id is None:
+            raise GuidedNotFound("stimulus")
+        return stimulus_id
+
+    def participant_game_option(self, token: str, key: str) -> str:
+        """La imagen de una opción de la ronda en curso de «Busca la misma
+        emoción» (y solo de esa ronda)."""
+        run = self._tick(self._by_token(token))
+        if run.phase is not GuidedPhase.STIMULI:
+            raise GuidedNotFound("stimulus")
+        session = self._session(run.session_id)
+        step = self._protocol(session).steps[run.step_index]
+        if not step.is_game or step.game_type != GAME_SIMILAR:
+            raise GuidedNotFound("stimulus")
+        index = min(self._game_progress(run)["round"], step.rounds - 1)
+        target = self._game_target(step, index)
+        options = self._game_options(run, step, index, target) if target else ()
+        stimulus_id = next((image for option, _, image in options if option == key), None)
         if stimulus_id is None:
             raise GuidedNotFound("stimulus")
         return stimulus_id
@@ -1625,8 +1768,11 @@ class GuidedSessionService:
         self._stop(self._by_token(token), StopReason.PARTICIPANT, None)
 
     def receive_frame(self, token: str, frame) -> None:
-        """Un cuadro de la pantalla de la persona (enlace propio)."""
-        self._receive(self._tick(self._by_token(token)), frame)
+        """Un cuadro de la pantalla de la persona (enlace propio). Android no envía imágenes."""
+        run = self._tick(self._by_token(token))
+        if run.view_device == "android":
+            raise GuidedConflict("La pantalla en Android no envía imágenes")
+        self._receive(run, frame)
 
     # --- Aplicativo móvil: quien conduce y la cámara están en el mismo dispositivo -----
 

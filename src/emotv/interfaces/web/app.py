@@ -78,7 +78,7 @@ from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresStimulusRepository,
 )
 from emotv.infrastructure.vision.person_detection import create_person_detector
-from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image, stimulus_appearance
 from emotv.application.questionnaire_service import QuestionnaireService
 from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
     PostgresQuestionnaireRepository,
@@ -223,7 +223,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         sessions=lambda session_id: session_repository.get_by_id(session_id),
         session_access=session_access)
     protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
-                                       audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service)
+                                       audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service,
+                                       appearance=stimulus_appearance)
     app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
     practice_settings = get_practice_settings()
     app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
@@ -376,6 +377,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         insights=insights_service,
         reports=report_service,
         statistics=statistics_service,
+        participation=guided_service.claim_android_code if guided_service is not None else None,
         production=web_settings.production,
         api_version=__version__,
         min_app_version=get_mobile_min_app_version(),

@@ -205,6 +205,15 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .matching-game-round { margin: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }
 .matching-game-actions { justify-content: center; }
 .matching-game-actions .button { min-height: 3rem; touch-action: manipulation; }
+/* Resultados educativos: una fila por tipo de actividad. */
+.educational-summary { display: grid; gap: var(--space-xs); margin: 0; }
+.educational-summary > div { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: var(--space-sm); }
+.educational-summary dt { font-weight: var(--weight-semibold); color: var(--color-ink); }
+.educational-summary dd { margin: 0; }
+@media (max-width: 480px) { .educational-summary > div { grid-template-columns: 1fr; gap: 0; } }
+/* Buscar la misma emoción: cada opción es una cara, con su número debajo. */
+.similar-game-face { display: block; width: min(9rem, 100%); aspect-ratio: 1; object-fit: contain; border-radius: var(--radius-md, 8px); background: var(--color-canvas); }
+.similar-game-options .recognition-option { padding: var(--space-xs); }
 /* La opción elegida sigue legible aunque los botones queden deshabilitados. */
 .recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
 .recognition-answer { color: var(--color-ink); }

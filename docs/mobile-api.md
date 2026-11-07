@@ -6,9 +6,9 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.6 (2026-11-06). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5 y la 4.6 solo agregan campos opcionales a la 4, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.10 (2026-11-07). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona) y la 4.10 documenta su paso de dibujo, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
-| Prefijo | Todas las rutas empiezan con `/mobile` |
+| Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
 
 **El aplicativo no conduce sesiones.** Las sesiones se conducen en la web (el
@@ -22,6 +22,9 @@ para consultar lo ya registrado y actuar sobre el reporte:
 - **Estadísticas agregadas**: cuentan sesiones, no personas.
 - **Pendientes del Docente**: reportes que los usuarios de su grupo enviaron a
   revisión.
+- **Pantalla de la persona** (desde 4.9): una tableta o un teléfono muestra a
+  la persona la actividad de una sesión que se conduce en la web. Se vincula
+  con un código de un solo uso y no necesita iniciar sesión.
 
 Ninguna ruta `/mobile` recibe imágenes: ninguna captura del rostro sale del
 teléfono.
@@ -218,6 +221,10 @@ Resumen:
 | `POST /mobile/reports/{id}/approve` | Sí | 200 | Sí (el segundo responde `409`) |
 | `GET /mobile/reviews` | Sí | 200 | Sí |
 | `GET /mobile/statistics` | Sí | 200 | Sí |
+| `POST /mobile/participation` | No | 200 | **No**: el código sirve una sola vez |
+| `GET /participant-view/{token}` | Enlace | 200 | Sí |
+| `POST /participant-view/{token}/answer` | Enlace | 200 | Sí (el segundo responde `409`) |
+| `POST /participant-view/{token}/stop` | Enlace | 200 | Sí (el segundo responde `404`) |
 
 ### Estado
 
@@ -447,6 +454,22 @@ Con token. Detalle de una sesión a la que la cuenta tiene acceso
   `rounds_done`, `matched`, `first_try`, `help_used` y `sentence`) y `notice`,
   que se muestra siempre junto a ellos. En `lanes.stimuli`, un juego llega con
   `kind` `game`, `title` vacío y los campos `outcome`, `rounds` y `sentence`. Son contadores de lo que ocurrió, sin puntaje ni comparación.
+- Desde la revisión 4.7, `game_type` también puede ser `similar` («Busca la
+  misma emoción»: la persona elige, entre otras caras, la que muestra la misma
+  emoción que una cara modelo). Los contadores significan lo mismo. En
+  `lanes.stimuli`, un juego trae además `game_type`. Un valor desconocido de
+  `game_type` se muestra como «Juego».
+- Desde la revisión 4.8, `metrics.educational` resume la sesión por tipo de
+  actividad y es `null` en sesiones sin protocolo o sin actividades (las
+  antiguas también): `recognition`, `drawing` (`exercises`, `completed`,
+  `timed_out`, `indicated[]` con `expression` y `count`), `games` (`games`,
+  `played`, `attempts` con las repeticiones, `rounds_total`, `rounds_done`,
+  `matched`, `first_try`, `help_used`) y `practice`, cada uno con `sentence` y
+  `null` si la sesión no lo tuvo; `not_completed` (`items[]` con `step_index`,
+  `kind`, `activity`, `status` `skipped`, `stopped` o `not_reached` y `label`;
+  los tres contadores y `sentence`) y `notice`, que se muestra siempre junto al
+  resumen. Se calcula al leer, igual que en la web y en el reporte: no es un
+  puntaje ni una conclusión sobre la persona.
 
 Errores: `403 forbidden`, `404 not_found`, `503 unavailable`.
 
@@ -595,8 +618,110 @@ Con token.
   ([`StatisticsRecognition`](#statisticsrecognition)); es `null` si ninguna
   sesión tuvo reconocimientos. `recognition.notice` se muestra siempre junto a
   ellos.
+- Desde la revisión 4.8, `drawing` (dibujos: `sessions`, `totals` con
+  `exercises`, `answered`, `timed_out`, `skipped`, `stopped` y `sentence`,
+  `by_expression[]` con `expression` y `count`, y `notice`) y `games` (juegos:
+  `sessions`, `totals`, `by_type[]` con `game_type` y `notice`; cada fila con
+  `games`, `attempts`, un contador por `outcome`, `rounds_total`,
+  `rounds_done`, `matched`, `first_try`, `help_used` y `sentence`). Son `null`
+  si ninguna sesión los tuvo. Cuentan sesiones, nunca personas.
 
 Errores: `403 forbidden`, `422 invalid`, `503 unavailable`.
+
+### Pantalla de la persona
+
+Desde la revisión 4.9. La sesión se conduce en la web; Android solo muestra a la
+persona evaluada la actividad del momento. No hay cuenta ni registro de esa
+persona.
+
+1. Quien conduce pulsa «Vincular Android» en la web. Ve un código de 8
+   caracteres (letras sin O, I ni L y cifras del 2 al 9) que **sirve una sola
+   vez y vence a los 5 minutos**. Solo se ofrece en sesiones sin cámara: el
+   aplicativo nunca envía imágenes.
+2. El aplicativo envía `POST /mobile/participation` con `{"code": "K7MP2QXR"}`,
+   sin `Authorization`. Acepta minúsculas, espacios y guiones. Responde
+   `{"participant_token", "state_path"}`.
+3. Con ese enlace, el aplicativo lee `GET /participant-view/{token}` cada
+   segundo y muestra `activity`.
+
+`activity` tiene estos campos:
+
+- `kind`: `waiting`, `questionnaire`, `stimulus`, `practice`,
+  `recognition`, `drawing`, `game`, `live` o `finished`. La lista es abierta:
+  un valor desconocido se muestra como «Actividad».
+- `name`: texto para mostrar.
+- `number` y `total`: el paso y cuántos hay; son nulos fuera de los pasos.
+
+Nunca trae la respuesta correcta ni ninguna expresión estimada. Los juegos
+todavía no se juegan en Android: el aplicativo muestra su nombre y quien conduce
+registra la respuesta en la web.
+
+**Paso de dibujo** (desde 4.10). Cuando `activity.kind` es `drawing`, el estado
+trae `drawing` con estos campos:
+
+- `instruction` y `question`: textos para mostrar.
+- `options[]`: cada una con `key` y `label`, las emociones para señalar.
+- `round`: cambia con cada intento. Un valor nuevo empieza un lienzo vacío:
+  repetir el paso lo decide quien conduce en la web.
+- `finished`: el paso terminó, por una respuesta (de la persona o de quien
+  conduce) o porque venció el tiempo.
+- `chosen` y `message`: la emoción elegida y la frase para mostrar; son nulos
+  hasta que se responde.
+
+La persona dibuja con el dedo. Herramientas, iguales que en la web:
+
+- siete colores con nombre;
+- tres grosores;
+- borrador;
+- deshacer;
+- limpiar, con confirmación;
+- «Terminé».
+
+Después señala la emoción con `POST /participant-view/{token}/answer`,
+cuyo cuerpo es `{"expression": "<key>"}`. El servidor rechaza cualquier otro
+campo (`422`).
+
+**El dibujo nunca sale del dispositivo**: no se envía, no se guarda en disco ni
+en el estado guardado del sistema, y EMOtv no lo interpreta. Solo se registran
+la emoción elegida, los tiempos y quién respondió. El dibujo vive en la memoria
+de la pantalla y se borra en estos casos:
+
+- al terminar el paso;
+- al cambiar `round`;
+- al terminar la sesión;
+- al salir;
+- si el sistema cierra el aplicativo.
+
+Reglas del enlace:
+
+- **Acceso limitado.** El enlace solo abre `/participant-view/{token}` de esa
+  sesión. Como `Bearer` no vale en ninguna ruta `/mobile`
+  (`401`): no da acceso a sesiones, reportes ni estadísticas. La respuesta no
+  trae el código de la sesión ni datos de quien conduce.
+- **Una pantalla a la vez.** Canjear otro código, o crear un enlace web,
+  invalida el anterior: sus rutas responden `404`.
+- **Cierre.** Al terminar o detener la sesión, el enlace deja de valer (`404`)
+  y el aplicativo lo muestra como «La sesión terminó». Los códigos sin canjear
+  también dejan de valer.
+- **Reconexión.** Si se corta la red o se cierra el aplicativo, el mismo
+  enlace sigue valiendo mientras dure la sesión, y la persona vuelve al paso en
+  curso. Si el enlace se perdió, quien conduce pide otro código.
+- **Sin duplicados.** Una respuesta repetida, por ejemplo al reintentar tras un
+  corte, responde `409` y no se registra otra vez. El aplicativo la toma como
+  ya recibida.
+- **Sin imágenes.** `POST /participant-view/{token}/frames` desde Android
+  responde `409`.
+
+Errores de `POST /mobile/participation`:
+
+- `404 invalid_code`: el código no existe, ya se usó o venció.
+- `429 too_many_attempts` con `Retry-After`: demasiados códigos equivocados
+  desde la misma red.
+- `422 invalid`.
+- `503 unavailable`.
+
+Las rutas `/participant-view` responden con el formato de la web,
+`{"detail": "…"}`, y no con el de `/mobile`.
 
 ---
 
@@ -802,6 +927,7 @@ final (respondido o con el tiempo vencido, que cuenta como no elegido).
 | `coincidence.compared`, `coincidence.matched` | int | no | Estímulos emocionales comparados y en los que coincidió la expresión estimada |
 | `practice` | [`StatisticsPractice`](#statisticspractice) | sí | Desde 4.1; `null` si ninguna sesión tuvo ejercicios. Puede faltar en un servidor anterior |
 | `recognition` | [`StatisticsRecognition`](#statisticsrecognition) | sí | Desde 4.2; `null` si ninguna sesión tuvo reconocimientos. Puede faltar en un servidor anterior |
+| `drawing`, `games` | objeto | sí | Desde 4.8; `null` si ninguna sesión tuvo dibujos o juegos. Pueden faltar en un servidor anterior |
 
 ### `StatisticsPractice`
 
@@ -899,6 +1025,10 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.10 | 2026-11-07 | Solo documentación, compatible con la 4.9: el bloque `drawing` de `GET /participant-view/{token}` y `POST /participant-view/{token}/answer` para el dibujo táctil en Android. El dibujo no sale del dispositivo. No hay rutas ni campos nuevos |
+| 4.9 | 2026-11-07 | Compatible con la 4 a la 4.8. Nueva ruta `POST /mobile/participation`, que canjea un código de un solo uso por el enlace de la [pantalla de la persona](#pantalla-de-la-persona). `GET /participant-view/{token}` agrega `activity`. Las rutas de consulta y de reporte no cambian |
+| 4.8 | 2026-11-07 | Compatible con la 4 a la 4.7: `GET /mobile/sessions/{id}` agrega `metrics.educational` (resultados por tipo de actividad y las omitidas o interrumpidas) y `GET /mobile/statistics` agrega `drawing` y `games`. Sin migración: se calcula de lo ya guardado. No hay rutas nuevas |
+| 4.7 | 2026-11-07 | Compatible con la 4 a la 4.6: `game_type` admite `similar` («Busca la misma emoción») y, en `lanes.stimuli`, los juegos traen `game_type`. Las estadísticas no cambian. No hay rutas nuevas |
 | 4.6 | 2026-11-06 | Compatible con la 4 a la 4.5: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.game` (juegos de emparejar: rondas, emparejadas, a la primera y ayudas) y, en `lanes.stimuli`, los pasos con `kind` `game`. Las estadísticas no cambian. No hay rutas nuevas: el juego solo se juega en la web |
 | 4.5 | 2026-11-06 | Compatible con la 4 a la 4.4: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.drawing` y, en `lanes.stimuli`, los pasos con `kind` `drawing` (abierto, así que un aplicativo anterior los muestra como un paso más). Solo la emoción que la persona señaló y los tiempos, nunca el dibujo. Las estadísticas no cambian. No hay rutas nuevas |
 | 4.4 | 2026-11-04 | Solo documentación; la API no cambió. Las sesiones propias del Docente son de demostración: `GET /mobile/statistics?scope=mine` le devuelve cero sesiones, así que el aplicativo usa `scope=group` para el Docente, y `SessionSummary.mine=true` del Docente se rotula «Tú (demostración)» |

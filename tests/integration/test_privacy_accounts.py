@@ -48,6 +48,7 @@ from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.application.guided_session_service import GuidedSessionService
 from emotv.domain.guided_session import FrameAssessment
 from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.infrastructure.vision.stimulus_image import stimulus_appearance
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
@@ -157,7 +158,7 @@ def env():
         responses=PostgresQuestionnaireResponseRepository(factory, FieldCipher([KEY])),
         sessions=sessions.get_session, session_access=session_access, clock=clock)
     protocols = ProtocolService(PostgresProtocolRepository(factory), stimuli, audit, docente_of, group_user_ids,
-                                questionnaires=questionnaires, clock=clock)
+                                questionnaires=questionnaires, clock=clock, appearance=stimulus_appearance)
     app = FastAPI()
     app.include_router(create_auth_router(auth, users))
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,

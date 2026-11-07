@@ -17,9 +17,12 @@ PRACTICE_TARGETS = EXPRESSION_KEYS
 MIN_RECOGNITION_OPTIONS = 2
 MAX_RECOGNITION_OPTIONS = 4
 DEFAULT_RECOGNITION_OPTIONS = 3
-# Juego de emparejar: rondas (una imagen cada una) y opciones por ronda. Pocas
-# opciones al empezar; quien arma el protocolo sube la dificultad.
-GAME_TYPES = ("matching",)
+# Juegos: rondas y opciones por ronda. Pocas opciones al empezar; quien arma el
+# protocolo sube la dificultad. «matching»: imagen con el nombre de su emoción;
+# «similar»: imagen modelo con otra imagen de la misma emoción.
+GAME_MATCHING = "matching"
+GAME_SIMILAR = "similar"
+GAME_TYPES = (GAME_MATCHING, GAME_SIMILAR)
 MIN_GAME_ROUNDS = 2
 MAX_GAME_ROUNDS = 6
 DEFAULT_GAME_ROUNDS = 3
@@ -138,6 +141,11 @@ class ProtocolStep:
     del banco aprobado (vacío hasta entonces). exposure_seconds es el tiempo de
     cada ronda; el juego entero dura como máximo rounds × exposure_seconds. No
     analiza la cámara.
+
+    En el juego «similar», cada ronda usa option_count + 1 imágenes seguidas en
+    game_stimulus_ids: la modelo, la otra de la misma emoción y una de otra
+    emoción por cada opción restante. Las elige y comprueba el servicio de
+    protocolos al guardar.
     """
 
     stimulus_id: str | None
@@ -206,7 +214,7 @@ class ProtocolStep:
             if stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None:
                 raise ValueError("Un juego no tiene imagen propia, expresión pedida ni tiempo de sostén")
             if self.game_type not in GAME_TYPES:
-                raise ValueError("El juego disponible es «Empareja la emoción»")
+                raise ValueError("Los juegos disponibles son «Empareja la emoción» y «Busca la misma emoción»")
             for name, low, high, text in (("rounds", MIN_GAME_ROUNDS, MAX_GAME_ROUNDS, "rondas"),
                                           ("option_count", MIN_RECOGNITION_OPTIONS, MAX_RECOGNITION_OPTIONS,
                                            "opciones")):
@@ -216,8 +224,8 @@ class ProtocolStep:
                 if not low <= value <= high:
                     raise ValueError(f"Un juego tiene entre {low} y {high} {text}")
             # Las que falten las completa el servicio de protocolos al guardar.
-            if len(ids) > self.rounds:
-                raise ValueError("El juego tiene una imagen por ronda")
+            if len(ids) > self.rounds * self.images_per_round:
+                raise ValueError("El juego tiene más imágenes que rondas")
             return
         if kind is StepKind.DRAWING:
             if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
@@ -267,6 +275,25 @@ class ProtocolStep:
                       round_seconds: int = 30, stimulus_ids: tuple[str, ...] = ()) -> ProtocolStep:
         return cls(None, round_seconds, 0, kind=StepKind.GAME, game_type="matching", rounds=rounds,
                    option_count=option_count, game_stimulus_ids=stimulus_ids)
+
+    @classmethod
+    def similar_game(cls, rounds: int = DEFAULT_GAME_ROUNDS, option_count: int = DEFAULT_GAME_OPTIONS,
+                     round_seconds: int = 30, stimulus_ids: tuple[str, ...] = ()) -> ProtocolStep:
+        return cls(None, round_seconds, 0, kind=StepKind.GAME, game_type=GAME_SIMILAR, rounds=rounds,
+                   option_count=option_count, game_stimulus_ids=stimulus_ids)
+
+    @property
+    def images_per_round(self) -> int:
+        """Imágenes de cada ronda de un juego: una al emparejar con nombres; la
+        modelo y una por opción al buscar la misma emoción."""
+        if self.game_type == GAME_SIMILAR and isinstance(self.option_count, int):
+            return self.option_count + 1
+        return 1
+
+    def round_images(self, round_index: int) -> tuple[str, ...]:
+        """Las imágenes de una ronda, en el orden en que se guardaron."""
+        size = self.images_per_round
+        return self.game_stimulus_ids[round_index * size:(round_index + 1) * size]
 
     @property
     def is_drawing(self) -> bool:

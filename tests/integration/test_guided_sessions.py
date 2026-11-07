@@ -249,7 +249,9 @@ def test_the_persons_screen_never_receives_results(env):  # noqa: F811
     text = json.dumps(responses)
     for word in RESULT_WORDS:
         assert word not in text, word  # ...pero la pantalla de la persona no las ve
-    allowed = {"phase", "message", "stimulus", "remaining_seconds", "capture_frames", "frame_interval_ms", "abstract_notice"}
+    # activity (bloque 8): el tipo, el nombre y el paso de la actividad, sin respuestas ni resultados.
+    allowed = {"phase", "message", "stimulus", "remaining_seconds", "capture_frames", "frame_interval_ms", "abstract_notice",
+               "activity"}
     # Al terminar, el enlace deja de valer y solo responde que no existe.
     assert all(set(item) <= allowed or item == {"received": True} or set(item) == {"detail"} for item in responses)
 

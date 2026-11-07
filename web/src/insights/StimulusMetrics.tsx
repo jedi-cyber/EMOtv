@@ -1,6 +1,6 @@
-import type { GameOutcome, MetricCapture, PracticeOutcome, RecognitionOutcome, SessionDrawing, SessionGame, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
+import type { GameOutcome, MetricCapture, SessionEducational, PracticeOutcome, RecognitionOutcome, SessionDrawing, SessionGame, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
 import { Callout } from "../components/Callout";
-import { practiceTargetNames } from "../stimuli/labels";
+import { gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 
 export const practiceOutcomeNames: Record<PracticeOutcome, string> = {
   achieved: "Logró la expresión pedida", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
@@ -114,17 +114,18 @@ export function DrawingMetrics({ drawing }: { drawing: SessionDrawing }) {
   </section>;
 }
 
-/** Juegos de emparejar: solo contadores de rondas, sin puntaje ni calificación. */
+/** Juegos: solo contadores de rondas, sin puntaje ni calificación. */
 export function GameMetrics({ game }: { game: SessionGame }) {
   const { totals } = game;
-  return <section className="form-stack" aria-label="Juegos de emparejar">
-    <h3>Juegos de emparejar</h3>
+  return <section className="form-stack" aria-label="Juegos">
+    <h3>Juegos</h3>
     <Callout variant="info" role="note">{game.notice}</Callout>
     {totals.sentence && <p><strong>{totals.sentence}</strong></p>}
     <div className="table-wrap"><table><thead><tr>
-      <th>Paso</th><th>Rondas y opciones</th><th>Resultado</th><th>Lo que ocurrió</th>
+      <th>Paso</th><th>Juego</th><th>Rondas y opciones</th><th>Resultado</th><th>Lo que ocurrió</th>
     </tr></thead><tbody>{game.exercises.map((item) => <tr key={item.step_index}>
       <td>{item.step_index + 1}</td>
+      <td>{gameTypeNames[item.game_type] ?? gameTypeNames.matching}</td>
       <td>{item.rounds} rondas · {item.option_count} opciones</td>
       <td>{item.outcome ? gameOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
       <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}</td>
@@ -132,9 +133,34 @@ export function GameMetrics({ game }: { game: SessionGame }) {
   </section>;
 }
 
+/** Resultados educativos: separados por tipo de actividad y sin puntaje. */
+export function EducationalSummary({ educational }: { educational: SessionEducational }) {
+  const rows: [string, string][] = [];
+  if (educational.recognition) rows.push(["Reconocimiento", educational.recognition.sentence]);
+  if (educational.drawing) rows.push(["Dibujo", educational.drawing.sentence]);
+  if (educational.games) rows.push(["Juegos", educational.games.sentence]);
+  if (educational.practice) rows.push(["Práctica facial", educational.practice.sentence]);
+  const pending = educational.not_completed;
+  return <section className="form-stack" aria-label="Resultados educativos">
+    <h3>Resultados educativos</h3>
+    <Callout variant="info" role="note">{educational.notice}</Callout>
+    <dl className="educational-summary">{rows.map(([name, sentence]) => <div key={name}>
+      <dt>{name}</dt><dd>{sentence}</dd>
+    </div>)}
+      <div><dt>Omitidas o interrumpidas</dt><dd>{pending.sentence}</dd></div>
+    </dl>
+    {pending.items.length > 0 && <ul className="card-list" aria-label="Actividades que no llegaron a su final">
+      {pending.items.map((item) => <li key={item.step_index} className="row-card">
+        <span>Paso {item.step_index + 1} · {item.activity}: {item.label.toLowerCase()}.</span>
+      </li>)}
+    </ul>}
+  </section>;
+}
+
 /** Métricas por estímulo: describen lo registrado, no lo interpretan. */
 export function StimulusMetrics({ metrics, expressionLabel }: { metrics: SessionMetrics; expressionLabel: (key: string | null) => string }) {
   return <div className="form-stack">
+    {metrics.educational && <EducationalSummary educational={metrics.educational} />}
     {metrics.emotional.length > 0 && <>
       <p><strong>{metrics.totals.sentence}</strong></p>
       {metrics.totals.excluded_captures > 0 && <p className="muted">

@@ -18,6 +18,14 @@ elige una imagen emocional aprobada por ronda (del público del protocolo),
 procurando emociones distintas. Al editar se conservan las que siguen sirviendo
 y se reemplazan las que no.
 
+En «Busca la misma emoción», cada ronda lleva una imagen modelo, otra de la
+misma emoción y una de otra emoción por cada opción restante. Para que se
+resuelva por la emoción y no por reconocer la misma imagen, la pareja no puede
+ser la misma imagen guardada otra vez (mismo archivo o casi igual de aspecto) y
+al menos otra opción se parece más a la modelo que la pareja (colores y
+composición). La emoción de cada imagen es la que indicó quien la subió y
+aprobó el docente: EMOtv no la comprueba.
+
 Los protocolos de examen simulado no pasan por aquí: no se listan, no se editan
 ni se aplican desde el Analizador. Los gestiona ExamService.
 """
@@ -27,6 +35,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import hashlib
 import random
 from uuid import uuid4
 
@@ -38,7 +47,7 @@ from emotv.application.questionnaire_service import QuestionnaireNotFound, Quest
 from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
 from emotv.domain.guided_session import RECOGNITION_DISTRACTORS
-from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
+from emotv.domain.protocol import GAME_SIMILAR, Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
@@ -46,6 +55,12 @@ from emotv.domain.user import User
 RESOURCE = "protocol"
 DocenteOf = Callable[[str], str | None]
 GroupUserIds = Callable[[str], Iterable[str]]
+# Aspecto de una imagen (miniatura) para compararla con otra; None si no se lee.
+Appearance = Callable[[bytes], tuple[int, ...] | None]
+# Diferencia media de aspecto (0 a 255) bajo la cual dos imágenes son la misma
+# imagen guardada otra vez. Con el banco inicial: la misma recodificada da menos
+# de 1; dos caras con la misma emoción y otro color, 28 o más.
+SAME_IMAGE_DISTANCE = 8.0
 
 
 class ProtocolNotFound(LookupError):
@@ -90,8 +105,11 @@ class ProtocolService:
         questionnaires: QuestionnaireService | None = None,
         clock: Callable[[], datetime] | None = None,
         validation_usable: Callable[[Protocol], bool] | None = None,
+        appearance: Appearance | None = None,
     ) -> None:
         self.repository = repository
+        # Sin él no se puede comprobar «Busca la misma emoción» y no se guarda.
+        self.appearance = appearance
         # El protocolo «Validación con adultos» solo se aplica en modo demo y con
         # cuentas de voluntarios (PracticeValidationService.usable).
         self.validation_usable = validation_usable or (lambda protocol: False)
@@ -169,6 +187,115 @@ class ProtocolService:
                    for step in protocol.steps for stimulus_id in step.image_ids)
 
     def _game_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
+        if step.game_type == GAME_SIMILAR:
+            return self._similar_images(user, target, step)
+        return self._matching_images(user, target, step)
+
+    def _game_fits(self, target: Protocol, item: Stimulus | None) -> bool:
+        return (item is not None and item.kind is StimulusKind.EMOTIONAL
+                and item.expected_expression in RECOGNITION_DISTRACTORS
+                and self._image_problem(target, item) is None)
+
+    def _similar_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
+        """Por ronda: la modelo, la pareja (misma emoción, otro aspecto) y una de
+        otra emoción por opción restante, distintas entre sí. Conserva las
+        guardadas si todas siguen sirviendo; si no, las elige de nuevo."""
+        if self.appearance is None:
+            raise ValueError("Este servidor no puede comprobar las imágenes de «Busca la misma emoción»")
+        looks: dict[str, tuple[str, tuple[int, ...] | None]] = {}
+
+        def look(item: Stimulus) -> tuple[str, tuple[int, ...] | None]:
+            if item.id not in looks:
+                _, data = self.stimuli.image(user, item.id)
+                looks[item.id] = (hashlib.sha256(data).hexdigest(), self.appearance(data))
+            return looks[item.id]
+
+        def distance(a: Stimulus, b: Stimulus) -> float | None:
+            (hash_a, look_a), (hash_b, look_b) = look(a), look(b)
+            if hash_a == hash_b:
+                return 0.0
+            if look_a is None or look_b is None or len(look_a) != len(look_b):
+                return None
+            return sum(abs(x - y) for x, y in zip(look_a, look_b)) / len(look_a)
+
+        def round_ok(model: Stimulus, match: Stimulus, others: list[Stimulus]) -> bool:
+            expressions = [item.expected_expression for item in others]
+            if (match.id == model.id or match.expected_expression != model.expected_expression
+                    or model.expected_expression in expressions or len(set(expressions)) != len(expressions)
+                    or len({model.id, match.id, *(item.id for item in others)}) != len(others) + 2):
+                return False
+            apart = distance(model, match)
+            if apart is None or apart < SAME_IMAGE_DISTANCE:
+                return False  # La misma imagen otra vez, o no se pudo comparar.
+            near = [distance(model, item) for item in others]
+            # Otra opción se parece más a la modelo: el aspecto no lleva a la respuesta.
+            return all(value is not None for value in near) and min(near) < apart
+
+        size = step.images_per_round
+        stored: list[Stimulus | None] = []
+        for stimulus_id in step.game_stimulus_ids:
+            try:
+                item = self.stimuli.get(user, stimulus_id)
+            except StimulusNotFound:
+                item = None
+            stored.append(item if self._game_fits(target, item) else None)
+        if len(stored) == step.rounds * size and all(stored):
+            blocks = [stored[index:index + size] for index in range(0, len(stored), size)]
+            if all(round_ok(block[0], block[1], list(block[2:])) for block in blocks):
+                return step
+
+        chooser = random.Random()
+        pool: defaultdict[str, list[Stimulus]] = defaultdict(list)
+        for item in self.stimuli.list_for(user, target.for_children):
+            if self._game_fits(target, item):
+                pool[item.expected_expression].append(item)
+        for items in pool.values():
+            chooser.shuffle(items)
+        used: set[str] = set()
+        counts: Counter[str] = Counter()
+        chosen: list[str] = []
+        for _ in range(step.rounds):
+            found = None
+            for expression in sorted(pool, key=lambda key: (counts[key], chooser.random())):
+                for model in pool[expression]:
+                    if model.id in used:
+                        continue
+                    # Pareja: la de la misma emoción que menos se parece a la modelo.
+                    matches = sorted((item for item in pool[expression] if item.id not in used | {model.id}),
+                                     key=lambda item: -(distance(model, item) or 0.0))
+                    # Otras opciones: de cada otra emoción, la que más se parece a la modelo.
+                    others = []
+                    for other in sorted(key for key in pool if key != expression):
+                        candidates = [item for item in pool[other] if distance(model, item) is not None]
+                        if candidates:
+                            others.append(min(candidates, key=lambda item: distance(model, item)))
+                    others.sort(key=lambda item: distance(model, item))
+                    others = others[:step.option_count - 1]
+                    if len(others) < step.option_count - 1:
+                        continue
+                    match = next((item for item in matches if round_ok(model, item, others)), None)
+                    if match is not None:
+                        found = (model, match, others)
+                        break
+                if found:
+                    break
+            if found is None:
+                break
+            model, match, others = found
+            used |= {model.id, match.id}
+            counts[model.expected_expression] += 1
+            chosen.extend([model.id, match.id, *(item.id for item in others)])
+        if len(chosen) < step.rounds * size:
+            audience = " «Para niños»" if target.for_children else ""
+            done = len(chosen) // size
+            raise ValueError(
+                f"«Busca la misma emoción» necesita, en cada una de sus {step.rounds} rondas, dos imágenes "
+                f"emocionales aprobadas{audience} de la misma emoción que se vean distintas (otra cara, otros "
+                f"colores) y {step.option_count - 1} de otras emociones; el banco alcanza para {done}. "
+                "Agrega imágenes al banco, baja las rondas o las opciones")
+        return replace(step, game_stimulus_ids=tuple(chosen))
+
+    def _matching_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
         """Una imagen emocional aprobada por ronda. Conserva las indicadas que
         sirven y completa con otras del banco, primero de emociones que todavía no
         aparecen."""

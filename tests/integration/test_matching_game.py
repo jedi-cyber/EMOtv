@@ -14,7 +14,8 @@ from alembic.operations import Operations
 import pytest
 from sqlalchemy import inspect
 
-from emotv.domain.guided_session import GAME_NOTICE, GAME_QUESTION, GAME_RETRY, GameOutcome, GameResult
+from emotv.domain.guided_session import (GAME_NOTICE, GAME_QUESTION, GAME_RETRY, GAME_RETRY_HELPED, GameOutcome,
+                                         GameResult)
 from emotv.domain.protocol import ProtocolStep, StepKind
 from emotv.infrastructure.persistence.postgres_practice_repositories import PostgresProtocolRepository
 from tests.integration.test_guided_sessions import begin_steps, frame, guided, post, state, view, wait
@@ -183,6 +184,15 @@ def test_la_ayuda_quita_una_opcion_que_no_es(env):  # noqa: F811
     assert sum(1 for item in options if item["available"]) == 3
     assert act(env, token, "answer", info["removed"]).status_code == 422
 
+
+
+def test_tras_pedir_ayuda_no_se_le_vuelve_a_ofrecer(env):  # noqa: F811
+    bank(env)
+    session_id, token = start(env, game(rounds=2, options=3))
+    assert act(env, token, "help").status_code == 200
+    assert act(env, token, "answer", wrong(round_info(env, session_id))).status_code == 200
+    block = view(env, token).json()["game"]
+    assert block["state"] == "retry" and block["message"] == GAME_RETRY_HELPED and block["can_help"] is False
 
 def test_quien_conduce_registra_la_emocion_y_pasa_de_ronda(env):  # noqa: F811
     bank(env)

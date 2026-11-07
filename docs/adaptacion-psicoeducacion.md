@@ -20,6 +20,10 @@ visión con modelos preentrenados, Emi, la aplicación web y el aplicativo Andro
 | Dibujo táctil en la web (bloque 4 del pedido) | Actividad completa el 2026-11-06, sin sesión ni registro; comprobada en el navegador (ver §15) |
 | 4a. El dibujo como paso de un protocolo, con registro mínimo | Hecho el 2026-11-06 (§15, «Subtarea 4a»); migración 20261106_40 |
 | 4. Primer juego (emparejar; bloque 5 del pedido) | Hecho el 2026-11-06 (§16); migración 20261106_41; contrato móvil 4.6 |
+| Segundo juego (busca la misma emoción; bloque 6 del pedido) | Hecho el 2026-11-07 (§17); migración 20261107_42; contrato móvil 4.7 |
+| Resultados educativos en reportes y estadísticas (bloque 7 del pedido) | Hecho el 2026-11-07 (§18); sin migración; contrato móvil 4.8 |
+| Android como pantalla de la persona (bloque 8 del pedido) | Hecho el 2026-11-07 (§19 y §20); migración 20261107_43; contrato móvil 4.9 |
+| Dibujo táctil en Android (bloque 9 del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§20); contrato móvil 4.10, solo documentación |
 | 5. Reportes, estadísticas y contrato móvil 4.5 | Pendiente |
 | 6. Android sigue el contrato 4.5 | Pendiente |
 | 7. Emi, guía de uso y plantillas | Pendiente |
@@ -890,3 +894,191 @@ apoyo está activo); no hay que arrastrar.
   protege: queda marcado como «necesita imagen».
 - `list_current_using` aún no ve las imágenes de los juegos.
 - Que Psicología revise los textos del juego.
+
+## 17. Bloque 6: busca la misma emoción
+
+**Qué cambió.** Un segundo juego en el mismo paso y el mismo motor que el de
+emparejar (`kind` `game`, `game_type` `similar`). No hay un motor aparte: la
+ayuda, la repetición, el tiempo, la parada y los contadores son los mismos.
+Arriba se ve una cara modelo; abajo, botones con caras («Cara 1», «Cara 2»…).
+La persona toca la que muestra la misma emoción.
+
+- Las opciones no dicen su emoción ni llevan pictograma: eso daría la
+  respuesta. La emoción se nombra al terminar la ronda, con su explicación.
+- Dificultad en el editor: rondas (2 a 6) y caras para elegir (2 a 4).
+- Quien conduce ve la emoción de cada cara («Cara 2 (Alegría)») y puede
+  registrar la que la persona señaló.
+- Si la persona ya pidió ayuda, el reintento ya no se la ofrece (también en el
+  juego de emparejar).
+
+**Imágenes: cómo se evita resolver por identidad visual.** EMOtv las elige al
+guardar el protocolo, del banco aprobado (y «Para niños» si corresponde).
+
+- La pareja nunca es la misma imagen: ni el mismo identificador, ni el mismo
+  archivo, ni una copia recodificada o con otro tamaño. Se compara una
+  miniatura en color de 16 × 16 (`stimulus_appearance`, en infraestructura).
+  Con el banco inicial, una copia difiere en menos de 1 (de 0 a 255); la misma
+  emoción en otra variante, en 28 o más. El corte es 8.
+- La pareja es la imagen de esa emoción que menos se parece a la modelo. Las
+  otras caras son de emociones distintas y se eligen entre las que más se le
+  parecen. Si la pareja quedara como la opción más parecida, la ronda no se
+  usa. Así el parecido apunta a una opción equivocada y solo la emoción lleva a
+  la respuesta.
+- La miniatura compara colores y composición; no estima la expresión ni
+  reconoce a nadie. No detecta una copia recortada o reflejada.
+
+**Lo que no se comprueba.** La emoción de cada imagen es la que indicó quien la
+subió y aprobó el docente. EMOtv no comprueba que la imagen la muestre, y el
+material no fue validado por especialistas.
+
+**Material disponible.** Cada ronda necesita dos imágenes distintas de una
+emoción y una de otra emoción por cada cara restante.
+
+- El banco inicial tiene 6 emociones con 3 variantes cada una. Eso alcanza para
+  6 rondas de emociones distintas, con hasta 4 caras.
+- No tiene «cara tranquila»: con solo el banco inicial, esa emoción no aparece.
+- Si el banco no alcanza, el protocolo no se guarda y el mensaje dice para
+  cuántas rondas alcanza.
+
+**Comprobado.**
+
+- Pruebas: `tests/integration/test_similar_game.py` (13) y
+  `web/tests/similar_game.test.tsx` (4).
+- La migración 42 se aplicó, se revirtió y se volvió a aplicar en PostgreSQL.
+- Recorrido en el navegador (sesión S-53ZMK2, para niños, 3 rondas y 3 caras,
+  con los 18 dibujos del banco inicial subidos como prueba):
+  - en cada ronda, la pareja se veía distinta de la modelo y las otras caras se
+    le parecían más;
+  - en la ronda 1 se pidió ayuda, se eligió una cara de otra emoción y después
+    la correcta;
+  - en la ronda 2 se mostró la pareja tras dos errores;
+  - en la ronda 3 terminó el tiempo y se registró «Jugó 2 de 3 rondas».
+  - La pantalla de la persona solo envió `POST .../game` y pidió las imágenes.
+
+**Pendiente.**
+
+- Probarlo en un teléfono o una tableta físicos, y con niños, bajo la revisión
+  de Psicología.
+- Que Psicología revise si las imágenes del banco muestran con claridad su
+  emoción.
+- Mismos pendientes del §16 sobre imágenes de juegos borradas del todo.
+
+## 18. Bloque 7: resultados educativos
+
+**Qué muestra.** El detalle de la sesión, el reporte, su impresión y el
+aplicativo móvil abren con «Resultados educativos». Es un resumen por tipo de
+actividad:
+
+- reconocimiento;
+- dibujo: cuántos se completaron y qué emoción se señaló;
+- juegos: rondas, emparejadas, ayudas e intentos, contando las repeticiones;
+- práctica facial;
+- actividades omitidas, interrumpidas o que no llegaron a aplicarse, con su
+  paso.
+
+Lleva un aviso fijo: no es un puntaje, no compara con otras sesiones y no
+permite concluir nada sobre la persona.
+
+Las estadísticas agregan dos secciones, «Dibujos» y «Juegos». Las dos cuentan
+sesiones; no hay filas por persona.
+
+**Cómo se calcula.**
+
+- Al leer, de las tablas que ya existían: no hay migración ni copia guardada.
+  Por eso el reporte, el detalle y el móvil dicen lo mismo.
+- Las sesiones antiguas, o sin actividades, se leen igual que antes: sin el
+  resumen.
+- Del dibujo solo se guarda la emoción señalada y los tiempos. El servidor
+  rechaza cualquier otro campo.
+- Los permisos son los de siempre: quien condujo y su docente. Ni otro docente,
+  ni `admin`, ni `superadmin`.
+
+**Comprobado.** Pruebas: `tests/integration/test_educational_results.py` (9) y
+`web/tests/educational_results.test.tsx` (5). Cubren:
+
+- una sesión con todos los tipos, una omisión, una interrupción y un paso sin
+  aplicar;
+- que el reporte coincida con las métricas y con el móvil;
+- permisos, sesiones antiguas, persistencia y estadísticas.
+
+**Pendiente.** Que Psicología revise la redacción de las frases del resumen.
+
+## 19. Bloque 8: Android como pantalla de la persona
+
+**Cómo se vincula.**
+
+- Quien conduce pulsa «Vincular Android» en la web. Recibe un código de 8
+  caracteres que sirve una vez y vence a los 5 minutos.
+- El aplicativo lo canjea sin iniciar sesión por el enlace de la pantalla de la
+  persona: es el mismo mecanismo que el enlace web.
+- Desde ese momento, la web informa que la pantalla está en Android.
+
+**Reglas.**
+
+- El enlace solo abre la pantalla de esa sesión. No sirve para sesiones,
+  reportes ni estadísticas.
+- Un código o un enlace nuevo invalida el anterior.
+- Al terminar o detener la sesión, el enlace se cierra.
+- Para reconectarse se usa el mismo enlace.
+- Una respuesta repetida responde `409` y no se cuenta dos veces.
+- Los códigos equivocados se limitan por red.
+- Solo se vinculan sesiones sin cámara, o en las que se siguió sin cámara.
+  Android nunca envía imágenes.
+- No se registra a la persona. La consulta y la revisión docente no cambian.
+
+**Datos.** La migración 43 agrega tres columnas a `guided_runs`: el SHA-256
+del código, su vencimiento y el dispositivo (`web` o `android`). El código en
+claro no se guarda.
+
+**Comprobado.** Pruebas: `tests/integration/test_android_participation.py`
+(14) y `web/tests/android_screen.test.tsx` (3).
+
+**Pendiente.**
+
+- Los juegos en Android quedan para un bloque posterior.
+- La migración 43 en PostgreSQL y una prueba con un dispositivo real.
+
+## 20. Bloque 9: dibujo táctil en Android
+
+Está en el repositorio `EMOtv-android` (Kotlin y Compose), dentro de la
+pantalla de la persona. Esa pantalla también se completó ahí: se abre desde el
+inicio de sesión sin iniciar sesión, se escribe el código y se ve la actividad.
+
+**Igual que la web.**
+
+- Herramientas: siete colores con nombre, tres grosores, borrador, deshacer,
+  limpiar con confirmación, «Terminé» y después elegir la emoción.
+- Dibuja un solo dedo y hay un tope de 40.000 puntos.
+- Repetir lo decide quien conduce: un `round` nuevo empieza un lienzo vacío.
+
+**Ciclo de vida.**
+
+- El dibujo vive en el `ViewModel`: sobrevive al giro de la pantalla y al
+  segundo plano.
+- Nunca se guarda en disco ni en el estado guardado del sistema.
+- En segundo plano no se consulta al servidor; al volver se reconecta con el
+  mismo enlace.
+- Salir con un dibujo en pantalla pide confirmación.
+
+**Política de datos temporales** (la misma que la web). El dibujo se borra en
+estos casos:
+
+- al terminar el paso, por respuesta o por tiempo;
+- al empezar otro intento;
+- al pasar a otra actividad;
+- al terminar o detener la sesión;
+- al salir;
+- cuando el sistema destruye la pantalla.
+
+**Privacidad.**
+
+- Solo se envía `{"expression"}`. Un `409` se toma como ya recibida, así un
+  reintento tras un corte no duplica la respuesta.
+- No se usa la cámara y los juegos no cambian.
+- `FLAG_SECURE` en la versión final.
+- El cliente HTTP de la persona no lleva el token de la cuenta.
+
+**Comprobado.** 21 pruebas unitarias nuevas (`DrawingBoardTest` y
+`ParticipationViewModelTest`), `lintDebug` y `assembleDebug`.
+
+**Pendiente.** Probarlo con niños, bajo la revisión de Psicología.

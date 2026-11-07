@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiRequest } from "../api/http";
-import type { GameOutcome, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
+import type { AndroidCode, GameOutcome, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
@@ -13,7 +13,7 @@ import { gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusM
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
-import { gameSentence, practiceTargetNames } from "../stimuli/labels";
+import { gameSentence, gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 
 const POLL_MS = 1000;
 const phaseNames: Record<GuidedPhase, string> = {
@@ -94,6 +94,7 @@ export function GuidedConductorPage() {
   const [note, setNote] = useState("");
   const [verbal, setVerbal] = useState("");
   const [busy, setBusy] = useState(false);
+  const [androidCode, setAndroidCode] = useState<AndroidCode | null>(null);
   const [error, setError] = useState("");
   const stateRef = useRef<GuidedState | null>(null);
   stateRef.current = state;
@@ -159,7 +160,19 @@ export function GuidedConductorPage() {
     finally { setBusy(false); }
   }
 
-  const viewUrl = viewToken ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
+  async function newAndroidCode() {
+    setBusy(true);
+    try { setAndroidCode(await apiRequest<AndroidCode>(`${base}/android-code`, { method: "POST", token })); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo crear el código."); }
+    finally { setBusy(false); }
+  }
+
+  const screen = state?.screen;
+  const onAndroid = screen?.device === "android";
+  // El código se muestra mientras no se canjee ni venza; al canjearlo, el servidor deja de informarlo.
+  const pendingCode = androidCode && screen?.pairing_expires_at ? androidCode.code : null;
+  // Con la pantalla en Android, el enlace web guardado ya no vale.
+  const viewUrl = viewToken && !onAndroid ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
@@ -184,6 +197,12 @@ export function GuidedConductorPage() {
         : `${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames]}${item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}${item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}${item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}`}</span>
     </li>);
   const targetName = (key?: string | null) => practiceTargetNames[key ?? ""] ?? "";
+  const similarGame = state?.game?.game_type === "similar";
+  // Al buscar la misma emoción, la clave es el lugar de la cara: se muestra con su emoción.
+  const optionName = (key: string) => {
+    const detail = state?.game?.option_details?.find((item) => item.key === key);
+    return similarGame && detail ? `Cara ${key} (${targetName(detail.expression)})` : targetName(key);
+  };
   const cameraStep = (state?.phase === "stimuli" && (isPractice || step?.step_kind === "stimulus")) || state?.phase === "calibration";
   // Seguir sin cámara: en la calibración o en un paso que la usa, si la sesión todavía la usa.
   const canContinueWithoutCamera = active && state?.has_protocol && state.uses_camera !== false && !state.camera_off && cameraStep;
@@ -201,7 +220,16 @@ export function GuidedConductorPage() {
       {viewUrl ? <div className="inline-actions">
         <Button onClick={() => window.open(viewUrl, "emotv-persona", "noopener")}>Abrir la pantalla de la persona</Button>
         <Button variant="ghost" onClick={() => { void navigator.clipboard?.writeText(viewUrl); }}>Copiar enlace</Button>
-      </div> : <Button disabled={busy} onClick={() => { void newLink(); }}>Crear el enlace de la pantalla de la persona</Button>}
+      </div> : <Button disabled={busy} onClick={() => { void newLink(); }}>
+        {onAndroid ? "Volver a abrirla en la web" : "Crear el enlace de la pantalla de la persona"}</Button>}
+      {onAndroid && <p role="status"><strong>La pantalla de la persona está abierta en Android.</strong> Si se cierra o se corta la red, el aplicativo vuelve al mismo paso.</p>}
+      {screen?.can_pair_android && <div className="form-stack">
+        {pendingCode
+          ? <p className="session-code" role="status" aria-live="polite">Código para Android: <strong>{pendingCode}</strong> · Sirve una sola vez y vence en {Math.round((androidCode?.expires_in ?? 300) / 60)} minutos.</p>
+          : <p className="muted">En una tableta o un teléfono Android, la persona puede ver la actividad en el aplicativo EMOtv. Al vincularlo, la pantalla abierta hasta ahora deja de valer.</p>}
+        <div className="inline-actions"><Button variant="secondary" disabled={busy} onClick={() => { void newAndroidCode(); }}>
+          {pendingCode ? "Pedir otro código" : onAndroid ? "Vincular otro dispositivo Android" : "Vincular Android"}</Button></div>
+      </div>}
       {hasPractice && <Checkbox checked={state.practice_feedback ?? true} disabled={busy}
         onChange={(event) => { void act("/practice-feedback", { visible: event.target.checked }); }}>
         Mostrar la señal a la persona en los ejercicios de práctica</Checkbox>}
@@ -303,9 +331,11 @@ export function GuidedConductorPage() {
     </div>}
 
     {step && state && isGame && <div className="card form-stack">
-      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · juego de emparejar{attemptCaption(state)}{supportsCaption(state)}</p>
-      <h2>Empareja la emoción{state.game ? ` · ronda ${state.game.round} de ${state.game.rounds}` : ""}</h2>
-      <p className="muted">La persona relaciona cada imagen con el nombre de su emoción. Sin puntaje: si no la encuentra, se le muestra con su explicación. No se analiza la cámara.</p>
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · {similarGame ? "juego de la misma emoción" : "juego de emparejar"}{attemptCaption(state)}{supportsCaption(state)}</p>
+      <h2>{similarGame ? "Busca la misma emoción" : "Empareja la emoción"}{state.game ? ` · ronda ${state.game.round} de ${state.game.rounds}` : ""}</h2>
+      <p className="muted">{similarGame
+        ? "La persona ve una cara arriba y elige, entre otras caras, la que muestra la misma emoción. La pareja es otra imagen, no la misma repetida."
+        : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. No se analiza la cámara.</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.game && (state.game.outcome
         ? <p role="status">{state.game.outcome === "completed" ? "Terminó el juego." : "Terminó el tiempo del juego."} {gameSentence({
@@ -313,13 +343,13 @@ export function GuidedConductorPage() {
           first_try: state.game.first_try, help_used: state.game.help_used })} {state.waiting_for_conductor
           ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El paso avanza en un momento."}</p>
         : <>
-          <p>Emoción de la imagen: {targetName(state.game.target_expression)}.{state.game.tried.length > 0 ? ` Ya eligió: ${state.game.tried.map(targetName).join(", ")}.` : ""}{state.game.helped ? " Pidió ayuda." : ""}</p>
+          <p>{similarGame ? "Emoción de la cara de arriba" : "Emoción de la imagen"}: {targetName(state.game.target_expression)}.{state.game.tried.length > 0 ? ` Ya eligió: ${state.game.tried.map(optionName).join(", ")}.` : ""}{state.game.helped ? " Pidió ayuda." : ""}</p>
           {state.game.state === "playing" || state.game.state === "retry"
             ? <>
-              <p>La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:</p>
+              <p>{similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
               <div className="inline-actions">{state.game.options.filter((key) => !state.game?.tried.includes(key) && key !== state.game?.removed)
                 .map((key) => <Button key={key} disabled={busy}
-                  onClick={() => { void act("/game", { action: "answer", expression: key }); }}>{targetName(key)}</Button>)}
+                  onClick={() => { void act("/game", { action: "answer", expression: key }); }}>{optionName(key)}</Button>)}
                 {!state.game.helped && <Button variant="ghost" disabled={busy} onClick={() => { void act("/game", { action: "help" }); }}>Dar la ayuda</Button>}
               </div>
             </>
@@ -412,10 +442,10 @@ export function GuidedConductorPage() {
     </section>}
 
     {gameResults.length > 0 && <section className="card">
-      <h2>Juegos de emparejar</h2>
+      <h2>Juegos</h2>
       <p className="muted">Describe lo que ocurrió; no es un puntaje.</p>
       <ul className="card-list">{gameResults.map((item) => <li key={item.step_index} className="row-card">
-        <span>Paso {item.step_index + 1} · {gameOutcomeNames[item.outcome]}. {gameSentence(item)}
+        <span>Paso {item.step_index + 1} · {gameTypeNames[item.game_type] ?? gameTypeNames.matching} · {gameOutcomeNames[item.outcome]}. {gameSentence(item)}
           {item.by_conductor > 0 ? ` · ${item.by_conductor} registrada${item.by_conductor === 1 ? "" : "s"} por quien conduce` : ""}</span>
         {repeatsOf(item.step_index, "game").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "game")}</ul>}
       </li>)}</ul>

@@ -21,7 +21,7 @@ from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
 from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
                                    ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
-                                   PRACTICE_TARGETS)
+                                   MAX_RECOGNITION_OPTIONS, PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -76,11 +76,13 @@ class StepModel(BaseModel):
     # Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
     # y la expresión pedida la toma el servidor de la imagen.
     imitate: bool = False
-    # Solo un juego: tipo («matching»), rondas y la imagen de cada ronda. Las
-    # imágenes las elige el servidor; al editar se envían las que ya tenía.
-    game_type: Literal["matching"] | None = None
+    # Solo un juego: tipo («matching» o «similar»), rondas y las imágenes de las
+    # rondas (en «similar», la modelo y una por opción). Las elige el servidor;
+    # al editar se envían las que ya tenía.
+    game_type: Literal["matching", "similar"] | None = None
     rounds: int | None = None
-    game_stimulus_ids: list[str] = Field(default_factory=list, max_length=MAX_GAME_ROUNDS)
+    game_stimulus_ids: list[str] = Field(default_factory=list,
+                                         max_length=MAX_GAME_ROUNDS * (MAX_RECOGNITION_OPTIONS + 1))
 
 
 class SupportsModel(BaseModel):

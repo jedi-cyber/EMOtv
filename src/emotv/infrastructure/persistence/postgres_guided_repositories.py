@@ -55,7 +55,9 @@ class PostgresGuidedSessionRepository:
             ended_at=_aware(row.ended_at), stop_reason=row.stop_reason,
             practice_feedback=row.practice_feedback is not False, camera_off_at=_aware(row.camera_off_at),
             step_attempt=row.step_attempt or 1,
-            game_progress=dict(row.game_progress) if row.game_progress else None)
+            game_progress=dict(row.game_progress) if row.game_progress else None,
+            pairing_hash=row.pairing_hash, pairing_expires_at=_aware(row.pairing_expires_at),
+            view_device=row.view_device or "web")
 
     def save_run(self, run: GuidedRun) -> GuidedRun:
         with self._factory.begin() as db:
@@ -79,6 +81,9 @@ class PostgresGuidedSessionRepository:
             row.camera_off_at = run.camera_off_at
             row.step_attempt = run.step_attempt
             row.game_progress = dict(run.game_progress) if run.game_progress else None
+            row.pairing_hash = run.pairing_hash
+            row.pairing_expires_at = run.pairing_expires_at
+            row.view_device = run.view_device
         return run
 
     def get_run(self, session_id: str) -> GuidedRun | None:
@@ -89,6 +94,11 @@ class PostgresGuidedSessionRepository:
     def get_run_by_token_hash(self, token_hash: str) -> GuidedRun | None:
         with self._factory() as db:
             row = db.scalars(select(GuidedRunRecord).where(GuidedRunRecord.view_token_hash == token_hash)).first()
+            return None if row is None else self._run(row)
+
+    def get_run_by_pairing_hash(self, code_hash: str) -> GuidedRun | None:
+        with self._factory() as db:
+            row = db.scalars(select(GuidedRunRecord).where(GuidedRunRecord.pairing_hash == code_hash)).first()
             return None if row is None else self._run(row)
 
     # --- Capturas -----------------------------------------------------------------

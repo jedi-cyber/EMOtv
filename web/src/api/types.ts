@@ -116,7 +116,7 @@ export interface ProtocolStep {
    * y la expresión pedida la pone el servidor, la de la imagen. */
   imitate?: boolean;
   /** Solo un juego: tipo, rondas e imagen de cada ronda (las elige el servidor). */
-  game_type?: "matching" | null;
+  game_type?: GameType | null;
   rounds?: number | null;
   game_stimulus_ids?: string[];
 }
@@ -313,15 +313,21 @@ export interface GuidedDrawing {
 }
 
 export type GameOutcome = "completed" | "timed_out" | "skipped" | "stopped";
+/** «matching»: imagen con el nombre de su emoción; «similar»: imagen modelo con otra de la misma emoción. */
+export type GameType = "matching" | "similar";
 export type GameState = "playing" | "retry" | "matched" | "shown" | "finished";
 
 /** Juego en curso para quien conduce: la ronda, la emoción de la imagen y los contadores. */
 export interface GuidedGame {
   round: number;
   rounds: number;
-  stimulus_id: string;
+  game_type?: GameType;
+  /** La imagen de la ronda (la modelo, al buscar la misma emoción). */
+  stimulus_id: string | null;
   target_expression: string | null;
+  /** Claves de las opciones: la emoción, o el lugar («1», «2»…) al buscar la misma emoción. */
   options: string[];
+  option_details?: { key: string; expression: string; stimulus_id: string | null }[];
   tried: string[];
   removed: string | null;
   state: GameState;
@@ -336,7 +342,7 @@ export interface GuidedGame {
 /** Solo contadores del juego: no es un puntaje. */
 export interface GuidedGameResult {
   step_index: number;
-  game_type: "matching";
+  game_type: GameType;
   outcome: GameOutcome;
   rounds_total: number;
   rounds_done: number;
@@ -389,6 +395,8 @@ export interface GuidedState {
   supports?: ProtocolSupports | null;
   /** «Esperar a quien conduce»: el paso terminó y sigue al pulsar «Seguir». */
   waiting_for_conductor?: boolean;
+  /** Dónde está abierta la pantalla de la persona y si hay un código de Android sin canjear. */
+  screen?: GuidedScreen;
   /** Intento del reconocimiento o del ejercicio en curso (1 el primero). */
   attempt?: number | null;
   /** El paso terminó y todavía se puede repetir. */
@@ -498,11 +506,13 @@ export interface ParticipantGame {
   round: string;
   number: number;
   total: number;
+  /** Sin él, «matching». Al buscar la misma emoción, cada opción es una imagen. */
+  game_type?: GameType;
   question: string;
   /** «ended»: venció el tiempo del juego. */
   state: GameState | "ended";
   options: { key: string; label: string; available: boolean }[];
-  /** La emoción de la imagen, solo al terminar la ronda. */
+  /** La clave de la opción correcta, solo al terminar la ronda. */
   answer: string | null;
   message: string | null;
   explanation?: string | null;
@@ -528,6 +538,30 @@ export interface ParticipantViewState {
   uses_camera?: boolean;
   /** Solo aparece si el protocolo tiene algún apoyo que cambia la pantalla. */
   supports?: { pictograms: boolean; large_controls: boolean; read_aloud: boolean };
+  /** La actividad de ahora, sin respuestas (la usa Android). */
+  activity?: ParticipantActivity | null;
+}
+
+export interface ParticipantActivity {
+  kind: "waiting" | "questionnaire" | "stimulus" | "practice" | "recognition" | "drawing" | "game" | "live" | "finished";
+  name: string;
+  number: number | null;
+  total: number | null;
+}
+
+/** La pantalla de la persona: en la web (enlace) o en Android (código de un solo uso). */
+export interface GuidedScreen {
+  device: "web" | "android" | null;
+  /** Hay un código para Android sin canjear hasta esa hora. */
+  pairing_expires_at: string | null;
+  /** Falso si la sesión usa la cámara, es un examen o ya terminó. */
+  can_pair_android: boolean;
+}
+
+export interface AndroidCode {
+  code: string;
+  expires_at: string;
+  expires_in: number;
 }
 
 /** Un solo eje de tiempo, en segundos desde el inicio de la sesión. */
@@ -542,6 +576,8 @@ export interface SessionTimeline {
       /** Solo en un ejercicio de práctica (kind «practice») o un reconocimiento (kind «recognition»). */
       target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | GameOutcome | null;
       imitate?: boolean;
+      /** Solo en un juego (kind «game»). */
+      game_type?: GameType | null;
       seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
       /** Solo en un juego (kind «game»): rondas y lo que ocurrió, en una frase. */
       rounds?: number | null; sentence?: string | null;
@@ -646,7 +682,7 @@ export interface SessionDrawing {
 }
 
 export interface SessionGame {
-  exercises: { step_index: number; game_type: "matching"; rounds: number; option_count: number;
+  exercises: { step_index: number; game_type: GameType; rounds: number; option_count: number;
     /** null: la sesión no llegó a este paso. */
     outcome: GameOutcome | null; rounds_done: number | null; matched: number | null; first_try: number | null;
     help_used: number | null; by_conductor: number | null; sentence: string | null }[];
@@ -671,6 +707,29 @@ export interface SessionMetrics {
   drawing?: SessionDrawing | null;
   /** Juegos de emparejar: solo contadores de rondas; null si no hubo. */
   game?: SessionGame | null;
+  /** Resultados educativos separados por tipo de actividad; null si no hubo actividades. */
+  educational?: SessionEducational | null;
+}
+
+/** Una actividad que no llegó a su final: omitida, interrumpida o sin aplicar. */
+export interface NotCompletedActivity {
+  step_index: number;
+  kind: "recognition" | "drawing" | "game" | "practice";
+  activity: string;
+  status: "skipped" | "stopped" | "not_reached";
+  label: string;
+}
+
+/** Resumen por tipo de actividad: solo cuenta y nombra; no es un puntaje. */
+export interface SessionEducational {
+  recognition: { exercises: number; applied: number; matched: number; timed_out: number; sentence: string } | null;
+  drawing: { exercises: number; completed: number; timed_out: number;
+    indicated: { expression: string; count: number }[]; sentence: string } | null;
+  games: { games: number; played: number; attempts: number; rounds_total: number; rounds_done: number;
+    matched: number; first_try: number; help_used: number; sentence: string } | null;
+  practice: { exercises: number; applied: number; achieved: number; sentence: string } | null;
+  not_completed: { items: NotCompletedActivity[]; skipped: number; stopped: number; not_reached: number; sentence: string };
+  notice: string;
 }
 
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";
@@ -720,6 +779,11 @@ export interface QuestionStatistics {
   max_label?: string | null;
 }
 
+export interface StatisticsGameRow {
+  games: number; attempts: number; completed: number; timed_out: number; skipped: number; stopped: number;
+  rounds_total: number; rounds_done: number; matched: number; first_try: number; help_used: number; sentence: string;
+}
+
 export interface SessionStatistics {
   scope: "mine" | "group";
   notice: string;
@@ -747,6 +811,12 @@ export interface SessionStatistics {
   } | null;
   /** Reconocimientos de emociones, aparte; null si no hubo. */
   recognition?: { sessions: number; totals: RecognitionTotals; by_target: RecognitionRow[]; notice: string } | null;
+  /** Dibujos: cuántos terminaron con una emoción señalada y cuáles; null si no hubo. */
+  drawing?: { sessions: number; totals: { exercises: number; answered: number; timed_out: number; skipped: number;
+    stopped: number; sentence: string }; by_expression: { expression: string; count: number }[]; notice: string } | null;
+  /** Juegos: contadores de rondas e intentos, en total y por tipo; null si no hubo. */
+  games?: { sessions: number; totals: StatisticsGameRow; by_type: (StatisticsGameRow & { game_type: GameType })[];
+    notice: string } | null;
 }
 
 /** Examen simulado: lo crea un docente; cada estación es una sesión con su código. */

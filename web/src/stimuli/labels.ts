@@ -46,6 +46,12 @@ export const DEFAULT_GAME = { rounds: 3, option_count: 2, exposure_seconds: 30 }
 export const MIN_GAME_ROUNDS = 2;
 export const MAX_GAME_ROUNDS = 6;
 
+/** Nombre de cada juego, para títulos y listas. */
+export const gameTypeNames: Record<string, string> = {
+  matching: "Juego de emparejar",
+  similar: "Juego: busca la misma emoción",
+};
+
 /** Lo que ocurrió en un juego, sin puntaje (igual que el servidor). */
 export function gameSentence(item: { rounds_total: number; rounds_done: number; matched: number; first_try: number; help_used: number }) {
   const helped = item.help_used === 0 ? "no usó la ayuda" : `usó la ayuda ${item.help_used} ${item.help_used === 1 ? "vez" : "veces"}`;

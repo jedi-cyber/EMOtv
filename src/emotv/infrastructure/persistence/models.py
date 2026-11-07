@@ -469,7 +469,8 @@ class QuestionnaireResponseRecord(Base):
 
 
 # El dibujo, sin imagen ni opciones que configurar (migración 20261106_40).
-# El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41).
+# El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41);
+# «Busca la misma emoción» (game_type 'similar', migración 20261107_42).
 PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game')"
 PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game') OR stimulus_id IS NOT NULL"
 # Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
@@ -483,7 +484,7 @@ PROTOCOL_STEP_PRACTICE = (
     "(kind = 'drawing' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count IS NULL AND capture_after_seconds = 0) OR "
     "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
-    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type = 'matching' "
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type IN ('matching', 'similar') "
     "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL)) "
     "AND (situation IS NULL OR kind = 'recognition') "
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
@@ -541,6 +542,10 @@ class GuidedRunRecord(Base):
         CheckConstraint("(phase = 'stopped') = (stop_reason IS NOT NULL)", name="ck_guided_runs_stop_reason"),
         CheckConstraint("stop_reason IS NULL OR stop_reason IN ('participant', 'guardian', 'conductor')",
                         name="ck_guided_runs_stop_reason_value"),
+        CheckConstraint("view_device IN ('web', 'android')", name="ck_guided_runs_view_device"),
+        CheckConstraint("(pairing_hash IS NULL) = (pairing_expires_at IS NULL)",
+                        name="ck_guided_runs_pairing"),
+        UniqueConstraint("pairing_hash", name="uq_guided_runs_pairing_hash"),
     )
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
     owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -562,6 +567,10 @@ class GuidedRunRecord(Base):
     step_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     # Juego de emparejar en curso: ronda y contadores (tamaño fijo).
     game_progress: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Vinculación de Android: solo el SHA-256 del código, su vencimiento y el dispositivo.
+    pairing_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pairing_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    view_device: Mapped[str] = mapped_column(String(8), nullable=False, default="web", server_default="web")
 
 
 class ExpressionCaptureRecord(Base):
@@ -696,7 +705,7 @@ class GameResultRecord(Base):
         UniqueConstraint("session_id", "step_index", "attempt", name="uq_game_results_session_step_attempt"),
         CheckConstraint("outcome IN ('completed', 'timed_out', 'skipped', 'stopped')",
                         name="ck_game_results_outcome"),
-        CheckConstraint("game_type = 'matching'", name="ck_game_results_type"),
+        CheckConstraint("game_type IN ('matching', 'similar')", name="ck_game_results_type"),
         CheckConstraint("first_try >= 0 AND first_try <= matched AND matched <= rounds_done "
                         "AND rounds_done <= rounds_total AND help_used >= 0 AND by_conductor >= 0",
                         name="ck_game_results_counts"),

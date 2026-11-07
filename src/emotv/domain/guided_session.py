@@ -111,8 +111,16 @@ DRAWING_OPTIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust
 # el juego sigue. Solo se guardan contadores (GameResult).
 GAME_QUESTION = "¿Qué emoción muestra esta cara?"
 GAME_RETRY = "Mira otra vez la cara. Puedes pedir ayuda."
+# Si ya pidió ayuda en la ronda, no se le vuelve a ofrecer.
+GAME_RETRY_HELPED = "Mira otra vez la cara."
 GAME_FOUND = "Lo encontraste: {answer}."
 GAME_SHOWN = "{answer}."
+# Buscar la misma emoción: la imagen modelo arriba y otras caras para elegir.
+SIMILAR_QUESTION = "¿Qué cara muestra la misma emoción que la de arriba?"
+SIMILAR_RETRY = "Mira otra vez la cara de arriba. Puedes pedir ayuda."
+SIMILAR_RETRY_HELPED = "Mira otra vez la cara de arriba."
+SIMILAR_FOUND = "Lo encontraste: las dos caras muestran la misma emoción, {answer}."
+SIMILAR_SHOWN = "Esta cara muestra la misma emoción: {answer}."
 GAME_FINISHED = "Terminaste el juego."
 GAME_TIME_UP = "Terminó el tiempo del juego."
 # Tras este número de opciones distintas a la de la imagen, se muestra la respuesta.
@@ -157,6 +165,14 @@ class GuidedPhase(str, Enum):
 
 
 TERMINAL_PHASES = frozenset({GuidedPhase.FINISHED, GuidedPhase.STOPPED})
+
+# Vinculación de un dispositivo Android como pantalla de la persona: quien
+# conduce pide un código en la web y el aplicativo lo canjea, una sola vez y
+# antes de que venza, por el enlace de esa pantalla. Sin 0/O ni 1/I/L.
+PAIRING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+PAIRING_LENGTH = 8
+PAIRING_SECONDS = 300
+VIEW_DEVICES = ("web", "android")
 EXAM_STATION_PHASES = frozenset({GuidedPhase.WAITING, GuidedPhase.READY, GuidedPhase.EXAM})
 
 
@@ -244,9 +260,18 @@ class GuidedRun:
     # Juego de emparejar en curso: ronda, opciones descartadas y contadores. De
     # tamaño fijo; se reinicia con cada paso o intento.
     game_progress: dict[str, Any] | None = None
+    # Código pendiente para vincular Android (solo su SHA-256) y cuándo vence.
+    pairing_hash: str | None = None
+    pairing_expires_at: datetime | None = None
+    # Dónde se abre la pantalla de la persona: el enlace web o Android.
+    view_device: str = "web"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", GuidedPhase(self.phase))
+        if self.view_device not in VIEW_DEVICES:
+            raise ValueError("La pantalla de la persona es web o Android")
+        if (self.pairing_hash is None) != (self.pairing_expires_at is None):
+            raise ValueError("Un código de vinculación tiene su vencimiento")
         _check_attempt(self.step_attempt)
         if self.stop_reason is not None:
             object.__setattr__(self, "stop_reason", StopReason(self.stop_reason))

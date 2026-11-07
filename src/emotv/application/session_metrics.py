@@ -380,3 +380,115 @@ def recognition_metrics(steps: Sequence[ProtocolStep],
         "by_target": recognition_by_target(found),
         "notice": RECOGNITION_NOTICE,
     }
+
+
+# --- Resultados educativos: un resumen por tipo de actividad ----------------------------------
+# Separa lo que ocurrió en cada tipo de actividad y lista las que no llegaron a su
+# final. Solo cuenta y nombra: no suma tipos distintos, no compara sesiones ni
+# personas y no saca conclusiones. Se arma con los bloques de arriba, así que el
+# reporte, el detalle y el aplicativo dicen siempre lo mismo.
+
+EDUCATIONAL_NOTICE = ("Resume lo que ocurrió en cada actividad de esta sesión. No es un puntaje, no compara "
+                      "con otras sesiones y no permite sacar conclusiones sobre la persona.")
+GAME_NAMES = {"matching": "Juego de emparejar", "similar": "Juego: busca la misma emoción"}
+# Estado de una actividad que no llegó a su final.
+NOT_COMPLETED = {"skipped": "Se omitió", "stopped": "Quedó interrumpida", None: "No llegó a aplicarse"}
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    return f"{count} {one if count == 1 else many}"
+
+
+def _activity(kind: str, exercise: dict[str, Any]) -> str:
+    if kind == "practice":
+        return "Haz la misma cara" if exercise.get("imitate") else "Práctica facial"
+    if kind == "game":
+        return GAME_NAMES.get(exercise.get("game_type") or "", "Juego")
+    return {"recognition": "Reconocimiento", "drawing": "Dibujo"}[kind]
+
+
+def not_completed_sentence(skipped: int, stopped: int, not_reached: int) -> str:
+    if skipped + stopped + not_reached == 0:
+        return "Todas las actividades llegaron a su final."
+    parts = []
+    if skipped:
+        parts.append(f"{_plural(skipped, 'actividad', 'actividades')} se "
+                     f"{'omitió' if skipped == 1 else 'omitieron'}")
+    if stopped:
+        parts.append(f"{_plural(stopped, 'quedó interrumpida', 'quedaron interrumpidas')}")
+    if not_reached:
+        parts.append(f"{_plural(not_reached, 'no llegó', 'no llegaron')} a aplicarse")
+    text = ", ".join(parts[:-1]) + (" y " if len(parts) > 1 else "") + parts[-1]
+    return text[:1].upper() + text[1:] + "."
+
+
+def educational_summary(metrics: dict[str, Any], game_attempts: dict[int, int] | None = None,
+                        names: dict[str, str] | None = None) -> dict[str, Any] | None:
+    """Resultados educativos de una sesión a partir de sus bloques de métricas;
+    None si el protocolo no tiene actividades. game_attempts: por paso, cuántos
+    intentos tuvo el juego (el primero y las repeticiones)."""
+    blocks = {kind: metrics.get(kind) for kind in ("recognition", "drawing", "game", "practice")}
+    if not any(blocks.values()):
+        return None
+    names = names or {}
+    game_attempts = game_attempts or {}
+    result: dict[str, Any] = {"recognition": None, "drawing": None, "games": None, "practice": None}
+
+    recognition = blocks["recognition"]
+    if recognition:
+        totals = recognition["totals"]
+        result["recognition"] = {"exercises": totals["exercises"], "applied": totals["applied"],
+                                 "matched": totals["matched"], "timed_out": totals["timed_out"],
+                                 "sentence": totals["sentence"]}
+
+    drawing = blocks["drawing"]
+    if drawing:
+        totals = drawing["totals"]
+        chosen: dict[str, int] = {}
+        for item in drawing["exercises"]:
+            if item["outcome"] == RecognitionOutcome.ANSWERED.value and item["chosen_expression"]:
+                chosen[item["chosen_expression"]] = chosen.get(item["chosen_expression"], 0) + 1
+        indicated = [{"expression": key, "count": count} for key, count in chosen.items()]
+        listed = ", ".join(f"{names.get(item['expression'], item['expression']).lower()} ({item['count']})"
+                           for item in indicated)
+        sentence = (f"Completó {totals['answered']} de {_plural(totals['exercises'], 'dibujo', 'dibujos')} "
+                    f"señalando una emoción" + (f": {listed}." if listed else "."))
+        result["drawing"] = {"exercises": totals["exercises"], "completed": totals["answered"],
+                             "timed_out": totals["timed_out"], "indicated": indicated, "sentence": sentence}
+
+    game = blocks["game"]
+    if game:
+        totals = game["totals"]
+        played = [item for item in game["exercises"] if item["outcome"] is not None]
+        attempts = sum(game_attempts.get(item["step_index"], 1) for item in played)
+        repeated = attempts - len(played)
+        sentence = totals["sentence"] or "Ningún juego llegó a empezar."
+        if repeated:
+            sentence += f" Se repitió {_plural(repeated, 'vez', 'veces')} (cuenta el primer intento)."
+        result["games"] = {"games": totals["games"], "played": len(played), "attempts": attempts,
+                           "rounds_total": totals["rounds_total"], "rounds_done": totals["rounds_done"],
+                           "matched": totals["matched"], "first_try": totals["first_try"],
+                           "help_used": totals["help_used"], "sentence": sentence}
+
+    practice = blocks["practice"]
+    if practice:
+        totals = practice["totals"]
+        result["practice"] = {"exercises": totals["exercises"], "applied": totals["applied"],
+                              "achieved": totals["achieved"], "sentence": totals["sentence"]}
+
+    items = []
+    for kind, block in blocks.items():
+        for exercise in (block or {}).get("exercises", ()):
+            outcome = exercise["outcome"]
+            if outcome in ("skipped", "stopped", None):
+                items.append({"step_index": exercise["step_index"], "kind": kind,
+                              "activity": _activity(kind, exercise), "status": outcome or "not_reached",
+                              "label": NOT_COMPLETED[outcome]})
+    items.sort(key=lambda item: item["step_index"])
+    counts = {status: sum(1 for item in items if item["status"] == status)
+              for status in ("skipped", "stopped", "not_reached")}
+    result["not_completed"] = {"items": items, **counts,
+                               "sentence": not_completed_sentence(counts["skipped"], counts["stopped"],
+                                                                  counts["not_reached"])}
+    result["notice"] = EDUCATIONAL_NOTICE
+    return result

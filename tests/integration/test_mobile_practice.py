@@ -68,8 +68,9 @@ def test_las_estadisticas_traen_la_practica_sin_desglose_por_usuario(env, mobile
     # Aparte de la coincidencia de estímulos; las claves de la revisión 4 siguen iguales.
     assert mine["coincidence"] == {"compared": 0, "matched": 0}
     assert set(mine) == {"scope", "notice", "few_sessions_notice", "sessions", "expressions", "coincidence", "practice",
-                         "recognition"}
+                         "recognition", "drawing", "games"}
     assert mine["recognition"] is None   # 4.2: sin reconocimientos, null
+    assert mine["drawing"] is None and mine["games"] is None   # 4.8: sin dibujos ni juegos, null
 
     group = get(mobile, "/mobile/statistics", "docente.a@example.com", scope="group").json()
     assert group["practice"]["totals"] == block["totals"]
@@ -93,4 +94,6 @@ def test_el_aplicativo_sigue_sin_conducir_sesiones_ni_recibir_cuadros(mobile):  
     assert writes == {"/mobile/auth/login", "/mobile/auth/refresh", "/mobile/auth/logout",
                       "/mobile/sessions/{session_id}/report", "/mobile/reports/{report_id}",
                       "/mobile/reports/{report_id}/submit", "/mobile/reports/{report_id}/comments",
-                      "/mobile/reports/{report_id}/return", "/mobile/reports/{report_id}/approve"}
+                      "/mobile/reports/{report_id}/return", "/mobile/reports/{report_id}/approve",
+                      # 4.9: canjea el código de la pantalla de la persona; no conduce ni recibe cuadros.
+                      "/mobile/participation"}

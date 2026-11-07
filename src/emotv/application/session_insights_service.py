@@ -12,10 +12,10 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import (drawing_metrics, game_metrics, game_sentence, practice_metrics,
-                                               recognition_metrics, stimulus_metrics)
+from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, game_sentence,
+                                               practice_metrics, recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.guided_session import GuidedPhase
+from emotv.domain.guided_session import RECOGNITION_NAMES, GuidedPhase
 from emotv.domain.protocol import Protocol
 from emotv.domain.session import EmotionalSession
 from emotv.domain.stimulus import Stimulus
@@ -70,19 +70,25 @@ class SessionInsightsService:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
             return {**stimulus_metrics((), {}, ()), "practice": None, "recognition": None, "drawing": None,
-                    "game": None}
+                    "game": None, "educational": None}
         stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
                    for step in protocol.steps}
         run = self.guided.get_run(session.id)
         skipped = [item["step_index"] for item in run.steps_log if item.get("skipped")] if run else []
-        return {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
-                                   self.guided.list_verbal(session.id), skipped),
-                # Aparte de la coincidencia de estímulos.
-                "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id)),
-                "recognition": recognition_metrics(protocol.steps,
-                                                   self.guided.list_recognition_results(session.id)),
-                "drawing": drawing_metrics(protocol.steps, self.guided.list_drawing_results(session.id)),
-                "game": game_metrics(protocol.steps, self.guided.list_game_results(session.id))}
+        metrics = {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
+                                      self.guided.list_verbal(session.id), skipped),
+                   # Aparte de la coincidencia de estímulos.
+                   "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id)),
+                   "recognition": recognition_metrics(protocol.steps,
+                                                      self.guided.list_recognition_results(session.id)),
+                   "drawing": drawing_metrics(protocol.steps, self.guided.list_drawing_results(session.id)),
+                   "game": game_metrics(protocol.steps, self.guided.list_game_results(session.id))}
+        # Resultados educativos: el mismo contenido, separado por tipo de actividad.
+        attempts: dict[int, int] = {}
+        for item in self.guided.list_game_attempts(session.id):
+            attempts[item.step_index] = max(attempts.get(item.step_index, 0), item.attempt)
+        metrics["educational"] = educational_summary(metrics, attempts, RECOGNITION_NAMES)
+        return metrics
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
         return self.session_metrics(self._allowed_session(user, session_id, METRICS))
@@ -170,7 +176,7 @@ class SessionInsightsService:
             if kind == "game":
                 game = games.get(index)
                 item.update(outcome=game.outcome.value if game else None,
-                            rounds=steps[index].rounds,
+                            rounds=steps[index].rounds, game_type=steps[index].game_type,
                             sentence=game_sentence(game.rounds_total, game.rounds_done, game.matched,
                                                    game.first_try, game.help_used) if game else None)
             if repeats.get(index):

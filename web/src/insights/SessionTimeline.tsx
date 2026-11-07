@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { AnswerValue, MarkerKind, SessionTimeline as Timeline } from "../api/types";
-import { practiceTargetNames } from "../stimuli/labels";
+import { gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 import { gameOutcomeNames, practiceOutcomeNames, recognitionOutcomeNames, secondsText } from "./StimulusMetrics";
 
 const WIDTH = 1000;
@@ -104,7 +104,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
       ? `Ejercicio de práctica: ${practiceText(item)}`
       : item.kind === "recognition" ? `¿Qué emoción es? ${recognitionText(item)}`
       : item.kind === "drawing" ? `Dibujo: ${drawingText(item)}`
-      : item.kind === "game" ? `Juego de emparejar: ${gameText(item)}`
+      : item.kind === "game" ? `${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
       : `Aparece el estímulo «${item.title}»${item.skipped ? " (se saltó)" : ""}` })),
     ...captures.map((item) => ({ time: item.time, text: `Captura: ${item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "sin expresión estimada"}${item.quality === "flagged" ? ", marcada por calidad" : ""}` })),
     ...said.map((item) => ({ time: item.time, text: `Dijo ver en «${item.title}»: ${item.text}` })),
@@ -122,7 +122,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
       <title>{item.kind === "practice" ? `${seconds(item.start ?? 0)} · Ejercicio: ${practiceText(item)}`
         : item.kind === "recognition" ? `${seconds(item.start ?? 0)} · ¿Qué emoción es? ${recognitionText(item)}`
         : item.kind === "drawing" ? `${seconds(item.start ?? 0)} · Dibujo: ${drawingText(item)}`
-        : item.kind === "game" ? `${seconds(item.start ?? 0)} · Juego de emparejar: ${gameText(item)}`
+        : item.kind === "game" ? `${seconds(item.start ?? 0)} · ${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
         : `${seconds(item.start ?? 0)} · ${item.title}${item.kind === "abstract" ? " (abstracta)" : ""}${item.skipped ? " · se saltó" : ""}`}</title>
     </g>),
     captures: captures.map((item, index) => <g key={index}>

@@ -243,7 +243,9 @@ def test_la_pantalla_de_la_persona_recibe_solo_la_instruccion_el_nivel_y_el_logr
     session_id, token = start(env)
     shown = view(env, token).json()
     assert set(shown) == {"phase", "message", "stimulus", "remaining_seconds", "capture_frames",
-                          "frame_interval_ms", "abstract_notice", "practice"}
+                          "frame_interval_ms", "abstract_notice", "practice", "activity"}
+    # La actividad solo nombra el paso (bloque 8): nada de la expresión ni del nivel.
+    assert shown["activity"] == {"kind": "practice", "name": "Práctica de expresiones", "number": 1, "total": 1}
     assert shown["practice"] == {"instruction": "Muestra alegría", "level": 0.0, "achieved": False,
                                  "message": None, "frame_interval_ms": 250}
     assert shown["abstract_notice"] is None

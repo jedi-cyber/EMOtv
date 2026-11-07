@@ -8,7 +8,7 @@ import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
-import { expectedExpressionNames, practiceTargetNames } from "../stimuli/labels";
+import { expectedExpressionNames, gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 import type { PracticeRow } from "../api/types";
 
 function averageText(value: number | null) {
@@ -115,6 +115,19 @@ export function StatisticsPage() {
         ["Emoción de la imagen", "La eligió", "Terminados", "Sin respuesta", "Saltados"],
         ...stats.recognition.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.matched,
           row.applied, row.timed_out, row.skipped]));
+    }
+    if (stats.drawing) {
+      rows.push([], ["Dibujos", stats.drawing.totals.sentence], [stats.drawing.notice],
+        ["Emoción señalada", "Dibujos"],
+        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]),
+        ["Sin emoción señalada (terminó el tiempo)", stats.drawing.totals.timed_out],
+        ["Omitidos", stats.drawing.totals.skipped], ["Interrumpidos", stats.drawing.totals.stopped]);
+    }
+    if (stats.games) {
+      rows.push([], ["Juegos", stats.games.totals.sentence], [stats.games.notice],
+        ["Juego", "Juegos", "Intentos", "Rondas terminadas", "Emparejadas", "A la primera", "Con ayuda", "Omitidos", "Interrumpidos"],
+        ...stats.games.by_type.map((row) => [gameTypeNames[row.game_type] ?? row.game_type, row.games, row.attempts,
+          row.rounds_done, row.matched, row.first_try, row.help_used, row.skipped, row.stopped]));
     }
     if (stats.by_user) {
       rows.push([], ["Usuario", "Sesiones", "Completadas", "Interrumpidas"],
@@ -251,6 +264,37 @@ export function StatisticsPage() {
             <td>{row.timed_out}</td>
             <td>{row.other_choices.length ? row.other_choices.map((item) =>
               `${practiceTargetNames[item.expression] ?? item.expression} (${item.count})`).join(", ") : "—"}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </section>}
+
+      {data.drawing && <section aria-label="Dibujos">
+        <h2 className="stat-heading">Dibujos</h2>
+        <Callout variant="info" role="note">{data.drawing.notice}</Callout>
+        <p>{data.drawing.totals.sentence} En {data.drawing.sessions} {data.drawing.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Solo se cuenta la emoción que se señaló al terminar cada dibujo; no hay respuesta correcta.
+          {data.drawing.totals.timed_out + data.drawing.totals.skipped + data.drawing.totals.stopped > 0
+            ? ` Terminó el tiempo en ${data.drawing.totals.timed_out}, se omitieron ${data.drawing.totals.skipped} y se interrumpieron ${data.drawing.totals.stopped}.` : ""}</p>
+        {data.drawing.by_expression.length > 0 && <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Emoción señalada</th><th>Dibujos</th></tr></thead>
+          <tbody>{data.drawing.by_expression.map((row) => <tr key={row.expression}>
+            <td>{practiceTargetNames[row.expression] ?? row.expression}</td><td>{row.count}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>}
+
+      {data.games && <section aria-label="Juegos">
+        <h2 className="stat-heading">Juegos</h2>
+        <Callout variant="info" role="note">{data.games.notice}</Callout>
+        <p>{data.games.totals.sentence} En {data.games.sessions} {data.games.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Cuenta el primer intento de cada juego; las repeticiones solo se suman a los intentos.</p>
+        <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Juego</th><th>Juegos</th><th>Intentos</th><th>Rondas terminadas</th><th>Emparejadas</th>
+            <th>A la primera</th><th>Con ayuda</th><th>Omitidos o interrumpidos</th></tr></thead>
+          <tbody>{data.games.by_type.map((row) => <tr key={row.game_type}>
+            <td>{gameTypeNames[row.game_type] ?? row.game_type}</td><td>{row.games}</td><td>{row.attempts}</td>
+            <td>{row.rounds_done} de {row.rounds_total}</td><td>{row.matched}</td><td>{row.first_try}</td>
+            <td>{row.help_used}</td><td>{row.skipped + row.stopped}</td>
           </tr>)}</tbody>
         </table></div>
       </section>}

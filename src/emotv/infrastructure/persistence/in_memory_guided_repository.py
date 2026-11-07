@@ -43,6 +43,10 @@ class InMemoryGuidedSessionRepository:
         with self._lock:
             return next((run for run in self._runs.values() if run.view_token_hash == token_hash), None)
 
+    def get_run_by_pairing_hash(self, code_hash: str) -> GuidedRun | None:
+        with self._lock:
+            return next((run for run in self._runs.values() if run.pairing_hash == code_hash), None)
+
     # --- Capturas y marcadores -------------------------------------------------------
 
     def add_capture(self, capture: ExpressionCapture) -> ExpressionCapture:

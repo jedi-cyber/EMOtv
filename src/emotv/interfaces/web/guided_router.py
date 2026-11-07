@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -16,7 +16,7 @@ from emotv.application import AuthenticationService
 from emotv.application.guided_session_service import GuidedConflict, GuidedNotFound, GuidedSessionService
 from emotv.application.ports import UserRepository
 from emotv.domain import User
-from emotv.domain.guided_session import ABSTRACT_NOTICE, MAX_NOTE_LENGTH
+from emotv.domain.guided_session import ABSTRACT_NOTICE, MAX_NOTE_LENGTH, PAIRING_SECONDS
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
 MAX_FRAME_BYTES = 1_000_000
@@ -50,7 +50,9 @@ class RecognitionAnswerRequest(BaseModel):
 
 
 class GameActionRequest(BaseModel):
-    """Una acción del juego de emparejar: elegir una emoción, pedir ayuda o pasar de ronda."""
+    """Una acción de un juego: elegir una opción, pedir ayuda o pasar de ronda.
+    expression es la clave de la opción: la emoción al emparejar con nombres, el
+    lugar («1», «2»…) al buscar la misma emoción."""
 
     model_config = ConfigDict(extra="forbid")
     action: Literal["answer", "help", "next"]
@@ -111,6 +113,8 @@ class GameView(BaseModel):
     round: str
     number: int
     total: int
+    # matching (nombres) o similar (imágenes: cada opción se pide por su clave).
+    game_type: str = "matching"
     question: str
     # playing, retry, matched, shown, finished o ended (venció el tiempo).
     state: str
@@ -154,6 +158,8 @@ class ParticipantView(BaseModel):
     # Apoyos que cambian la pantalla (pictogramas, botones grandes, lectura en voz
     # alta); solo aparece si el protocolo tiene alguno.
     supports: dict[str, bool] | None = None
+    # La actividad de ahora (tipo, nombre y paso), sin respuestas; la usa Android.
+    activity: dict[str, Any] | None = None
 
 
 def create_guided_router(
@@ -202,6 +208,13 @@ def create_guided_router(
     @router.post("/guided-sessions/{session_id}/view-link")
     def view_link(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
         return {"view_token": guarded(lambda: service().new_view_link(user, session_id))}
+
+    @router.post("/guided-sessions/{session_id}/android-code")
+    def android_code(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
+        """Código de un solo uso para abrir la pantalla de la persona en Android.
+        Se entrega solo aquí; al canjearlo, el enlace anterior deja de valer."""
+        code, expires = guarded(lambda: service().new_android_code(user, session_id))
+        return {"code": code, "expires_at": expires.isoformat(), "expires_in": PAIRING_SECONDS}
 
     @router.get("/guided-sessions/{session_id}")
     def state(session_id: str, user: User = Depends(current_user)) -> dict[str, Any]:
@@ -290,12 +303,24 @@ def create_guided_router(
         hidden |= set() if view.accessible else {"accessible"}
         hidden |= {"uses_camera"} if view.uses_camera else set()
         hidden |= {"supports"} if view.supports is None else set()
+        # Una estación de examen no recibe la actividad: no sabe qué se mide.
+        hidden |= {"activity"} if view.activity is None else set()
         return view.model_dump(exclude=hidden)
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
         """La imagen del estímulo que se muestra ahora (nunca la de una persona evaluada)."""
         stimulus_id = guarded(lambda: service().participant_stimulus(token))
+        found = stimulus_image(stimulus_id) if stimulus_image else None
+        if found is None:
+            raise HTTPException(404, "Estímulo no disponible")
+        content_type, data = found
+        return Response(content=data, media_type=content_type)
+
+    @router.get("/participant-view/{token}/game/option/{key}", response_class=Response)
+    def participant_game_option(token: str, key: str = Path(min_length=1, max_length=8)) -> Response:
+        """La imagen de una opción de la ronda en curso de «Busca la misma emoción»."""
+        stimulus_id = guarded(lambda: service().participant_game_option(token, key))
         found = stimulus_image(stimulus_id) if stimulus_image else None
         if found is None:
             raise HTTPException(404, "Estímulo no disponible")

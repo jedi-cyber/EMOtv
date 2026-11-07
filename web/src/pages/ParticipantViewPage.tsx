@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiBlob, apiRequest } from "../api/http";
 import type { ParticipantPractice, ParticipantRecognition, ParticipantViewState } from "../api/types";
@@ -221,6 +221,8 @@ export function ParticipantViewPage() {
     setView(await apiRequest<ParticipantViewState>(base));
   }
 
+  const loadGameOption = useCallback((key: string) => apiBlob(`${base}/game/option/${encodeURIComponent(key)}`), [base]);
+
   async function playGame(action: GameAction, expression?: string) {
     await apiRequest(`${base}/game`, { method: "POST", body: JSON.stringify({ action, ...(expression ? { expression } : {}) }) });
     setView(await apiRequest<ParticipantViewState>(base));
@@ -254,7 +256,7 @@ export function ParticipantViewPage() {
             finished: drawing.finished, chosen: drawing.chosen, message: drawing.message,
             onChoose: answer, readAloud: Boolean(supports?.read_aloud) }} />
           : game
-          ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame}
+          ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame} loadOption={loadGameOption}
             pictograms={Boolean(supports?.pictograms)} readAloud={Boolean(supports?.read_aloud)} />
           : imageUrl
           ? <img className="participant-stimulus" src={imageUrl} alt="Imagen de la sesión" />
