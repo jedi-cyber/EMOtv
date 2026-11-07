@@ -1,6 +1,6 @@
 """Persistencia de la sesión guiada: estado, capturas, marcadores (nota
 cifrada), lo que la persona dice ver (cifrado) y resultados de las prácticas y
-de los reconocimientos y los dibujos (nunca el dibujo)."""
+de los reconocimientos, los dibujos (nunca el dibujo) y los juegos (contadores)."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from emotv.domain.guided_session import (
     DrawingResult,
     ExpressionCapture,
+    GameResult,
     GuidedRun,
     PracticeResult,
     RecognitionResult,
@@ -20,6 +21,7 @@ from emotv.domain.guided_session import (
 from emotv.infrastructure.persistence.models import (
     DrawingResultRecord,
     ExpressionCaptureRecord,
+    GameResultRecord,
     GuidedRunRecord,
     PracticeResultRecord,
     RecognitionResultRecord,
@@ -52,7 +54,8 @@ class PostgresGuidedSessionRepository:
             calibrated_at=_aware(row.calibrated_at), view_token_hash=row.view_token_hash,
             ended_at=_aware(row.ended_at), stop_reason=row.stop_reason,
             practice_feedback=row.practice_feedback is not False, camera_off_at=_aware(row.camera_off_at),
-            step_attempt=row.step_attempt or 1)
+            step_attempt=row.step_attempt or 1,
+            game_progress=dict(row.game_progress) if row.game_progress else None)
 
     def save_run(self, run: GuidedRun) -> GuidedRun:
         with self._factory.begin() as db:
@@ -75,6 +78,7 @@ class PostgresGuidedSessionRepository:
             row.practice_feedback = run.practice_feedback
             row.camera_off_at = run.camera_off_at
             row.step_attempt = run.step_attempt
+            row.game_progress = dict(run.game_progress) if run.game_progress else None
         return run
 
     def get_run(self, session_id: str) -> GuidedRun | None:
@@ -293,3 +297,48 @@ class PostgresGuidedSessionRepository:
                 started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
                 chosen_expression=row.chosen_expression, seconds_to_answer=row.seconds_to_answer,
                 answered_by=row.answered_by, attempt=row.attempt) for row in rows)
+
+    # --- Resultados de los juegos (solo contadores) ------------------------------------
+
+    def save_game_result(self, result: GameResult) -> GameResult:
+        """Uno por paso e intento: guardar de nuevo el mismo intento lo reemplaza."""
+        with self._factory.begin() as db:
+            row = db.scalars(select(GameResultRecord).where(
+                GameResultRecord.session_id == result.session_id,
+                GameResultRecord.step_index == result.step_index,
+                GameResultRecord.attempt == result.attempt)).first()
+            if row is None:
+                row = GameResultRecord(id=result.id, session_id=result.session_id, attempt=result.attempt,
+                                       step_index=result.step_index)
+                db.add(row)
+            row.game_type = result.game_type
+            row.outcome = result.outcome.value
+            row.rounds_total = result.rounds_total
+            row.rounds_done = result.rounds_done
+            row.matched = result.matched
+            row.first_try = result.first_try
+            row.help_used = result.help_used
+            row.by_conductor = result.by_conductor
+            row.started_at = result.started_at
+            row.ended_at = result.ended_at
+        return result
+
+    def list_game_results(self, session_id: str) -> tuple[GameResult, ...]:
+        """El primer intento de cada paso."""
+        return self._games(session_id, first_only=True)
+
+    def list_game_attempts(self, session_id: str) -> tuple[GameResult, ...]:
+        return self._games(session_id, first_only=False)
+
+    def _games(self, session_id: str, first_only: bool) -> tuple[GameResult, ...]:
+        query = select(GameResultRecord).where(GameResultRecord.session_id == session_id)
+        if first_only:
+            query = query.where(GameResultRecord.attempt == 1)
+        with self._factory() as db:
+            rows = db.scalars(query.order_by(GameResultRecord.step_index, GameResultRecord.attempt)).all()
+            return tuple(GameResult(
+                id=row.id, session_id=row.session_id, step_index=row.step_index, game_type=row.game_type,
+                outcome=row.outcome, started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
+                rounds_total=row.rounds_total, rounds_done=row.rounds_done, matched=row.matched,
+                first_try=row.first_try, help_used=row.help_used, by_conductor=row.by_conductor,
+                attempt=row.attempt) for row in rows)

@@ -41,6 +41,16 @@ export const ACCESSIBLE_RECOGNITION = { option_count: 2, max_seconds: 30 };
 export const ACCESSIBLE_TIME_FACTOR = 2;
 // Dibujo: tiempo para dibujar que propone el editor (el máximo en el modo accesible).
 export const DRAWING_SECONDS = 90;
+/** Juego de emparejar: pocas opciones al empezar; quien arma el protocolo sube la dificultad. */
+export const DEFAULT_GAME = { rounds: 3, option_count: 2, exposure_seconds: 30 };
+export const MIN_GAME_ROUNDS = 2;
+export const MAX_GAME_ROUNDS = 6;
+
+/** Lo que ocurrió en un juego, sin puntaje (igual que el servidor). */
+export function gameSentence(item: { rounds_total: number; rounds_done: number; matched: number; first_try: number; help_used: number }) {
+  const helped = item.help_used === 0 ? "no usó la ayuda" : `usó la ayuda ${item.help_used} ${item.help_used === 1 ? "vez" : "veces"}`;
+  return `Jugó ${item.rounds_done} de ${item.rounds_total} ${item.rounds_total === 1 ? "ronda" : "rondas"}. Emparejó ${item.matched} ${item.matched === 1 ? "imagen" : "imágenes"}, ${item.first_try} a la primera; ${helped}.`;
+}
 // Pictograma que acompaña al nombre de cada emoción en el modo accesible. Es un
 // apoyo visual del nombre, no una imagen de la persona ni de lo detectado.
 export const emotionPictograms: Record<string, string> = {
@@ -75,12 +85,14 @@ export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[]
   const practices = steps.filter((step) => step.kind === "practice").length;
   const recognitions = steps.filter((step) => step.kind === "recognition").length;
   const drawings = steps.filter((step) => step.kind === "drawing").length;
-  const images = steps.length - practices - recognitions - drawings;
+  const games = steps.filter((step) => step.kind === "game").length;
+  const images = steps.length - practices - recognitions - drawings - games;
   const parts = [];
-  if (images > 0 || practices + recognitions + drawings === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (images > 0 || practices + recognitions + drawings + games === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
   if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
   if (recognitions > 0) parts.push(`${recognitions} ${recognitions === 1 ? "reconocimiento" : "reconocimientos"}`);
   if (drawings > 0) parts.push(`${drawings} ${drawings === 1 ? "dibujo" : "dibujos"}`);
+  if (games > 0) parts.push(`${games} ${games === 1 ? "juego" : "juegos"}`);
   return parts;
 }
 

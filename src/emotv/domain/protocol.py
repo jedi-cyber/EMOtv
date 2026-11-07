@@ -17,6 +17,13 @@ PRACTICE_TARGETS = EXPRESSION_KEYS
 MIN_RECOGNITION_OPTIONS = 2
 MAX_RECOGNITION_OPTIONS = 4
 DEFAULT_RECOGNITION_OPTIONS = 3
+# Juego de emparejar: rondas (una imagen cada una) y opciones por ronda. Pocas
+# opciones al empezar; quien arma el protocolo sube la dificultad.
+GAME_TYPES = ("matching",)
+MIN_GAME_ROUNDS = 2
+MAX_GAME_ROUNDS = 6
+DEFAULT_GAME_ROUNDS = 3
+DEFAULT_GAME_OPTIONS = 2
 # Historia corta de una situación («A Lucía se le cayó su helado»).
 MAX_SITUATION_CHARS = 200
 # Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
@@ -83,7 +90,8 @@ class StepKind(str, Enum):
     """Estímulo: una imagen con su captura automática. Práctica: se pide una
     expresión y la persona ve una señal que crece al acercarse a ella.
     Reconocimiento: se muestra una imagen emocional y la persona elige qué
-    emoción es entre unas pocas opciones. Dibujo: la persona dibuja una cara
+    emoción es entre unas pocas opciones. Juego: varias rondas en las que la
+    persona relaciona una imagen con el nombre de su emoción. Dibujo: la persona dibuja una cara
     en su pantalla y señala qué emoción quiso representar; el dibujo no sale
     del dispositivo ni se interpreta."""
 
@@ -91,6 +99,7 @@ class StepKind(str, Enum):
     PRACTICE = "practice"
     RECOGNITION = "recognition"
     DRAWING = "drawing"
+    GAME = "game"
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +131,13 @@ class ProtocolStep:
     En un dibujo no hay estímulo, expresión pedida ni opciones que configurar:
     exposure_seconds es el tiempo máximo. Solo se registra la emoción que la
     persona señaló y los tiempos, nunca el dibujo. No analiza la cámara.
+
+    En un juego (game_type «matching»), rounds es cuántas imágenes se emparejan y
+    option_count cuántos nombres se muestran en cada ronda. game_stimulus_ids son
+    las imágenes emocionales de cada ronda: las elige el servicio de protocolos
+    del banco aprobado (vacío hasta entonces). exposure_seconds es el tiempo de
+    cada ronda; el juego entero dura como máximo rounds × exposure_seconds. No
+    analiza la cámara.
     """
 
     stimulus_id: str | None
@@ -135,10 +151,19 @@ class ProtocolStep:
     option_count: int | None = None
     situation: str | None = None
     imitate: bool = False
+    game_type: str | None = None
+    rounds: int | None = None
+    game_stimulus_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
         object.__setattr__(self, "kind", kind)
+        ids = tuple(self.game_stimulus_ids or ())
+        if any(not isinstance(item, str) or not item.strip() for item in ids):
+            raise ValueError("Cada imagen del juego se indica con su identificador")
+        object.__setattr__(self, "game_stimulus_ids", tuple(item.strip() for item in ids))
+        if kind is not StepKind.GAME and (self.game_type is not None or self.rounds is not None or ids):
+            raise ValueError("Solo un juego tiene tipo de juego, rondas e imágenes del juego")
         if not isinstance(self.imitate, bool):
             raise TypeError("imitate debe ser verdadero o falso")
         if self.imitate and kind is not StepKind.PRACTICE:
@@ -177,6 +202,23 @@ class ProtocolStep:
                              "del analizador")
         if self.capture_after_seconds != 0:
             raise ValueError("Una práctica o un reconocimiento no tiene captura automática")
+        if kind is StepKind.GAME:
+            if stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None:
+                raise ValueError("Un juego no tiene imagen propia, expresión pedida ni tiempo de sostén")
+            if self.game_type not in GAME_TYPES:
+                raise ValueError("El juego disponible es «Empareja la emoción»")
+            for name, low, high, text in (("rounds", MIN_GAME_ROUNDS, MAX_GAME_ROUNDS, "rondas"),
+                                          ("option_count", MIN_RECOGNITION_OPTIONS, MAX_RECOGNITION_OPTIONS,
+                                           "opciones")):
+                value = getattr(self, name)
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise TypeError(f"{name} debe ser un entero")
+                if not low <= value <= high:
+                    raise ValueError(f"Un juego tiene entre {low} y {high} {text}")
+            # Las que falten las completa el servicio de protocolos al guardar.
+            if len(ids) > self.rounds:
+                raise ValueError("El juego tiene una imagen por ronda")
+            return
         if kind is StepKind.DRAWING:
             if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
                     or self.option_count is not None):
@@ -220,15 +262,35 @@ class ProtocolStep:
     def drawing(cls, max_seconds: int) -> ProtocolStep:
         return cls(None, max_seconds, 0, kind=StepKind.DRAWING)
 
+    @classmethod
+    def matching_game(cls, rounds: int = DEFAULT_GAME_ROUNDS, option_count: int = DEFAULT_GAME_OPTIONS,
+                      round_seconds: int = 30, stimulus_ids: tuple[str, ...] = ()) -> ProtocolStep:
+        return cls(None, round_seconds, 0, kind=StepKind.GAME, game_type="matching", rounds=rounds,
+                   option_count=option_count, game_stimulus_ids=stimulus_ids)
+
     @property
     def is_drawing(self) -> bool:
         return self.kind is StepKind.DRAWING
 
     @property
+    def is_game(self) -> bool:
+        return self.kind is StepKind.GAME
+
+    @property
+    def seconds_limit(self) -> int:
+        """Tiempo máximo del paso: en un juego, el de cada ronda por las rondas."""
+        return self.exposure_seconds * self.rounds if self.is_game and self.rounds else self.exposure_seconds
+
+    @property
+    def image_ids(self) -> tuple[str, ...]:
+        """Todas las imágenes del banco que usa el paso."""
+        return (*((self.stimulus_id,) if self.stimulus_id else ()), *self.game_stimulus_ids)
+
+    @property
     def is_timed(self) -> bool:
         """Termina al lograrlo, al responder o al vencer su tiempo máximo, con pausa
-        después: una práctica, un reconocimiento o un dibujo."""
-        return self.kind in (StepKind.PRACTICE, StepKind.RECOGNITION, StepKind.DRAWING)
+        después: una práctica, un reconocimiento, un dibujo o un juego."""
+        return self.kind in (StepKind.PRACTICE, StepKind.RECOGNITION, StepKind.DRAWING, StepKind.GAME)
 
     @property
     def is_practice(self) -> bool:
@@ -240,7 +302,7 @@ class ProtocolStep:
 
     @property
     def uses_camera(self) -> bool:
-        """Una imagen con captura o un ejercicio de práctica; un reconocimiento o un dibujo no."""
+        """Una imagen con captura o un ejercicio de práctica; un reconocimiento, un dibujo o un juego no."""
         return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE)
 
 

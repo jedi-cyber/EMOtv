@@ -1,4 +1,4 @@
-import type { MetricCapture, PracticeOutcome, RecognitionOutcome, SessionDrawing, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
+import type { GameOutcome, MetricCapture, PracticeOutcome, RecognitionOutcome, SessionDrawing, SessionGame, SessionMetrics, SessionPractice, SessionRecognition } from "../api/types";
 import { Callout } from "../components/Callout";
 import { practiceTargetNames } from "../stimuli/labels";
 
@@ -8,6 +8,10 @@ export const practiceOutcomeNames: Record<PracticeOutcome, string> = {
 // Cómo terminó cada reconocimiento: la opción elegida se nombra aparte.
 export const recognitionOutcomeNames: Record<RecognitionOutcome, string> = {
   answered: "Respondió", timed_out: "Terminó el tiempo sin respuesta", skipped: "Se saltó", stopped: "La sesión se detuvo",
+};
+// Cómo terminó cada juego de emparejar; lo que ocurrió en él va en una frase aparte.
+export const gameOutcomeNames: Record<GameOutcome, string> = {
+  completed: "Completo", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
 };
 export const secondsText = (value: number) => `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} s`;
 
@@ -110,6 +114,24 @@ export function DrawingMetrics({ drawing }: { drawing: SessionDrawing }) {
   </section>;
 }
 
+/** Juegos de emparejar: solo contadores de rondas, sin puntaje ni calificación. */
+export function GameMetrics({ game }: { game: SessionGame }) {
+  const { totals } = game;
+  return <section className="form-stack" aria-label="Juegos de emparejar">
+    <h3>Juegos de emparejar</h3>
+    <Callout variant="info" role="note">{game.notice}</Callout>
+    {totals.sentence && <p><strong>{totals.sentence}</strong></p>}
+    <div className="table-wrap"><table><thead><tr>
+      <th>Paso</th><th>Rondas y opciones</th><th>Resultado</th><th>Lo que ocurrió</th>
+    </tr></thead><tbody>{game.exercises.map((item) => <tr key={item.step_index}>
+      <td>{item.step_index + 1}</td>
+      <td>{item.rounds} rondas · {item.option_count} opciones</td>
+      <td>{item.outcome ? gameOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
+      <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}</td>
+    </tr>)}</tbody></table></div>
+  </section>;
+}
+
 /** Métricas por estímulo: describen lo registrado, no lo interpretan. */
 export function StimulusMetrics({ metrics, expressionLabel }: { metrics: SessionMetrics; expressionLabel: (key: string | null) => string }) {
   return <div className="form-stack">
@@ -146,5 +168,6 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
     {metrics.practice && <PracticeMetrics practice={metrics.practice} />}
     {metrics.recognition && <RecognitionMetrics recognition={metrics.recognition} />}
     {metrics.drawing && <DrawingMetrics drawing={metrics.drawing} />}
+    {metrics.game && <GameMetrics game={metrics.game} />}
   </div>;
 }

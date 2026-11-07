@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.5 (2026-11-06). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3 y la 4.5 solo agregan campos opcionales a la 4, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.6 (2026-11-06). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5 y la 4.6 solo agregan campos opcionales a la 4, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile` |
 | Formato | JSON en UTF-8 |
@@ -438,6 +438,15 @@ Con token. Detalle de una sesión a la que la cuenta tiene acceso
   campos `outcome`, `chosen_expression` y `seconds_to_answer`. Solo es la
   emoción que la persona señaló: el dibujo nunca llega al servidor y no hay
   respuesta correcta.
+- Desde la revisión 4.6, `metrics.game` trae los juegos de emparejar y es
+  `null` si el protocolo no tenía ninguno: `exercises[]` (`step_index`,
+  `game_type` `matching`, `rounds`, `option_count`, `outcome` `completed`,
+  `timed_out`, `skipped`, `stopped` o nulo si no se aplicó, `rounds_done`,
+  `matched`, `first_try`, `help_used`, `by_conductor` y `sentence`), `totals`
+  (`games`, un contador por cada `outcome`, `not_reached`, `rounds_total`,
+  `rounds_done`, `matched`, `first_try`, `help_used` y `sentence`) y `notice`,
+  que se muestra siempre junto a ellos. En `lanes.stimuli`, un juego llega con
+  `kind` `game`, `title` vacío y los campos `outcome`, `rounds` y `sentence`. Son contadores de lo que ocurrió, sin puntaje ni comparación.
 
 Errores: `403 forbidden`, `404 not_found`, `503 unavailable`.
 
@@ -827,7 +836,7 @@ aplicativo debe tolerar valores desconocidos (ver
 | `report_status` | `draft` (borrador), `submitted` (en revisión), `changes_requested` (con observaciones), `approved` (aprobado) | No |
 | `section` | `timeline`, `metrics`, `questionnaires`, `narrative`, `general` | No |
 | `report_action` | `created`, `edited`, `submitted`, `commented`, `returned`, `approved`, `closed`, `new_version`, `printed` | Sí |
-| `kind` (estímulo) | `emotional`, `abstract`; `practice` (4.1), `recognition` (4.2) y `drawing` (4.5) en la línea de tiempo | Sí |
+| `kind` (estímulo) | `emotional`, `abstract`; `practice` (4.1), `recognition` (4.2), `drawing` (4.5) y `game` (4.6) en la línea de tiempo | Sí |
 | `practice_outcome` | `achieved` (logró la expresión pedida), `timed_out` (terminó el tiempo), `skipped` (se saltó), `stopped` (la sesión se detuvo) | Sí |
 | `recognition_outcome` | `answered` (respondió), `timed_out` (terminó el tiempo sin respuesta), `skipped` (se saltó), `stopped` (la sesión se detuvo) | Sí |
 | `target_expression` | `happiness`, `surprise`, `sadness`, `anger`, `fear`, `disgust`, `neutral` (cara tranquila) | Sí |
@@ -890,6 +899,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.6 | 2026-11-06 | Compatible con la 4 a la 4.5: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.game` (juegos de emparejar: rondas, emparejadas, a la primera y ayudas) y, en `lanes.stimuli`, los pasos con `kind` `game`. Las estadísticas no cambian. No hay rutas nuevas: el juego solo se juega en la web |
 | 4.5 | 2026-11-06 | Compatible con la 4 a la 4.4: solo campos nuevos y opcionales. `GET /mobile/sessions/{id}` agrega `metrics.drawing` y, en `lanes.stimuli`, los pasos con `kind` `drawing` (abierto, así que un aplicativo anterior los muestra como un paso más). Solo la emoción que la persona señaló y los tiempos, nunca el dibujo. Las estadísticas no cambian. No hay rutas nuevas |
 | 4.4 | 2026-11-04 | Solo documentación; la API no cambió. Las sesiones propias del Docente son de demostración: `GET /mobile/statistics?scope=mine` le devuelve cero sesiones, así que el aplicativo usa `scope=group` para el Docente, y `SessionSummary.mine=true` del Docente se rotula «Tú (demostración)» |
 | 4.3 | 2026-11-04 | Compatible con la 4, la 4.1 y la 4.2: solo un campo nuevo y opcional. `imitate` (boolean) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio fue «Haz la misma cara», con la imagen como modelo. No hay rutas nuevas |

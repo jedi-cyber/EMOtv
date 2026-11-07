@@ -469,8 +469,9 @@ class QuestionnaireResponseRecord(Base):
 
 
 # El dibujo, sin imagen ni opciones que configurar (migración 20261106_40).
-PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing')"
-PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing') OR stimulus_id IS NOT NULL"
+# El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41).
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game')"
+PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game') OR stimulus_id IS NOT NULL"
 # Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
     "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
@@ -480,10 +481,14 @@ PROTOCOL_STEP_PRACTICE = (
     "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0) OR "
     "(kind = 'drawing' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
-    "AND option_count IS NULL AND capture_after_seconds = 0)) "
+    "AND option_count IS NULL AND capture_after_seconds = 0) OR "
+    "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type = 'matching' "
+    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL)) "
     "AND (situation IS NULL OR kind = 'recognition') "
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
-    "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL))")
+    "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "
+    "AND (kind = 'game' OR (game_type IS NULL AND rounds IS NULL AND game_stimulus_ids IS NULL))")
 
 
 class ProtocolStepRecord(Base):
@@ -513,6 +518,11 @@ class ProtocolStepRecord(Base):
     situation: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Práctica que imita la imagen («Haz la misma cara»).
     imitate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Juego de emparejar: tipo, rondas y la imagen de cada ronda (lista de ids).
+    # none_as_null: None se guarda como NULL de SQL, como exigen las restricciones.
+    game_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    game_stimulus_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -550,6 +560,8 @@ class GuidedRunRecord(Base):
     camera_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Intento del paso en curso (1 al empezarlo).
     step_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Juego de emparejar en curso: ronda y contadores (tamaño fijo).
+    game_progress: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
 
 
 class ExpressionCaptureRecord(Base):
@@ -672,6 +684,36 @@ class DrawingResultRecord(Base):
     chosen_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     seconds_to_answer: Mapped[float | None] = mapped_column(Float, nullable=True)
     answered_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GameResultRecord(Base):
+    """Resultado de un juego de emparejar: solo contadores, por paso e intento."""
+
+    __tablename__ = "game_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", "attempt", name="uq_game_results_session_step_attempt"),
+        CheckConstraint("outcome IN ('completed', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_game_results_outcome"),
+        CheckConstraint("game_type = 'matching'", name="ck_game_results_type"),
+        CheckConstraint("first_try >= 0 AND first_try <= matched AND matched <= rounds_done "
+                        "AND rounds_done <= rounds_total AND help_used >= 0 AND by_conductor >= 0",
+                        name="ck_game_results_counts"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    game_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    rounds_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    rounds_done: Mapped[int] = mapped_column(Integer, nullable=False)
+    matched: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_try: Mapped[int] = mapped_column(Integer, nullable=False)
+    help_used: Mapped[int] = mapped_column(Integer, nullable=False)
+    by_conductor: Mapped[int] = mapped_column(Integer, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

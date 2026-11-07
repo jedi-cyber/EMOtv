@@ -49,6 +49,14 @@ class RecognitionAnswerRequest(BaseModel):
     expression: str = Field(min_length=1, max_length=32)
 
 
+class GameActionRequest(BaseModel):
+    """Una acción del juego de emparejar: elegir una emoción, pedir ayuda o pasar de ronda."""
+
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["answer", "help", "next"]
+    expression: str | None = Field(default=None, min_length=1, max_length=32)
+
+
 class CameraProblemRequest(BaseModel):
     reason: str = Field(max_length=16)
 
@@ -89,6 +97,31 @@ class DrawingView(BaseModel):
     message: str | None
 
 
+class GameOption(BaseModel):
+    key: str
+    label: str
+    # Falso si ya la eligió en esta ronda o la quitó la ayuda.
+    available: bool
+
+
+class GameView(BaseModel):
+    """Una ronda del juego de emparejar: la pregunta, las emociones para tocar y,
+    al terminar la ronda, la de la imagen con su explicación. Sin puntaje."""
+
+    round: str
+    number: int
+    total: int
+    question: str
+    # playing, retry, matched, shown, finished o ended (venció el tiempo).
+    state: str
+    options: list[GameOption]
+    answer: str | None
+    message: str | None
+    explanation: str | None = None
+    can_help: bool
+    last_round: bool
+
+
 class PracticeView(BaseModel):
     """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
     está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
@@ -113,6 +146,7 @@ class ParticipantView(BaseModel):
     practice: PracticeView | None = None
     recognition: RecognitionView | None = None
     drawing: DrawingView | None = None
+    game: GameView | None = None
     # Modo accesible del protocolo: pictogramas, botones grandes y sin animaciones.
     accessible: bool = False
     # Falso en un protocolo solo de reconocimientos: la pantalla no pide la cámara.
@@ -228,6 +262,12 @@ def create_guided_router(
         run = guarded(lambda: service().record_recognition(user, session_id, request.expression))
         return {"phase": run.phase.value}
 
+    @router.post("/guided-sessions/{session_id}/game")
+    def game(session_id: str, request: GameActionRequest, user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce registra la emoción que la persona señaló, pide la ayuda o pasa de ronda."""
+        run = guarded(lambda: service().conductor_game(user, session_id, request.action, request.expression))
+        return {"phase": run.phase.value}
+
     @router.post("/guided-sessions/{session_id}/verbal-responses", status_code=201)
     def verbal(session_id: str, request: VerbalRequest, user: User = Depends(current_user)) -> dict[str, Any]:
         item = guarded(lambda: service().record_verbal(user, session_id, request.step_index, request.text))
@@ -244,9 +284,9 @@ def create_guided_router(
     def participant_view(token: str) -> dict[str, Any]:
         data = guarded(lambda: service().participant_state(token))
         view = ParticipantView(**{**data, "abstract_notice": ABSTRACT_NOTICE if data["abstract_notice"] else None})
-        # practice, recognition y drawing solo aparecen en su paso, accessible solo si el protocolo
+        # practice, recognition, drawing y game solo aparecen en su paso, accessible solo si el protocolo
         # lo activa y uses_camera solo cuando es falso: las sesiones con cámara quedan como antes.
-        hidden = {name for name in ("practice", "recognition", "drawing") if getattr(view, name) is None}
+        hidden = {name for name in ("practice", "recognition", "drawing", "game") if getattr(view, name) is None}
         hidden |= set() if view.accessible else {"accessible"}
         hidden |= {"uses_camera"} if view.uses_camera else set()
         hidden |= {"supports"} if view.supports is None else set()
@@ -294,6 +334,13 @@ def create_guided_router(
         """La persona tocó una opción. Solo se confirma la recepción: si acertó
         no se devuelve (la pantalla muestra el nombre de la emoción en su estado)."""
         guarded(lambda: service().participant_answer(token, request.expression))
+        return {"received": True}
+
+    @router.post("/participant-view/{token}/game")
+    def participant_game(token: str, request: GameActionRequest) -> dict[str, bool]:
+        """La persona tocó una emoción, «Ayuda» o «Siguiente». Solo se confirma la
+        recepción: la pantalla lee lo que pasó en su estado."""
+        guarded(lambda: service().participant_game(token, request.action, request.expression))
         return {"received": True}
 
     @router.post("/participant-view/{token}/stop")

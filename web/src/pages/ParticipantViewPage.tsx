@@ -6,6 +6,7 @@ import { cameraProblem, cameraUnavailableReason, stopStream } from "../analysis/
 import { speakText, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { Button } from "../components/Button";
 import { DrawingActivity } from "../drawing/DrawingActivity";
+import { MatchingGameStage, type GameAction } from "../game/MatchingGameStage";
 import { emotionPictograms } from "../stimuli/labels";
 
 const POLL_MS = 500;
@@ -115,6 +116,7 @@ export function ParticipantViewPage() {
   const practice = view?.practice ?? null;
   const recognition = view?.recognition ?? null;
   const drawing = view?.drawing ?? null;
+  const game = view?.game ?? null;
   // Con un dibujo en pantalla, cerrar o recargar la pestaña pide confirmación (el dibujo se borra).
   const [hasDrawing, setHasDrawing] = useState(false);
   const drawingOpen = drawing != null && !drawing.finished && hasDrawing;
@@ -219,6 +221,11 @@ export function ParticipantViewPage() {
     setView(await apiRequest<ParticipantViewState>(base));
   }
 
+  async function playGame(action: GameAction, expression?: string) {
+    await apiRequest(`${base}/game`, { method: "POST", body: JSON.stringify({ action, ...(expression ? { expression } : {}) }) });
+    setView(await apiRequest<ParticipantViewState>(base));
+  }
+
   async function stop() {
     try { await apiRequest(`${base}/stop`, { method: "POST" }); } catch { /* ya terminó */ }
     setEnded(true);
@@ -246,6 +253,9 @@ export function ParticipantViewPage() {
             instruction: drawing.instruction, question: drawing.question, options: drawing.options,
             finished: drawing.finished, chosen: drawing.chosen, message: drawing.message,
             onChoose: answer, readAloud: Boolean(supports?.read_aloud) }} />
+          : game
+          ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame}
+            pictograms={Boolean(supports?.pictograms)} readAloud={Boolean(supports?.read_aloud)} />
           : imageUrl
           ? <img className="participant-stimulus" src={imageUrl} alt="Imagen de la sesión" />
           : <p className="participant-message">{view?.message ?? "Espera un momento."}</p>}

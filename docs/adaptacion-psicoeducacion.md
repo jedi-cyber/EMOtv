@@ -19,7 +19,7 @@ visión con modelos preentrenados, Emi, la aplicación web y el aplicativo Andro
 | 3a. Repetir un paso, tiempo sin límite y pausa para leer | Completo en 2b (§14) |
 | Dibujo táctil en la web (bloque 4 del pedido) | Actividad completa el 2026-11-06, sin sesión ni registro; comprobada en el navegador (ver §15) |
 | 4a. El dibujo como paso de un protocolo, con registro mínimo | Hecho el 2026-11-06 (§15, «Subtarea 4a»); migración 20261106_40 |
-| 4. Primer juego (emparejar) | Pendiente |
+| 4. Primer juego (emparejar; bloque 5 del pedido) | Hecho el 2026-11-06 (§16); migración 20261106_41; contrato móvil 4.6 |
 | 5. Reportes, estadísticas y contrato móvil 4.5 | Pendiente |
 | 6. Android sigue el contrato 4.5 | Pendiente |
 | 7. Emi, guía de uso y plantillas | Pendiente |
@@ -843,3 +843,50 @@ bloqueado.
 tiene imágenes, el detalle de la sesión igual muestra el título «Métricas por
 imagen» sobre el bloque de dibujos; ese título ya existía y no se cambió.
 
+## 16. Bloque 5: juego de emparejar
+
+**Qué cambió.** Un paso nuevo de protocolo, «Juego: empareja la emoción»
+(`kind` `game`, `game_type` `matching`). En cada ronda la persona ve una imagen
+del banco y elige con botones el nombre de su emoción (con pictograma si el
+apoyo está activo); no hay que arrastrar.
+
+- Dificultad en el editor: rondas (2 a 6, por defecto 3), opciones por ronda
+  (2 a 4, por defecto 2) y tiempo por ronda.
+- Si elige otra emoción: «Mira otra vez la cara. Puedes pedir ayuda.». Tras
+  dos, se le muestra la emoción con su explicación educativa.
+- «Ayuda» quita una opción y lee la pregunta; «Escuchar» repite el texto.
+- Quien conduce puede responder, dar la ayuda, pasar de ronda, saltar el juego
+  o repetirlo (cuenta el primer intento). La sesión se puede detener siempre.
+- Sin puntaje, ranking ni penalización: el registro dice, por ejemplo, «Jugó
+  3 de 3 rondas. Emparejó 2 imágenes, 1 a la primera; usó la ayuda 1 vez.».
+- No usa la cámara: durante el juego no se envían cuadros.
+
+**Desvíos del diagnóstico.**
+
+- El resultado va en la tabla `game_results`, con contadores, en vez de un
+  `ActivityResult` genérico. Así no se guardan listas que crezcan.
+- Las imágenes las elige EMOtv al guardar el protocolo: imágenes emocionales
+  aprobadas (y «Para niños» si corresponde), de emociones distintas. Si no
+  alcanzan, el protocolo no se guarda y se dice cuántas faltan.
+
+**Comprobado.**
+
+- Pruebas: `tests/integration/test_matching_game.py` (14) y
+  `web/tests/matching_game.test.tsx` (7).
+- La migración 41 se aplicó, se revirtió y se volvió a aplicar en la base
+  desechable.
+- Recorrido en el navegador (sesión S-82ZWDR, para niños, 3 rondas y 3
+  opciones), con error, ayuda, emoción mostrada, ronda pasada por quien
+  conduce y fin. La pantalla de la persona solo envió `POST .../game`.
+- La suite completa falló al principio. Las columnas JSON nuevas guardaban
+  `None` como `null` de JSON, y las restricciones rechazaban los pasos que no
+  son juego. Se corrigió con `none_as_null` y una prueba de un protocolo mixto.
+  El recorrido usó un protocolo con solo el juego.
+
+**Pendiente.**
+
+- Probar en un teléfono o una tableta físicos.
+- Si se borra del todo una imagen que solo usa un juego, el protocolo no la
+  protege: queda marcado como «necesita imagen».
+- `list_current_using` aún no ve las imágenes de los juegos.
+- Que Psicología revise los textos del juego.

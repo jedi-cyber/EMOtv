@@ -7,6 +7,7 @@ from threading import RLock
 from emotv.domain.guided_session import (
     DrawingResult,
     ExpressionCapture,
+    GameResult,
     GuidedRun,
     PracticeResult,
     RecognitionResult,
@@ -24,6 +25,7 @@ class InMemoryGuidedSessionRepository:
         self._practice: dict[tuple[str, int, int], PracticeResult] = {}
         self._recognition: dict[tuple[str, int, int], RecognitionResult] = {}
         self._drawing: dict[tuple[str, int, int], DrawingResult] = {}
+        self._game: dict[tuple[str, int, int], GameResult] = {}
         self._lock = RLock()
 
     # --- Estado -------------------------------------------------------------------
@@ -113,4 +115,18 @@ class InMemoryGuidedSessionRepository:
     def list_drawing_attempts(self, session_id: str) -> tuple[DrawingResult, ...]:
         with self._lock:
             return tuple(sorted((item for (owner, _, _), item in self._drawing.items() if owner == session_id),
+                                key=lambda item: (item.step_index, item.attempt)))
+
+    def save_game_result(self, result: GameResult) -> GameResult:
+        with self._lock:
+            self._game[(result.session_id, result.step_index, result.attempt)] = result
+        return result
+
+    def list_game_results(self, session_id: str) -> tuple[GameResult, ...]:
+        """El primer intento de cada paso."""
+        return tuple(item for item in self.list_game_attempts(session_id) if item.attempt == 1)
+
+    def list_game_attempts(self, session_id: str) -> tuple[GameResult, ...]:
+        with self._lock:
+            return tuple(sorted((item for (owner, _, _), item in self._game.items() if owner == session_id),
                                 key=lambda item: (item.step_index, item.attempt)))

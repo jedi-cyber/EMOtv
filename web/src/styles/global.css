@@ -202,6 +202,9 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .recognition-feedback { display: grid; gap: var(--space-xs); justify-items: center; text-align: center; }
 .recognition-note, .recognition-explanation { max-width: 40ch; margin: 0; color: var(--color-ink); line-height: 1.4; text-wrap: pretty; }
 .recognition-listen { min-height: 3rem; touch-action: manipulation; }
+.matching-game-round { margin: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }
+.matching-game-actions { justify-content: center; }
+.matching-game-actions .button { min-height: 3rem; touch-action: manipulation; }
 /* La opción elegida sigue legible aunque los botones queden deshabilitados. */
 .recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
 .recognition-answer { color: var(--color-ink); }

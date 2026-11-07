@@ -13,14 +13,21 @@ El docente puede compartir un protocolo suyo con su grupo como plantilla: sus
 usuarios lo ven y lo copian como protocolo propio, que editan y aplican. Una
 plantilla no se aplica sin copiarla.
 
+Un juego de emparejar no pide imágenes a quien lo arma: al guardar, el servicio
+elige una imagen emocional aprobada por ronda (del público del protocolo),
+procurando emociones distintas. Al editar se conservan las que siguen sirviendo
+y se reemplazan las que no.
+
 Los protocolos de examen simulado no pasan por aquí: no se listan, no se editan
 ni se aplican desde el Analizador. Los gestiona ExamService.
 """
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import random
 from uuid import uuid4
 
 from emotv.application.audit_service import AuditService
@@ -30,6 +37,7 @@ from emotv.application.ports.practice_repositories import ProtocolRepository
 from emotv.application.questionnaire_service import QuestionnaireNotFound, QuestionnaireService
 from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
+from emotv.domain.guided_session import RECOGNITION_DISTRACTORS
 from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
@@ -157,8 +165,44 @@ class ProtocolService:
     def needs_image(self, protocol: Protocol) -> bool:
         """Algún paso nombra una imagen eliminada, sin aprobar, retirada o que ya
         no corresponde al público del protocolo."""
-        return any(self._image_problem(protocol, self.stimuli.repository.get(step.stimulus_id)) is not None
-                   for step in protocol.steps if step.stimulus_id is not None)
+        return any(self._image_problem(protocol, self.stimuli.repository.get(stimulus_id)) is not None
+                   for step in protocol.steps for stimulus_id in step.image_ids)
+
+    def _game_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
+        """Una imagen emocional aprobada por ronda. Conserva las indicadas que
+        sirven y completa con otras del banco, primero de emociones que todavía no
+        aparecen."""
+        def fits(item: Stimulus | None) -> bool:
+            return (item is not None and item.kind is StimulusKind.EMOTIONAL
+                    and item.expected_expression in RECOGNITION_DISTRACTORS
+                    and self._image_problem(target, item) is None)
+
+        kept: list[Stimulus] = []
+        for stimulus_id in step.game_stimulus_ids:
+            try:
+                item = self.stimuli.get(user, stimulus_id)
+            except StimulusNotFound:
+                continue
+            if fits(item) and all(other.id != item.id for other in kept) and len(kept) < step.rounds:
+                kept.append(item)
+        chooser = random.Random()
+        counts = Counter(item.expected_expression for item in kept)
+        pool: defaultdict[str, list[Stimulus]] = defaultdict(list)
+        for item in self.stimuli.list_for(user, target.for_children):
+            if fits(item) and all(other.id != item.id for other in kept):
+                pool[item.expected_expression].append(item)
+        for items in pool.values():
+            chooser.shuffle(items)
+        while len(kept) < step.rounds and any(pool.values()):
+            expression = min((key for key, items in pool.items() if items),
+                             key=lambda key: (counts[key], chooser.random()))
+            kept.append(pool[expression].pop())
+            counts[expression] += 1
+        if len(kept) < step.rounds:
+            audience = " «Para niños»" if target.for_children else ""
+            raise ValueError(f"El juego necesita {step.rounds} imágenes emocionales aprobadas{audience} y hay "
+                             f"{len(kept)}: agrega imágenes al banco o baja las rondas")
+        return replace(step, game_stimulus_ids=tuple(item.id for item in kept))
 
     # --- Armado y versiones --------------------------------------------------
 
@@ -179,6 +223,9 @@ class ProtocolService:
                 raise ValueError("Un cuestionario indicado no existe o no está disponible") from error
         steps = []
         for step in draft.steps:
+            if step.is_game:
+                steps.append(self._game_images(user, target, step))
+                continue
             if step.stimulus_id is None:
                 steps.append(step)
                 continue  # Ejercicio de práctica sin ilustración.
@@ -286,8 +333,10 @@ class ProtocolService:
             return questionnaire_id
 
         pre = usable(source.pre_questionnaire_id)
+        # Las imágenes de un juego se vuelven a elegir entre las que ve la cuenta.
+        steps = tuple(replace(step, game_stimulus_ids=()) if step.is_game else step for step in source.steps)
         return self.create(user, ProtocolDraft(
-            name=source.name, description=source.description, for_children=source.for_children, steps=source.steps,
+            name=source.name, description=source.description, for_children=source.for_children, steps=steps,
             pre_questionnaire_id=pre, post_questionnaire_id=usable(source.post_questionnaire_id) if pre else None,
             accessible=source.accessible, supports=source.supports))
 
@@ -321,11 +370,9 @@ class ProtocolService:
         if is_validation_protocol(protocol) and not self.validation_usable(protocol):
             raise ProtocolUnavailable("El protocolo de validación solo se aplica en modo demo, con una cuenta "
                                       "de voluntario")
-        for step in protocol.steps:
-            if step.stimulus_id is None:
-                continue  # práctica sin ilustración: no necesita imagen
+        for stimulus_id in (item for step in protocol.steps for item in step.image_ids):
             try:
-                stimulus = self.stimuli.get(user, step.stimulus_id)
+                stimulus = self.stimuli.get(user, stimulus_id)
             except StimulusNotFound as error:
                 raise ProtocolUnavailable("El protocolo necesita una imagen: una de sus imágenes ya no "
                                           "está disponible") from error

@@ -91,12 +91,13 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
-export type StepKind = "stimulus" | "practice" | "recognition" | "drawing";
+export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "game";
 
 export interface ProtocolStep {
   /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
    * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es.
-   * «drawing»: la persona dibuja una cara y señala qué emoción quiso representar. */
+   * «drawing»: la persona dibuja una cara y señala qué emoción quiso representar.
+   * «game»: juego de emparejar cada imagen con el nombre de su emoción. */
   kind?: StepKind;
   stimulus_id: string | null;
   exposure_seconds: number;
@@ -114,6 +115,10 @@ export interface ProtocolStep {
   /** Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
    * y la expresión pedida la pone el servidor, la de la imagen. */
   imitate?: boolean;
+  /** Solo un juego: tipo, rondas e imagen de cada ronda (las elige el servidor). */
+  game_type?: "matching" | null;
+  rounds?: number | null;
+  game_stimulus_ids?: string[];
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -307,6 +312,40 @@ export interface GuidedDrawing {
   outcome: RecognitionOutcome | null;
 }
 
+export type GameOutcome = "completed" | "timed_out" | "skipped" | "stopped";
+export type GameState = "playing" | "retry" | "matched" | "shown" | "finished";
+
+/** Juego en curso para quien conduce: la ronda, la emoción de la imagen y los contadores. */
+export interface GuidedGame {
+  round: number;
+  rounds: number;
+  stimulus_id: string;
+  target_expression: string | null;
+  options: string[];
+  tried: string[];
+  removed: string | null;
+  state: GameState;
+  helped: boolean;
+  rounds_done: number;
+  matched: number;
+  first_try: number;
+  help_used: number;
+  outcome: GameOutcome | null;
+}
+
+/** Solo contadores del juego: no es un puntaje. */
+export interface GuidedGameResult {
+  step_index: number;
+  game_type: "matching";
+  outcome: GameOutcome;
+  rounds_total: number;
+  rounds_done: number;
+  matched: number;
+  first_try: number;
+  help_used: number;
+  by_conductor: number;
+}
+
 /** Solo la emoción que la persona señaló; el dibujo nunca llega al servidor. */
 export interface GuidedDrawingResult {
   step_index: number;
@@ -389,6 +428,8 @@ export interface GuidedState {
   recognition_results?: GuidedRecognitionResult[];
   drawing?: GuidedDrawing | null;
   drawing_results?: GuidedDrawingResult[];
+  game?: GuidedGame | null;
+  game_results?: GuidedGameResult[];
   /** Repeticiones (intento 2 en adelante): se describen aparte y no cuentan en las métricas. */
   repeated_attempts?: GuidedRepeatedAttempt[];
 }
@@ -396,10 +437,16 @@ export interface GuidedState {
 export interface GuidedRepeatedAttempt {
   step_index: number;
   attempt: number;
-  step_kind: "practice" | "recognition" | "drawing";
-  /** Nulo en un dibujo: no hay expresión pedida. */
+  step_kind: "practice" | "recognition" | "drawing" | "game";
+  /** Nulo en un dibujo o un juego: no hay expresión pedida. */
   target_expression: string | null;
-  outcome: PracticeOutcome | RecognitionOutcome;
+  outcome: PracticeOutcome | RecognitionOutcome | GameOutcome;
+  /** Solo en un juego: contadores del intento. */
+  rounds_total?: number;
+  rounds_done?: number;
+  matched?: number;
+  first_try?: number;
+  help_used?: number;
   seconds_to_achieve?: number | null;
   chosen_expression?: string | null;
   seconds_to_answer?: number | null;
@@ -445,6 +492,24 @@ export interface ParticipantDrawing {
   message: string | null;
 }
 
+/** Una ronda del juego en la pantalla de la persona: sin puntaje. */
+export interface ParticipantGame {
+  /** Cambia con cada ronda e intento. */
+  round: string;
+  number: number;
+  total: number;
+  question: string;
+  /** «ended»: venció el tiempo del juego. */
+  state: GameState | "ended";
+  options: { key: string; label: string; available: boolean }[];
+  /** La emoción de la imagen, solo al terminar la ronda. */
+  answer: string | null;
+  message: string | null;
+  explanation?: string | null;
+  can_help: boolean;
+  last_round: boolean;
+}
+
 export interface ParticipantViewState {
   phase: GuidedPhase;
   message: string | null;
@@ -456,6 +521,7 @@ export interface ParticipantViewState {
   practice?: ParticipantPractice | null;
   recognition?: ParticipantRecognition | null;
   drawing?: ParticipantDrawing | null;
+  game?: ParticipantGame | null;
   /** Solo aparece si hay pictogramas o botones grandes. */
   accessible?: boolean;
   /** Solo aparece, como falso, si la sesión no usa la cámara. */
@@ -474,11 +540,15 @@ export interface SessionTimeline {
     questionnaires: { time: number; moment: QuestionnaireMoment; title: string; answers: { question: string; kind: QuestionKind; answer: AnswerValue | null }[] }[];
     stimuli: { step_index: number; title: string; kind: string; start: number | null; end: number | null; skipped: boolean;
       /** Solo en un ejercicio de práctica (kind «practice») o un reconocimiento (kind «recognition»). */
-      target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | null; imitate?: boolean;
+      target_expression?: string | null; outcome?: PracticeOutcome | RecognitionOutcome | GameOutcome | null;
+      imitate?: boolean;
       seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
+      /** Solo en un juego (kind «game»): rondas y lo que ocurrió, en una frase. */
+      rounds?: number | null; sentence?: string | null;
       /** Repeticiones del paso (intento 2 en adelante); el resultado de arriba es el primero. */
-      repeats?: { attempt: number; outcome: PracticeOutcome | RecognitionOutcome; seconds_to_achieve?: number | null;
-        chosen_expression?: string | null; seconds_to_answer?: number | null }[] }[];
+      repeats?: { attempt: number; outcome: PracticeOutcome | RecognitionOutcome | GameOutcome;
+        seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
+        sentence?: string | null }[] }[];
     captures: { time: number; step_index: number; emotion: string | null; probability: number | null; quality: "good" | "flagged" }[];
     said: { time: number; step_index: number; title: string; text: string }[];
     markers: { time: number; kind: MarkerKind; note: string | null }[];
@@ -575,6 +645,17 @@ export interface SessionDrawing {
   notice: string;
 }
 
+export interface SessionGame {
+  exercises: { step_index: number; game_type: "matching"; rounds: number; option_count: number;
+    /** null: la sesión no llegó a este paso. */
+    outcome: GameOutcome | null; rounds_done: number | null; matched: number | null; first_try: number | null;
+    help_used: number | null; by_conductor: number | null; sentence: string | null }[];
+  totals: { games: number; completed: number; timed_out: number; skipped: number; stopped: number;
+    not_reached: number; rounds_total: number; rounds_done: number; matched: number; first_try: number;
+    help_used: number; sentence: string | null };
+  notice: string;
+}
+
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
@@ -588,6 +669,8 @@ export interface SessionMetrics {
   recognition?: SessionRecognition | null;
   /** Dibujos: solo la emoción señalada; null si no hubo. */
   drawing?: SessionDrawing | null;
+  /** Juegos de emparejar: solo contadores de rondas; null si no hubo. */
+  game?: SessionGame | null;
 }
 
 export type ReportStatus = "draft" | "submitted" | "changes_requested" | "approved";

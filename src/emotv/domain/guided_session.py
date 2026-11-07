@@ -106,6 +106,19 @@ DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?"
 DRAWING_NOTICE = ("Describe la emoción que la persona señaló en cada dibujo. EMOtv no ve ni interpreta los "
                   "dibujos: se quedan en la pantalla de la persona y se borran al terminar el paso.")
 DRAWING_OPTIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
+# Juego de emparejar: la persona relaciona cada imagen con el nombre de su
+# emoción. Sin puntaje: si no la encuentra, se le muestra con su explicación y
+# el juego sigue. Solo se guardan contadores (GameResult).
+GAME_QUESTION = "¿Qué emoción muestra esta cara?"
+GAME_RETRY = "Mira otra vez la cara. Puedes pedir ayuda."
+GAME_FOUND = "Lo encontraste: {answer}."
+GAME_SHOWN = "{answer}."
+GAME_FINISHED = "Terminaste el juego."
+GAME_TIME_UP = "Terminó el tiempo del juego."
+# Tras este número de opciones distintas a la de la imagen, se muestra la respuesta.
+GAME_MISSES_BEFORE_ANSWER = 2
+GAME_NOTICE = ("Describe lo que ocurrió en el juego. Una sesión breve no permite sacar conclusiones sobre cómo "
+               "reconoce emociones la persona.")
 # Describe lo que la persona eligió; no se compara con el dibujo.
 DRAWING_ANSWERS = {
     "happiness": "Dibujaste alegría.",
@@ -228,6 +241,9 @@ class GuidedRun:
     camera_off_at: datetime | None = None
     # Intento del paso en curso: 1 al empezarlo; «Repetir este paso» lo aumenta.
     step_attempt: int = 1
+    # Juego de emparejar en curso: ronda, opciones descartadas y contadores. De
+    # tamaño fijo; se reinicia con cada paso o intento.
+    game_progress: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", GuidedPhase(self.phase))
@@ -456,6 +472,59 @@ class RecognitionResult:
     def matched(self) -> bool | None:
         """Si la opción elegida es la expresión de la imagen; None sin respuesta."""
         return None if self.chosen_expression is None else self.chosen_expression == self.target_expression
+
+
+class GameOutcome(str, Enum):
+    COMPLETED = "completed"       # se jugaron todas las rondas
+    TIMED_OUT = "timed_out"       # venció el tiempo del juego
+    SKIPPED = "skipped"           # quien conduce saltó el paso
+    STOPPED = "stopped"           # la sesión se detuvo durante el juego
+
+
+@dataclass(frozen=True, slots=True)
+class GameResult:
+    """Resultado de un juego de emparejar: solo contadores, uno por paso e
+    intento. rounds_done son las rondas terminadas (encontrada o mostrada);
+    matched, las que la persona emparejó; first_try, las emparejadas sin elegir
+    antes otra opción; help_used, las rondas en que pidió ayuda; by_conductor,
+    las respuestas que registró quien conduce. No es un puntaje."""
+
+    id: str
+    session_id: str
+    step_index: int
+    game_type: str
+    outcome: GameOutcome | str
+    started_at: datetime
+    ended_at: datetime
+    rounds_total: int
+    rounds_done: int = 0
+    matched: int = 0
+    first_try: int = 0
+    help_used: int = 0
+    by_conductor: int = 0
+    attempt: int = 1
+
+    def __post_init__(self) -> None:
+        for name in ("id", "session_id", "game_type"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} es obligatorio")
+        object.__setattr__(self, "outcome", GameOutcome(self.outcome))
+        for name in ("step_index", "rounds_total", "rounds_done", "matched", "first_try", "help_used",
+                     "by_conductor"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} debe ser un entero no negativo")
+        if not (self.first_try <= self.matched <= self.rounds_done <= self.rounds_total
+                and self.help_used <= self.rounds_done + 1 and self.help_used <= self.rounds_total):
+            raise ValueError("Los contadores del juego no cuadran")
+        if (self.outcome is GameOutcome.COMPLETED) != (self.rounds_done == self.rounds_total):
+            raise ValueError("Un juego completo tiene todas sus rondas terminadas")
+        _aware("started_at", self.started_at)
+        _aware("ended_at", self.ended_at)
+        if self.ended_at < self.started_at:
+            raise ValueError("El paso termina después de empezar")
+        _check_attempt(self.attempt)
 
 
 @dataclass(frozen=True, slots=True)

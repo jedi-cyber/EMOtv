@@ -12,7 +12,8 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import drawing_metrics, practice_metrics, recognition_metrics, stimulus_metrics
+from emotv.application.session_metrics import (drawing_metrics, game_metrics, game_sentence, practice_metrics,
+                                               recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import GuidedPhase
 from emotv.domain.protocol import Protocol
@@ -68,7 +69,8 @@ class SessionInsightsService:
     def _session_metrics(self, session: EmotionalSession) -> dict[str, Any]:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
-            return {**stimulus_metrics((), {}, ()), "practice": None, "recognition": None, "drawing": None}
+            return {**stimulus_metrics((), {}, ()), "practice": None, "recognition": None, "drawing": None,
+                    "game": None}
         stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
                    for step in protocol.steps}
         run = self.guided.get_run(session.id)
@@ -79,7 +81,8 @@ class SessionInsightsService:
                 "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id)),
                 "recognition": recognition_metrics(protocol.steps,
                                                    self.guided.list_recognition_results(session.id)),
-                "drawing": drawing_metrics(protocol.steps, self.guided.list_drawing_results(session.id))}
+                "drawing": drawing_metrics(protocol.steps, self.guided.list_drawing_results(session.id)),
+                "game": game_metrics(protocol.steps, self.guided.list_game_results(session.id))}
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
         return self.session_metrics(self._allowed_session(user, session_id, METRICS))
@@ -111,13 +114,15 @@ class SessionInsightsService:
             stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
             # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
             kind = ("practice" if step.is_practice else "recognition" if step.is_recognition
-                    else "drawing" if step.is_drawing else stimulus.kind.value if stimulus else "")
+                    else "drawing" if step.is_drawing else "game" if step.is_game
+                    else stimulus.kind.value if stimulus else "")
             titles[index] = (stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
         practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
         recognition = ({item.step_index: item for item in self.guided.list_recognition_results(session.id)}
                        if run else {})
         drawing = {item.step_index: item for item in self.guided.list_drawing_results(session.id)} if run else {}
+        games = {item.step_index: item for item in self.guided.list_game_results(session.id)} if run else {}
         # Repeticiones de un paso (intento 2 en adelante): se describen, no cuentan en las métricas.
         repeats: dict[int, list[dict[str, Any]]] = {}
         if run:
@@ -136,6 +141,12 @@ class SessionInsightsService:
                     repeats.setdefault(answer.step_index, []).append({
                         "attempt": answer.attempt, "outcome": answer.outcome.value,
                         "chosen_expression": answer.chosen_expression, "seconds_to_answer": answer.seconds_to_answer})
+            for game in self.guided.list_game_attempts(session.id):
+                if game.attempt > 1:
+                    repeats.setdefault(game.step_index, []).append({
+                        "attempt": game.attempt, "outcome": game.outcome.value,
+                        "sentence": game_sentence(game.rounds_total, game.rounds_done, game.matched,
+                                                  game.first_try, game.help_used)})
 
         def lane_item(index: int, start, end, skipped: bool) -> dict[str, Any]:
             title, kind = titles.get(index, ("", ""))
@@ -156,6 +167,12 @@ class SessionInsightsService:
                 item.update(outcome=answer.outcome.value if answer else None,
                             chosen_expression=answer.chosen_expression if answer else None,
                             seconds_to_answer=answer.seconds_to_answer if answer else None)
+            if kind == "game":
+                game = games.get(index)
+                item.update(outcome=game.outcome.value if game else None,
+                            rounds=steps[index].rounds,
+                            sentence=game_sentence(game.rounds_total, game.rounds_done, game.matched,
+                                                   game.first_try, game.help_used) if game else None)
             if repeats.get(index):
                 item["repeats"] = repeats[index]
             return item

@@ -19,7 +19,8 @@ from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import (DEFAULT_RECOGNITION_OPTIONS, ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
+                                   ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
                                    PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
@@ -55,8 +56,9 @@ class StepModel(BaseModel):
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
     # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
     # una imagen emocional y la persona elige qué emoción es. «drawing»: la
-    # persona dibuja una cara y señala qué emoción quiso representar.
-    kind: Literal["stimulus", "practice", "recognition", "drawing"] = "stimulus"
+    # persona dibuja una cara y señala qué emoción quiso representar. «game»: juego
+    # de emparejar imágenes con el nombre de su emoción.
+    kind: Literal["stimulus", "practice", "recognition", "drawing", "game"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
@@ -74,6 +76,11 @@ class StepModel(BaseModel):
     # Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
     # y la expresión pedida la toma el servidor de la imagen.
     imitate: bool = False
+    # Solo un juego: tipo («matching»), rondas y la imagen de cada ronda. Las
+    # imágenes las elige el servidor; al editar se envían las que ya tenía.
+    game_type: Literal["matching"] | None = None
+    rounds: int | None = None
+    game_stimulus_ids: list[str] = Field(default_factory=list, max_length=MAX_GAME_ROUNDS)
 
 
 class SupportsModel(BaseModel):
@@ -187,7 +194,9 @@ def create_stimulus_router(
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer,
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
-                             option_count=step.option_count, situation=step.situation, imitate=step.imitate)
+                             option_count=step.option_count, situation=step.situation, imitate=step.imitate,
+                             game_type=step.game_type, rounds=step.rounds,
+                             game_stimulus_ids=list(step.game_stimulus_ids))
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
@@ -200,8 +209,14 @@ def create_stimulus_router(
                                        step.record_verbal_response, step.shown_before_analyzer, kind=step.kind,
                                        target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                                        option_count=(DEFAULT_RECOGNITION_OPTIONS if step.kind == "recognition"
+                                                     and step.option_count is None
+                                                     else DEFAULT_GAME_OPTIONS if step.kind == "game"
                                                      and step.option_count is None else step.option_count),
-                                       situation=step.situation, imitate=step.imitate)
+                                       situation=step.situation, imitate=step.imitate,
+                                       game_type=step.game_type or ("matching" if step.kind == "game" else None),
+                                       rounds=(DEFAULT_GAME_ROUNDS if step.kind == "game" and step.rounds is None
+                                               else step.rounds),
+                                       game_stimulus_ids=tuple(step.game_stimulus_ids))
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

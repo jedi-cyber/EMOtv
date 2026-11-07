@@ -26,6 +26,12 @@ Un paso de dibujo pide dibujar una cara y después «¿Qué emoción quisiste
 dibujar?». El dibujo vive solo en la pantalla de la persona: aquí llega la
 emoción que señaló (o la que registra quien conduce), nunca el dibujo. No hay
 respuesta correcta y no analiza la cámara.
+
+Un juego de emparejar tiene varias rondas: en cada una, la persona relaciona una
+imagen con el nombre de su emoción. Puede pedir ayuda (se quita una opción y se
+lee la pregunta). Si elige otra emoción, se le invita a mirar otra vez; tras dos,
+se le muestra cuál es con su explicación y el juego sigue. Pasa de ronda con
+«Siguiente». Sin puntaje: solo se guardan contadores (GameResult).
 """
 from __future__ import annotations
 
@@ -68,12 +74,21 @@ from emotv.domain.guided_session import (
     DRAWING_INSTRUCTION,
     DRAWING_OPTIONS,
     DRAWING_QUESTION,
+    GAME_FINISHED,
+    GAME_FOUND,
+    GAME_MISSES_BEFORE_ANSWER,
+    GAME_QUESTION,
+    GAME_RETRY,
+    GAME_SHOWN,
+    GAME_TIME_UP,
     MAX_STEP_ATTEMPTS,
     NO_CAMERA_SKIP,
     CaptureQuality,
     DrawingResult,
     ExpressionCapture,
     FrameAssessment,
+    GameOutcome,
+    GameResult,
     GuidedPhase,
     GuidedRun,
     MarkerKind,
@@ -125,6 +140,10 @@ class GuidedRepository(Interface):
     def save_drawing_result(self, result: DrawingResult) -> DrawingResult: ...
     def list_drawing_results(self, session_id: str) -> tuple[DrawingResult, ...]: ...
     def list_drawing_attempts(self, session_id: str) -> tuple[DrawingResult, ...]: ...
+    # Uno por juego e intento: solo contadores.
+    def save_game_result(self, result: GameResult) -> GameResult: ...
+    def list_game_results(self, session_id: str) -> tuple[GameResult, ...]: ...
+    def list_game_attempts(self, session_id: str) -> tuple[GameResult, ...]: ...
 
 
 class GuidedNotFound(LookupError):
@@ -222,7 +241,7 @@ class GuidedSessionService:
         """Segundos máximos del paso. Sin límite de tiempo, un reconocimiento o un
         ejercicio solo termina al responder, al lograrlo o al saltarlo (con tope)."""
         timed = step.is_timed
-        return float(NO_TIME_LIMIT_SECONDS) if timed and protocol.supports.no_time_limit else step.exposure_seconds
+        return float(NO_TIME_LIMIT_SECONDS) if timed and protocol.supports.no_time_limit else step.seconds_limit
 
     def _unlimited(self, session: EmotionalSession, step: ProtocolStep | None) -> bool:
         return (step is not None and step.is_timed and session.protocol_id is not None
@@ -267,7 +286,7 @@ class GuidedSessionService:
     def _start_step(self, run: GuidedRun, protocol: Protocol, phase: GuidedPhase, index: int) -> GuidedRun:
         step = protocol.steps[index]
         return replace(run, phase=phase, step_index=index, step_started_at=self.clock(),
-                       next_capture_due=self._first_due(step, phase), step_attempt=1)
+                       next_capture_due=self._first_due(step, phase), step_attempt=1, game_progress=None)
 
     def _log_step(self, run: GuidedRun, skipped: bool, reason: str | None = None) -> GuidedRun:
         # Un paso repetido se registra desde su primer intento.
@@ -513,11 +532,11 @@ class GuidedSessionService:
     # --- Repetir un paso ---------------------------------------------------------------------
 
     def _step_attempts(self, session_id: str,
-                       step_index: int) -> list[PracticeResult | RecognitionResult | DrawingResult]:
+                       step_index: int) -> list[PracticeResult | RecognitionResult | DrawingResult | GameResult]:
         """Los intentos ya guardados de un paso, de cualquier tipo."""
-        items: list[PracticeResult | RecognitionResult | DrawingResult] = [
+        items: list[PracticeResult | RecognitionResult | DrawingResult | GameResult] = [
             *self.repository.list_practice_attempts(session_id), *self.repository.list_recognition_attempts(session_id),
-            *self.repository.list_drawing_attempts(session_id)]
+            *self.repository.list_drawing_attempts(session_id), *self.repository.list_game_attempts(session_id)]
         return [item for item in items if item.step_index == step_index]
 
     def _can_repeat(self, run: GuidedRun, session: EmotionalSession) -> bool:
@@ -542,7 +561,7 @@ class GuidedSessionService:
                 raise GuidedConflict("Este paso no se puede repetir ahora")
             self._live_of(session_id).practice = None
             run = self.repository.save_run(replace(fresh, step_started_at=self.clock(), next_capture_due=None,
-                                                   step_attempt=fresh.step_attempt + 1))
+                                                   step_attempt=fresh.step_attempt + 1, game_progress=None))
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
         return run
 
@@ -588,6 +607,8 @@ class GuidedSessionService:
                     self._store_recognition(run, session, step, RecognitionOutcome.TIMED_OUT, ended_at=limit)
                 elif step.is_drawing:
                     self._store_drawing(run, session, RecognitionOutcome.TIMED_OUT, ended_at=limit)
+                elif step.is_game:
+                    self._store_game(run, session, step, GameOutcome.TIMED_OUT, ended_at=limit)
                 else:
                     self._store_practice(run, session, step, PracticeOutcome.TIMED_OUT, ended_at=limit)
                 # También sin lograrlo hay una pausa antes del paso siguiente (§14.5).
@@ -790,7 +811,7 @@ class GuidedSessionService:
         if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
             return
         step = self._protocol(session).steps[run.step_index]
-        if not (step.is_recognition or step.is_drawing) or run.next_capture_due is not None:
+        if not (step.is_recognition or step.is_drawing or step.is_game) or run.next_capture_due is not None:
             return
         with self._practice_lock:
             fresh = self.repository.get_run(run.session_id) or run
@@ -800,6 +821,8 @@ class GuidedSessionService:
             ended = (RecognitionOutcome.TIMED_OUT, limit) if self.clock() >= limit else (outcome, self.clock())
             if step.is_drawing:
                 self._store_drawing(run, session, ended[0], ended_at=ended[1])
+            elif step.is_game:
+                self._store_game(fresh, session, step, GameOutcome(ended[0].value), ended_at=ended[1])
             else:
                 self._store_recognition(run, session, step, ended[0], ended_at=ended[1])
 
@@ -904,6 +927,174 @@ class GuidedSessionService:
         return {"options": list(DRAWING_OPTIONS),
                 "chosen_expression": result.chosen_expression if result else None,
                 "outcome": result.outcome.value if result else None}
+
+    # --- Juego de emparejar: rondas con contadores, sin puntaje --------------------------
+
+    @staticmethod
+    def _game_progress(run: GuidedRun) -> dict[str, Any]:
+        """La ronda en curso y los contadores del intento; nuevos al empezar el
+        paso o un intento. state: playing, retry (eligió otra emoción), matched
+        (la encontró), shown (se le mostró) o finished (terminó el juego)."""
+        key = f"{run.step_index}-{run.step_attempt}"
+        if run.game_progress and run.game_progress.get("key") == key:
+            return {**run.game_progress, "tried": list(run.game_progress.get("tried") or ())}
+        return {"key": key, "round": 0, "tried": [], "removed": None, "helped": False, "state": "playing",
+                "done": 0, "matched": 0, "first": 0, "help": 0, "by_conductor": 0}
+
+    def _game_target(self, step: ProtocolStep, round_index: int) -> str | None:
+        """La emoción de la imagen de la ronda: su expresión esperada en el banco."""
+        item = self.stimuli(step.game_stimulus_ids[round_index]) if round_index < len(step.game_stimulus_ids) else None
+        return item.expected_expression if item is not None else None
+
+    @staticmethod
+    def _game_options(run: GuidedRun, step: ProtocolStep, round_index: int, target: str) -> tuple[str, ...]:
+        """La emoción de la imagen y distractoras al azar, en orden al azar. La
+        semilla es la sesión, el paso, el intento y la ronda."""
+        chooser = random.Random(f"{run.session_id}:{run.step_index}:{run.step_attempt}:{round_index}")
+        pool = [item for item in RECOGNITION_DISTRACTORS if item != target]
+        options = [target, *chooser.sample(pool, step.option_count - 1)]
+        chooser.shuffle(options)
+        return tuple(options)
+
+    def _game_result(self, run: GuidedRun) -> GameResult | None:
+        """El resultado del intento en curso, si ya terminó."""
+        return next((item for item in self.repository.list_game_attempts(run.session_id)
+                     if item.step_index == run.step_index and item.attempt == run.step_attempt
+                     and run.step_started_at is not None), None)
+
+    def _store_game(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep, outcome: GameOutcome,
+                    ended_at: datetime, progress: dict[str, Any] | None = None) -> None:
+        progress = progress or self._game_progress(run)
+        self.repository.save_game_result(GameResult(
+            id=str(uuid4()), session_id=session.id, step_index=run.step_index, game_type=step.game_type,
+            outcome=outcome, started_at=run.step_started_at, ended_at=max(run.step_started_at, ended_at),
+            rounds_total=step.rounds, rounds_done=progress["done"], matched=progress["matched"],
+            first_try=progress["first"], help_used=progress["help"], by_conductor=progress["by_conductor"],
+            attempt=run.step_attempt))
+
+    def _game_act(self, run: GuidedRun, action: str, expression: str | None, by: RecognitionAnswerer) -> GuidedRun:
+        """Una acción del juego: elegir una emoción (answer), pedir ayuda (help) o
+        pasar a la ronda siguiente (next). Tras la última ronda, el paso termina y
+        sigue la pausa de siempre."""
+        session = self._session(run.session_id)
+        if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
+            raise GuidedConflict("No hay un juego en curso")
+        protocol = self._protocol(session)
+        step = protocol.steps[run.step_index]
+        if not step.is_game:
+            raise GuidedConflict("No hay un juego en curso")
+        with self._practice_lock:
+            fresh = self.repository.get_run(run.session_id) or run
+            if (fresh.phase, fresh.step_index, fresh.step_started_at) != (run.phase, run.step_index,
+                                                                           run.step_started_at):
+                raise GuidedConflict("El paso cambió")
+            elapsed = self._seconds(fresh.step_started_at)
+            if fresh.next_capture_due is not None or elapsed >= self._limit(protocol, step):
+                raise GuidedConflict("Este paso ya terminó")
+            progress = self._game_progress(fresh)
+            target = self._game_target(step, progress["round"])
+            if target is None:
+                raise GuidedConflict("La imagen de esta ronda ya no está disponible: salta el paso")
+            options = self._game_options(fresh, step, progress["round"], target)
+            playing = progress["state"] in ("playing", "retry")
+            if action == "answer":
+                if not playing:
+                    raise GuidedConflict("Esta ronda ya terminó")
+                if expression not in options or expression in progress["tried"] or expression == progress["removed"]:
+                    raise ValueError("Esa opción no se muestra ahora")
+                if by is RecognitionAnswerer.CONDUCTOR:
+                    progress["by_conductor"] += 1
+                if expression == target:
+                    progress.update(state="matched", done=progress["done"] + 1, matched=progress["matched"] + 1)
+                    if not progress["tried"]:
+                        progress["first"] += 1
+                else:
+                    progress["tried"] = [*progress["tried"], expression]
+                    if len(progress["tried"]) >= GAME_MISSES_BEFORE_ANSWER:
+                        progress.update(state="shown", done=progress["done"] + 1)
+                    else:
+                        progress["state"] = "retry"
+            elif action == "help":
+                if not playing:
+                    raise GuidedConflict("Esta ronda ya terminó")
+                if not progress["helped"]:
+                    progress.update(helped=True, help=progress["help"] + 1)
+                    # Se quita una opción que no es, si quedan al menos dos a la vista.
+                    wrong = [item for item in options if item != target and item not in progress["tried"]]
+                    if len(wrong) >= 2:
+                        progress["removed"] = wrong[0]
+            elif action == "next":
+                if playing:
+                    raise GuidedConflict("Primero termina esta ronda")
+                if progress["round"] + 1 < step.rounds:
+                    progress.update(round=progress["round"] + 1, tried=[], removed=None, helped=False,
+                                    state="playing")
+                else:
+                    progress["state"] = "finished"
+                    self._store_game(fresh, session, step, GameOutcome.COMPLETED, ended_at=self.clock(),
+                                     progress=progress)
+                    return self.repository.save_run(replace(
+                        fresh, game_progress=progress, next_capture_due=elapsed + self._step_pause(protocol)))
+            else:
+                raise ValueError("Acción del juego desconocida")
+            return self.repository.save_run(replace(fresh, game_progress=progress))
+
+    def participant_game(self, token: str, action: str, expression: str | None = None) -> None:
+        """La persona tocó una emoción, «Ayuda» o «Siguiente» en su pantalla."""
+        self._game_act(self._tick(self._by_token(token)), action, expression, RecognitionAnswerer.PARTICIPANT)
+
+    def conductor_game(self, user: User, session_id: str, action: str, expression: str | None = None) -> GuidedRun:
+        """Quien conduce registra la emoción que la persona señaló, pide la ayuda o pasa de ronda."""
+        run, _ = self._conducted(user, session_id)
+        run = self._game_act(self._tick(run), action, expression, RecognitionAnswerer.CONDUCTOR)
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
+
+    def _game_round(self, run: GuidedRun, step: ProtocolStep) -> tuple[dict[str, Any], int, str | None,
+                                                                          tuple[str, ...]]:
+        progress = self._game_progress(run)
+        index = min(progress["round"], step.rounds - 1)
+        target = self._game_target(step, index)
+        options = self._game_options(run, step, index, target) if target else ()
+        return progress, index, target, options
+
+    def _participant_game(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
+        """Lo que ve la persona: la ronda, las emociones que puede tocar y, al
+        terminar la ronda, la emoción de la imagen con su explicación. Sin puntaje."""
+        progress, index, target, options = self._game_round(run, step)
+        result = self._game_result(run)
+        state = progress["state"] if result is None or result.outcome is GameOutcome.COMPLETED else "ended"
+        answer = RECOGNITION_ANSWERS.get(target or "", "")
+        messages = {
+            "retry": GAME_RETRY,
+            "matched": GAME_FOUND.format(answer=answer[:1].lower() + answer[1:]),
+            "shown": GAME_SHOWN.format(answer=answer),
+            "finished": GAME_FINISHED,
+            "ended": GAME_TIME_UP if result is not None and result.outcome is GameOutcome.TIMED_OUT else None,
+        }
+        revealed = state in ("matched", "shown")
+        explanation = self.explanation_of(target) if revealed and target and self.explanation_of else None
+        return {"round": f"{run.step_index}-{run.step_attempt}-{index}", "number": index + 1, "total": step.rounds,
+                "question": GAME_QUESTION, "state": state,
+                "options": [{"key": item, "label": RECOGNITION_NAMES[item],
+                             "available": item not in progress["tried"] and item != progress["removed"]}
+                            for item in options],
+                "answer": target if revealed else None,
+                "message": messages.get(state),
+                "explanation": explanation or None,
+                "can_help": state in ("playing", "retry") and not progress["helped"],
+                "last_round": index + 1 == step.rounds}
+
+    def _conductor_game(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
+        """Lo que ve quien conduce: la ronda, la emoción de la imagen, las opciones
+        y los contadores del intento."""
+        progress, index, target, options = self._game_round(run, step)
+        result = self._game_result(run)
+        return {"round": index + 1, "rounds": step.rounds, "stimulus_id": step.game_stimulus_ids[index],
+                "target_expression": target, "options": list(options), "tried": list(progress["tried"]),
+                "removed": progress["removed"], "state": progress["state"], "helped": progress["helped"],
+                "rounds_done": progress["done"], "matched": progress["matched"], "first_try": progress["first"],
+                "help_used": progress["help"], "outcome": result.outcome.value if result else None}
 
     def _tick_live(self, run: GuidedRun) -> GuidedRun:
         """Fase live: una captura vencida sin un cuadro válido se guarda marcada."""
@@ -1218,10 +1409,11 @@ class GuidedSessionService:
                        "shown_before_analyzer": item.shown_before_analyzer,
                        "step_kind": item.kind.value, "target_expression": item.target_expression,
                        "hold_seconds": item.hold_seconds, "option_count": item.option_count,
-                       "situation": item.situation, "imitate": item.imitate}
+                       "situation": item.situation, "imitate": item.imitate,
+                       "game_type": item.game_type, "rounds": item.rounds}
                       for index, item in enumerate(steps)],
             # Nulo sin límite de tiempo: el paso no vence.
-            "remaining_seconds": (max(0.0, step.exposure_seconds - self._seconds(run.step_started_at))
+            "remaining_seconds": (max(0.0, step.seconds_limit - self._seconds(run.step_started_at))
                                   if step and not self._unlimited(session, step) else None),
             "supports": (self._supports_payload(self._protocol(session)) if session.protocol_id else None),
             # «Esperar a quien conduce»: el paso terminó y sigue cuando pulse «Seguir».
@@ -1247,6 +1439,8 @@ class GuidedSessionService:
                             else None),
             "drawing": (self._conductor_drawing(run)
                         if step is not None and step.is_drawing and run.phase is GuidedPhase.STIMULI else None),
+            "game": (self._conductor_game(run, step)
+                     if step is not None and step.is_game and run.phase is GuidedPhase.STIMULI else None),
         }
         if include_results:
             summary["captures"] = [{
@@ -1279,6 +1473,12 @@ class GuidedSessionService:
                 "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,
                 "answered_by": item.answered_by.value if item.answered_by else None,
             } for item in self.repository.list_drawing_results(session.id)]
+            # Solo contadores: no es un puntaje.
+            summary["game_results"] = [{
+                "step_index": item.step_index, "game_type": item.game_type, "outcome": item.outcome.value,
+                "rounds_total": item.rounds_total, "rounds_done": item.rounds_done, "matched": item.matched,
+                "first_try": item.first_try, "help_used": item.help_used, "by_conductor": item.by_conductor,
+            } for item in self.repository.list_game_results(session.id)]
             # Las repeticiones (intento 2 en adelante), aparte: no cuentan en las métricas.
             summary["repeated_attempts"] = sorted([
                 *({"step_index": item.step_index, "attempt": item.attempt, "step_kind": "practice",
@@ -1295,6 +1495,11 @@ class GuidedSessionService:
                    "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,
                    "answered_by": item.answered_by.value if item.answered_by else None}
                   for item in self.repository.list_drawing_attempts(session.id) if item.attempt > 1),
+                *({"step_index": item.step_index, "attempt": item.attempt, "step_kind": "game",
+                   "target_expression": None, "outcome": item.outcome.value, "rounds_total": item.rounds_total,
+                   "rounds_done": item.rounds_done, "matched": item.matched, "first_try": item.first_try,
+                   "help_used": item.help_used}
+                  for item in self.repository.list_game_attempts(session.id) if item.attempt > 1),
             ], key=lambda item: (item["step_index"], item["attempt"]))
             summary["verbal_responses"] = [{
                 "step_index": item.step_index, "stimulus_id": item.stimulus_id, "text": item.text,
@@ -1322,7 +1527,7 @@ class GuidedSessionService:
             return {"phase": run.phase.value, "message": message, "stimulus": None,
                     "remaining_seconds": None, "capture_frames": False, "frame_interval_ms": FRAME_INTERVAL_MS,
                     "abstract_notice": False, "practice": None, "recognition": None, "drawing": None,
-                    "accessible": False,
+                    "game": None, "accessible": False,
                     "uses_camera": self._camera_active(run, session)}
         stimulus = None
         remaining = None
@@ -1330,6 +1535,7 @@ class GuidedSessionService:
         practice = None
         recognition = None
         drawing = None
+        game = None
         if run.phase in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             step = self._protocol(session).steps[run.step_index]
             item = self.stimuli(step.stimulus_id) if step.stimulus_id else None
@@ -1339,7 +1545,7 @@ class GuidedSessionService:
                                      + (f"-{run.step_attempt}" if run.step_attempt > 1 else "")}
                         if step.stimulus_id else None)
             remaining = (None if self._unlimited(session, step)
-                         else max(0.0, step.exposure_seconds - self._seconds(run.step_started_at)))
+                         else max(0.0, step.seconds_limit - self._seconds(run.step_started_at)))
             abstract = item is not None and item.kind is StimulusKind.ABSTRACT and not step.is_practice
             if step.is_practice:
                 practice = self._participant_practice(run, step)
@@ -1347,6 +1553,10 @@ class GuidedSessionService:
                 recognition = self._participant_recognition(run, step)
             if step.is_drawing:
                 drawing = self._participant_drawing(run)
+            if step.is_game:
+                game = self._participant_game(run, step)
+                # La imagen de la ronda: el identificador cambia con cada ronda.
+                stimulus = {"exposure": f"{run.step_index}-{int(run.step_started_at.timestamp())}-{game['round']}"}
         live = self._live.get(run.session_id)
         calibrating = run.phase is GuidedPhase.CALIBRATION and live is not None and live.calibration is not None \
             and live.calibration.state == CALIBRATING
@@ -1363,7 +1573,7 @@ class GuidedSessionService:
                     "remaining_seconds": None,
                     "capture_frames": calibrating or run.phase is GuidedPhase.EXAM,
                     "frame_interval_ms": FRAME_INTERVAL_MS, "abstract_notice": False, "practice": None,
-                    "recognition": None, "drawing": None}
+                    "recognition": None, "drawing": None, "game": None}
         messages = {
             GuidedPhase.PRE_QUESTIONNAIRE: "Primero, unas preguntas.",
             GuidedPhase.CALIBRATION: ("Mira a la pantalla con el rostro relajado." if calibrating
@@ -1380,12 +1590,13 @@ class GuidedSessionService:
             # Un reconocimiento o un dibujo no analiza la cámara: la pantalla no envía cuadros.
             "capture_frames": self._camera_active(run, session) and (
                 calibrating or (run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE)
-                                and recognition is None and drawing is None)),
+                                and recognition is None and drawing is None and game is None)),
             "frame_interval_ms": FRAME_INTERVAL_MS,
             "abstract_notice": abstract,
             "practice": practice,
             "recognition": recognition,
             "drawing": drawing,
+            "game": game,
             # Pantalla accesible: algún apoyo que cambia la pantalla.
             "accessible": bool(supports := self._screen_supports(session))
             and (supports["pictograms"] or supports["large_controls"]),
@@ -1401,7 +1612,10 @@ class GuidedSessionService:
         if run.phase not in (GuidedPhase.BEFORE_ANALYZER, GuidedPhase.STIMULI):
             raise GuidedNotFound("stimulus")
         session = self._session(run.session_id)
-        stimulus_id = self._protocol(session).steps[run.step_index].stimulus_id
+        step = self._protocol(session).steps[run.step_index]
+        stimulus_id = step.stimulus_id
+        if step.is_game:
+            stimulus_id = step.game_stimulus_ids[min(self._game_progress(run)["round"], step.rounds - 1)]
         if stimulus_id is None:
             raise GuidedNotFound("stimulus")
         return stimulus_id
@@ -1473,8 +1687,8 @@ class GuidedSessionService:
             if step.is_practice:
                 self._practice_frame(run, session, step, frame)
                 return
-            if step.is_recognition or step.is_drawing:
-                return  # un reconocimiento o un dibujo no analiza la cámara
+            if step.is_recognition or step.is_drawing or step.is_game:
+                return  # un reconocimiento, un dibujo o un juego no analiza la cámara
         if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE) or run.next_capture_due is None:
             return
         elapsed = self._seconds(run.step_started_at)

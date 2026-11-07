@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_PRACTICE, DRAWING_SECONDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 
@@ -85,7 +85,7 @@ export function ProtocolsPage() {
   const recognitionProblems = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.kind === "recognition"
     && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
       || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
-  const drawingProblems = draft.steps.filter((step) => step.kind === "drawing"
+  const drawingProblems = draft.steps.filter((step) => (step.kind === "drawing" || step.kind === "game")
     && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
   const chosen = choice ? byId.get(choice) : undefined;
   // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
@@ -133,6 +133,14 @@ export function ProtocolsPage() {
     // Sin imagen ni opciones: la persona dibuja y señala la emoción que quiso representar.
     update({ steps: [...draft.steps, { kind: "drawing", stimulus_id: null,
       exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS,
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+  }
+  function addGame() {
+    // Pocas opciones al empezar. Las imágenes las elige el servidor del banco aprobado.
+    update({ steps: [...draft.steps, { kind: "game", game_type: "matching", stimulus_id: null,
+      rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
+      exposure_seconds: accessibleOn(draft.supports)
+        ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds,
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
@@ -347,6 +355,32 @@ export function ProtocolsPage() {
               </div>
             </li>;
           }
+          if (step.kind === "game") {
+            const rounds = step.rounds ?? DEFAULT_GAME.rounds;
+            return <li key={`game-${index}`} className="row-card protocol-step">
+              <div>
+                <strong>{index + 1}. Juego: empareja la emoción</strong>
+                <span>En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones. Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
+                <span className="muted">EMOtv elige una imagen emocional aprobada por ronda{draft.for_children ? " «Para niños»" : ""}, de emociones distintas, al guardar.</span>
+              </div>
+              <div className="inline-actions">
+                <label>Rondas<select value={rounds} onChange={(event) => {
+                  const next = Number(event.target.value);
+                  updateStep(index, { rounds: next, game_stimulus_ids: (step.game_stimulus_ids ?? []).slice(0, next) });
+                }}>
+                  {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
+                    .map((count) => <option key={count} value={count}>{count}</option>)}
+                </select></label>
+                <label>Opciones por ronda<select value={step.option_count ?? DEFAULT_GAME.option_count}
+                  onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
+                  {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
+                </select></label>
+                <label>Tiempo por ronda (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                {order}
+              </div>
+            </li>;
+          }
           const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
           if (step.kind === "recognition") {
             const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
@@ -411,6 +445,7 @@ export function ProtocolsPage() {
         <div className="inline-actions">
           <Button onClick={addPractice}>Agregar ejercicio de práctica</Button>
           <Button onClick={addDrawing}>Agregar dibujo</Button>
+          <Button onClick={addGame}>Agregar juego de emparejar</Button>
         </div>
         <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
           una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
@@ -421,6 +456,9 @@ export function ProtocolsPage() {
         <p className="muted">En un dibujo la persona dibuja una cara en su pantalla y después señala qué emoción quiso
           representar. El dibujo se queda en su pantalla y se borra al terminar el paso: solo se registra la emoción que
           señaló. EMOtv no mira ni interpreta el dibujo.</p>
+        <p className="muted">En el juego de emparejar la persona relaciona cada imagen con el nombre de su emoción, tocando
+          un botón. Empieza con pocas opciones; sube las rondas o las opciones cuando quieras más dificultad. Se registra
+          cuántas rondas jugó, cuántas emparejó y si pidió ayuda; no es un puntaje ni evalúa a nadie.</p>
 
         {questionnaireSelect("post")}
       </>}
