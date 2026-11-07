@@ -24,6 +24,7 @@ visión con modelos preentrenados, Emi, la aplicación web y el aplicativo Andro
 | Resultados educativos en reportes y estadísticas (bloque 7 del pedido) | Hecho el 2026-11-07 (§18); sin migración; contrato móvil 4.8 |
 | Android como pantalla de la persona (bloque 8 del pedido) | Hecho el 2026-11-07 (§19 y §20); migración 20261107_43; contrato móvil 4.9 |
 | Dibujo táctil en Android (bloque 9 del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§20); contrato móvil 4.10, solo documentación |
+| Juego de emparejar en Android (bloque 10A del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§21); contrato móvil 4.11, solo documentación. «Busca la misma emoción» sigue solo en la web |
 | 5. Reportes, estadísticas y contrato móvil 4.5 | Pendiente |
 | 6. Android sigue el contrato 4.5 | Pendiente |
 | 7. Emi, guía de uso y plantillas | Pendiente |
@@ -1035,7 +1036,7 @@ claro no se guarda.
 
 **Pendiente.**
 
-- Los juegos en Android quedan para un bloque posterior.
+- El juego de emparejar llegó a Android en el bloque 10A (§21); «Busca la misma emoción» queda para otro bloque.
 - La migración 43 en PostgreSQL y una prueba con un dispositivo real.
 
 ## 20. Bloque 9: dibujo táctil en Android
@@ -1082,3 +1083,45 @@ estos casos:
 `ParticipationViewModelTest`), `lintDebug` y `assembleDebug`.
 
 **Pendiente.** Probarlo con niños, bajo la revisión de Psicología.
+
+## 21. Bloque 10A: juego de emparejar en Android
+
+Está en `EMOtv-android`, dentro de la pantalla de la persona. El servidor y la
+web no cambian: Android usa las mismas rutas que la pantalla web.
+
+**Igual que la web.**
+
+- La imagen de la ronda, «Ronda N de M» y un botón por emoción, sin arrastrar.
+- Si elige otra, se invita a mirar otra vez; tras dos, se muestra cuál es con su
+  explicación.
+- «Ayuda» quita una opción una vez por ronda.
+- «Siguiente» y «Terminar el juego».
+- Pictogramas si el protocolo los pide.
+- Sin puntaje.
+
+Las reglas las aplica el servidor; Android solo muestra su estado.
+
+**TalkBack.**
+
+- Cada botón se lee con el nombre de la emoción y su estado («No disponible»,
+  «Es esta»). El pictograma y la marca «✓ Es esta» no se leen dos veces.
+- La imagen se anuncia como «Cara de la ronda».
+- Lo que pasó en la ronda está en una región viva.
+
+**Reconexión y duplicados.**
+
+- No se envía una acción mientras otra va en camino.
+- Si se pierde la respuesta y la persona toca otra vez, el servidor responde
+  `409` o `422` sin registrar nada; Android vuelve a leer el estado.
+- Sin conexión, se reintenta con el mismo enlace y la ronda sigue igual.
+
+**Privacidad.** La imagen de la ronda es un estímulo, solo en memoria: se borra
+al cambiar de ronda, al terminar y al salir. Sin cámara.
+
+**Comprobado.** Pruebas unitarias (`MatchingGameViewModelTest`, con un servidor
+falso que aplica las reglas del juego web), pruebas en el teléfono
+(`MatchingGameScreenTest`), `lintDebug` y `assembleDebug`.
+
+**Pendiente.** «Busca la misma emoción» en Android. Probarlo con niños, bajo la
+revisión de Psicología. La lectura en voz alta (apoyo `read_aloud`) aún no está
+en Android.
