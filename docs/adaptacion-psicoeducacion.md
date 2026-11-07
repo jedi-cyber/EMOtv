@@ -24,7 +24,8 @@ visión con modelos preentrenados, Emi, la aplicación web y el aplicativo Andro
 | Resultados educativos en reportes y estadísticas (bloque 7 del pedido) | Hecho el 2026-11-07 (§18); sin migración; contrato móvil 4.8 |
 | Android como pantalla de la persona (bloque 8 del pedido) | Hecho el 2026-11-07 (§19 y §20); migración 20261107_43; contrato móvil 4.9 |
 | Dibujo táctil en Android (bloque 9 del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§20); contrato móvil 4.10, solo documentación |
-| Juego de emparejar en Android (bloque 10A del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§21); contrato móvil 4.11, solo documentación. «Busca la misma emoción» sigue solo en la web |
+| Juego de emparejar en Android (bloque 10A del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§21); contrato móvil 4.11, solo documentación |
+| «Busca la misma emoción» en Android (bloque 10B del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§22); contrato móvil 4.12, solo documentación |
 | 5. Reportes, estadísticas y contrato móvil 4.5 | Pendiente |
 | 6. Android sigue el contrato 4.5 | Pendiente |
 | 7. Emi, guía de uso y plantillas | Pendiente |
@@ -1036,7 +1037,7 @@ claro no se guarda.
 
 **Pendiente.**
 
-- El juego de emparejar llegó a Android en el bloque 10A (§21); «Busca la misma emoción» queda para otro bloque.
+- Los dos juegos llegaron a Android en los bloques 10A y 10B (§21 y §22).
 - La migración 43 en PostgreSQL y una prueba con un dispositivo real.
 
 ## 20. Bloque 9: dibujo táctil en Android
@@ -1122,6 +1123,43 @@ al cambiar de ronda, al terminar y al salir. Sin cámara.
 falso que aplica las reglas del juego web), pruebas en el teléfono
 (`MatchingGameScreenTest`), `lintDebug` y `assembleDebug`.
 
-**Pendiente.** «Busca la misma emoción» en Android. Probarlo con niños, bajo la
-revisión de Psicología. La lectura en voz alta (apoyo `read_aloud`) aún no está
+**Pendiente.** Probarlo con niños, bajo la revisión de Psicología. La lectura en voz alta (apoyo `read_aloud`) aún no está
 en Android.
+
+## 22. Bloque 10B: «Busca la misma emoción» en Android
+
+Reutiliza la estructura del juego de emparejar (§21): el mismo paso, la misma
+pantalla y las mismas acciones. El servidor y la web no cambian.
+
+**Igual que la web.**
+
+- La cara modelo arriba y un botón con cada cara («Cara 1», «Cara 2»…), sin
+  decir su emoción ni mostrar pictogramas.
+- Si elige otra, se invita a mirar otra vez; tras dos, se muestra la pareja con
+  su explicación.
+- «Ayuda» quita una cara una vez por ronda.
+- «Siguiente» y «Terminar el juego».
+
+**TalkBack.** La modelo se anuncia como «Cara de arriba, la que hay que
+comparar». Cada botón se lee «Cara 1» con su estado; la imagen de la cara no se
+anuncia.
+
+**Imágenes.** La modelo y cada cara se piden al cambiar la ronda, no en cada
+consulta. Viven solo en memoria y se borran al cambiar de ronda, al terminar y al
+salir. Son estímulos, nunca imágenes de personas.
+
+**Finalización y resultados.** Al terminar la última ronda el paso se cierra y
+sigue el siguiente. El resultado queda registrado como el del juego web:
+rondas, emparejadas, a la primera, ayudas y respuestas de quien conduce (cero si
+todo lo tocó la persona). Un toque repetido tras un corte no se registra dos
+veces.
+
+**Comprobado.**
+
+- Servidor: una prueba juega las dos rondas con el enlace de Android y revisa el
+  registro y la frase de las métricas
+  (`test_busca_la_misma_emocion_desde_android_termina_y_registra_el_resultado`).
+- Android: pruebas unitarias (`MatchingGameViewModelTest`) y en el teléfono
+  (`SimilarGameScreenTest`).
+
+**Pendiente.** Probarlo con niños, bajo la revisión de Psicología.

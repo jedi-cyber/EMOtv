@@ -20,7 +20,7 @@ from sqlalchemy import inspect
 from emotv.application.login_throttle import LoginThrottle
 from emotv.application.mobile_auth_service import MobileAuthService
 from emotv.config import LoginLimits
-from emotv.domain.guided_session import PAIRING_ALPHABET, PAIRING_LENGTH, PAIRING_SECONDS, GuidedRun
+from emotv.domain.guided_session import PAIRING_ALPHABET, PAIRING_LENGTH, PAIRING_SECONDS, GameOutcome, GuidedRun
 from emotv.infrastructure.persistence import PostgresLoginAttemptRepository, PostgresMobileSessionRepository
 from emotv.interfaces.web.mobile_router import create_mobile_router
 from emotv.interfaces.web.security import configure_web_security, load_web_settings
@@ -29,6 +29,7 @@ from tests.integration.test_guided_sessions import begin_steps, guided, post, pr
 from tests.integration.test_mobile_api import bearer, signed_in
 from tests.integration.test_practice_persistence import engine  # noqa: F401
 from tests.integration.test_privacy_accounts import env, headers  # noqa: F401
+from tests.integration.test_similar_game import bank, correct_key, round_info, save, similar, wrong_keys
 
 MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "versions" / "20261107_43_android_screen.py"
 DRAWING = {"kind": "drawing", "exposure_seconds": 30}
@@ -242,6 +243,52 @@ def test_al_terminar_el_enlace_se_cierra(env, mobile):  # noqa: F811
     assert env.client.post(f"/participant-view/{token}/stop").json() == {"stopped": True}
     assert view(env, token).status_code == 404 and answer(env, token, "happiness").status_code == 404
     assert claim(mobile, pending).status_code == 404
+
+
+def test_busca_la_misma_emocion_desde_android_termina_y_registra_el_resultado(env, mobile):  # noqa: F811
+    """Bloque 10B: Android juega «Busca la misma emoción» con las mismas rutas que la
+    web. Un toque repetido tras un corte no se registra dos veces y, al terminar,
+    el resultado queda como respondido por la persona."""
+    bank(env)
+    response = save(env, [similar(rounds=2, options=3), DRAWING])
+    assert response.status_code == 201, response.text
+    session_id, _ = guided(env, response.json())
+    begin_steps(env, session_id, _)
+    token = paired(env, mobile, session_id)
+    block = view(env, token).json()
+    assert block["activity"]["kind"] == "game" and block["game"]["game_type"] == "similar"
+    # La modelo y cada cara se piden con el enlace de Android.
+    assert env.client.get(f"/participant-view/{token}/stimulus").status_code == 200
+    for item in block["game"]["options"]:
+        assert env.client.get(f"/participant-view/{token}/game/option/{item['key']}").status_code == 200
+
+    def act(action, key=None):
+        return env.client.post(f"/participant-view/{token}/game",
+                               json={"action": action, **({"expression": key} if key else {})})
+
+    # Ronda 1: una cara de otra emoción, repetida tras un corte, y luego la pareja.
+    miss = wrong_keys(round_info(env, session_id))[0]
+    assert act("answer", miss).status_code == 200
+    assert act("answer", miss).status_code == 422
+    assert act("answer", correct_key(round_info(env, session_id))).status_code == 200
+    assert act("next").status_code == 200
+    assert act("next").status_code == 409                               # no salta dos rondas
+    assert view(env, token).json()["game"]["number"] == 2
+    # Ronda 2: a la primera, y «Terminar el juego».
+    assert act("answer", correct_key(round_info(env, session_id))).status_code == 200
+    assert act("next").status_code == 200
+    assert view(env, token).json()["game"]["state"] == "finished"
+    assert act("next").status_code == 409
+
+    [item] = env.guided.repository.list_game_attempts(session_id)
+    assert item.game_type == "similar" and item.outcome is GameOutcome.COMPLETED
+    assert (item.rounds_total, item.rounds_done, item.matched, item.first_try, item.help_used,
+            item.by_conductor) == (2, 2, 2, 1, 0, 0)
+    [exercise] = env.client.get(f"/sessions/{session_id}/metrics",
+                                headers=headers(env, env.user_1)).json()["game"]["exercises"]
+    assert exercise["game_type"] == "similar" and exercise["sentence"].startswith("Jugó 2 de 2 rondas.")
+    wait(env, 2.1)
+    assert view(env, token).json()["activity"]["kind"] == "drawing"     # sigue el paso siguiente
 
 
 # --- Migración ------------------------------------------------------------------------------------

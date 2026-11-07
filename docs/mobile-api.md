@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.11 (2026-11-07). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona) y la 4.10 y la 4.11 documentan su paso de dibujo y su juego de emparejar, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.12 (2026-11-07). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona) y la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
@@ -225,6 +225,7 @@ Resumen:
 | `GET /participant-view/{token}` | Enlace | 200 | Sí |
 | `POST /participant-view/{token}/answer` | Enlace | 200 | Sí (el segundo responde `409`) |
 | `GET /participant-view/{token}/stimulus` | Enlace | 200 | Sí |
+| `GET /participant-view/{token}/game/option/{key}` | Enlace | 200 | Sí |
 | `POST /participant-view/{token}/game` | Enlace | 200 | Sí (repetida responde `409` o `422` y no se registra otra vez) |
 | `POST /participant-view/{token}/stop` | Enlace | 200 | Sí (el segundo responde `404`) |
 
@@ -655,15 +656,15 @@ persona.
 - `number` y `total`: el paso y cuántos hay; son nulos fuera de los pasos.
 
 Nunca trae la respuesta correcta ni ninguna expresión estimada. En Android se
-juega el juego de emparejar (desde 4.11). «Busca la misma emoción»
-(`game_type` `similar`) todavía no se juega ahí: el aplicativo muestra su nombre
-y quien conduce registra la respuesta en la web.
+juegan los dos juegos: emparejar (desde 4.11) y «Busca la misma emoción»
+(desde 4.12). Con un `game_type` desconocido, el aplicativo muestra su nombre y
+quien conduce registra la respuesta en la web.
 
 **Juego de emparejar** (desde 4.11). Cuando `activity.kind` es `game`, el estado
 trae `game` y `stimulus.exposure`. Las reglas son las de la web:
 
 - `number` y `total`: «Ronda 2 de 3». No hay puntaje.
-- `game_type`: `matching`; con otro valor el aplicativo no juega.
+- `game_type`: `matching` o `similar`; con otro valor el aplicativo no juega.
 - `question`: el texto para mostrar.
 - `state`: `playing`, `retry`, `matched`, `shown`, `finished` o `ended`. La
   lista es abierta: un valor desconocido no se juega.
@@ -679,6 +680,22 @@ La imagen de la ronda se pide con `GET /participant-view/{token}/stimulus` cada
 vez que cambia `stimulus.exposure`. Es un estímulo, nunca la imagen de una
 persona. Vive solo en memoria y se borra al cambiar de ronda, al terminar la
 sesión y al salir.
+
+**Busca la misma emoción** (desde 4.12). Mismo bloque `game` con `game_type`
+`similar` y las mismas reglas. Cambia esto:
+
+- La imagen de `stimulus` es la cara modelo, la de arriba.
+- Cada opción es otra cara. Su `key` es el lugar («1», «2»…), su `label` es
+  «Cara 1» y no dice la emoción.
+- La imagen de cada opción se pide con
+  `GET /participant-view/{token}/game/option/{key}`, solo para la ronda en
+  curso (`404` con otra clave).
+- `answer` es la clave de la cara que muestra la misma emoción.
+- No hay pictogramas: dirían la respuesta.
+
+Las imágenes viven solo en memoria y se borran al cambiar de ronda, al terminar
+y al salir. Al terminar, el resultado se registra como el del juego web:
+rondas, emparejadas, a la primera, ayudas y cuántas registró quien conduce.
 
 Las acciones van a `POST /participant-view/{token}/game` con
 `{"action": "answer", "expression": "<key>"}`, `{"action": "help"}` o
@@ -1058,6 +1075,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.12 | 2026-11-07 | Solo documentación, compatible con la 4.11: «Busca la misma emoción» (`game_type` `similar`) en Android, con `GET /participant-view/{token}/game/option/{key}`. No hay rutas ni campos nuevos |
 | 4.11 | 2026-11-07 | Solo documentación, compatible con la 4.10: el bloque `game` de `GET /participant-view/{token}`, `GET /participant-view/{token}/stimulus` y `POST /participant-view/{token}/game` para el juego de emparejar en Android. No hay rutas ni campos nuevos |
 | 4.10 | 2026-11-07 | Solo documentación, compatible con la 4.9: el bloque `drawing` de `GET /participant-view/{token}` y `POST /participant-view/{token}/answer` para el dibujo táctil en Android. El dibujo no sale del dispositivo. No hay rutas ni campos nuevos |
 | 4.9 | 2026-11-07 | Compatible con la 4 a la 4.8. Nueva ruta `POST /mobile/participation`, que canjea un código de un solo uso por el enlace de la [pantalla de la persona](#pantalla-de-la-persona). `GET /participant-view/{token}` agrega `activity`. Las rutas de consulta y de reporte no cambian |
