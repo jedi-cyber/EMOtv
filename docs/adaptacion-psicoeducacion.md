@@ -26,6 +26,7 @@ visión con modelos preentrenados, Emi, la aplicación web y el aplicativo Andro
 | Dibujo táctil en Android (bloque 9 del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§20); contrato móvil 4.10, solo documentación |
 | Juego de emparejar en Android (bloque 10A del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§21); contrato móvil 4.11, solo documentación |
 | «Busca la misma emoción» en Android (bloque 10B del pedido) | Hecho el 2026-11-07 en `EMOtv-android` (§22); contrato móvil 4.12, solo documentación |
+| Adaptación de Emi (bloque 11 del pedido) | En el repositorio el 2026-11-07 (§23). Pendiente en Sim: pegar `docs/chatbot/sim-pendiente-bloque11.md` y desplegar |
 | 5. Reportes, estadísticas y contrato móvil 4.5 | Pendiente |
 | 6. Android sigue el contrato 4.5 | Pendiente |
 | 7. Emi, guía de uso y plantillas | Pendiente |
@@ -1163,3 +1164,32 @@ veces.
   (`SimilarGameScreenTest`).
 
 **Pendiente.** Probarlo con niños, bajo la revisión de Psicología.
+
+## 23. Bloque 11: adaptación de Emi
+
+**En el repositorio.**
+
+- `emi_knowledge.py`: nueva sección «Actividades educativas y apoyos» (sin
+  cámara, dibujo, los dos juegos, apoyos, repetir un paso, Android con código y
+  resultados que describen). Cabe en el límite del workflow sin recortar.
+- Guía de uso: el paso «Preparar el material» nombra los botones reales de los
+  pasos nuevos, para que Emi no los invente.
+- `docs/chatbot/emotv-descripcion-sim.md`: descripción fija actualizada.
+- `scripts/chatbot/check_provider.py`: comprueba la disponibilidad del proveedor
+  y muestra solo el servidor, el resultado y la respuesta, nunca la URL completa
+  ni la clave.
+
+**Se conserva.** Emi no aparece en la pantalla de la persona (web ni Android) y
+`/chat` exige cuenta. Ni el conocimiento ni las preguntas llevan datos de
+sesiones o resultados. Emi no interpreta dibujos ni diagnostica. La
+indisponibilidad sigue con sus mensajes (502, 503 y 504).
+
+**Comprobado.** Pruebas `test_emi_knowledge`, `test_emi_chat` y
+`test_user_guide`. El proveedor respondió desde `www.sim.ai` y nombró «Agregar
+juego de emparejar».
+
+**Pendiente (fuera del repositorio).** El workflow publicado en Sim usa
+categorías antiguas, menciona posturas y examen como disponibles y responde a
+«¿qué significa su dibujo?» con el rechazo genérico (`otra_psicologia`), no como
+`diagnostico_persona`. El texto exacto está en
+`docs/chatbot/sim-pendiente-bloque11.md`. No está aplicado.

@@ -149,3 +149,37 @@ def test_con_las_actividades_congeladas_emi_no_las_describe():
     # Las expresiones conservan al menos su primera frase completa.
     for item in seeded_items():
         assert item.what_it_is.split(". ")[0] in text
+
+
+def test_emi_explica_las_actividades_educativas_y_sus_apoyos():
+    """Bloque 11: con la configuración vigente (posturas congeladas), Emi recibe cómo
+    funcionan el dibujo, los juegos, los apoyos y la pantalla en Android, con sus
+    límites, sin pasar el límite del workflow ni perder las expresiones."""
+    text = build_knowledge(DEFAULT_ACTIVITIES, seeded_items(), activities_enabled=False)
+    assert len(text) <= MAX_KNOWLEDGE_CHARS
+    assert "[Conocimiento recortado" not in text
+    section = text[text.index("## Actividades educativas y apoyos"):]
+    section = section[:section.index("\n## ")]
+    for fact in ("«Continuar sin cámara»", "«Terminé»", "elige qué emoción quiso dibujar", "2 a 6 rondas",
+                 "emparejar", "«Busca la misma emoción»", "«Ayuda» quita una opción", "pictogramas",
+                 "botones grandes", "voz alta", "sin límite de tiempo", "«Modo accesible»",
+                 "Un paso se puede repetir", "«Vincular Android»", "«Abrir una actividad con código»",
+                 "vence en 5 minutos, un solo uso", "sin cámara ni cuenta"):
+        assert fact in section, fact
+    # Límites que Emi debe conservar: el dibujo no sale ni se interpreta y nada se diagnostica.
+    assert "El dibujo no se guarda ni se envía y EMOtv no lo interpreta" in section
+    assert "EMOtv no diagnostica ni interpreta dibujos, respuestas ni juegos" in section
+    assert "nunca valoran" in section
+    # La guía de uso nombra las actividades nuevas.
+    for button in ("«Agregar dibujo»", "«Agregar juego de emparejar»", "«Agregar juego: busca la misma emoción»"):
+        assert button in text, button
+    for item in seeded_items():
+        assert item.what_it_is.split(". ")[0] in text, item.label_es
+
+
+def test_el_conocimiento_nuevo_no_trae_datos_ni_resultados():
+    from emotv.application.emi_knowledge import EDUCATIONAL
+
+    # Solo reglas y nombres de la interfaz: ningún código de sesión, enlace, correo ni cifra de una persona.
+    for forbidden in ("S-", "participant-view", "token", "@", "http", "%"):
+        assert forbidden not in EDUCATIONAL, forbidden

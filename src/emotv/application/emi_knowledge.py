@@ -47,15 +47,23 @@ EMOtv es una herramienta de apoyo de la Facultad de Psicología de la UNHEVAL pa
 SESSIONS = """## Sesiones y autorizaciones
 - No se registra a la persona evaluada: no se guarda nombre, DNI ni foto. Cada sesión lleva solo un código aleatorio.
 - Sin la confirmación de la autorización no hay sesión: la firma de la persona adulta o, con un niño o niña, su tutor autorizó por escrito, está presente y el niño aceptó.
-- Acceden a una sesión quien la condujo y su docente. La administración no accede a contenidos.
-- El acta de una eliminación lleva el código, la fecha y los registros borrados, sin datos personales."""
+- Acceden a una sesión quien la condujo y su docente. La administración no accede a contenidos."""
 
 PROTOCOLS = """## Protocolos
 - Un protocolo es una receta guardada para adultos o para niños: cuestionario previo opcional, hasta 30 pasos en orden (1 a 120 s cada uno) y cuestionario posterior opcional. Con niños solo admite imágenes leves y aprobadas.
-- Pasos: una imagen con captura de la expresión estimada; «¿Qué emoción es?», donde la persona elige una emoción sin que se analice la cámara; un ejercicio de práctica con una señal de 0 a 1 que crece al acercarse a la expresión pedida; y «Haz la misma cara», una práctica en la que la imagen es el modelo.
+- Pasos: una imagen con captura de la expresión estimada; «¿Qué emoción es?» (elige una emoción, sin cámara); un ejercicio de práctica (una señal de 0 a 1); «Haz la misma cara» (la imagen es el modelo); un dibujo; y dos juegos.
 - Un protocolo usado en una sesión no se edita: se crea una versión nueva.
 - Antes de cada captura se revisa la calidad (rostro visible, centrado, tamaño, luz e inclinación). Una captura con problemas no cuenta en las métricas.
 - La pantalla de la persona no muestra resultados, etiquetas ni probabilidades. EMOtv no calcula puntajes ni interpreta las respuestas."""
+
+# Bloque 11: lo que Emi explica a usuarios y docentes sobre las actividades sin cámara.
+EDUCATIONAL = """## Actividades educativas y apoyos
+- «¿Qué emoción es?», dibujos y juegos no usan la cámara; si falla, «Continuar sin cámara» sigue con ellos.
+- Dibujo: la persona dibuja con el dedo, pulsa «Terminé» y elige qué emoción quiso dibujar. El dibujo no se guarda ni se envía y EMOtv no lo interpreta.
+- Juegos de 2 a 6 rondas: emparejar (nombrar la emoción de una cara) y «Busca la misma emoción» (elegir la cara con la misma emoción que la de arriba). «Ayuda» quita una opción.
+- Apoyos: pictogramas, botones grandes, voz alta, sin límite de tiempo y pausas («Modo accesible» junta varios). Un paso se puede repetir.
+- Android: tras «Vincular Android», la persona escribe el código en «Abrir una actividad con código» (vence en 5 minutos, un solo uso); dibuja y juega sin cámara ni cuenta.
+- Los resultados describen, nunca valoran. EMOtv no diagnostica ni interpreta dibujos, respuestas ni juegos."""
 
 METRICS = """## Línea de tiempo y métricas de la sesión
 - La línea de tiempo ordena cuestionarios, imágenes, capturas, lo que la persona dijo ver y marcadores.
@@ -138,10 +146,11 @@ def build_knowledge(activities: Iterable[Activity], expressions: Iterable[Expres
     if activities_enabled:
         postures = ("## Posturas (la cámara verifica cada una)\n"
                     + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values()))
-        fixed = [INTRO, guide, postures, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
+        fixed = [INTRO, guide, postures, SESSIONS, PROTOCOLS, EDUCATIONAL, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
     else:
-        fixed = [_without_activities(INTRO), guide, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
-    for limit in (400, 320, 260, 200, 160, 120, 90, 60):
+        fixed = [_without_activities(INTRO), guide, SESSIONS, PROTOCOLS, EDUCATIONAL, METRICS, REPORTS, LIMITATIONS, DATA,
+                 ROLES]
+    for limit in (400, 320, 260, 200, 160, 120, 90, 60, 45, 30):
         # Los textos fijos van primero: si hay que recortar, solo se pierde contenido editable.
         sections = [_activities_section(activities, limit)] if activities_enabled else []
         text = "\n\n".join([*fixed, *sections, _expressions_section(expressions, limit)])

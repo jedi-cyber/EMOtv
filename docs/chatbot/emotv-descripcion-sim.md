@@ -17,10 +17,11 @@ EMOtv es una herramienta de apoyo de la Facultad de Psicología de la UNHEVAL
 emociones, en especial en la niñez. La usan Usuarios y Docentes, que la aplican
 con personas adultas o con niños y niñas, siempre con autorización. Estima la
 expresión facial visible con la cámara del navegador, permite aplicar
-protocolos (cuestionarios, «¿Qué emoción es?», ejercicios de práctica y «Haz la
-misma cara») durante una sesión, muestra una línea de tiempo con métricas
-descriptivas y un reporte que revisa el Docente, y presenta estadísticas
-agregadas de sesiones. Emi es su asistente: responde a Usuarios y Docentes
+protocolos (cuestionarios, «¿Qué emoción es?», ejercicios de práctica, «Haz la
+misma cara», dibujos y dos juegos, con apoyos configurables) durante una
+sesión, con o sin cámara, muestra una línea de tiempo con métricas descriptivas
+y un reporte que revisa el Docente, y presenta estadísticas agregadas de
+sesiones. Emi es su asistente: responde a Usuarios y Docentes
 sobre Psicología en general y sobre el uso de EMOtv. Las personas evaluadas no
 tienen cuenta ni usan Emi.
 
@@ -55,9 +56,10 @@ Toda sesión empieza en el **Analizador**:
 
 Con protocolo, la sesión sigue sus pasos: cuestionario previo, calibración
 neutral, los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
-práctica o «Haz la misma cara») y cuestionario posterior. La persona evaluada
-ve los pasos en su propia pantalla («Abrir la pantalla de la persona»), sin
-resultados, y puede pedir parar en cualquier momento.
+práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. La
+persona evaluada ve los pasos en su propia pantalla («Abrir la pantalla de la
+persona», o en Android con «Vincular Android»), sin resultados, y puede pedir
+parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
 
 ## 3. Otras funciones
 
@@ -79,6 +81,35 @@ resultados, y puede pedir parar en cualquier momento.
   elige entre opciones; después se lee el nombre de la emoción del dibujo, sin
   valorar la respuesta. El resultado se describe («Eligió la emoción de la imagen
   en X de Y»), nunca como puntaje.
+- **Sin cámara**: «¿Qué emoción es?», los dibujos y los juegos no usan la
+  cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
+  quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
+  que la necesitan.
+- **Dibujo** («Agregar dibujo»): la persona dibuja con el dedo
+  (colores, grosor, borrador, «Deshacer» y «Limpiar»), pulsa «Terminé» y elige
+  qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y EMOtv no lo
+  interpreta**: solo se registra la emoción elegida, los tiempos y quién
+  respondió. Emi tampoco interpreta dibujos.
+- **Juegos**, de 2 a 6 rondas, sin puntaje:
+  - «Agregar juego de emparejar»: la persona ve una cara y toca el nombre de su
+    emoción;
+  - «Agregar juego: busca la misma emoción»: ve una cara arriba y elige otra
+    cara («Cara 1», «Cara 2»…) que muestre la misma emoción.
+
+  Si elige otra, se la invita a mirar otra vez; tras dos intentos, se muestra
+  la respuesta con una explicación sencilla. «Ayuda» quita una opción una vez
+  por ronda.
+- **Repetir un paso**: quien conduce puede pulsar «Repetir este paso», «Repetir
+  este ejercicio», «Repetir este dibujo» o «Repetir el juego».
+- **Apoyos del protocolo**: «Modo accesible» junta pictogramas, botones
+  grandes, nada que se mueva y pausas más largas. También se eligen uno por
+  uno: «Pictogramas junto a cada emoción», «Botones y letra grandes, sin
+  animaciones», «Leer la consigna en voz alta al empezar cada paso», «Sin
+  límite de tiempo en «¿Qué emoción es?» y en la práctica» y la pausa tras cada
+  paso (normal, larga o esperar a que quien conduce pulse «Seguir»).
+- **Resultados educativos**: el reporte y las estadísticas describen lo
+  ocurrido en cada actividad (por ejemplo, «Jugó 2 de 2 rondas.») y nunca
+  valoran a la persona. Una sesión breve no permite sacar conclusiones.
 - **Imágenes**: los Docentes y la administración crean estímulos; los Usuarios
   suben imágenes propias, que pasan por detección automática de personas y
   quedan pendientes hasta que su Docente las aprueba («Para niños» o «Para
@@ -110,10 +141,15 @@ resultados, y puede pedir parar en cualquier momento.
   examen simulado y las imágenes abstractas con respuesta verbal están
   desactivadas porque no forman parte del objetivo actual. Si alguien pregunta
   por ellas, Emi dice que no están disponibles en esta versión.
-- **Aplicativo móvil (Android)**: solo de consulta. No conduce sesiones ni usa
-  la cámara. Muestra las sesiones y su detalle, los reportes (el Usuario
-  redacta, corrige y envía; el Docente comenta, devuelve o aprueba), las
-  estadísticas agregadas y los pendientes del Docente.
+- **Aplicativo móvil (Android)**: no conduce sesiones ni usa la cámara.
+  - Con cuenta: muestra las sesiones y su detalle, los reportes (el Usuario
+    redacta, corrige y envía; el Docente comenta, devuelve o aprueba), las
+    estadísticas agregadas y los pendientes del Docente.
+  - Sin cuenta, como pantalla de la persona: quien conduce pulsa «Vincular
+    Android» en la web y la persona escribe el código en «Abrir una actividad
+    con código». El código vence en 5 minutos y sirve una sola vez. Ahí se
+    dibuja y se juegan los dos juegos. El dibujo y las imágenes viven solo en
+    la memoria del teléfono.
 
 ## 4. Expresiones que estima EMOtv
 
@@ -175,6 +211,7 @@ nombres: Alegría, Sorpresa, Tristeza, Enojo, Miedo, Asco y Cara tranquila.
   por escrito, está presente y el niño aceptó participar.
 - **Compromiso de confidencialidad**: Usuarios y Docentes lo aceptan una vez
   (por versión); sin aceptarlo no inician sesiones con personas.
+- Los dibujos no se guardan ni salen del dispositivo de la persona.
 - A Emi nunca llegan datos de sesiones, reportes ni resultados. EMOtv rechaza,
   antes de enviarlos, los mensajes con DNI, correos o teléfonos. No se deben
   escribir nombres ni datos de niños o familias.
@@ -190,8 +227,10 @@ nombres: Alegría, Sorpresa, Tristeza, Enojo, Miedo, Asco y Cara tranquila.
   contener o actuar una expresión, y una captura dura un instante.
 - Los cuestionarios, las respuestas de reconocimiento y las estadísticas solo
   muestran y resumen lo registrado: EMOtv no calcula puntajes, no interpreta
-  respuestas ni relaciona una imagen con ninguna condición. Una sesión breve no
-  permite concluir nada sobre la persona.
+  respuestas, dibujos ni juegos, y no relaciona una imagen con ninguna
+  condición. Una sesión breve no permite concluir nada sobre la persona.
+- Si alguien pide interpretar el dibujo o el resultado de una persona concreta,
+  Emi explica que ni EMOtv ni Emi lo hacen y sugiere conversarlo con su Docente.
 - Los resultados son de apoyo y los interpreta un profesional, nunca el
   sistema.
 
