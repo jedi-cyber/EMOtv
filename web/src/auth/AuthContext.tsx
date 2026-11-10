@@ -2,7 +2,7 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import type { PropsWithChildren } from "react";
 import { AUTH_UNAUTHORIZED_EVENT, ApiError, apiRequest, isConnectionError } from "../api/http";
 import { tokenStorage } from "./tokenStorage";
-import type { CurrentUser, TokenResponse } from "./types";
+import type { CurrentUser, MfaChallenge, TokenResponse } from "./types";
 
 interface AuthContextValue {
   user: CurrentUser | null;
@@ -10,7 +10,9 @@ interface AuthContextValue {
   loading: boolean;
   notice: string;
   connectionError?: boolean;
-  login(email: string, password: string): Promise<void>;
+  /** Devuelve el segundo paso cuando la cuenta es de gestión (superadmin o admin). */
+  login(email: string, password: string): Promise<MfaChallenge | null>;
+  completeMfa(mfaToken: string, code: string): Promise<void>;
   changePassword(currentPassword: string, newPassword: string): Promise<void>;
   logout(notice?: string): void;
 }
@@ -85,7 +87,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => { active = false; };
   }, [logout, token]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const finishLogin = useCallback(async (accessToken: string, attempt: number) => {
+    const currentUser = await apiRequest<CurrentUser>("/auth/me", { token: accessToken });
+    if (attempt !== generation.current) return;
+    tokenStorage.set(accessToken);
+    setToken(accessToken);
+    setUser(currentUser);
+  }, []);
+
+  const login = useCallback(async (email: string, password: string): Promise<MfaChallenge | null> => {
     const attempt = ++generation.current;
     setNotice("");
     const form = new URLSearchParams({ username: email, password });
@@ -94,15 +104,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
       body: form,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    if (attempt !== generation.current) return;
-    const currentUser = await apiRequest<CurrentUser>("/auth/me", {
-      token: result.access_token,
+    if (attempt !== generation.current) return null;
+    if (result.mfa && result.mfa_token) return { step: result.mfa, mfaToken: result.mfa_token };
+    if (!result.access_token) throw new Error("No se pudo completar el ingreso.");
+    await finishLogin(result.access_token, attempt);
+    return null;
+  }, [finishLogin]);
+
+  const completeMfa = useCallback(async (mfaToken: string, code: string) => {
+    const attempt = ++generation.current;
+    const result = await apiRequest<TokenResponse>("/auth/mfa/verify", {
+      method: "POST", body: JSON.stringify({ mfa_token: mfaToken, code: code.replace(/\s/g, "") }),
     });
     if (attempt !== generation.current) return;
-    tokenStorage.set(result.access_token);
-    setToken(result.access_token);
-    setUser(currentUser);
-  }, []);
+    if (!result.access_token) throw new Error("No se pudo completar el ingreso.");
+    await finishLogin(result.access_token, attempt);
+  }, [finishLogin]);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     if (!token) throw new Error("Inicia sesión nuevamente.");
@@ -110,15 +127,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
       method: "POST", token,
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     });
-    const current = await apiRequest<CurrentUser>("/auth/me", { token: result.access_token });
-    tokenStorage.set(result.access_token);
-    setToken(result.access_token);
+    const accessToken = result.access_token;
+    if (!accessToken) throw new Error("Inicia sesión nuevamente.");
+    const current = await apiRequest<CurrentUser>("/auth/me", { token: accessToken });
+    tokenStorage.set(accessToken);
+    setToken(accessToken);
     setUser(current);
   }, [token]);
 
   const value = useMemo(
-    () => ({ user, token, loading, notice, connectionError, login, changePassword, logout }),
-    [user, token, loading, notice, connectionError, login, changePassword, logout],
+    () => ({ user, token, loading, notice, connectionError, login, completeMfa, changePassword, logout }),
+    [user, token, loading, notice, connectionError, login, completeMfa, changePassword, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

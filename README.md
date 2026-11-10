@@ -14,7 +14,10 @@ para la Facultad de Psicología de la Universidad Nacional Hermilio Valdizán
    una señal de 0 a 1 que crece cuando su expresión estimada se acerca a la
    pedida. El sistema registra si se logró, en cuánto tiempo y si la señal
    estuvo visible; no valora a la persona ni guarda imágenes
-   ([práctica de expresiones](docs/expression-practice.md)).
+   ([práctica de expresiones](docs/expression-practice.md)); y pasos de
+   **reconocimiento** («¿Qué emoción es?»): la persona elige la emoción de una
+   imagen y después lee su nombre, sin que se analice la cámara
+   ([reconocimiento de emociones](docs/emotion-recognition.md)).
 
 Incluye inicio de sesión con roles, consentimiento configurable, historial de
 sesiones y **Emi**, un chatbot educativo (workflow de Sim; n8n queda como opción).

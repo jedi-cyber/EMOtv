@@ -8,6 +8,10 @@ import { apiRequest } from "../src/api/http";
 import { AssistantProvider } from "../src/components/AssistantContext";
 import { AssistantWidget } from "../src/components/AssistantWidget";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+const features = vi.hoisted(() => ({ ACTIVITIES_ENABLED: true }));
+vi.mock("../src/routes/features", () => features);
+
 const { admissions, protocols } = vi.hoisted(() => ({ admissions: { value: [{ model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[], is_default: true as boolean }] }, protocols: { value: [] as unknown[] } }));
 vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => ({ data: path === null ? null : path === "/protocols" ? protocols.value : admissions.value, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
@@ -122,6 +126,28 @@ describe("analizador emoción → recomendación → postura", () => {
     await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p1");
     expect(screen.queryByRole("group", { name: "¿Con quién es la sesión?" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeInTheDocument();
+  });
+
+  it("con protocolo no pide probar la cámara aquí: la pide la pantalla de la persona solo si hace falta", async () => {
+    const getUserMedia = camera();
+    protocols.value = [
+      { id: "p1", name: "Reconocer", for_children: false, owned_by_me: true, steps: [{ kind: "recognition" }],
+        pre_questionnaire_id: null, post_questionnaire_id: null, uses_camera: false },
+      { id: "p2", name: "Mixto", for_children: false, owned_by_me: true, steps: [{ kind: "recognition" }, { kind: "practice" }],
+        pre_questionnaire_id: null, post_questionnaire_id: null, uses_camera: true },
+    ];
+    page();
+    await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p1");
+    const requirements = screen.getByRole("list", { name: "Requisitos para empezar" });
+    expect(within(requirements).queryByText("Cámara")).not.toBeInTheDocument();
+    expect(screen.getByText(/No usa la cámara\./)).toBeInTheDocument();
+    expect(screen.getByText(/Sigue sus pasos/).textContent).not.toMatch(/calibración/);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled());
+    await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p2");
+    expect(screen.getByText(/Sigue sus pasos/).textContent).toMatch(/calibración/);
+    expect(screen.getByText(/si no está disponible, siguen los pasos sin cámara/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled();
+    expect(getUserMedia).not.toHaveBeenCalled();
   });
 
   it("sin protocolos ofrece crear uno", () => {
@@ -246,8 +272,8 @@ describe("analizador emoción → recomendación → postura", () => {
     act(() => Socket.instances[0].onopen?.());
     // Sin elección, el servidor usa el predeterminado (o su respaldo) e informa si está bloqueado.
     expect(JSON.parse(Socket.instances[0].send.mock.calls[0][0])).not.toHaveProperty("emotion_model_id");
-    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Benchmark vencido" }) }));
-    expect(await screen.findByText(/Modelo bloqueado: Benchmark vencido/)).toBeInTheDocument();
+    act(() => Socket.instances[0].onmessage?.({ data: JSON.stringify({ type: "error", message: "Modelo bloqueado: Pesos no instalados en el servidor" }) }));
+    expect(await screen.findByText(/Modelo bloqueado: Pesos no instalados/)).toBeInTheDocument();
   });
 
   it("reconoce primero, muestra sugerencia y solo entonces asigna la actividad", async () => {
@@ -357,6 +383,25 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByText("Sesión finalizada sin actividad. Tu expresión quedó registrada.")).toBeInTheDocument();
     expect(screen.getByText(/Expresión registrada:/)).toHaveTextContent("Neutral (70 %)");
     expect(screen.getByRole("button", { name: "Analizar otra expresión" })).toBeInTheDocument();
+  });
+
+  it("con las actividades congeladas termina en el resultado, sin sugerir actividades", async () => {
+    features.ACTIVITIES_ENABLED = false;
+    try {
+      const socket = await openLive();
+      expect(screen.getByText("Paso 1 de 2 · Expresión en vivo")).toBeInTheDocument();
+      recognize(socket, sadnessInfo);
+      expect(screen.getByText("Paso 2 de 2 · Resultado")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Movilidad suave" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Actividad recomendada")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /actividad/i })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Finalizar" }));
+      expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toEqual({ type: "finish_without_activity" });
+      act(() => socket.onmessage?.({ data: JSON.stringify({ type: "completed", message: "Sesión finalizada", emotion: "sadness", emotion_confidence: .9, exercise_result: "skipped" }) }));
+      expect(screen.getByText("Sesión finalizada. Tu expresión quedó registrada.")).toBeInTheDocument();
+    } finally {
+      features.ACTIVITIES_ENABLED = true;
+    }
   });
 
   it("muestra el resultado educativo en el orden indicado, con la limitación y la nota de borrador", async () => {

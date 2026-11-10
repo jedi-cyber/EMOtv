@@ -12,9 +12,10 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import practice_metrics, stimulus_metrics
+from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, game_sentence,
+                                               practice_metrics, recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.guided_session import GuidedPhase
+from emotv.domain.guided_session import RECOGNITION_NAMES, GuidedPhase
 from emotv.domain.protocol import Protocol
 from emotv.domain.session import EmotionalSession
 from emotv.domain.stimulus import Stimulus
@@ -68,15 +69,26 @@ class SessionInsightsService:
     def _session_metrics(self, session: EmotionalSession) -> dict[str, Any]:
         protocol = self.protocols(session.protocol_id) if session.protocol_id else None
         if protocol is None:
-            return {**stimulus_metrics((), {}, ()), "practice": None}
+            return {**stimulus_metrics((), {}, ()), "practice": None, "recognition": None, "drawing": None,
+                    "game": None, "educational": None}
         stimuli = {step.stimulus_id: self.stimuli(step.stimulus_id) if step.stimulus_id else None
                    for step in protocol.steps}
         run = self.guided.get_run(session.id)
         skipped = [item["step_index"] for item in run.steps_log if item.get("skipped")] if run else []
-        return {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
-                                   self.guided.list_verbal(session.id), skipped),
-                # Aparte de la coincidencia de estímulos.
-                "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id))}
+        metrics = {**stimulus_metrics(protocol.steps, stimuli, self.guided.list_captures(session.id),
+                                      self.guided.list_verbal(session.id), skipped),
+                   # Aparte de la coincidencia de estímulos.
+                   "practice": practice_metrics(protocol.steps, self.guided.list_practice_results(session.id)),
+                   "recognition": recognition_metrics(protocol.steps,
+                                                      self.guided.list_recognition_results(session.id)),
+                   "drawing": drawing_metrics(protocol.steps, self.guided.list_drawing_results(session.id)),
+                   "game": game_metrics(protocol.steps, self.guided.list_game_results(session.id))}
+        # Resultados educativos: el mismo contenido, separado por tipo de actividad.
+        attempts: dict[int, int] = {}
+        for item in self.guided.list_game_attempts(session.id):
+            attempts[item.step_index] = max(attempts.get(item.step_index, 0), item.attempt)
+        metrics["educational"] = educational_summary(metrics, attempts, RECOGNITION_NAMES)
+        return metrics
 
     def metrics(self, user: User, session_id: str) -> dict[str, Any]:
         return self.session_metrics(self._allowed_session(user, session_id, METRICS))
@@ -107,19 +119,68 @@ class SessionInsightsService:
         for index, step in enumerate(steps):
             stimulus = self.stimuli(step.stimulus_id) if step.stimulus_id else None
             # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
-            kind = "practice" if step.is_practice else stimulus.kind.value if stimulus else ""
+            kind = ("practice" if step.is_practice else "recognition" if step.is_recognition
+                    else "drawing" if step.is_drawing else "game" if step.is_game
+                    else stimulus.kind.value if stimulus else "")
             titles[index] = (stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
         practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
+        recognition = ({item.step_index: item for item in self.guided.list_recognition_results(session.id)}
+                       if run else {})
+        drawing = {item.step_index: item for item in self.guided.list_drawing_results(session.id)} if run else {}
+        games = {item.step_index: item for item in self.guided.list_game_results(session.id)} if run else {}
+        # Repeticiones de un paso (intento 2 en adelante): se describen, no cuentan en las métricas.
+        repeats: dict[int, list[dict[str, Any]]] = {}
+        if run:
+            for result in self.guided.list_practice_attempts(session.id):
+                if result.attempt > 1:
+                    repeats.setdefault(result.step_index, []).append({
+                        "attempt": result.attempt, "outcome": result.outcome.value,
+                        "seconds_to_achieve": result.seconds_to_achieve})
+            for answer in self.guided.list_recognition_attempts(session.id):
+                if answer.attempt > 1:
+                    repeats.setdefault(answer.step_index, []).append({
+                        "attempt": answer.attempt, "outcome": answer.outcome.value,
+                        "chosen_expression": answer.chosen_expression, "seconds_to_answer": answer.seconds_to_answer})
+            for answer in self.guided.list_drawing_attempts(session.id):
+                if answer.attempt > 1:
+                    repeats.setdefault(answer.step_index, []).append({
+                        "attempt": answer.attempt, "outcome": answer.outcome.value,
+                        "chosen_expression": answer.chosen_expression, "seconds_to_answer": answer.seconds_to_answer})
+            for game in self.guided.list_game_attempts(session.id):
+                if game.attempt > 1:
+                    repeats.setdefault(game.step_index, []).append({
+                        "attempt": game.attempt, "outcome": game.outcome.value,
+                        "sentence": game_sentence(game.rounds_total, game.rounds_done, game.matched,
+                                                  game.first_try, game.help_used)})
 
         def lane_item(index: int, start, end, skipped: bool) -> dict[str, Any]:
             title, kind = titles.get(index, ("", ""))
             item = {"step_index": index, "title": title, "kind": kind, "start": start, "end": end, "skipped": skipped}
             if kind == "practice":
                 result = practice.get(index)
-                item.update(target_expression=steps[index].target_expression,
+                item.update(target_expression=steps[index].target_expression, imitate=steps[index].imitate,
                             outcome=result.outcome.value if result else None,
                             seconds_to_achieve=result.seconds_to_achieve if result else None)
+            if kind == "recognition":
+                answer = recognition.get(index)
+                item.update(target_expression=steps[index].target_expression,
+                            outcome=answer.outcome.value if answer else None,
+                            chosen_expression=answer.chosen_expression if answer else None,
+                            seconds_to_answer=answer.seconds_to_answer if answer else None)
+            if kind == "drawing":
+                answer = drawing.get(index)
+                item.update(outcome=answer.outcome.value if answer else None,
+                            chosen_expression=answer.chosen_expression if answer else None,
+                            seconds_to_answer=answer.seconds_to_answer if answer else None)
+            if kind == "game":
+                game = games.get(index)
+                item.update(outcome=game.outcome.value if game else None,
+                            rounds=steps[index].rounds, game_type=steps[index].game_type,
+                            sentence=game_sentence(game.rounds_total, game.rounds_done, game.matched,
+                                                   game.first_try, game.help_used) if game else None)
+            if repeats.get(index):
+                item["repeats"] = repeats[index]
             return item
 
         stimuli_lane = []

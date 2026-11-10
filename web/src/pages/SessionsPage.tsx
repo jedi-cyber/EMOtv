@@ -11,6 +11,7 @@ import { StatusChip, toneForSession } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { paths } from "../routes/paths";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -71,7 +72,7 @@ export function SessionsPage() {
           {!showWithoutResult && <span className="muted">{hiddenCount === 1 ? "1 sesión oculta" : `${hiddenCount} sesiones ocultas`}</span>}
         </div>}
         {visible.length === 0 ? <p className="empty-state">Todas las sesiones se cancelaron antes de registrar una expresión.</p>
-          : <div className="table-wrap"><table className="data-table"><thead><tr><th>Código</th><th>Fecha</th><th>Estado</th>{!student && <th>Conducida por</th>}<th>Actividad</th><th>Resultado de la actividad</th><th>Expresión registrada</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
+          : <div className="table-wrap"><table className="data-table"><thead><tr><th>Código</th><th>Fecha</th><th>Estado</th>{!student && <th>Conducida por</th>}{ACTIVITIES_ENABLED && <><th>Actividad</th><th>Resultado de la actividad</th></>}<th>Expresión registrada</th><th>Confianza</th><th>Duración</th></tr></thead><tbody>
             {visible.map((session) => <tr key={session.id} className="clickable-row" onClick={(event) => {
               if (!(event.target as HTMLElement).closest("a")) navigate(paths.session(session.id));
             }}>
@@ -79,9 +80,9 @@ export function SessionsPage() {
               <td data-label="Fecha">{formatDate(session.started_at)}</td>
               <td data-label="Estado"><span className="inline-actions"><StatusChip tone={toneForSession(session.state)}>{sessionStateName(session.state)}</StatusChip>
                 {session.deletion_requested_at && <StatusChip tone="progress">Eliminación pedida</StatusChip>}</span></td>
-              {!student && <td data-label="Conducida por">{session.student_id ? studentCodes.get(session.student_id) ?? "Usuario de tu grupo" : "Tú"}</td>}
-              <td data-label="Actividad">{activityName(session.activity_id)}</td>
-              <td data-label="Resultado de la actividad">{session.exercise_result ? activityOutcomeName(session.exercise_result) : EMPTY}</td>
+              {!student && <td data-label="Conducida por">{session.student_id ? studentCodes.get(session.student_id) ?? "Usuario de tu grupo" : "Tú (demostración)"}</td>}
+              {ACTIVITIES_ENABLED && <><td data-label="Actividad">{activityName(session.activity_id)}</td>
+              <td data-label="Resultado de la actividad">{session.exercise_result ? activityOutcomeName(session.exercise_result) : EMPTY}</td></>}
               <td data-label="Expresión registrada">{session.initial_emotion ? expressionLabel(session.initial_emotion) : EMPTY}</td>
               <td data-label="Confianza">{session.emotion_confidence == null ? EMPTY : `${Math.round(session.emotion_confidence * 100)} %`}</td>
               <td data-label="Duración">{session.exercise_duration_seconds == null ? EMPTY : `${session.exercise_duration_seconds.toFixed(1)} s`}</td>

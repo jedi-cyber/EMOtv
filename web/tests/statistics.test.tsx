@@ -82,10 +82,11 @@ describe("estadísticas", () => {
     expect(within(answers).getAllByRole("listitem").map((item) => item.getAttribute("aria-label"))).toEqual(["Sí: 2", "No: 1"]);
   });
 
-  it("el docente elige su grupo y ve los totales por usuario", async () => {
+  it("el docente ve directamente su grupo, sin sus sesiones de demostración", () => {
     state.data["/statistics"] = stats({ scope: "group", by_user: [{ email: "usuario1@example.com", sessions: 6, completed: 4, interrupted: 2 }] });
     withUser("psychologist");
-    await userEvent.click(screen.getByRole("radio", { name: "Mi grupo" }));
+    expect(screen.queryByRole("radio", { name: "Mis sesiones" })).not.toBeInTheDocument();
+    expect(screen.getByText("Sesiones de tu grupo. Tus sesiones de demostración no cuentan.")).toBeInTheDocument();
     expect(state.paths.at(-1)).toContain("scope=group");
     expect(screen.getByText("usuario1@example.com")).toBeInTheDocument();
   });

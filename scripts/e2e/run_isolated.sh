@@ -5,9 +5,10 @@
 #   bash scripts/e2e/run_isolated.sh e2e/auth.spec.ts
 #
 # 1. Levanta (o reutiliza) el proyecto "emotv-e2e" con su propia base de datos.
-# 2. Genera una contraseña nueva para la cuenta de administración de pruebas
-#    (la crea si no existe) y la cambia por la API. La contraseña solo vive en
-#    variables de este proceso: no se escribe en archivos ni en la terminal.
+# 2. Genera una contraseña temporal para la cuenta de administración de pruebas
+#    (la crea si no existe) y reinicia su segundo factor. global-setup.ts la
+#    cambia por una aleatoria y configura la aplicación autenticadora en
+#    memoria. Nada de eso se escribe en archivos ni en la terminal.
 # 3. Lanza Playwright con E2E_BASE_URL apuntando al stack aislado y el n8n falso
 #    activado.
 set -euo pipefail
@@ -39,16 +40,10 @@ output="$("${compose[@]}" exec -T api python scripts/security/reset_admin_passwo
 temporary="$(printf '%s\n' "$output" | sed -n 's/^Contraseña temporal: //p')"
 [ -n "$temporary" ] || { echo "El script de administración no devolvió una contraseña temporal." >&2; exit 1; }
 mask "$temporary"
-
-new_secret="$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('base64url'))")"
-mask "$new_secret"
-token="$(curl -fsS -X POST "$BASE_URL/auth/token" --data-urlencode "username=$ADMIN_EMAIL" --data-urlencode "password=$temporary" \
-  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
-[ -n "$token" ] || { echo "No se pudo iniciar sesión con la cuenta de administración de pruebas." >&2; exit 1; }
-mask "$token"
-curl -fsS -o /dev/null -X POST "$BASE_URL/auth/change-password" -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-  --data "{\"current_password\":\"$temporary\",\"new_password\":\"$new_secret\"}"
+# Sin clave conocida: en el primer ingreso global-setup.ts configura la aplicación.
+"${compose[@]}" exec -T api python scripts/security/reset_mfa.py --email "$ADMIN_EMAIL" >/dev/null \
+  || { echo "No se pudo reiniciar el segundo factor de la cuenta de pruebas." >&2; exit 1; }
 
 cd web
-E2E_BASE_URL="$BASE_URL" E2E_ADMIN_EMAIL="$ADMIN_EMAIL" E2E_ADMIN_PASSWORD="$new_secret" E2E_FAKE_N8N=1 \
+E2E_BASE_URL="$BASE_URL" E2E_ADMIN_EMAIL="$ADMIN_EMAIL" E2E_ADMIN_PASSWORD="$temporary" E2E_FAKE_N8N=1 \
   npx playwright test "$@"

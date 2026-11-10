@@ -5,6 +5,7 @@ from collections.abc import Callable
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
+from emotv.config import ACTIVITIES_FROZEN_MESSAGE
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService
 from emotv.application.activity_recommendation_service import MINIMUM_RECOMMENDED_STEPS
 from emotv.application.ports import UserRepository
@@ -65,6 +66,7 @@ def create_activity_router(
     recommendations: RecommendationConfigService | None = None,
     expression_label: Callable[[str], str] | None = None,
     on_change: Callable[[], None] | None = None,
+    changes_enabled: bool = True,
 ) -> APIRouter:
     """``on_change`` se llama tras crear, editar o eliminar (p. ej. para invalidar el conocimiento de Emi)."""
     router = APIRouter(prefix="/activities", tags=["activities"])
@@ -81,6 +83,9 @@ def create_activity_router(
         return catalog
 
     def require_management(user: User) -> None:
+        # Congeladas: el catálogo solo se lee, para mostrar las sesiones anteriores.
+        if not changes_enabled:
+            raise HTTPException(status_code=403, detail=ACTIVITIES_FROZEN_MESSAGE)
         try:
             policy.require(user, AccessAction.MANAGE_ACTIVITIES)
         except PermissionError as error:

@@ -72,8 +72,11 @@ versiona ni redistribuye: los descarga `scripts/download_models.py`.
 
 **Admisión.** Usa el mismo `ServerModelAdmission` que FER+, con su propio
 informe (`HSEMOTION_BENCHMARK_PATH`, por defecto
-`reports/benchmarks/hsemotion-baseline.json`). Sin informe vigente medido en
-el servidor queda `BLOCKED` y la lectura en vivo usa FER+. Para medirlo:
+`reports/benchmarks/hsemotion-baseline.json`). La medición no vence: solo deja
+de valer si cambian los pesos, el equipo o onnxruntime. Sin una válida, FER+ y
+HSEmotion se admiten con un rendimiento de referencia (p95 100 ms, 300 MiB),
+más alto que lo medido, y la carga real de CPU y RAM sigue decidiendo el
+estado. Medirlo es opcional y da cifras reales del equipo:
 
 ```powershell
 python scripts/download_models.py

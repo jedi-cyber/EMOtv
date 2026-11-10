@@ -58,12 +58,16 @@ formato firmado en papel.
 | Método | Ruta | Acceso |
 | --- | --- | --- |
 | `GET` | `/stimuli` | Usuarios (institucionales, los de su docente y sus imágenes propias aprobadas; nunca las pendientes), docentes (los suyos e institucionales) y administrador (institucionales). `?for_children=true`: solo los que admite un protocolo para niños (leves, aprobados y vigentes; la edad no se registra, así que no se filtra por edad mínima) |
-| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` (no es una foto de una persona evaluada) y, en abstractas, `not_a_projective_test`. Queda aprobado al subirlo (no pasa por revisión). Los usuarios reciben `403`: suben sus imágenes en `/own-stimuli` |
+| `POST` | `/stimuli` | Docente (alcance de grupo) o administrador (institución), con `multipart/form-data`: imagen PNG, JPEG o WebP de hasta 5 MB, título, tipo, categoría, expresión esperada (solo emocionales), intensidad, edad mínima, origen, licencia y las declaraciones `not_a_participant_photo` (no es una foto de una persona evaluada) y, en abstractas, `not_a_projective_test`. Las abstractas están congeladas: sin `ABSTRACT_STIMULI_ENABLED=true` se rechazan con `422`, `GET /stimuli` no las lista y un protocolo que las usa queda con `needs_image`. Queda aprobado al subirlo (no pasa por revisión). Los usuarios reciben `403`: suben sus imágenes en `/own-stimuli` |
+| `POST` | `/stimuli/initial-bank` | Administrador: agrega los dibujos del banco inicial que falten (18 caras esquemáticas de creación propia, seis emociones básicas con tres variantes; categoría «Banco inicial EMOtv», aptos para niños desde los 3 años). Repetirlo no duplica ni devuelve los retirados. Responde `{added, total}` |
 | `GET` | `/stimuli/{id}`, `/stimuli/{id}/file` | Quien puede verlo; `/file` es la única ruta que sirve una imagen, siempre un estímulo reescrito sin metadatos |
 | `POST` | `/stimuli/{id}/approve` | Quien lo gestiona |
 | `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
 | `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo. `for_children` es obligatorio («¿Para adultos o para niños?») |
 | `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
+| `POST` | `/protocols/starter` | Usuarios y docentes, `201`: copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (para niños, modo accesible, un «¿Qué emoción es?» por emoción con dos opciones y 30 s). Sin el banco inicial responde `422` |
+| `PUT` | `/protocols/{id}/share` | Docente autor: `{shared}` comparte la versión vigente con su grupo como plantilla (`shared_with_group`) o deja de compartirla |
+| `POST` | `/protocols/{id}/copy` | `201`: copia propia de un protocolo propio («Duplicar») o de una plantilla del docente de la cuenta («Copiar y modificar»). La copia no se comparte; un cuestionario que la cuenta no puede usar no se copia |
 
 Un protocolo es una receta guardada: qué aplicar en una sesión. Se guarda sin
 ejecutarlo y no necesita la aprobación del docente. Uno para niños solo admite
@@ -72,6 +76,13 @@ adultos admite los dos. Una imagen propia pendiente no se admite en ninguno
 (`422` al guardarlo y `409` al usarlo si alguno dejó de servir). `needs_image`
 indica que el docente eliminó o reclasificó una imagen del protocolo: hay que
 reemplazarla.
+
+`accessible` activa el modo accesible en la pantalla de la persona. Una
+**plantilla** es un protocolo que el docente comparte con su grupo, por ejemplo
+«Emociones básicas 4 a 6 años»: sus usuarios la ven en `/protocols` con
+`owned_by_me: false` y `shared_with_group: true`, y la copian para editarla y
+aplicarla; la plantilla misma no se edita ni se aplica sin copiarla. Funciona
+igual que las plantillas de cuestionarios.
 
 ### Imágenes propias
 
@@ -118,10 +129,13 @@ cuestionarios se pueden armar, pero una sesión no puede aplicar ninguno (`503`)
 
 | Método | Ruta | Acceso |
 | --- | --- | --- |
-| `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias); exige el compromiso aceptado (`428`) |
+| `POST` | `/sessions` | Usuario (sus sesiones) o docente (sesiones propias de demostración, que no cuentan en `GET /statistics`); exige el compromiso aceptado (`428`) |
 | `POST` | `/sessions/{id}/cancel` | Solo quien conduce la sesión |
 | `GET` | `/sessions/{id}` | `can_access_session`: quien la condujo y el docente de ese usuario |
 | `GET` | `/sessions` | Propias (usuario) o las propias y las de su grupo (docente) |
+| `GET` | `/reviews` | Solo docente: lo que su grupo dejó esperando su revisión, del más antiguo al más nuevo. Cada elemento trae `kind` (`report` o `deletion`), `session_id`, `session_code`, `user_code`, `waiting_since` y `report_id`. Las sesiones propias del docente (demostración) no aparecen. Auditado |
+| `GET` | `/guide` | Toda cuenta: `{topics}` con los temas de la guía de uso de su papel (`id`, `title`, `steps`, `note`). Contenido fijo, sin datos de nadie; no se audita |
+| `GET` | `/reviews/count` | Solo docente: `{pending}` para el contador del menú, sin auditar |
 | `GET` | `/sessions?student_id={id}` | Sesiones de un usuario del grupo del docente |
 | `POST` | `/sessions/{id}/deletion-request` | Solo quien condujo la sesión |
 | `POST` | `/sessions/{id}/delete` | Docente: sus sesiones y las de su grupo, terminadas (`409` en curso). Borra todos los registros, verifica que no quede ninguno y devuelve el acta |

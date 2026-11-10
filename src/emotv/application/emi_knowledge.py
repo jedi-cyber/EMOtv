@@ -1,7 +1,7 @@
 """Conocimiento verificado de EMOtv que viaja en el campo ``knowledge`` del webhook de Emi.
 
 Se genera desde la base de datos (actividades y catálogo de expresiones) más
-textos fijos del proyecto: posturas, flujo de uso, sesiones y
+textos fijos del proyecto: la guía de uso (``user_guide``), posturas, sesiones y
 autorizaciones, protocolos, métricas de la sesión, estados del reporte,
 limitaciones del reconocimiento facial, datos guardados y roles. No incluye
 datos de ningún usuario ni persona evaluada: ni sesiones, ni reportes, ni
@@ -18,6 +18,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 
+from emotv.application.user_guide import guide_knowledge
 from emotv.domain.activity import Activity
 from emotv.domain.expression_info import ExpressionInfo, ReviewStatus
 from emotv.domain.posture_id import PostureId
@@ -42,34 +43,31 @@ POSTURES: dict[PostureId, tuple[str, str]] = {
 INTRO = """# Conocimiento de EMOtv
 EMOtv es una herramienta de apoyo de la Facultad de Psicología de la UNHEVAL para usuarios y docentes, que la aplican con personas adultas o con niños. Estima la expresión facial visible con la cámara, permite aplicar protocolos (cuestionarios e imágenes) durante una sesión, muestra una línea de tiempo con métricas descriptivas y un reporte que revisa el docente, y propone actividades guiadas de posturas. La estimación no indica lo que una persona siente, no es diagnóstico ni evaluación psicológica y no sustituye a un profesional. Las actividades son actividad guiada, no terapia. Emi responde a usuarios y docentes; las personas evaluadas no tienen cuenta ni usan Emi."""
 
-FLOW = """## Flujo de uso
-1. Iniciar sesión con la cuenta asignada. Algunas cuentas deben cambiar su contraseña provisional al entrar.
-2. Aceptar una vez el compromiso de confidencialidad vigente; sin aceptarlo no se inician sesiones.
-3. Toda sesión empieza en el Analizador. Se elige un protocolo o «Sin protocolo (solo analizar)». Sin protocolo se indica con quién es la sesión: conmigo, un adulto o un niño o niña.
-4. Antes de empezar se confirma una sola vez la autorización según el público. La sesión muestra un código (por ejemplo S-4F7K2Q) al empezar y al terminar, para anotarlo en el formato firmado.
-5. Sin protocolo se permite la cámara del navegador, se lee la expresión en vivo y se registra cuando la lectura es estable; el resultado muestra la expresión, su confianza y textos educativos.
-6. Se sugiere una actividad de varias posturas. La cámara verifica cada postura: el tiempo de un paso solo avanza mientras la postura es correcta. Si la persona no se ve completa, conviene alejarse un poco y centrarse.
-7. Las sesiones anteriores se consultan en Mis sesiones."""
-
+# Cómo hacer cada tarea está en la guía de uso; aquí quedan las reglas.
 SESSIONS = """## Sesiones y autorizaciones
 - No se registra a la persona evaluada: no se guarda nombre, DNI ni foto. Cada sesión lleva solo un código aleatorio.
-- Una sesión propia o con un adulto se inicia confirmando que es propia o que se cuenta con la autorización firmada de la persona adulta. Con un niño o niña se confirma que su tutor autorizó por escrito, está presente y el niño aceptó participar.
-- Acceden a una sesión quien la condujo y su docente. La administración no accede a contenidos.
-- Quien condujo una sesión puede pedir su eliminación y su docente la ejecuta; queda un acta con el código, la fecha y los registros borrados, sin datos personales."""
+- Sin la confirmación de la autorización no hay sesión: la firma de la persona adulta o, con un niño o niña, su tutor autorizó por escrito, está presente y el niño aceptó.
+- Acceden a una sesión quien la condujo y su docente. La administración no accede a contenidos."""
 
 PROTOCOLS = """## Protocolos
-- Un protocolo es una receta guardada: qué aplicar en una sesión, para usarla cuando se quiera. Primero se indica si es para adultos o para niños.
-- Contiene un nombre, un cuestionario previo opcional, imágenes en orden con sus segundos de exposición (1 a 120 s, hasta 30 imágenes) y un cuestionario posterior opcional. Un protocolo para niños solo admite imágenes leves y aprobadas.
-- Los protocolos tienen versiones: uno usado en una sesión no se edita, se crea una versión nueva.
-- Con protocolo, la sesión sigue sus pasos: cuestionario previo, calibración neutral, imágenes con captura y cuestionario posterior. Se detiene en cualquier momento si la persona, su tutor o quien conduce lo piden.
-- Antes de cada captura se revisa la calidad: rostro visible, centrado, tamaño, iluminación e inclinación. Una captura con problemas se marca y no cuenta en las métricas.
-- Quien conduce agrega marcadores (se distrajo, se rió, lloró, pidió parar o una nota). La persona ve las imágenes en su propia pantalla, sin resultados.
-- Los cuestionarios y las imágenes abstractas solo se muestran y se registran: EMOtv no calcula puntajes ni interpreta las respuestas ni lo que la persona dice ver."""
+- Un protocolo es una receta guardada para adultos o para niños: cuestionario previo opcional, hasta 30 pasos en orden (1 a 120 s cada uno) y cuestionario posterior opcional. Con niños solo admite imágenes leves y aprobadas.
+- Pasos: una imagen con captura de la expresión estimada; «¿Qué emoción es?» (elige una emoción, sin cámara); un ejercicio de práctica (una señal de 0 a 1); «Haz la misma cara» (la imagen es el modelo); un dibujo; y dos juegos.
+- Un protocolo usado en una sesión no se edita: se crea una versión nueva.
+- Antes de cada captura se revisa la calidad (rostro visible, centrado, tamaño, luz e inclinación). Una captura con problemas no cuenta en las métricas.
+- La pantalla de la persona no muestra resultados, etiquetas ni probabilidades. EMOtv no calcula puntajes ni interpreta las respuestas."""
+
+# Bloque 11: lo que Emi explica a usuarios y docentes sobre las actividades sin cámara.
+EDUCATIONAL = """## Actividades educativas y apoyos
+- «¿Qué emoción es?», dibujos y juegos no usan la cámara; si falla, «Continuar sin cámara» sigue con ellos.
+- Dibujo: la persona dibuja con el dedo, pulsa «Terminé» y elige qué emoción quiso dibujar. El dibujo no se guarda ni se envía y EMOtv no lo interpreta.
+- Juegos de 2 a 6 rondas: emparejar (nombrar la emoción de una cara) y «Busca la misma emoción» (elegir la cara con la misma emoción que la de arriba). «Ayuda» quita una opción.
+- Apoyos: pictogramas, botones grandes, voz alta, sin límite de tiempo y pausas («Modo accesible» junta varios). Un paso se puede repetir.
+- Android: tras «Vincular Android», la persona escribe el código en «Abrir una actividad con código» (vence en 5 minutos, un solo uso); dibuja y juega sin cámara ni cuenta.
+- Los resultados describen, nunca valoran. EMOtv no diagnostica ni interpreta dibujos, respuestas ni juegos."""
 
 METRICS = """## Línea de tiempo y métricas de la sesión
 - La línea de tiempo ordena cuestionarios, imágenes, capturas, lo que la persona dijo ver y marcadores.
 - Para cada imagen emocional se compara la primera captura de buena calidad con la expresión esperada de la imagen. Resumen: «En X de Y imágenes la expresión estimada coincidió con la esperada». Es una descripción, no una evaluación.
-- Las estadísticas cuentan sesiones, nunca personas: no hay seguimiento por persona.
 - Una sesión breve con imágenes abstractas no permite concluir nada sobre la persona."""
 
 REPORTS = """## Reporte de la sesión
@@ -91,9 +89,9 @@ DATA = """## Qué se guarda y qué no
 - Las preguntas a Emi y sus respuestas se guardan hasta 90 días y cada persona puede borrar su conversación. A Emi nunca llegan datos de sesiones, reportes ni resultados. Emi rechaza mensajes con DNI, correos o teléfonos; no se deben escribir nombres ni datos de niños o familias."""
 
 ROLES = """## Roles
-- Usuario: conduce sesiones desde el Analizador, arma sus cuestionarios y protocolos, redacta reportes y también analiza su propia expresión.
-- Docente: tiene un grupo de usuarios, revisa y aprueba sus reportes, aprueba las imágenes que suben, ejecuta la eliminación de sesiones y también conduce sesiones propias.
-- Administración: gestiona cuentas y grupos; no accede a sesiones ni resultados."""
+- Usuario: conduce sesiones, arma cuestionarios y protocolos y redacta reportes; también analiza su propia expresión.
+- Docente: supervisa a su grupo sin estar en cada sesión y revisa después reportes, imágenes y eliminaciones. Sus sesiones propias son de demostración.
+- Administración: gestiona cuentas, grupos y estímulos institucionales; no accede a sesiones ni resultados."""
 
 
 def shorten(text: str, limit: int) -> str:
@@ -112,8 +110,13 @@ def _activities_section(activities: Iterable[Activity], limit: int) -> str:
     for activity in activities:
         repetitions = f", {activity.repetitions} repeticiones" if activity.repetitions > 1 else ""
         lines.append(f"- {shorten(activity.name, 80)}{repetitions}: {shorten(activity.description, limit)}")
-        for number, step in enumerate(activity.steps, start=1):
-            name = POSTURES.get(PostureId(step.posture), (str(step.posture), ""))[0]
+        names = [POSTURES.get(PostureId(step.posture), (str(step.posture), ""))[0] for step in activity.steps]
+        if limit < 160:
+            # Con poco espacio, los pasos van en una línea, sin sus instrucciones.
+            lines.append("  Pasos: " + ", ".join(f"{name} {step.duration_seconds:g} s"
+                                                for name, step in zip(names, activity.steps)))
+            continue
+        for number, (name, step) in enumerate(zip(names, activity.steps), start=1):
             instruction = "" if step.instruction == activity.description else f": {shorten(step.instruction, limit)}"
             lines.append(f"  {number}. {name}, {step.duration_seconds:g} s{instruction}")
     return "\n".join(lines)
@@ -130,14 +133,27 @@ def _expressions_section(expressions: Iterable[ExpressionInfo], limit: int) -> s
     return "\n".join(lines)
 
 
-def build_knowledge(activities: Iterable[Activity], expressions: Iterable[ExpressionInfo]) -> str:
+def _without_activities(intro: str) -> str:
+    """Presentación sin las actividades corporales, que están congeladas."""
+    return intro.replace(", y propone actividades guiadas de posturas", "").replace(
+        " Las actividades son actividad guiada, no terapia.", "")
+
+
+def build_knowledge(activities: Iterable[Activity], expressions: Iterable[ExpressionInfo],
+                    activities_enabled: bool = True) -> str:
     activities, expressions = tuple(activities), tuple(expressions)
-    postures = "## Posturas\n" + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values())
-    fixed = [INTRO, postures, FLOW, SESSIONS, PROTOCOLS, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
-    for limit in (400, 320, 260, 200, 160, 120, 90, 60):
+    guide = guide_knowledge()
+    if activities_enabled:
+        postures = ("## Posturas (la cámara verifica cada una)\n"
+                    + "\n".join(f"- {name}: {instruction}" for name, instruction in POSTURES.values()))
+        fixed = [INTRO, guide, postures, SESSIONS, PROTOCOLS, EDUCATIONAL, METRICS, REPORTS, LIMITATIONS, DATA, ROLES]
+    else:
+        fixed = [_without_activities(INTRO), guide, SESSIONS, PROTOCOLS, EDUCATIONAL, METRICS, REPORTS, LIMITATIONS, DATA,
+                 ROLES]
+    for limit in (400, 320, 260, 200, 160, 120, 90, 60, 45, 30):
         # Los textos fijos van primero: si hay que recortar, solo se pierde contenido editable.
-        text = "\n\n".join([*fixed, _activities_section(activities, limit),
-                            _expressions_section(expressions, limit)])
+        sections = [_activities_section(activities, limit)] if activities_enabled else []
+        text = "\n\n".join([*fixed, *sections, _expressions_section(expressions, limit)])
         if len(text) <= TARGET_CHARS:
             return text
     marker = "\n[Conocimiento recortado por longitud]"
@@ -153,8 +169,11 @@ class EmiKnowledge:
         expressions: Callable[[], Iterable[ExpressionInfo]],
         cache_seconds: float = CACHE_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        activities_enabled: bool = True,
     ) -> None:
         self._activities = activities
+        # Con las actividades congeladas, Emi no las describe ni las sugiere.
+        self._activities_enabled = activities_enabled
         self._expressions = expressions
         self._cache_seconds = cache_seconds
         self._clock = clock
@@ -171,7 +190,8 @@ class EmiKnowledge:
             if self._text is not None and self._clock() - self._built_at < self._cache_seconds:
                 return self._text
             try:
-                text = build_knowledge(self._activities(), self._expressions())
+                text = build_knowledge(self._activities() if self._activities_enabled else (),
+                                       self._expressions(), self._activities_enabled)
             except Exception:  # la base puede fallar; Emi sigue respondiendo
                 logger.exception("No se pudo regenerar el conocimiento de Emi; se usa el anterior")
                 return self._text or ""

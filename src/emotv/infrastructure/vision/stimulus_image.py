@@ -48,3 +48,19 @@ def sanitize_stimulus_image(data: bytes) -> tuple[str, bytes]:
     if not ok:
         raise InvalidStimulusImage("No se pudo procesar la imagen")
     return content_type, encoded.tobytes()
+
+
+# Miniatura con la que se compara el aspecto de dos imágenes del banco.
+APPEARANCE_SIDE = 16
+
+
+def stimulus_appearance(data: bytes) -> tuple[int, ...] | None:
+    """El aspecto de una imagen del banco, para compararla con otra: una
+    miniatura en color de 16 × 16. Detecta la misma imagen guardada otra vez
+    (recodificada o con otro tamaño) y cuánto se parecen los colores y la
+    composición. No reconoce a nadie ni estima la expresión. None si no se lee."""
+    image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if image is None or image.size == 0:
+        return None
+    small = cv2.resize(image, (APPEARANCE_SIDE, APPEARANCE_SIDE), interpolation=cv2.INTER_AREA)
+    return tuple(int(value) for value in small.reshape(-1))

@@ -11,10 +11,11 @@ import { useConsentStatus } from "../consent/useConsentStatus";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { paths } from "../routes/paths";
 import { activityOutcomeName, sessionStateName } from "../sessions/labels";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 const descriptions: Record<UserRole, string> = {
   student: "Conduce sesiones desde el Analizador, con o sin protocolo, y revisa sus resultados.",
-  psychologist: "Revisa los resultados de tu grupo y conduce tus propias sesiones.",
+  psychologist: "Supervisa a tu grupo: revisa en «Por revisar» lo que te envían, cuando tengas tiempo. Tus sesiones son de demostración, para enseñar a usar EMOtv.",
   admin: "Gestiona las cuentas de docentes y usuarios, los grupos y la auditoría.",
   superadmin: "Soporte técnico: modelos, configuración, cuenta de administrador y auditoría.",
 };
@@ -66,9 +67,9 @@ function StudentNextStep() {
     return <NextStepCard title="Cómo funciona un análisis"
       action={<ButtonLink variant="primary" to={paths.analysis}>Empezar análisis</ButtonLink>}>
       <ol className="next-step-steps">
-        <li><strong>Encuadra tu rostro.</strong> Colócate de frente a la cámara, con buena luz.</li>
-        <li><strong>Registra la expresión.</strong> Cuando la lectura sea estable, regístrala.</li>
-        <li><strong>Practica la actividad.</strong> Sigue las posturas de la actividad sugerida.</li>
+        <li><strong>Elige un protocolo.</strong> En el Analizador, elige uno o analiza la expresión sin protocolo.</li>
+        <li><strong>Confirma la autorización.</strong> Una sola confirmación, según con quién es la sesión.</li>
+        <li><strong>Revisa lo registrado.</strong> Al terminar ves la línea de tiempo y el reporte; tu docente lo revisa después.</li>
       </ol>
     </NextStepCard>;
   }
@@ -77,7 +78,7 @@ function StudentNextStep() {
     <dl className="next-step-summary">
       <div><dt>Expresión registrada</dt><dd>{last.initial_emotion ? expressionLabel(last.initial_emotion) : "Sin expresión registrada"}</dd></div>
       <div><dt>Fecha</dt><dd>{formatDate(last.started_at)}</dd></div>
-      <div><dt>Actividad</dt><dd>{last.exercise_result
+      <div><dt>{ACTIVITIES_ENABLED || last.activity_id ? "Actividad" : "Estado"}</dt><dd>{last.exercise_result && (ACTIVITIES_ENABLED || last.activity_id)
         ? <StatusChip tone={last.exercise_result === "completed" ? "success" : "neutral"}>{activityOutcomeName(last.exercise_result)}</StatusChip>
         :<StatusChip tone={toneForSession(last.state)}>{sessionStateName(last.state)}</StatusChip>}</dd></div>
     </dl>

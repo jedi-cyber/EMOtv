@@ -31,6 +31,7 @@ from emotv.infrastructure.persistence import (
     PostgresAuditRepository,
     PostgresCommitmentRepository,
     PostgresConsentRepository,
+    PostgresExpressionInfoRepository,
     PostgresSessionErasureRepository,
     PostgresSessionRepository,
     PostgresStudentRepository,
@@ -47,6 +48,7 @@ from emotv.interfaces.web.analysis_router import create_analysis_router
 from emotv.application.guided_session_service import GuidedSessionService
 from emotv.domain.guided_session import FrameAssessment
 from emotv.infrastructure.persistence.postgres_guided_repositories import PostgresGuidedSessionRepository
+from emotv.infrastructure.vision.stimulus_image import stimulus_appearance
 from emotv.interfaces.web.guided_router import create_guided_router
 from emotv.application.session_insights_service import SessionInsightsService
 from emotv.interfaces.web.insights_router import create_insights_router
@@ -55,6 +57,10 @@ from emotv.interfaces.web.statistics_router import create_statistics_router
 from emotv.application.report_service import ReportService
 from emotv.infrastructure.persistence.postgres_report_repository import PostgresReportRepository
 from emotv.interfaces.web.report_router import create_report_router
+from emotv.infrastructure.stimuli.initial_bank import initial_drawings
+from emotv.interfaces.web.guide_router import create_guide_router
+from emotv.interfaces.web.review_router import create_review_router
+from emotv.interfaces.web.session_router import create_visible_sessions
 from emotv.application.stimulus_service import StimulusService
 from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresProtocolRepository,
@@ -140,7 +146,9 @@ def env():
     erasure = PostgresSessionErasureRepository(factory)
     privacy = SessionPrivacyService(sessions, erasure, authorization, audit, docente_of, retention_months=12,
                                     clock=clock)
-    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock)
+    # Las imágenes abstractas están congeladas; estas pruebas cubren las ya registradas.
+    stimuli = StimulusService(PostgresStimulusRepository(factory), audit, docente_of, sanitize_stimulus_image, clock,
+                              abstract_enabled=True, initial_bank=initial_drawings)
     def session_access(user, session):
         actor = students.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization.can_access_session(user, session, actor_student_id=actor.id if actor else None)
@@ -150,7 +158,7 @@ def env():
         responses=PostgresQuestionnaireResponseRepository(factory, FieldCipher([KEY])),
         sessions=sessions.get_session, session_access=session_access, clock=clock)
     protocols = ProtocolService(PostgresProtocolRepository(factory), stimuli, audit, docente_of, group_user_ids,
-                                questionnaires=questionnaires, clock=clock)
+                                questionnaires=questionnaires, clock=clock, appearance=stimulus_appearance)
     app = FastAPI()
     app.include_router(create_auth_router(auth, users))
     app.include_router(create_identity_router(auth, users, students, consents, assignments=assignments, audit=audit,
@@ -185,13 +193,17 @@ def env():
         return e.frame_result
 
     exam_repository = PostgresExamRepository(factory)
+    # Catálogo de expresiones vacío; cada prueba agrega las filas que necesita.
+    e.expressions = PostgresExpressionInfoRepository(factory)
     guided = GuidedSessionService(
         PostgresGuidedSessionRepository(factory, FieldCipher([KEY])), sessions,
         protocols=protocols.repository.get, stimuli=stimuli.repository.get,
         questionnaire_answered=questionnaires.answered,
         resolve_model=lambda: ("hsemotion_enet_b0_8_best_afew", "prueba"),
         assess_factory=lambda model_id: assess, audit=audit, session_access=session_access,
-        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get)
+        calibration_seconds=3.0, clock=clock, exam_of=exam_repository.get,
+        explanation_of=lambda key: (info.child_explanation or None)
+        if (info := e.expressions.get(key)) else None)
     app.include_router(create_guided_router(guided, auth, users, stimulus_image=stimuli.repository.get_image,
                                             decode_frame=lambda data: data or None))
     e.guided = guided
@@ -213,6 +225,9 @@ def env():
     e.reports = ReportService(PostgresReportRepository(factory, FieldCipher([KEY])), sessions,
                               authorization, docente_of, insights, audit, clock)
     app.include_router(create_report_router(e.reports, auth, users))
+    app.include_router(create_review_router(create_visible_sessions(sessions, students, assignments, authorization),
+                                            e.reports, students, auth, users, audit=audit))
+    app.include_router(create_guide_router(auth, users))
     app.include_router(create_analysis_router(sessions, ActivityCatalog(), auth, users, students, lambda activity: None,
                                               authorization=authorization,
                                               questionnaire_ready=questionnaires.pre_completed))
@@ -559,7 +574,8 @@ def test_deleting_a_session_leaves_zero_records_and_produces_the_certificate(env
     certificate = response.json()
     assert certificate["session_code"] == session["code"] and certificate["verified"] is True
     assert certificate["counts"] == {"questionnaire_responses": 0, "expression_captures": 0, "session_markers": 1,
-                                     "verbal_responses": 0, "practice_results": 0, "guided_runs": 0,
+                                     "verbal_responses": 0, "practice_results": 0, "recognition_results": 0, "drawing_results": 0, "game_results": 0,
+                                     "guided_runs": 0,
                                      "report_comments": 0,
                                      "report_events": 0, "session_reports": 0, "sessions": 1}
     assert not set(certificate) & {"owner_user_id", "student_id", "executed_by_user_id", "requested_by_user_id"}

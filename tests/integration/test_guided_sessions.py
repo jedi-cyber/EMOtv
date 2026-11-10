@@ -92,6 +92,16 @@ def calibrate(env, session_id, token):  # noqa: F811
     frame(env, token)
 
 
+def begin_steps(env, session_id, token):  # noqa: F811
+    """Lleva la sesión a su primer paso: calibra si el protocolo usa la cámara;
+    uno solo de reconocimientos espera «Empezar»."""
+    phase = state(env, session_id)["phase"]
+    if phase == "calibration":
+        calibrate(env, session_id, token)
+    elif phase == "ready":
+        assert post(env, session_id, "start").status_code == 200
+
+
 # --- Inicio y orden de la sesión -----------------------------------------------------
 
 def test_the_confirmation_happens_once_at_the_start(env):  # noqa: F811
@@ -239,7 +249,9 @@ def test_the_persons_screen_never_receives_results(env):  # noqa: F811
     text = json.dumps(responses)
     for word in RESULT_WORDS:
         assert word not in text, word  # ...pero la pantalla de la persona no las ve
-    allowed = {"phase", "message", "stimulus", "remaining_seconds", "capture_frames", "frame_interval_ms", "abstract_notice"}
+    # activity (bloque 8): el tipo, el nombre y el paso de la actividad, sin respuestas ni resultados.
+    allowed = {"phase", "message", "stimulus", "remaining_seconds", "capture_frames", "frame_interval_ms", "abstract_notice",
+               "activity"}
     # Al terminar, el enlace deja de valer y solo responde que no existe.
     assert all(set(item) <= allowed or item == {"received": True} or set(item) == {"detail"} for item in responses)
 

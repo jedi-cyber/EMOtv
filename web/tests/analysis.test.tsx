@@ -7,6 +7,9 @@ import { App } from "../src/App";
 import { AuthContext } from "../src/auth/AuthContext";
 import { AUTH_UNAUTHORIZED_EVENT, apiRequest, ApiError } from "../src/api/http";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+vi.mock("../src/routes/features", () => ({ ACTIVITIES_ENABLED: true }));
+
 const { admissions, requestedPaths } = vi.hoisted(() => ({ requestedPaths: [] as (string | null)[], admissions: { value: [
   { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] },
   { model_id: "hardlyhumans_vit", state: "WARNING", reasons: ["Latencia elevada"] },

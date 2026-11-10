@@ -31,6 +31,7 @@ import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { useConsentStatus } from "../consent/useConsentStatus";
 import { postureName } from "../components/PostureIcon";
 import { cameraErrorMessage, cameraProblem, cameraProblemMessages, cameraUnavailableReason, stopStream, type CameraProblem } from "../analysis/camera";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 type Phase = "ready" | "live" | "result" | "exercise" | "completed";
 type Message = Partial<LiveReading> & {
@@ -74,9 +75,10 @@ export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
     <ul>
       <li><strong>Luz de frente.</strong> Ponte mirando hacia la ventana o la lámpara, no de espaldas a ella.</li>
       <li><strong>Rostro centrado.</strong> Mira a la cámara con la cara completa dentro del encuadre.</li>
-      <li><strong>{activity ? "Cuerpo completo." : "Para la actividad, aléjate."}</strong> {activity
+      {/* Las actividades de posturas están desactivadas: sin ellas no se pide alejarse. */}
+      {(activity || ACTIVITIES_ENABLED) && <li><strong>{activity ? "Cuerpo completo." : "Para la actividad, aléjate."}</strong> {activity
         ? "Aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, con espacio para mover los brazos."
-        : "Después del registro, colócate a unos dos metros para que la cámara vea tu cuerpo completo."}</li>
+        : "Después del registro, colócate a unos dos metros para que la cámara vea tu cuerpo completo."}</li>}
     </ul>
   </section>;
 }
@@ -211,7 +213,10 @@ export function AdaptiveAnalysisPage() {
         : service === "checking" ? "Comprobando…" : "No responde en este momento.",
       action: service === "blocked" ? <Button variant="secondary" size="sm" onClick={() => { void checkService(); }}>Comprobar de nuevo</Button> : undefined },
   ];
-  const pendingRequirements = requirements.filter((item) => item.state !== "ready");
+  // Con protocolo, la cámara la pide la pantalla de la persona solo en los pasos que
+  // la necesitan (y la sesión puede seguir sin ella): aquí no es un requisito.
+  const pendingRequirements = requirements.filter((item) => item.state !== "ready" && !(protocol && item.key === "camera"));
+  const protocolUsesCamera = protocol?.uses_camera !== false;
 
   function pauseFrames() {
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
@@ -582,7 +587,11 @@ export function AdaptiveAnalysisPage() {
 
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
-    <PageHeader title="Analizador" description="Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo y después puedes revisar una actividad sugerida." />
+    <PageHeader title="Analizador" description={`Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo${ACTIVITIES_ENABLED ? " y después puedes revisar una actividad sugerida" : " y después ves el resultado"}.`} />
+    <p className="muted">¿Solo dibujar? <ButtonLink variant="ghost" size="sm" to={paths.drawing}>Actividad de dibujo</ButtonLink> La persona dibuja una expresión y señala qué emoción quiso mostrar. No crea una sesión, no usa la cámara y no guarda el dibujo.</p>
+    {user?.role === "psychologist" && <Callout variant="info" role="note">
+      Tus sesiones son de demostración: sirven para enseñar a tu grupo a usar EMOtv y no cuentan en las estadísticas. Las sesiones de tus usuarios las conducen ellos.
+    </Callout>}
     {session?.code && phase !== "ready" && <p className="session-code" role="status">Código de la sesión: <strong>{session.code}</strong> · Anótalo en el formato firmado.</p>}
     {error && <Callout variant="error">{error}</Callout>}
     {notice && <Callout variant="info">{notice}</Callout>}
@@ -608,7 +617,7 @@ export function AdaptiveAnalysisPage() {
           <AnalysisGuide />
           <h2>Requisitos</h2>
           <ul className="requirement-list" aria-label="Requisitos para empezar">
-            {requirements.map((item) => <li key={item.key} className="requirement">
+            {requirements.filter((item) => !(protocol && item.key === "camera")).map((item) => <li key={item.key} className="requirement">
               <div className="requirement-text">
                 <strong>{item.label}</strong>
                 <span>{item.detail}</span>
@@ -637,7 +646,9 @@ export function AdaptiveAnalysisPage() {
             </option>)}
           </select>
           <p id="adaptive-protocol-help" className="muted">{protocol
-            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", "calibración", ...protocolStepParts(protocol.steps), protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}.`
+            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", protocolUsesCamera && "calibración", ...protocolStepParts(protocol.steps), protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}. ${protocolUsesCamera
+              ? "La cámara se pide en la pantalla de la persona solo en los pasos que la necesitan; si no está disponible, siguen los pasos sin cámara."
+              : "No usa la cámara."}`
             : protocols.length > 0 ? "Un protocolo aplica cuestionarios e imágenes guardados. Sin protocolo, solo se analiza la expresión."
               : <>Aún no tienes protocolos. <ButtonLink variant="ghost" size="sm" to={paths.protocols}>Crear un protocolo</ButtonLink></>}</p>
           {!protocol && <fieldset className="audience-choice">
@@ -656,10 +667,11 @@ export function AdaptiveAnalysisPage() {
           <p id="start-help" className="muted" aria-live="polite">{pendingRequirements.length > 0
             ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
             : !sessionAudience ? "Elige con quién es la sesión."
-              : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
+              : protocol ? "Todo listo." : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
         </>}
         {phase !== "ready" && <>
-          <p className="step-caption">{phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
+          <p className="step-caption">{!ACTIVITIES_ENABLED ? (phase === "live" ? "Paso 1 de 2 · Expresión en vivo" : "Paso 2 de 2 · Resultado")
+            : phase === "live" ? "Paso 1 de 3 · Expresión en vivo" : phase === "result" ? "Paso 2 de 3 · Resultado y actividad sugerida" : "Paso 3 de 3 · Actividad corporal"}</p>
           {phase !== "live" && <span role="status" className="analysis-state">{message}</span>}
           {phase === "live" && activeModel && <p className="muted">Modelo facial: {emotionModelName(activeModel)}</p>}
           {phase === "live" && <LiveExpressionPanel live={live} />}
@@ -672,6 +684,7 @@ export function AdaptiveAnalysisPage() {
           {phase !== "live" && phase !== "result" && emotion && <p>Expresión registrada: <strong>{expressionLabel(emotion)}</strong>{confidence != null && ` (${percent(confidence)} %)`}</p>}
           {phase === "result" && emotion && <ExpressionResult expressionKey={emotion} confidence={confidence} info={expressionInfo} />}
           {phase === "result" && <>
+            {ACTIVITIES_ENABLED && <>
             {recommendation ? <div className="recommendation-card">
               <p className="step-caption">Actividad recomendada</p>
               <h2>{recommendation.name}</h2>
@@ -703,13 +716,14 @@ export function AdaptiveAnalysisPage() {
             {(recommendation || availableActivities.length > 0) && <Callout variant="info" role="note">
               <strong>Antes de la actividad:</strong> aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, y deja espacio para mover los brazos.
             </Callout>}
+            </>}
             <div className="inline-actions">
-              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>Finalizar sin actividad</Button>
+              <Button variant="secondary" type="submit" disabled={selectingActivity} onClick={() => finishWithoutActivity()}>{ACTIVITIES_ENABLED ? "Finalizar sin actividad" : "Finalizar"}</Button>
               <Button variant="secondary" type="submit" disabled={selectingActivity || starting} onClick={() => finishWithoutActivity(true)}>Analizar otra expresión</Button>
             </div>
-            <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>
+            {ACTIVITIES_ENABLED && <p className="muted">Esta sugerencia técnica no constituye una evaluación clínica.</p>}
           </>}
-          {phase === "completed" && !activity && outcome === "skipped" && <p>Sesión finalizada sin actividad. Tu expresión quedó registrada.</p>}
+          {phase === "completed" && !activity && outcome === "skipped" && <p>{ACTIVITIES_ENABLED ? "Sesión finalizada sin actividad. Tu expresión quedó registrada." : "Sesión finalizada. Tu expresión quedó registrada."}</p>}
           {(phase === "exercise" || phase === "completed") && activity && <>
             <h2>{activity.name}</h2><p>{activity.description}</p>
             {phase === "exercise" && speechAvailable() && <Button variant="secondary" type="submit" onClick={() => currentStep ? announceStep(currentStep, stepNumber, stepCount, repetitionCount) : speakExercise(activity)}>Repetir instrucción</Button>}

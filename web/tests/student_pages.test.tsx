@@ -9,6 +9,9 @@ import { ActivitiesPage } from "../src/pages/ActivitiesPage";
 import { DashboardPage } from "../src/pages/DashboardPage";
 import { SessionsPage } from "../src/pages/SessionsPage";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+vi.mock("../src/routes/features", () => ({ ACTIVITIES_ENABLED: true }));
+
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
 
 const policy = { id: "EMOTV-CONSENT-DEMO-003:v0.3", version: "v0.3", mode: "demo", url: null, available: true };
@@ -57,7 +60,7 @@ describe("Inicio del estudiante", () => {
     expect(await screen.findByRole("link", { name: "Empezar análisis" })).toHaveAttribute("href", "/analysis");
     const steps = within(screen.getByRole("list"));
     expect(steps.getAllByRole("listitem").map((item) => item.querySelector("strong")?.textContent)).toEqual([
-      "Encuadra tu rostro.", "Registra la expresión.", "Practica la actividad."]);
+      "Elige un protocolo.", "Confirma la autorización.", "Revisa lo registrado."]);
   });
 
   it("con sesiones muestra la última y «Nuevo análisis», sin tarjetas que repitan el menú", async () => {

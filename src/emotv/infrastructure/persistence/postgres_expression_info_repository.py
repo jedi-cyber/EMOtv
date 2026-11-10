@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from emotv.domain.expression_info import TEXT_FIELDS, ExpressionInfo
 from emotv.infrastructure.persistence.models import ExpressionInfoRecord
 
-_FIELDS = ("label_es", *TEXT_FIELDS, "reviewed_by_user_id", "reviewed_at", "updated_at")
+_FIELDS = ("label_es", *TEXT_FIELDS, "child_explanation", "reviewed_by_user_id", "reviewed_at", "updated_at")
 
 
 class PostgresExpressionInfoRepository:
@@ -51,6 +51,7 @@ class PostgresExpressionInfoRepository:
             facial_cues=row.facial_cues,
             practice_tip=row.practice_tip,
             limitation_note=row.limitation_note,
+            child_explanation=row.child_explanation or "",
             review_status=row.review_status,
             reviewed_by_user_id=row.reviewed_by_user_id,
             reviewed_at=cls._aware(row.reviewed_at),

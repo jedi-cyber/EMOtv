@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, String, Integer, LargeBinary, Text, UniqueConstraint, Index, JSON, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, String, Integer, LargeBinary, Text, UniqueConstraint, Index, JSON, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -158,6 +158,10 @@ class UserRecord(Base):
     is_test_account: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Último restablecimiento hecho por otra cuenta: muestra un aviso al siguiente ingreso.
     password_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Segundo factor (TOTP) de las cuentas de gestión: clave cifrada, confirmación y último intervalo usado.
+    mfa_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_last_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class PsychologistAssignmentRecord(Base):
@@ -272,6 +276,7 @@ class ExpressionInfoRecord(Base):
     facial_cues: Mapped[str] = mapped_column(String(1200), nullable=False)
     practice_tip: Mapped[str] = mapped_column(String(1200), nullable=False)
     limitation_note: Mapped[str] = mapped_column(String(1200), nullable=False)
+    child_explanation: Mapped[str] = mapped_column(String(200), nullable=False, default="", server_default="")
     review_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     reviewed_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -360,6 +365,24 @@ class ProtocolRecord(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
     for_children: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Modo accesible en la pantalla de la persona (migración 20261102_33). Desde
+    # la 20261106_38 indica si hay algún apoyo; los apoyos van en support_*.
+    accessible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                             server_default=text("false"))
+    support_pictograms: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                     server_default=text("false"))
+    support_large_controls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                         server_default=text("false"))
+    support_read_aloud: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                     server_default=text("false"))
+    support_no_time_limit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                        server_default=text("false"))
+    # normal, long o wait; lo valida el dominio (PauseMode).
+    support_pause: Mapped[str] = mapped_column(String(8), nullable=False, default="normal",
+                                               server_default="normal")
+    # Plantilla que el docente comparte con su grupo (migración 20261102_34).
+    shared_with_group: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                                    server_default=text("false"))
     # Cuestionario previo opcional y, solo si hay previo, uno posterior.
     pre_questionnaire_id: Mapped[str | None] = mapped_column(
         ForeignKey("questionnaires.id", ondelete="RESTRICT"), nullable=True)
@@ -445,12 +468,28 @@ class QuestionnaireResponseRecord(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice')"
-PROTOCOL_STEP_STIMULUS = "kind = 'practice' OR stimulus_id IS NOT NULL"
+# El dibujo, sin imagen ni opciones que configurar (migración 20261106_40).
+# El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41);
+# «Busca la misma emoción» (game_type 'similar', migración 20261107_42).
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game')"
+PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game') OR stimulus_id IS NOT NULL"
+# Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
-    "(kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL) OR "
+    "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
     "(kind = 'practice' AND target_expression IS NOT NULL AND hold_seconds IS NOT NULL "
-    "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0)")
+    "AND hold_seconds >= 1 AND hold_seconds < exposure_seconds AND capture_after_seconds = 0 "
+    "AND option_count IS NULL) OR "
+    "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0) OR "
+    "(kind = 'drawing' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "AND option_count IS NULL AND capture_after_seconds = 0) OR "
+    "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type IN ('matching', 'similar') "
+    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL)) "
+    "AND (situation IS NULL OR kind = 'recognition') "
+    # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
+    "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "
+    "AND (kind = 'game' OR (game_type IS NULL AND rounds IS NULL AND game_stimulus_ids IS NULL))")
 
 
 class ProtocolStepRecord(Base):
@@ -475,6 +514,16 @@ class ProtocolStepRecord(Base):
                                       server_default=text("'stimulus'"))
     target_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hold_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    option_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Historia corta de un reconocimiento («A Lucía se le cayó su helado»).
+    situation: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Práctica que imita la imagen («Haz la misma cara»).
+    imitate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Juego de emparejar: tipo, rondas y la imagen de cada ronda (lista de ids).
+    # none_as_null: None se guarda como NULL de SQL, como exigen las restricciones.
+    game_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    game_stimulus_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -493,6 +542,10 @@ class GuidedRunRecord(Base):
         CheckConstraint("(phase = 'stopped') = (stop_reason IS NOT NULL)", name="ck_guided_runs_stop_reason"),
         CheckConstraint("stop_reason IS NULL OR stop_reason IN ('participant', 'guardian', 'conductor')",
                         name="ck_guided_runs_stop_reason_value"),
+        CheckConstraint("view_device IN ('web', 'android')", name="ck_guided_runs_view_device"),
+        CheckConstraint("(pairing_hash IS NULL) = (pairing_expires_at IS NULL)",
+                        name="ck_guided_runs_pairing"),
+        UniqueConstraint("pairing_hash", name="uq_guided_runs_pairing_hash"),
     )
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True)
     owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -509,6 +562,15 @@ class GuidedRunRecord(Base):
     stop_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
     practice_feedback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                                     server_default=text("true"))
+    camera_off_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Intento del paso en curso (1 al empezarlo).
+    step_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Juego de emparejar en curso: ronda y contadores (tamaño fijo).
+    game_progress: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Vinculación de Android: solo el SHA-256 del código, su vencimiento y el dispositivo.
+    pairing_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pairing_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    view_device: Mapped[str] = mapped_column(String(8), nullable=False, default="web", server_default="web")
 
 
 class ExpressionCaptureRecord(Base):
@@ -573,13 +635,105 @@ class VerbalResponseRecord(Base):
     recorded_by_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class RecognitionResultRecord(Base):
+    """Resultado de un paso de reconocimiento: opciones mostradas (separadas por
+    comas) y la elegida. Nunca imágenes ni datos de la cámara."""
+
+    __tablename__ = "recognition_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", "attempt", name="uq_recognition_results_session_step_attempt"),
+        CheckConstraint("outcome IN ('answered', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_recognition_results_outcome"),
+        CheckConstraint("(outcome = 'answered') = (chosen_expression IS NOT NULL) "
+                        "AND (outcome = 'answered') = (seconds_to_answer IS NOT NULL) "
+                        "AND (outcome = 'answered') = (answered_by IS NOT NULL)",
+                        name="ck_recognition_results_answered"),
+        CheckConstraint("answered_by IS NULL OR answered_by IN ('participant', 'conductor')",
+                        name="ck_recognition_results_answered_by"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 1 es el primero; una repetición del paso es el 2 o el 3.
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    stimulus_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    target_expression: Mapped[str] = mapped_column(String(32), nullable=False)
+    options: Mapped[str] = mapped_column(String(160), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    chosen_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seconds_to_answer: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answered_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DrawingResultRecord(Base):
+    """Resultado de un paso de dibujo: la emoción que la persona señaló y los
+    tiempos. Nunca el dibujo, que no llega al servidor."""
+
+    __tablename__ = "drawing_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", "attempt", name="uq_drawing_results_session_step_attempt"),
+        CheckConstraint("outcome IN ('answered', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_drawing_results_outcome"),
+        CheckConstraint("(outcome = 'answered') = (chosen_expression IS NOT NULL) "
+                        "AND (outcome = 'answered') = (seconds_to_answer IS NOT NULL) "
+                        "AND (outcome = 'answered') = (answered_by IS NOT NULL)",
+                        name="ck_drawing_results_answered"),
+        CheckConstraint("answered_by IS NULL OR answered_by IN ('participant', 'conductor')",
+                        name="ck_drawing_results_answered_by"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    chosen_expression: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    seconds_to_answer: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answered_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GameResultRecord(Base):
+    """Resultado de un juego de emparejar: solo contadores, por paso e intento."""
+
+    __tablename__ = "game_results"
+    __table_args__ = (
+        UniqueConstraint("session_id", "step_index", "attempt", name="uq_game_results_session_step_attempt"),
+        CheckConstraint("outcome IN ('completed', 'timed_out', 'skipped', 'stopped')",
+                        name="ck_game_results_outcome"),
+        CheckConstraint("game_type IN ('matching', 'similar')", name="ck_game_results_type"),
+        CheckConstraint("first_try >= 0 AND first_try <= matched AND matched <= rounds_done "
+                        "AND rounds_done <= rounds_total AND help_used >= 0 AND by_conductor >= 0",
+                        name="ck_game_results_counts"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    game_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    rounds_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    rounds_done: Mapped[int] = mapped_column(Integer, nullable=False)
+    matched: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_try: Mapped[int] = mapped_column(Integer, nullable=False)
+    help_used: Mapped[int] = mapped_column(Integer, nullable=False)
+    by_conductor: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PracticeResultRecord(Base):
     """Resultado de un ejercicio de práctica. Nunca imágenes, niveles por cuadro
     ni la base neutral."""
 
     __tablename__ = "practice_results"
     __table_args__ = (
-        UniqueConstraint("session_id", "step_index", name="uq_practice_results_session_step"),
+        UniqueConstraint("session_id", "step_index", "attempt", name="uq_practice_results_session_step_attempt"),
         CheckConstraint("outcome IN ('achieved', 'timed_out', 'skipped', 'stopped')",
                         name="ck_practice_results_outcome"),
         CheckConstraint("(outcome = 'achieved') = (seconds_to_achieve IS NOT NULL)",
@@ -590,6 +744,8 @@ class PracticeResultRecord(Base):
     session_id: Mapped[str] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 1 es el primero; una repetición del paso es el 2 o el 3.
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     target_expression: Mapped[str] = mapped_column(String(32), nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     seconds_to_achieve: Mapped[float | None] = mapped_column(Float, nullable=True)

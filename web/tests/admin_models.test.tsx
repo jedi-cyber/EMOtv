@@ -22,7 +22,7 @@ function settings(overrides: Partial<LocalModelSettings> = {}): LocalModelSettin
       { model_id: "hsemotion_enet_b0_8_best_afew", name: "HSEmotion", version: "af833487321c3efd", state: "SUPPORTED", reasons: [],
         checks: { weights_verified: true, benchmark_current: true }, p95_ms: 42.4,
         concurrent_frame_p95_ms: { "4": 310.4, "1": 95.2, "2": 160 }, is_default: true },
-      { model_id: "ferplus_onnx", name: "FER+", version: "1.0", state: "BLOCKED", reasons: ["Benchmark vencido o con fecha futura; repite la medición"],
+      { model_id: "ferplus_onnx", name: "FER+", version: "1.0", state: "BLOCKED", reasons: ["Pesos no instalados en el servidor"],
         checks: { weights_verified: true, benchmark_current: false }, p95_ms: null, concurrent_frame_p95_ms: null, is_default: false },
     ],
     ...overrides,
@@ -57,7 +57,7 @@ describe("página Modelos", () => {
     // p95 del cuadro completo con varias sesiones, ordenado por número de sesiones.
     expect(within(rows[0]).getByText("Cuadro completo: 1 sesión: 95 ms · 2 sesiones: 160 ms · 4 sesiones: 310 ms")).toBeInTheDocument();
     expect(within(rows[1]).getByText("Sin admisión vigente")).toBeInTheDocument();
-    expect(within(rows[1]).getByText(/Benchmark vencido/)).toBeInTheDocument();
+    expect(within(rows[1]).getByText(/Pesos no instalados/)).toBeInTheDocument();
     expect(within(rows[1]).getByRole("button", { name: "Usar FER+ como predeterminado" })).toBeDisabled();
     expect(screen.getByText("Rige el modelo predeterminado inicial; nadie lo ha cambiado todavía.")).toBeInTheDocument();
     expect(view.container.textContent).not.toMatch(/precis|exact|mejor/i);
@@ -81,10 +81,10 @@ describe("página Modelos", () => {
   it("informa el rechazo del servidor y el uso del respaldo", async () => {
     state.settings = settings({ fallback_model_id: "ferplus_onnx", fallback_at: "2026-10-19T15:00:00Z",
       models: settings().models.map((model) => ({ ...model, state: "SUPPORTED" })) });
-    vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(409, "Modelo sin admisión vigente: Benchmark vencido"));
+    vi.mocked(apiRequest).mockRejectedValueOnce(new ApiError(409, "Modelo sin admisión vigente: Pesos no instalados en el servidor"));
     page();
     expect(screen.getByText(/se usó FER\+ como respaldo/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Usar FER+ como predeterminado" }));
-    expect(await screen.findByText("Modelo sin admisión vigente: Benchmark vencido")).toBeInTheDocument();
+    expect(await screen.findByText("Modelo sin admisión vigente: Pesos no instalados en el servidor")).toBeInTheDocument();
   });
 });

@@ -22,7 +22,8 @@ from emotv.config import (BASE_DIR, DATABASE_URL, JWT_SECRET_KEY, get_chat_setti
                           YUNET_PATH, EMOTION_MODEL_PATH, get_login_limits,
                           get_live_expression_settings, get_practice_settings, get_server_load_settings,
                           get_privacy_settings, get_sensitive_data_keys, get_mobile_min_app_version,
-                          get_user_image_settings)
+                          get_user_image_settings, get_exams_enabled, get_abstract_stimuli_enabled,
+                          get_activities_enabled)
 from emotv.infrastructure.persistence import (
     PostgresUserRepository,
     PostgresStudentRepository,
@@ -42,6 +43,7 @@ from emotv.infrastructure.persistence import (
     create_session_factory,
 )
 from emotv.application.login_throttle import LoginThrottle
+from emotv.application.mfa_service import MfaService
 from emotv.interfaces.web.auth_router import create_auth_router
 from emotv.interfaces.web.identity_router import create_identity_router
 from emotv.infrastructure.persistence.postgres_activity_repository import PostgresActivityRepository
@@ -55,7 +57,10 @@ from emotv.application.mobile_auth_service import MobileAuthService
 from emotv.infrastructure.persistence import PostgresMobileSessionRepository
 from emotv.interfaces.web.chat_router import create_chat_router
 from emotv.interfaces.web.expression_router import create_expression_router, expression_payload
+from emotv.infrastructure.stimuli.initial_bank import initial_drawings
 from emotv.interfaces.web.recommendation_router import create_recommendation_router
+from emotv.interfaces.web.guide_router import create_guide_router
+from emotv.interfaces.web.review_router import create_review_router
 from emotv.interfaces.web.model_admin_router import create_model_admin_router
 from emotv.application.local_model_service import LocalModelService
 from emotv.application.audit_service import AuditService
@@ -73,7 +78,7 @@ from emotv.infrastructure.persistence.postgres_practice_repositories import (
     PostgresStimulusRepository,
 )
 from emotv.infrastructure.vision.person_detection import create_person_detector
-from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image
+from emotv.infrastructure.vision.stimulus_image import sanitize_stimulus_image, stimulus_appearance
 from emotv.application.questionnaire_service import QuestionnaireService
 from emotv.infrastructure.persistence.postgres_questionnaire_repositories import (
     PostgresQuestionnaireRepository,
@@ -162,10 +167,16 @@ if DATABASE_URL and JWT_SECRET_KEY:
     assignment_repository = PostgresAssignmentRepository(database_sessions)
     expression_catalog = ExpressionCatalogService(PostgresExpressionInfoRepository(database_sessions))
     # Conocimiento de EMOtv para Emi; se invalida cuando administración edita contenido.
-    emi_knowledge = EmiKnowledge(activity_catalog.list_all, expression_catalog.list_all)
+    # Actividades corporales congeladas (ACTIVITIES_ENABLED): el catálogo solo se
+    # lee para mostrar sesiones anteriores; no se recomiendan ni se inician.
+    activities_enabled = get_activities_enabled()
+    emi_knowledge = EmiKnowledge(activity_catalog.list_all, expression_catalog.list_all,
+                                 activities_enabled=activities_enabled)
     recommendation_repository = PostgresRecommendationRepository(database_sessions)
     recommendation_config = RecommendationConfigService(recommendation_repository, activity_catalog)
-    app.include_router(create_recommendation_router(recommendation_config, authentication_service, user_repository))
+    if activities_enabled:
+        app.include_router(create_recommendation_router(recommendation_config, authentication_service,
+                                                        user_repository))
 
     def expression_label(key: str) -> str:
         info = expression_catalog.get(key)
@@ -198,7 +209,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
     # Una sola regla de acceso a sesiones (can_access_session) en todos los routers.
     authorization_service = AuthorizationService(assignment_repository.is_assigned, docente_of)
     stimulus_service = StimulusService(PostgresStimulusRepository(database_sessions), audit_service, docente_of,
-                                       sanitize_stimulus_image)
+                                       sanitize_stimulus_image, abstract_enabled=get_abstract_stimuli_enabled(),
+                                       initial_bank=initial_drawings)
     def session_access(user, session) -> bool:
         actor = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
         return authorization_service.can_access_session(user, session, actor_student_id=actor.id if actor else None)
@@ -211,7 +223,8 @@ if DATABASE_URL and JWT_SECRET_KEY:
         sessions=lambda session_id: session_repository.get_by_id(session_id),
         session_access=session_access)
     protocol_service = ProtocolService(PostgresProtocolRepository(database_sessions), stimulus_service,
-                                       audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service)
+                                       audit_service, docente_of, group_user_ids, questionnaires=questionnaire_service,
+                                       appearance=stimulus_appearance)
     app.include_router(create_questionnaire_router(questionnaire_service, authentication_service, user_repository))
     practice_settings = get_practice_settings()
     app.include_router(create_stimulus_router(stimulus_service, protocol_service, authentication_service,
@@ -225,10 +238,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_user_image_router(user_image_service, authentication_service, user_repository))
     app.include_router(create_privacy_router(commitment_service, audit_service, authentication_service,
                                              user_repository))
+    # Segundo factor de superadmin y admin: al ingresar y antes de cambiar cuentas o grupos.
+    mfa_service = MfaService(user_repository, authentication_service, field_cipher, audit_service)
     app.include_router(create_identity_router(authentication_service, user_repository, student_repository,
                                               consent_repository, consent_policy_service,
                                               assignments=assignment_repository, audit=audit_service,
-                                              privacy=privacy_settings))
+                                              privacy=privacy_settings, confirm_code=mfa_service.confirm))
     session_service = SessionService(
         session_repository,
         consent_repository=consent_repository,
@@ -240,7 +255,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         audit_service, docente_of, retention_months=privacy_settings.session_retention_months)
     login_throttle = LoginThrottle(PostgresLoginAttemptRepository(database_sessions), get_login_limits())
     app.include_router(create_auth_router(authentication_service, user_repository,
-                                          login_throttle=login_throttle))
+                                          login_throttle=login_throttle, mfa=mfa_service))
     app.include_router(create_activity_router(
         activity_catalog,
         authentication_service,
@@ -248,6 +263,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         recommendations=recommendation_config,
         expression_label=expression_label,
         on_change=emi_knowledge.invalidate,
+        changes_enabled=activities_enabled,
     ))
     app.include_router(create_session_router(
         session_service,
@@ -262,6 +278,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         questionnaires=questionnaire_service,
         privacy=session_privacy_service,
         audit=audit_service,
+        activities_enabled=activities_enabled,
     ))
     exam_repository = PostgresExamRepository(database_sessions)
     # El predeterminado se lee en cada inicio de sesión: un cambio rige sin reiniciar.
@@ -290,7 +307,9 @@ if DATABASE_URL and JWT_SECRET_KEY:
             audit=audit_service, session_access=session_access,
             calibration_seconds=live_expression.calibration_seconds,
             calibration_min_increase=live_expression.calibration_min_increase,
-            exam_of=exam_repository.get, practice=practice_settings)
+            exam_of=exam_repository.get, practice=practice_settings,
+            explanation_of=lambda key: (info.child_explanation or None)
+            if (info := expression_catalog.get(key)) else None)
     app.include_router(create_guided_router(guided_service, authentication_service, user_repository,
                                             stimulus_image=stimulus_service.repository.get_image,
                                             decode_frame=decode_frame, capacity=analysis_capacity))
@@ -305,10 +324,12 @@ if DATABASE_URL and JWT_SECRET_KEY:
     app.include_router(create_practice_validation_router(practice_validation, authentication_service,
                                                          user_repository))
     # Examen simulado: el docente crea, confirma consentimientos, inicia y termina;
-    # cada estación se une con el código y usa la pantalla de la persona.
-    exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
-                               commitment_service, stations=guided_service)
-    app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
+    # cada estación se une con el código y usa la pantalla de la persona. Está
+    # congelado (no forma parte del objetivo): sin EXAMS_ENABLED=true no se monta.
+    if get_exams_enabled():
+        exam_service = ExamService(exam_repository, protocol_service.repository, session_service, audit_service,
+                                   commitment_service, stations=guided_service)
+        app.include_router(create_exam_router(exam_service, authentication_service, user_repository))
 
     def actor_student_id(user) -> str | None:
         student = student_repository.get_by_user_id(user.id) if user.role is Role.STUDENT else None
@@ -339,6 +360,11 @@ if DATABASE_URL and JWT_SECRET_KEY:
         report_service = ReportService(PostgresReportRepository(database_sessions, field_cipher), session_service,
                                        authorization_service, docente_of, insights_service, audit_service)
     app.include_router(create_report_router(report_service, authentication_service, user_repository))
+    # Por revisar del docente: supervisa después, cuando tiene tiempo, sin estar en cada sesión.
+    app.include_router(create_review_router(
+        create_visible_sessions(session_service, student_repository, assignment_repository, authorization_service),
+        report_service, student_repository, authentication_service, user_repository, audit=audit_service))
+    app.include_router(create_guide_router(authentication_service, user_repository))
     # Aplicativo Android: consulta sesiones, reportes y estadísticas con los mismos
     # servicios y reglas que la web; no conduce sesiones (docs/mobile-api.md).
     app.include_router(create_mobile_router(
@@ -351,6 +377,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         insights=insights_service,
         reports=report_service,
         statistics=statistics_service,
+        participation=guided_service.claim_android_code if guided_service is not None else None,
         production=web_settings.production,
         api_version=__version__,
         min_app_version=get_mobile_min_app_version(),
@@ -385,6 +412,7 @@ if DATABASE_URL and JWT_SECRET_KEY:
         capacity=analysis_capacity,
         local_models=local_models,
         questionnaire_ready=questionnaire_service.pre_completed,
+        activities_enabled=activities_enabled,
     ))
     chat_gateway = None
     if chat_settings.provider == "sim":
@@ -412,7 +440,8 @@ else:
     app.include_router(create_mobile_router(None, None, production=web_settings.production, api_version=__version__,
                                             min_app_version=get_mobile_min_app_version()))
     app.include_router(create_expression_router(None, None, None))
-    app.include_router(create_recommendation_router(None, None, None))
+    if get_activities_enabled():
+        app.include_router(create_recommendation_router(None, None, None))
     app.include_router(create_model_admin_router(None, None, None))
     app.include_router(create_privacy_router(None, None, None, None))
     app.include_router(create_stimulus_router(None, None, None, None))
@@ -421,8 +450,11 @@ else:
     app.include_router(create_guided_router(None, None, None))
     app.include_router(create_insights_router(None, None, None))
     app.include_router(create_statistics_router(None, None, None))
-    app.include_router(create_exam_router(None, None, None))
+    if get_exams_enabled():
+        app.include_router(create_exam_router(None, None, None))
     app.include_router(create_report_router(None, None, None))
+    app.include_router(create_review_router(None, None, None, None, None))
+    app.include_router(create_guide_router(None, None))
 
 
 def run_retention() -> None:

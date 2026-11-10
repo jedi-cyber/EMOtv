@@ -12,7 +12,8 @@ from emotv.application.expression_catalog_service import ExpressionCatalogServic
 from emotv.application.ports import UserRepository
 from emotv.domain import Role, User
 from emotv.domain.expression_info import (
-    COMMON_LIMITATION, LABEL_MAX_LENGTH, TEXT_MAX_LENGTH, TEXT_MIN_LENGTH, ExpressionInfo,
+    CHILD_EXPLANATION_MAX_LENGTH, CHILD_EXPLANATION_MIN_LENGTH, COMMON_LIMITATION, LABEL_MAX_LENGTH,
+    TEXT_MAX_LENGTH, TEXT_MIN_LENGTH, ExpressionInfo,
 )
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
@@ -28,6 +29,8 @@ class ExpressionInfoResponse(BaseModel):
     facial_cues: str
     practice_tip: str
     limitation_note: str
+    # Explicación sencilla que lee la persona al terminar un paso «¿Qué emoción es?».
+    child_explanation: str = ""
     common_limitation: str
     review_status: Literal["draft", "reviewed"]
     reviewed_by_user_id: str | None
@@ -40,7 +43,8 @@ class ExpressionInfoResponse(BaseModel):
             expression_key=info.expression_key, label_es=info.label_es,
             what_it_is=info.what_it_is, why_it_occurs=info.why_it_occurs,
             facial_cues=info.facial_cues, practice_tip=info.practice_tip,
-            limitation_note=info.limitation_note, common_limitation=COMMON_LIMITATION,
+            limitation_note=info.limitation_note, child_explanation=info.child_explanation,
+            common_limitation=COMMON_LIMITATION,
             review_status=info.review_status.value, reviewed_by_user_id=info.reviewed_by_user_id,
             reviewed_at=info.reviewed_at, updated_at=info.updated_at,
         )
@@ -53,6 +57,9 @@ class ExpressionInfoUpdateRequest(BaseModel):
     facial_cues: str = _text()
     practice_tip: str = _text()
     limitation_note: str = _text()
+    # Opcional: si no se envía, se conserva la actual.
+    child_explanation: str | None = Field(default=None, min_length=CHILD_EXPLANATION_MIN_LENGTH,
+                                          max_length=CHILD_EXPLANATION_MAX_LENGTH)
     review_status: Literal["draft", "reviewed"] = "draft"
 
 
@@ -94,6 +101,8 @@ def create_expression_router(
         if user.role is not Role.SUPERADMIN:
             raise HTTPException(403, "Solo el superadministrador puede editar el catálogo de expresiones")
         data = request.model_dump()
+        if data["child_explanation"] is None:
+            data.pop("child_explanation")
         try:
             updated = require_catalog().update(
                 expression_key, editor_user_id=user.id, review_status=data.pop("review_status"), **data,

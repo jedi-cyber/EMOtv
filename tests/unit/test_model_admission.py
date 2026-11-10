@@ -57,14 +57,12 @@ def test_valid_report_and_live_resources(evaluator):
     assert service.evaluate("not-allowed")["state"] == "BLOCKED"
 
 
-@pytest.mark.parametrize("reason", ["missing", "invalid", "stale", "future", "hash", "environment", "runtime", "samples", "nan"])
-def test_untrusted_reports_fail_closed(evaluator, reason):
+@pytest.mark.parametrize("reason", ["missing", "invalid", "hash", "environment", "runtime", "samples", "nan"])
+def test_live_models_work_without_a_valid_report(evaluator, reason):
     service, path, report = evaluator
     if reason == "missing": path.unlink()
     elif reason == "invalid": path.write_text("invalid")
     else:
-        if reason == "stale": report["measured_at"] = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
-        if reason == "future": report["measured_at"] = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
         if reason == "hash": report["model"]["sha256"] = "wrong"
         if reason == "environment": report["environment"]["cpu"] = "different"
         if reason == "runtime": report["environment"]["onnxruntime"] = "different"
@@ -72,10 +70,55 @@ def test_untrusted_reports_fail_closed(evaluator, reason):
         if reason == "nan": report["results"][0]["ram_peak_mib"] = float("nan")
         path.write_text(json.dumps(report), encoding="utf-8")
     result = service.evaluate("ferplus_onnx")
-    assert result["state"] == "BLOCKED"
+    # Sin medición propia, el modelo se admite con su rendimiento de referencia.
+    assert result["state"] == "SUPPORTED"
+    assert result["metrics"]["p95_ms"] == module.REFERENCE_FIGURES["ferplus_onnx"]["p95_ms"]
     # Los pesos solo cuentan como verificados si coinciden con un benchmark legible.
     assert result["checks"]["weights_verified"] is (reason not in ("missing", "invalid", "hash"))
     assert result["checks"]["benchmark_current"] is False
+
+
+@pytest.mark.parametrize("days", [31, 400, -1])
+def test_a_report_does_not_expire(evaluator, days):
+    service, path, report = evaluator
+    report["measured_at"] = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    path.write_text(json.dumps(report), encoding="utf-8")
+    result = service.evaluate("ferplus_onnx")
+    assert result["state"] == "SUPPORTED"
+    assert result["checks"] == {"weights_verified": True, "benchmark_current": True}
+    assert result["metrics"]["p95_ms"] == 40
+
+
+def test_reference_figures_still_respect_the_server_load(evaluator, monkeypatch):
+    service, path, _ = evaluator
+    path.unlink()
+    monkeypatch.setattr(module.psutil, "cpu_percent", lambda interval: 99)
+    assert service.evaluate("ferplus_onnx")["state"] == "BLOCKED"
+    monkeypatch.setattr(module.psutil, "virtual_memory", lambda: SimpleNamespace(available=100 * 1024**2))
+    monkeypatch.setattr(module.psutil, "cpu_percent", lambda interval: 10)
+    assert service.evaluate("ferplus_onnx")["state"] == "BLOCKED"
+
+
+def test_live_models_still_need_their_weights(evaluator):
+    service, path, _ = evaluator
+    weights, _ = service.paths["ferplus_onnx"]
+    weights.unlink()
+    result = service.evaluate("ferplus_onnx")
+    assert result["state"] == "BLOCKED"
+    assert result["reasons"] == ["Pesos no instalados en el servidor"]
+
+
+def test_the_experimental_model_still_needs_its_own_report(evaluator, monkeypatch, tmp_path):
+    service, _, _ = evaluator
+    folder = tmp_path / "vit"
+    folder.mkdir()
+    for name in ("model.safetensors", "config.json", "preprocessor_config.json"):
+        (folder / name).write_bytes(b"{}")
+    monkeypatch.setattr(module.importlib.util, "find_spec", lambda name: object())
+    service.paths["hardlyhumans_vit"] = folder / "model.safetensors", tmp_path / "missing.json"
+    result = service.evaluate("hardlyhumans_vit")
+    assert result["state"] == "BLOCKED"
+    assert result["reasons"] == ["Falta un benchmark validado; ejecuta el script de medición"]
 
 
 def test_server_load_blocks_without_invalidating_the_checks(evaluator, monkeypatch):
@@ -98,14 +141,15 @@ def test_hsemotion_uses_the_same_admission_with_its_own_report(evaluator, tmp_pa
     service, ferplus_report, report = evaluator
     weights, _ = service.paths["ferplus_onnx"]
     version = module.EmotionModelCatalog().get("hsemotion_enet_b0_8_best_afew").version
-    # El informe de FER+ no admite a HSEmotion aunque los pesos coincidan.
+    # El informe de FER+ no cuenta como medición de HSEmotion aunque los pesos coincidan.
     service.paths["hsemotion_enet_b0_8_best_afew"] = weights, ferplus_report
-    assert service.evaluate("hsemotion_enet_b0_8_best_afew")["state"] == "BLOCKED"
+    assert service.evaluate("hsemotion_enet_b0_8_best_afew")["checks"]["benchmark_current"] is False
     own = tmp_path / "hsemotion.json"
     own.write_text(json.dumps({**report, "model": {**report["model"], "id": "hsemotion_enet_b0_8_best_afew",
                                                     "version": version}}), encoding="utf-8")
     service.paths["hsemotion_enet_b0_8_best_afew"] = weights, own
     assert service.evaluate("hsemotion_enet_b0_8_best_afew")["state"] == "SUPPORTED"
+    assert service.evaluate("hsemotion_enet_b0_8_best_afew")["checks"]["benchmark_current"] is True
     assert "HSEMOTION_BENCHMARK_PATH" not in str(service.evaluate("hsemotion_enet_b0_8_best_afew"))
 
 

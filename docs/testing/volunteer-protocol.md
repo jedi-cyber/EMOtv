@@ -4,7 +4,7 @@ Este protocolo explica cómo preparar, hacer y cerrar una prueba funcional de
 EMOtv con personas. Solo participan voluntarios **mayores de edad** que **no
 pertenecen a la Facultad de Psicología de la UNHEVAL** y que firman el
 consentimiento en papel. EMOtv estima la expresión facial visible: no
-diagnostica, no determina el estado psicológico de nadie y sus actividades son
+diagnostica, no determina el estado psicológico de nadie y sus ejercicios son
 actividad guiada, no terapia.
 
 El consentimiento en papel promete tres cosas, y este protocolo sirve para
@@ -67,7 +67,8 @@ indicando su código, y que puede revocar el consentimiento desde la página
 
 1. El voluntario inicia sesión y acepta el consentimiento de la aplicación
    (política de prueba v0.3). Si no lo acepta, la prueba termina ahí.
-2. Usa EMOtv por sí mismo: analizador facial, actividad recomendada y, si
+2. Usa EMOtv por sí mismo: analizador facial, una sesión con protocolo
+   (reconocimiento, ejercicios de práctica y «Haz la misma cara») y, si
    corresponde, Emi. La persona que facilita la prueba no escribe ni responde
    por el voluntario.
 3. Recuérdale que el resultado es una estimación de la expresión visible y no

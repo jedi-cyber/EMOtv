@@ -12,6 +12,24 @@ export interface CurrentUser {
 }
 
 export interface TokenResponse {
-  access_token: string;
+  /** Falta mientras una cuenta de gestión no escriba el código de su aplicación. */
+  access_token?: string;
   token_type: "bearer";
+  /** Superadmin y admin: configurar la aplicación autenticadora o escribir su código. */
+  mfa?: "setup" | "verify";
+  mfa_token?: string;
 }
+
+/** Segundo paso del ingreso de una cuenta de gestión. */
+export interface MfaChallenge {
+  step: "setup" | "verify";
+  mfaToken: string;
+}
+
+export interface MfaSetup {
+  secret: string;
+  otpauth_uri: string;
+}
+
+/** Encabezado con el código del momento para las acciones que cambian cuentas o grupos. */
+export const CONFIRMATION_HEADER = "X-Confirmation-Code";

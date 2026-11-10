@@ -581,3 +581,17 @@ def test_provider_settings():
         SimChatGateway(FAKE_SIM_URL, "")
     with pytest.raises(ValueError, match="URL"):
         SimChatGateway("sim.invalid", FAKE_KEY)
+
+
+def test_la_pantalla_de_la_persona_no_abre_a_emi(emi):
+    """Bloque 11: Emi queda fuera de la pantalla infantil. El enlace de la pantalla
+    de la persona (web o Android) no es una cuenta: con él, /chat responde 401 y
+    nada llega al workflow."""
+    import secrets
+
+    client, _, _, fake, _, _ = emi
+    link = secrets.token_urlsafe(32)          # la forma del enlace de la pantalla de la persona
+    for headers in ({"Authorization": f"Bearer {link}"}, {}):
+        assert ask(client, headers, "¿Qué emoción dibujé?").status_code == 401
+        assert client.get("/chat/conversations/current", headers=headers).status_code == 401
+    assert fake.requests == []

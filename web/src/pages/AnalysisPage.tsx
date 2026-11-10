@@ -22,6 +22,7 @@ import { CameraFrame } from "../components/CameraFrame";
 import { Checkbox } from "../components/Checkbox";
 import { StatusChip } from "../components/StatusChip";
 import { SessionConfirmDialog } from "../sessions/SessionConfirmDialog";
+import { ACTIVITIES_ENABLED } from "../routes/features";
 
 interface ModelAdmission {
   model_id: string;
@@ -52,7 +53,8 @@ const analysisSteps = ["Reconocer expresión", "Preparar postura", "Realizar act
 
 export function AnalysisPage() {
   const [params] = useSearchParams();
-  return params.has("activity") ? <ManualActivityAnalysisPage /> : <AdaptiveAnalysisPage />;
+  // Actividades congeladas: el Analizador solo lee la expresión.
+  return ACTIVITIES_ENABLED && params.has("activity") ? <ManualActivityAnalysisPage /> : <AdaptiveAnalysisPage />;
 }
 
 function ManualActivityAnalysisPage() {

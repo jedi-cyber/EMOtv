@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from emotv.config import ACTIVITIES_FROZEN_MESSAGE
 from emotv.application import ActivityCatalog, AuthenticationService, AuthorizationService, SessionService
 from emotv.application.audit_service import AuditService
 from emotv.application.ports import StudentRepository, UserRepository
@@ -134,6 +135,7 @@ def create_session_starter(
     protocols: ProtocolService | None = None,
     questionnaires: QuestionnaireService | None = None,
     audit: AuditService | None = None,
+    activities_enabled: bool = True,
 ) -> Callable[[User, CreateSessionRequest], EmotionalSession]:
     """Inicia una sesión con las mismas reglas para la web y el aplicativo móvil:
     compromiso, una sola confirmación según el público, aviso sobre menores la
@@ -147,13 +149,15 @@ def create_session_starter(
 
     def start(user: User, request: CreateSessionRequest) -> EmotionalSession:
         service, student_repository = services()
+        if request.activity_id is not None and not activities_enabled:
+            raise HTTPException(status_code=403, detail=ACTIVITIES_FROZEN_MESSAGE)
         if user.role is Role.STUDENT:
             actor = student_repository.get_by_user_id(user.id)
             if actor is None:
                 raise HTTPException(status_code=403, detail="Tu cuenta de usuario no tiene perfil asociado")
             resource_id, actor_id = request.student_id or actor.id, actor.id
         else:
-            # El docente conduce sesiones propias: sin perfil de usuario asociado.
+            # El docente conduce sesiones propias de demostración: sin perfil de usuario asociado.
             if request.student_id is not None:
                 raise HTTPException(status_code=403, detail="Cada usuario inicia sus sesiones desde su cuenta")
             resource_id, actor_id = None, None
@@ -268,12 +272,13 @@ def create_session_router(
     questionnaires: QuestionnaireService | None = None,
     privacy: SessionPrivacyService | None = None,
     audit: AuditService | None = None,
+    activities_enabled: bool = True,
 ) -> APIRouter:
     router = APIRouter(tags=["sessions"])
     policy = authorization or AuthorizationService()
     current_user = create_current_user_dependency(authentication, users)
     starter = create_session_starter(sessions, students, policy, activities, commitments, protocols,
-                                     questionnaires, audit)
+                                     questionnaires, audit, activities_enabled=activities_enabled)
 
     def services() -> tuple[SessionService, StudentRepository]:
         if sessions is None or students is None:

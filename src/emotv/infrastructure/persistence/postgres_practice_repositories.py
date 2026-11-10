@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from emotv.domain.notice import UserNotice
-from emotv.domain.protocol import Protocol, ProtocolStep
+from emotv.domain.protocol import Protocol, ProtocolStep, ProtocolSupports
 from emotv.domain.stimulus import Stimulus, StimulusScope
 from emotv.infrastructure.persistence.models import (
     ExpressionCaptureRecord,
@@ -160,6 +160,14 @@ class PostgresProtocolRepository:
         row.name = item.name
         row.description = item.description
         row.for_children = item.for_children
+        row.accessible = item.accessible
+        supports = item.supports
+        row.support_pictograms = supports.pictograms
+        row.support_large_controls = supports.large_controls
+        row.support_read_aloud = supports.read_aloud
+        row.support_no_time_limit = supports.no_time_limit
+        row.support_pause = supports.pause.value
+        row.shared_with_group = item.shared_with_group
         row.pre_questionnaire_id = item.pre_questionnaire_id
         row.post_questionnaire_id = item.post_questionnaire_id
         row.created_at = item.created_at
@@ -175,7 +183,10 @@ class PostgresProtocolRepository:
             exposure_seconds=step.exposure_seconds, capture_after_seconds=step.capture_after_seconds,
             record_verbal_response=step.record_verbal_response,
             shown_before_analyzer=step.shown_before_analyzer, kind=step.kind.value,
-            target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+            target_expression=step.target_expression, hold_seconds=step.hold_seconds,
+            option_count=step.option_count, situation=step.situation, imitate=step.imitate,
+            game_type=step.game_type, rounds=step.rounds,
+            game_stimulus_ids=list(step.game_stimulus_ids) if step.is_game else None)
             for position, step in enumerate(item.steps))
 
     @staticmethod
@@ -189,10 +200,19 @@ class PostgresProtocolRepository:
             post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
             superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
+            accessible=bool(row.accessible), shared_with_group=bool(row.shared_with_group),
+            supports=ProtocolSupports(
+                pictograms=bool(row.support_pictograms), large_controls=bool(row.support_large_controls),
+                read_aloud=bool(row.support_read_aloud), no_time_limit=bool(row.support_no_time_limit),
+                pause=row.support_pause or "normal"),
             steps=tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                      step.record_verbal_response, step.shown_before_analyzer,
                                      kind=step.kind or "stimulus", target_expression=step.target_expression,
-                                     hold_seconds=step.hold_seconds) for step in steps))
+                                     hold_seconds=step.hold_seconds, option_count=step.option_count,
+                                     situation=step.situation, imitate=bool(step.imitate),
+                                     game_type=step.game_type, rounds=step.rounds,
+                                     game_stimulus_ids=tuple(step.game_stimulus_ids or ()))
+                         for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:
         with self._factory.begin() as db:

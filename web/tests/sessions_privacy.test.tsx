@@ -176,13 +176,13 @@ describe("estímulos", () => {
     const submit = screen.getByRole("button", { name: "Agregar" });
     await userEvent.upload(screen.getByLabelText(/Imagen/), new File(["x"], "forma.png", { type: "image/png" }));
     await userEvent.type(screen.getByLabelText("Título"), "Forma");
-    await userEvent.selectOptions(screen.getByLabelText("Tipo"), "abstract");
+    // Las imágenes abstractas están congeladas: no se elige el tipo.
+    expect(screen.queryByLabelText("Tipo")).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Categoría"), "Manchas");
     await userEvent.type(screen.getByLabelText("Origen"), "Creación propia");
     await userEvent.type(screen.getByLabelText("Licencia"), "Uso docente");
+    expect(submit).toBeDisabled();  // falta declarar que no es una foto de una persona evaluada
     await userEvent.click(screen.getByRole("checkbox", { name: /no es una fotografía de una persona evaluada/ }));
-    expect(submit).toBeDisabled();  // falta declarar que no es una lámina proyectiva
-    await userEvent.click(screen.getByRole("checkbox", { name: /no es una lámina de una prueba proyectiva/ }));
     expect(submit).toBeEnabled();
     await userEvent.click(submit);
     await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("/stimuli", expect.objectContaining({ method: "POST" })));

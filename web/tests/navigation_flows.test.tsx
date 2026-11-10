@@ -6,6 +6,9 @@ import { App } from "../src/App";
 import { AuthContext } from "../src/auth/AuthContext";
 import type { UserRole } from "../src/auth/types";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+vi.mock("../src/routes/features", () => ({ ACTIVITIES_ENABLED: true }));
+
 vi.mock("../src/api/useApiQuery", () => ({
   useApiQuery: (path: string | null) => ({
     data: path === "/activities" ? [{ id: "arms_up_5s", name: "Brazos arriba", description: "Levanta los brazos", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }]

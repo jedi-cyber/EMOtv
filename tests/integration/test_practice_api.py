@@ -107,7 +107,7 @@ def test_quien_conduce_ve_la_expresion_pedida_el_nivel_y_el_logro(env):  # noqa:
     session_id, token = start(env, practice(), practice("surprise"))
     current = state(env, session_id)
     assert current["steps"][0]["step_kind"] == "practice" and current["steps"][0]["target_expression"] == "happiness"
-    assert current["practice"] == {"target_expression": "happiness", "hold_seconds": 2, "level": 0.0, "achieved": False}
+    assert current["practice"] == {"target_expression": "happiness", "hold_seconds": 2, "imitate": False, "level": 0.0, "achieved": False}
     assert current["practice_feedback"] is True
     send(env, token, HAPPY, count=2)
     assert 0 < state(env, session_id)["practice"]["level"] < 1

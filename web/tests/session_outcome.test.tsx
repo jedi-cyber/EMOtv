@@ -5,6 +5,9 @@ import { AuthContext } from "../src/auth/AuthContext";
 import { SessionDetailPage } from "../src/pages/SessionDetailPage";
 import { SessionsPage } from "../src/pages/SessionsPage";
 
+// Las actividades están congeladas; estas pruebas cubren el módulo con la opción activa.
+vi.mock("../src/routes/features", () => ({ ACTIVITIES_ENABLED: true }));
+
 const base = {
   student_id: "student-1", started_at: "2026-10-08T10:00:00Z", completed_at: "2026-10-08T10:02:00Z",
   initial_emotion: "sadness", emotion_confidence: .8, exercise_duration_seconds: null,

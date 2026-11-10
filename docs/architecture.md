@@ -154,8 +154,10 @@ clasificador declara su propio recorte (margen, tamaño y color) según su fuent
 
 Antes de cargar el clasificador, el WebSocket vuelve a evaluar la admisión del
 modelo: un cliente no puede evitar el bloqueo manipulando la interfaz y no hay
-fallback silencioso. Una evaluación ausente, insuficiente o vencida bloquea
-incluso FER+, y el motivo llega al navegador como mensaje de error. Tras cargar
+fallback silencioso. Sin pesos instalados, o con el servidor sin CPU o RAM
+libres, se bloquea incluso FER+, y el motivo llega al navegador como mensaje de
+error. La medición del equipo no vence; sin una válida, FER+ y HSEmotion usan
+su rendimiento de referencia (`REFERENCE_FIGURES`). Tras cargar
 el clasificador se registran `emotion_model_id` y `emotion_model_version` en la
 sesión. La inferencia ocurre en el servidor, así que su capacidad es la que
 determina la admisión. Véanse [condiciones actuales](emotion-model-candidates.md)

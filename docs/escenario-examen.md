@@ -1,5 +1,14 @@
 # Escenario de examen simulado en EMOtv
 
+> **Estado: congelado (2 de noviembre de 2026).** El examen simulado no forma
+> parte del objetivo del proyecto: un analizador de expresiones que apoya al
+> estudiante de Psicología en la evaluación, como herramienta complementaria.
+> El código y las migraciones se conservan, pero no se amplía. La interfaz no
+> muestra el menú «Exámenes» ni la página de estación, y la API (`/exams`,
+> `/exam-stations`) solo se monta con `EXAMS_ENABLED=true`. Para reactivarlo
+> hay que activar esa variable y volver a agregar las rutas y el menú en
+> `web/src/App.tsx` y `web/src/routes/navigation.ts`.
+
 ## Contexto
 
 EMOtv nació como herramienta para practicantes de Psicología (sesiones con niños y padres, estímulos por imagen). Cambió el supervisor del proyecto y el nuevo pide aplicarlo en un entorno de exámenes, sin que los estudiantes finjan su expresión. La decana aprobó EMOtv como herramienta de la Facultad de Psicología y no como sistema de monitoreo.

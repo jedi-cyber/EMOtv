@@ -19,7 +19,9 @@ from emotv.application.ports import UserRepository
 from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, StimulusService
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
-from emotv.domain.protocol import MAX_EXPOSURE_SECONDS, MAX_STEPS, PRACTICE_TARGETS
+from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
+                                   ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+                                   MAX_RECOGNITION_OPTIONS, PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -52,8 +54,11 @@ class StimulusActive(BaseModel):
 class StepModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
-    # sostiene; la imagen es una ilustración opcional.
-    kind: Literal["stimulus", "practice"] = "stimulus"
+    # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
+    # una imagen emocional y la persona elige qué emoción es. «drawing»: la
+    # persona dibuja una cara y señala qué emoción quiso representar. «game»: juego
+    # de emparejar imágenes con el nombre de su emoción.
+    kind: Literal["stimulus", "practice", "recognition", "drawing", "game"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
     exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
@@ -63,6 +68,37 @@ class StepModel(BaseModel):
     target_expression: str | None = Field(default=None, max_length=32)
     # Los límites los valida el dominio, con sus mensajes en español.
     hold_seconds: int | None = None
+    # Solo un reconocimiento: cuántas opciones se muestran. Su respuesta
+    # correcta (target_expression) la toma el servidor de la imagen.
+    option_count: int | None = None
+    # Solo un reconocimiento: una historia corta; la pregunta pasa a «¿Qué emoción muestra la cara?».
+    situation: str | None = Field(default=None, max_length=MAX_SITUATION_CHARS)
+    # Solo una práctica con imagen: la imagen es el modelo («Haz la misma cara»)
+    # y la expresión pedida la toma el servidor de la imagen.
+    imitate: bool = False
+    # Solo un juego: tipo («matching» o «similar»), rondas y las imágenes de las
+    # rondas (en «similar», la modelo y una por opción). Las elige el servidor;
+    # al editar se envían las que ya tenía.
+    game_type: Literal["matching", "similar"] | None = None
+    rounds: int | None = None
+    game_stimulus_ids: list[str] = Field(default_factory=list,
+                                         max_length=MAX_GAME_ROUNDS * (MAX_RECOGNITION_OPTIONS + 1))
+
+
+class SupportsModel(BaseModel):
+    """Apoyos de la pantalla de la persona (ProtocolSupports)."""
+
+    model_config = ConfigDict(extra="forbid")
+    pictograms: bool = False
+    large_controls: bool = False
+    read_aloud: bool = False
+    no_time_limit: bool = False
+    pause: Literal["normal", "long", "wait"] = "normal"
+
+    @classmethod
+    def of(cls, item: ProtocolSupports) -> "SupportsModel":
+        return cls(pictograms=item.pictograms, large_controls=item.large_controls, read_aloud=item.read_aloud,
+                   no_time_limit=item.no_time_limit, pause=item.pause.value)
 
 
 class ProtocolRequest(BaseModel):
@@ -74,6 +110,15 @@ class ProtocolRequest(BaseModel):
     pre_questionnaire_id: str | None = Field(default=None, max_length=36)
     post_questionnaire_id: str | None = Field(default=None, max_length=36)
     steps: list[StepModel] = Field(min_length=1, max_length=MAX_STEPS)
+    # Preajuste: pictogramas, botones grandes y pausas más largas. Si llegan los
+    # apoyos (supports), mandan sobre accessible.
+    accessible: bool = False
+    supports: SupportsModel | None = None
+
+
+class ProtocolShareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    shared: bool
 
 
 class ProtocolResponse(BaseModel):
@@ -83,14 +128,20 @@ class ProtocolResponse(BaseModel):
     name: str
     description: str
     for_children: bool
+    accessible: bool
     pre_questionnaire_id: str | None
     post_questionnaire_id: str | None
     steps: list[StepModel]
     created_at: datetime
     owned_by_me: bool
+    # Plantilla que el docente comparte con su grupo.
+    shared_with_group: bool
     used: bool
     # Una imagen fue eliminada o reclasificada por el docente: hay que reemplazarla.
     needs_image: bool
+    # Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara.
+    uses_camera: bool = True
+    supports: SupportsModel = Field(default_factory=SupportsModel)
 
 
 def create_stimulus_router(
@@ -136,7 +187,7 @@ def create_stimulus_router(
         service = protocol_service()
         return ProtocolResponse(
             id=item.id, family_id=item.family_id, version=item.version, name=item.name,
-            description=item.description, for_children=item.for_children,
+            description=item.description, for_children=item.for_children, accessible=item.accessible,
             pre_questionnaire_id=item.pre_questionnaire_id,
             post_questionnaire_id=item.post_questionnaire_id,
             steps=[StepModel(kind=step.kind.value, stimulus_id=step.stimulus_id,
@@ -144,22 +195,37 @@ def create_stimulus_router(
                              capture_after_seconds=step.capture_after_seconds,
                              record_verbal_response=step.record_verbal_response,
                              shown_before_analyzer=step.shown_before_analyzer,
-                             target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+                             target_expression=step.target_expression, hold_seconds=step.hold_seconds,
+                             option_count=step.option_count, situation=step.situation, imitate=step.imitate,
+                             game_type=step.game_type, rounds=step.rounds,
+                             game_stimulus_ids=list(step.game_stimulus_ids))
                    for step in item.steps],
-            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id, used=service.is_used(item),
-            needs_image=service.needs_image(item))
+            created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
+            shared_with_group=item.shared_with_group, used=service.is_used(item),
+            needs_image=service.needs_image(item), uses_camera=item.uses_camera,
+            supports=SupportsModel.of(item.supports))
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
             steps = tuple(ProtocolStep(step.stimulus_id, step.exposure_seconds, step.capture_after_seconds,
                                        step.record_verbal_response, step.shown_before_analyzer, kind=step.kind,
-                                       target_expression=step.target_expression, hold_seconds=step.hold_seconds)
+                                       target_expression=step.target_expression, hold_seconds=step.hold_seconds,
+                                       option_count=(DEFAULT_RECOGNITION_OPTIONS if step.kind == "recognition"
+                                                     and step.option_count is None
+                                                     else DEFAULT_GAME_OPTIONS if step.kind == "game"
+                                                     and step.option_count is None else step.option_count),
+                                       situation=step.situation, imitate=step.imitate,
+                                       game_type=step.game_type or ("matching" if step.kind == "game" else None),
+                                       rounds=(DEFAULT_GAME_ROUNDS if step.kind == "game" and step.rounds is None
+                                               else step.rounds),
+                                       game_stimulus_ids=tuple(step.game_stimulus_ids))
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error
         return ProtocolDraft(name=request.name, description=request.description, for_children=request.for_children,
                              steps=steps, pre_questionnaire_id=request.pre_questionnaire_id,
-                             post_questionnaire_id=request.post_questionnaire_id)
+                             post_questionnaire_id=request.post_questionnaire_id, accessible=request.accessible,
+                             supports=ProtocolSupports(**request.supports.model_dump()) if request.supports else None)
 
     # --- Estímulos -------------------------------------------------------------
 
@@ -191,6 +257,13 @@ def create_stimulus_router(
             not_a_participant_photo=not_a_participant_photo, not_a_projective_test=not_a_projective_test)
         return stimulus_response(guarded(lambda: stimulus_service().create(user, draft_item, data)), user)
 
+    @router.post("/stimuli/initial-bank")
+    def add_initial_bank(user: User = Depends(current_user)) -> dict[str, int]:
+        """Del administrador: agrega los dibujos del banco inicial que falten
+        (seis emociones básicas, tres variantes cada una). Repetirlo no duplica."""
+        added = guarded(lambda: stimulus_service().add_initial_bank(user))
+        return {"added": len(added), "total": len(stimulus_service().initial_bank_present())}
+
     @router.get("/stimuli/{stimulus_id}", response_model=StimulusResponse)
     def get_stimulus(stimulus_id: str, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().get(user, stimulus_id)), user)
@@ -220,6 +293,11 @@ def create_stimulus_router(
     def create_protocol(request: ProtocolRequest, user: User = Depends(current_user)):
         return protocol_response(guarded(lambda: protocol_service().create(user, draft(request))), user)
 
+    @router.post("/protocols/starter", response_model=ProtocolResponse, status_code=201)
+    def create_starter_protocol(user: User = Depends(current_user)):
+        """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (banco inicial)."""
+        return protocol_response(guarded(lambda: protocol_service().create_starter(user)), user)
+
     @router.get("/protocols/practice-defaults")
     def practice_defaults(user: User = Depends(current_user)) -> dict[str, Any]:
         """Lo que el editor propone para un ejercicio nuevo y las expresiones que se
@@ -232,6 +310,14 @@ def create_stimulus_router(
     @router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def get_protocol(protocol_id: str, user: User = Depends(current_user)):
         return protocol_response(guarded(lambda: protocol_service().get(user, protocol_id)), user)
+
+    @router.post("/protocols/{protocol_id}/copy", response_model=ProtocolResponse, status_code=201)
+    def copy_protocol(protocol_id: str, user: User = Depends(current_user)):
+        return protocol_response(guarded(lambda: protocol_service().copy(user, protocol_id)), user)
+
+    @router.put("/protocols/{protocol_id}/share", response_model=ProtocolResponse)
+    def share_protocol(protocol_id: str, request: ProtocolShareRequest, user: User = Depends(current_user)):
+        return protocol_response(guarded(lambda: protocol_service().share(user, protocol_id, request.shared)), user)
 
     @router.put("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def edit_protocol(protocol_id: str, request: ProtocolRequest, user: User = Depends(current_user)):

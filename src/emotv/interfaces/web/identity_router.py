@@ -1,10 +1,11 @@
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 import secrets
 import os
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
@@ -84,6 +85,10 @@ class ConsentPolicyCreate(BaseModel):
     approved: bool = False
 
 
+# Las acciones que cambian cuentas o grupos piden el código del momento de la
+# aplicación autenticadora: con un token robado no se toma ninguna cuenta.
+CONFIRMATION_DETAIL = "Escribe el código que muestra ahora tu aplicación autenticadora para confirmar."
+
 MANAGEABLE_ROLES: dict[Role, frozenset[Role]] = {
     # El superadministrador gestiona solo la cuenta de administrador.
     Role.SUPERADMIN: frozenset({Role.ADMIN}),
@@ -99,9 +104,16 @@ def create_identity_router(authentication: AuthenticationService | None,
                            policy_service: ConsentPolicyService | None = None,
                            assignments: AssignmentRepository | None = None,
                            audit: AuditService | None = None,
-                           privacy: PrivacySettings | None = None) -> APIRouter:
+                           privacy: PrivacySettings | None = None,
+                           confirm_code: Callable[[User, str | None], bool] | None = None) -> APIRouter:
     router = APIRouter(tags=["identity"])
     current_user = create_current_user_dependency(authentication, users)
+
+    def confirmed_user(user: User = Depends(current_user),
+                       x_confirmation_code: str | None = Header(default=None)) -> User:
+        if confirm_code is not None and not confirm_code(user, x_confirmation_code):
+            raise HTTPException(403, CONFIRMATION_DETAIL)
+        return user
     limits = privacy or PrivacySettings()
 
     def configured() -> IdentityRegistrationService:
@@ -172,7 +184,7 @@ def create_identity_router(authentication: AuthenticationService | None,
         return UserResponse.from_domain(managed_target(user, user_id))
 
     @router.post("/users", response_model=CreatedUserResponse, status_code=201)
-    def create_user(request: UserCreate, user: User = Depends(current_user)):
+    def create_user(request: UserCreate, user: User = Depends(confirmed_user)):
         if request.role not in manageable(user):
             raise HTTPException(403, "Tu cuenta no puede crear cuentas con ese papel")
         service = configured()
@@ -200,7 +212,7 @@ def create_identity_router(authentication: AuthenticationService | None,
                                    temporary_password=temporary_password)
 
     @router.patch("/users/{user_id}", response_model=UserResponse)
-    def update_user(user_id: str, request: UserUpdate, user: User = Depends(current_user)):
+    def update_user(user_id: str, request: UserUpdate, user: User = Depends(confirmed_user)):
         item = managed_target(user, user_id)
         service = configured()
         changes = request.model_dump(exclude_none=True)
@@ -231,7 +243,7 @@ def create_identity_router(authentication: AuthenticationService | None,
         return UserResponse.from_domain(updated)
 
     @router.post("/users/{user_id}/reset-password", response_model=CreatedUserResponse)
-    def reset_password(user_id: str, user: User = Depends(current_user)):
+    def reset_password(user_id: str, user: User = Depends(confirmed_user)):
         target = managed_target(user, user_id)
         service = configured()
         temporary_password = secrets.token_urlsafe(24)
@@ -244,7 +256,7 @@ def create_identity_router(authentication: AuthenticationService | None,
                                    temporary_password=temporary_password)
 
     @router.delete("/users/{user_id}", response_model=UserResponse)
-    def deactivate_user(user_id: str, user: User = Depends(current_user)):
+    def deactivate_user(user_id: str, user: User = Depends(confirmed_user)):
         return update_user(user_id, UserUpdate(is_active=False), user)
 
     @router.get("/students", response_model=list[StudentResponse])
@@ -289,7 +301,7 @@ def create_identity_router(authentication: AuthenticationService | None,
         return [item for item in items if item is not None]
 
     @router.put("/users/{user_id}/assigned-students/{student_id}", response_model=AssignedStudentResponse)
-    def assign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
+    def assign_student(user_id: str, student_id: str, user: User = Depends(confirmed_user)):
         """Agrega el usuario al grupo del docente; si tenía otro docente, lo mueve."""
         repository, psychologist = assignment_services(user, user_id)
         if configured().students.get_by_id(student_id) is None:
@@ -302,7 +314,7 @@ def create_identity_router(authentication: AuthenticationService | None,
         return assigned_response(assignment)
 
     @router.delete("/users/{user_id}/assigned-students/{student_id}", status_code=204)
-    def unassign_student(user_id: str, student_id: str, user: User = Depends(current_user)):
+    def unassign_student(user_id: str, student_id: str, user: User = Depends(confirmed_user)):
         repository, psychologist = assignment_services(user, user_id)
         if not repository.unassign(psychologist.id, student_id):
             raise HTTPException(404, "El usuario no pertenecía al grupo de este docente")

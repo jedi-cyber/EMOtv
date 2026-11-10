@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { AnswerValue, MarkerKind, SessionTimeline as Timeline } from "../api/types";
-import { practiceTargetNames } from "../stimuli/labels";
-import { practiceOutcomeNames, secondsText } from "./StimulusMetrics";
+import { gameTypeNames, practiceTargetNames } from "../stimuli/labels";
+import { gameOutcomeNames, practiceOutcomeNames, recognitionOutcomeNames, secondsText } from "./StimulusMetrics";
 
 const WIDTH = 1000;
 const LABEL = 170;
@@ -32,9 +32,49 @@ function answerText(value: AnswerValue | null) {
 /** Un ejercicio de práctica con su resultado, tal como ocurrió. */
 function practiceText(item: Timeline["lanes"]["stimuli"][number]) {
   const target = practiceTargetNames[item.target_expression ?? ""] ?? "expresión pedida";
-  const outcome = item.outcome ? practiceOutcomeNames[item.outcome].toLowerCase() : item.skipped ? "se saltó" : "en curso";
+  const outcome = item.outcome && item.outcome !== "answered" ? practiceOutcomeNames[item.outcome as keyof typeof practiceOutcomeNames].toLowerCase()
+    : item.skipped ? "se saltó" : "en curso";
   const when = item.outcome === "achieved" && item.seconds_to_achieve != null ? ` a los ${secondsText(item.seconds_to_achieve)}` : "";
-  return `${target} · ${outcome}${when}`;
+  return `${item.imitate ? `Imitar ${target.toLowerCase()}` : target} · ${outcome}${when}${repeatsText(item)}`;
+}
+
+/** Las repeticiones de un paso, después de su primer intento. */
+function repeatsText(item: Timeline["lanes"]["stimuli"][number]) {
+  return (item.repeats ?? []).map((repeat) => {
+    if (item.kind === "game") return ` · ${repeat.attempt}.º intento: ${repeat.sentence ?? ""}`;
+    const outcome = item.kind === "practice"
+      ? practiceOutcomeNames[repeat.outcome as keyof typeof practiceOutcomeNames].toLowerCase()
+      : recognitionOutcomeNames[repeat.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+    const chosen = repeat.chosen_expression ? `: ${practiceTargetNames[repeat.chosen_expression] ?? repeat.chosen_expression}` : "";
+    const seconds = item.kind === "practice" ? repeat.seconds_to_achieve : repeat.seconds_to_answer;
+    return ` · ${repeat.attempt}.º intento: ${outcome}${chosen}${seconds != null ? ` a los ${secondsText(seconds)}` : ""}`;
+  }).join("");
+}
+
+/** Un reconocimiento con la opción elegida, tal como ocurrió. */
+function recognitionText(item: Timeline["lanes"]["stimuli"][number]) {
+  const target = practiceTargetNames[item.target_expression ?? ""] ?? "emoción";
+  if (!item.outcome) return `«${item.title}» (${target}) · ${item.skipped ? "se saltó" : "en curso"}`;
+  const chosen = item.chosen_expression ? `: ${practiceTargetNames[item.chosen_expression] ?? item.chosen_expression}` : "";
+  const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
+  return `«${item.title}» (${target}) · ${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase()}${chosen}${when}${repeatsText(item)}`;
+}
+
+/** Un dibujo: solo la emoción que la persona señaló (el dibujo no se guarda). */
+function drawingText(item: Timeline["lanes"]["stimuli"][number]) {
+  if (!item.outcome) return item.skipped ? "se saltó" : "en curso";
+  const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
+  const outcome = item.chosen_expression
+    ? `señaló ${(practiceTargetNames[item.chosen_expression] ?? item.chosen_expression).toLowerCase()}`
+    : recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+  return `${outcome}${when}${repeatsText(item)}`;
+}
+
+/** Un juego: cómo terminó y lo que ocurrió en sus rondas, sin puntaje. */
+function gameText(item: Timeline["lanes"]["stimuli"][number]) {
+  if (!item.outcome) return item.skipped ? "se saltó" : "en curso";
+  const outcome = gameOutcomeNames[item.outcome as keyof typeof gameOutcomeNames].toLowerCase();
+  return `${outcome}. ${item.sentence ?? ""}${repeatsText(item)}`;
 }
 
 interface Event { time: number; text: string }
@@ -62,6 +102,9 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
     ...questionnaires.map((item) => ({ time: item.time, text: `Cuestionario ${item.moment === "pre" ? "previo" : "posterior"} «${item.title}»: ${item.answers.map((answer) => `${answer.question} ${answerText(answer.answer)}`).join("; ")}` })),
     ...stimuli.map((item) => ({ time: item.start ?? 0, text: item.kind === "practice"
       ? `Ejercicio de práctica: ${practiceText(item)}`
+      : item.kind === "recognition" ? `¿Qué emoción es? ${recognitionText(item)}`
+      : item.kind === "drawing" ? `Dibujo: ${drawingText(item)}`
+      : item.kind === "game" ? `${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
       : `Aparece el estímulo «${item.title}»${item.skipped ? " (se saltó)" : ""}` })),
     ...captures.map((item) => ({ time: item.time, text: `Captura: ${item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "sin expresión estimada"}${item.quality === "flagged" ? ", marcada por calidad" : ""}` })),
     ...said.map((item) => ({ time: item.time, text: `Dijo ver en «${item.title}»: ${item.text}` })),
@@ -77,6 +120,9 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
       <rect x={x(item.start)} y={y(1) - 12} width={Math.max(4, x(item.end ?? duration) - x(item.start))} height={24} rx={3}
         className={item.skipped ? "timeline-bar timeline-bar-skipped" : "timeline-bar"} />
       <title>{item.kind === "practice" ? `${seconds(item.start ?? 0)} · Ejercicio: ${practiceText(item)}`
+        : item.kind === "recognition" ? `${seconds(item.start ?? 0)} · ¿Qué emoción es? ${recognitionText(item)}`
+        : item.kind === "drawing" ? `${seconds(item.start ?? 0)} · Dibujo: ${drawingText(item)}`
+        : item.kind === "game" ? `${seconds(item.start ?? 0)} · ${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
         : `${seconds(item.start ?? 0)} · ${item.title}${item.kind === "abstract" ? " (abstracta)" : ""}${item.skipped ? " · se saltó" : ""}`}</title>
     </g>),
     captures: captures.map((item, index) => <g key={index}>

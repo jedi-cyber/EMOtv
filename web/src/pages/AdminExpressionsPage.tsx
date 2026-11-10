@@ -16,6 +16,8 @@ import { Modal } from "../components/Modal";
 const TEXT_MIN = 20;
 const TEXT_MAX = 1200;
 const LABEL_MAX = 60;
+const CHILD_MIN = 10;
+const CHILD_MAX = 200;
 
 type TextField = "what_it_is" | "why_it_occurs" | "facial_cues" | "practice_tip" | "limitation_note";
 const textFields: { key: TextField; label: string; help: string }[] = [
@@ -26,13 +28,13 @@ const textFields: { key: TextField; label: string; help: string }[] = [
   { key: "limitation_note", label: "Limitación", help: "Incluye cultura, contexto, iluminación y ángulo; habla de «expresión compatible con»." },
 ];
 
-type Form = Pick<ExpressionInfo, "label_es" | TextField> & { reviewed: boolean };
+type Form = Pick<ExpressionInfo, "label_es" | TextField> & { child_explanation: string; reviewed: boolean };
 
 function toForm(info: ExpressionInfo): Form {
   return {
     label_es: info.label_es, what_it_is: info.what_it_is, why_it_occurs: info.why_it_occurs,
     facial_cues: info.facial_cues, practice_tip: info.practice_tip, limitation_note: info.limitation_note,
-    reviewed: info.review_status === "reviewed",
+    child_explanation: info.child_explanation ?? "", reviewed: info.review_status === "reviewed",
   };
 }
 
@@ -61,10 +63,14 @@ export function AdminExpressionsPage() {
     if (!label || label.length > LABEL_MAX) { setError(`La etiqueta debe tener entre 1 y ${LABEL_MAX} caracteres.`); return; }
     const invalid = textFields.find(({ key }) => form[key].trim().length < TEXT_MIN || form[key].trim().length > TEXT_MAX);
     if (invalid) { setError(`«${invalid.label}» debe tener entre ${TEXT_MIN} y ${TEXT_MAX} caracteres.`); return; }
+    const child = form.child_explanation.trim().length;
+    if (child > 0 && (child < CHILD_MIN || child > CHILD_MAX)) { setError(`«Explicación sencilla» debe tener entre ${CHILD_MIN} y ${CHILD_MAX} caracteres.`); return; }
     setSaving(true); setError(""); setMessage("");
     try {
       const { reviewed, ...texts } = form;
-      const body = Object.fromEntries(Object.entries(texts).map(([key, value]) => [key, value.trim()]));
+      // Una explicación vacía no se envía: el servidor conserva la actual.
+      const body = Object.fromEntries(Object.entries(texts).map(([key, value]) => [key, value.trim()])
+        .filter(([key, value]) => key !== "child_explanation" || value));
       const updated = await apiRequest<ExpressionInfo>(`/expressions/${encodeURIComponent(selected.expression_key)}`, {
         method: "PUT", token, body: JSON.stringify({ ...body, review_status: reviewed ? "reviewed" : "draft" }),
       });
@@ -104,6 +110,13 @@ export function AdminExpressionsPage() {
           onChange={(event) => setForm({ ...form, [key]: event.target.value })} />
         <small id={`help-${key}`} className="muted">{help} {form[key].trim().length}/{TEXT_MAX}</small>
       </div>)}
+      <div className="form-field">
+        <label htmlFor="expression-child_explanation">Explicación sencilla</label>
+        <textarea id="expression-child_explanation" value={form.child_explanation} rows={2} maxLength={CHILD_MAX}
+          aria-describedby="help-child_explanation"
+          onChange={(event) => setForm({ ...form, child_explanation: event.target.value })} />
+        <small id="help-child_explanation" className="muted">Una oración que describe la cara, para la actividad «¿Qué emoción es?». Sin decir qué siente la persona. {form.child_explanation.trim().length}/{CHILD_MAX}</small>
+      </div>
       <Checkbox checked={form.reviewed}
         onChange={(event) => setForm({ ...form, reviewed: event.target.checked })}>Marcar como revisado por Psicología (se registra quién y cuándo)</Checkbox>
       <p className="muted">Guardar sin marcar deja el texto como borrador y elimina una revisión anterior.</p>

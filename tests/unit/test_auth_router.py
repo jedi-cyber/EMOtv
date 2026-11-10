@@ -63,7 +63,13 @@ class AuthRouterTests(unittest.TestCase):
         }).status_code, 401)
 
     def test_admin_lists_users_but_student_is_forbidden(self) -> None:
-        admin_token = self.token("admin@example.com", "administrator-password-123")
+        # El admin no recibe token solo con la contraseña (segundo factor:
+        # tests/unit/test_privileged_mfa.py); aquí se emite directamente.
+        password_only = self.client.post("/auth/token", data={
+            "username": "admin@example.com", "password": "administrator-password-123",
+        })
+        self.assertNotIn("access_token", password_only.json())
+        admin_token = self.auth.create_access_token(self.admin)
         student_token = self.token("student@example.com", "student-password-123")
         self.assertEqual(self.client.get("/auth/users", headers={
             "Authorization": f"Bearer {admin_token}",

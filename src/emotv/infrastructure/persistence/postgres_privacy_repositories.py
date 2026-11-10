@@ -16,9 +16,12 @@ from emotv.domain.audit import AuditEntry
 from emotv.infrastructure.persistence.models import (
     AccessAuditRecord,
     CommitmentAcceptanceRecord,
+    DrawingResultRecord,
+    GameResultRecord,
     ExpressionCaptureRecord,
     GuidedRunRecord,
     PracticeResultRecord,
+    RecognitionResultRecord,
     QuestionnaireResponseRecord,
     ReportCommentRecord,
     ReportEventRecord,
@@ -39,6 +42,9 @@ SESSION_LINKED_RECORDS = (
     ("session_markers", SessionMarkerRecord, SessionMarkerRecord.session_id),
     ("verbal_responses", VerbalResponseRecord, VerbalResponseRecord.session_id),
     ("practice_results", PracticeResultRecord, PracticeResultRecord.session_id),
+    ("recognition_results", RecognitionResultRecord, RecognitionResultRecord.session_id),
+    ("drawing_results", DrawingResultRecord, DrawingResultRecord.session_id),
+    ("game_results", GameResultRecord, GameResultRecord.session_id),
     ("guided_runs", GuidedRunRecord, GuidedRunRecord.session_id),
 )
 

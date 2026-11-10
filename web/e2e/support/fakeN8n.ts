@@ -14,7 +14,7 @@ export interface FakeN8n {
 }
 
 export const OUT_OF_SCOPE_ANSWER = "Solo puedo orientarte sobre EMOtv, sus actividades y las expresiones faciales. Para otros temas, consulta otra fuente.";
-export const IN_SCOPE_ANSWER = "En EMOtv, una actividad es una secuencia de posturas guiadas que la cámara verifica paso a paso.";
+export const IN_SCOPE_ANSWER = "En EMOtv, un protocolo es una receta guardada: dice qué aplicar en una sesión, por ejemplo imágenes, «¿Qué emoción es?», dibujos o juegos.";
 export const LLM_DOWN_ANSWER = "El modelo de lenguaje no está disponible.";
 
 /** Palabras clave en la pregunta que eligen la respuesta del n8n falso. */

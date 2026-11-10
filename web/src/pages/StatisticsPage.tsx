@@ -8,7 +8,7 @@ import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
-import { expectedExpressionNames, practiceTargetNames } from "../stimuli/labels";
+import { expectedExpressionNames, gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 import type { PracticeRow } from "../api/types";
 
 function averageText(value: number | null) {
@@ -70,8 +70,10 @@ function cell(value: string | number) {
 export function StatisticsPage() {
   const { user } = useAuth();
   const isDocente = user?.role === "psychologist";
-  const [draft, setDraft] = useState<Filters>(emptyFilters);
-  const [applied, setApplied] = useState<Filters>(emptyFilters);
+  // Las sesiones del docente son de demostración: solo ve las de su grupo.
+  const initial: Filters = { ...emptyFilters, scope: isDocente ? "group" : "mine" };
+  const [draft, setDraft] = useState<Filters>(initial);
+  const [applied, setApplied] = useState<Filters>(initial);
   const [questionnaireId, setQuestionnaireId] = useState("");
   const [copied, setCopied] = useState("");
   const result = useApiQuery<SessionStatistics>(query(applied, questionnaireId));
@@ -85,12 +87,6 @@ export function StatisticsPage() {
     event.preventDefault();
     setCopied("");
     setApplied(draft);
-  }
-
-  function changeScope(scope: Scope) {
-    setCopied(""); setQuestionnaireId("");
-    setDraft((current) => ({ ...current, scope, protocol: "" }));
-    setApplied((current) => ({ ...current, scope, protocol: "" }));
   }
 
   /** Los datos visibles, separados por tabulaciones. No se crea ningún archivo. */
@@ -113,6 +109,25 @@ export function StatisticsPage() {
         ["Expresión pedida", "Logrados", "Terminados", "Tiempo promedio (s)", "Saltados"],
         ...stats.practice.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.achieved,
           row.applied, row.average_seconds_to_achieve ?? "", row.skipped]));
+    }
+    if (stats.recognition) {
+      rows.push([], ["Reconocimiento de emociones", stats.recognition.totals.sentence], [stats.recognition.notice],
+        ["Emoción de la imagen", "La eligió", "Terminados", "Sin respuesta", "Saltados"],
+        ...stats.recognition.by_target.map((row) => [practiceTargetNames[row.target_expression] ?? row.target_expression, row.matched,
+          row.applied, row.timed_out, row.skipped]));
+    }
+    if (stats.drawing) {
+      rows.push([], ["Dibujos", stats.drawing.totals.sentence], [stats.drawing.notice],
+        ["Emoción señalada", "Dibujos"],
+        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]),
+        ["Sin emoción señalada (terminó el tiempo)", stats.drawing.totals.timed_out],
+        ["Omitidos", stats.drawing.totals.skipped], ["Interrumpidos", stats.drawing.totals.stopped]);
+    }
+    if (stats.games) {
+      rows.push([], ["Juegos", stats.games.totals.sentence], [stats.games.notice],
+        ["Juego", "Juegos", "Intentos", "Rondas terminadas", "Emparejadas", "A la primera", "Con ayuda", "Omitidos", "Interrumpidos"],
+        ...stats.games.by_type.map((row) => [gameTypeNames[row.game_type] ?? row.game_type, row.games, row.attempts,
+          row.rounds_done, row.matched, row.first_try, row.help_used, row.skipped, row.stopped]));
     }
     if (stats.by_user) {
       rows.push([], ["Usuario", "Sesiones", "Completadas", "Interrumpidas"],
@@ -140,20 +155,14 @@ export function StatisticsPage() {
 
   return <section>
     <PageHeader title="Estadísticas"
-      description={isDocente ? "Resumen de tus sesiones o de las de tu grupo." : "Resumen de las sesiones que condujiste."}
+      description={isDocente ? "Resumen de las sesiones que condujo tu grupo." : "Resumen de las sesiones que condujiste."}
       actions={<Button variant="secondary" disabled={!data} onClick={() => { void copy(); }}>Copiar tabla</Button>} />
     <Callout variant="info" role="note">
       Estas estadísticas cuentan sesiones, no personas, y son estimaciones. No permiten sacar conclusiones sobre ninguna persona.
     </Callout>
     {copied && <Callout variant="success">{copied}</Callout>}
 
-    {isDocente && <fieldset className="audience-choice stat-scope">
-      <legend>¿Qué sesiones?</legend>
-      {(["mine", "group"] as const).map((scope) => <label key={scope} className={`audience-option${applied.scope === scope ? " is-selected" : ""}`}>
-        <input type="radio" name="statistics-scope" checked={applied.scope === scope} onChange={() => changeScope(scope)} />
-        <strong>{scope === "mine" ? "Mis sesiones" : "Mi grupo"}</strong>
-      </label>)}
-    </fieldset>}
+    {isDocente && <p className="muted">Sesiones de tu grupo. Tus sesiones de demostración no cuentan.</p>}
 
     <form className="filter-bar stat-filters" onSubmit={apply}>
       <label>Desde<input type="date" value={draft.date_from} onChange={(event) => set("date_from", event.target.value)} /></label>
@@ -238,6 +247,56 @@ export function StatisticsPage() {
           <h3>Por usuario del grupo</h3>
           <PracticeTable first="Usuario" rows={data.practice.by_user.map((row) => ({ ...row, key: row.email, label: row.email }))} />
         </>}
+      </section>}
+
+      {data.recognition && <section aria-label="Reconocimiento de emociones">
+        <h2 className="stat-heading">Reconocimiento de emociones</h2>
+        <Callout variant="info" role="note">{data.recognition.notice}</Callout>
+        <p>{data.recognition.totals.sentence} En {data.recognition.sessions} {data.recognition.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Se cuentan los pasos que llegaron a su final; los que terminaron sin respuesta cuentan como no elegidos.
+          Van aparte de la coincidencia de estímulos.</p>
+        <h3>Por emoción de la imagen</h3>
+        <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Emoción de la imagen</th><th>La eligió</th><th>Sin respuesta</th><th>Eligió en su lugar</th></tr></thead>
+          <tbody>{data.recognition.by_target.map((row) => <tr key={row.target_expression}>
+            <td>{practiceTargetNames[row.target_expression] ?? row.target_expression}</td>
+            <td>{row.matched} de {row.applied}</td>
+            <td>{row.timed_out}</td>
+            <td>{row.other_choices.length ? row.other_choices.map((item) =>
+              `${practiceTargetNames[item.expression] ?? item.expression} (${item.count})`).join(", ") : "—"}</td>
+          </tr>)}</tbody>
+        </table></div>
+      </section>}
+
+      {data.drawing && <section aria-label="Dibujos">
+        <h2 className="stat-heading">Dibujos</h2>
+        <Callout variant="info" role="note">{data.drawing.notice}</Callout>
+        <p>{data.drawing.totals.sentence} En {data.drawing.sessions} {data.drawing.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Solo se cuenta la emoción que se señaló al terminar cada dibujo; no hay respuesta correcta.
+          {data.drawing.totals.timed_out + data.drawing.totals.skipped + data.drawing.totals.stopped > 0
+            ? ` Terminó el tiempo en ${data.drawing.totals.timed_out}, se omitieron ${data.drawing.totals.skipped} y se interrumpieron ${data.drawing.totals.stopped}.` : ""}</p>
+        {data.drawing.by_expression.length > 0 && <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Emoción señalada</th><th>Dibujos</th></tr></thead>
+          <tbody>{data.drawing.by_expression.map((row) => <tr key={row.expression}>
+            <td>{practiceTargetNames[row.expression] ?? row.expression}</td><td>{row.count}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>}
+
+      {data.games && <section aria-label="Juegos">
+        <h2 className="stat-heading">Juegos</h2>
+        <Callout variant="info" role="note">{data.games.notice}</Callout>
+        <p>{data.games.totals.sentence} En {data.games.sessions} {data.games.sessions === 1 ? "sesión" : "sesiones"}.</p>
+        <p className="muted">Cuenta el primer intento de cada juego; las repeticiones solo se suman a los intentos.</p>
+        <div className="table-wrap"><table className="data-table">
+          <thead><tr><th>Juego</th><th>Juegos</th><th>Intentos</th><th>Rondas terminadas</th><th>Emparejadas</th>
+            <th>A la primera</th><th>Con ayuda</th><th>Omitidos o interrumpidos</th></tr></thead>
+          <tbody>{data.games.by_type.map((row) => <tr key={row.game_type}>
+            <td>{gameTypeNames[row.game_type] ?? row.game_type}</td><td>{row.games}</td><td>{row.attempts}</td>
+            <td>{row.rounds_done} de {row.rounds_total}</td><td>{row.matched}</td><td>{row.first_try}</td>
+            <td>{row.help_used}</td><td>{row.skipped + row.stopped}</td>
+          </tr>)}</tbody>
+        </table></div>
       </section>}
 
       {data.by_user && <>

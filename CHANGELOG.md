@@ -9,6 +9,24 @@ commit de cada grupo. La cronología commit por commit está en
 ## [Unreleased]
 
 ### Añadido
+- Paso de reconocimiento «¿Qué emoción es?» en los protocolos. Se muestra una
+  imagen emocional del banco y la persona elige entre 2 y 4 opciones que se
+  eligen solas. Después lee el nombre de la emoción de la imagen. La cámara no
+  se analiza en ese paso. Se registra lo elegido, el tiempo y quién respondió.
+  Incluye métricas, línea de tiempo, reporte, estadísticas y el contrato móvil
+  4.2 ([docs/emotion-recognition.md](docs/emotion-recognition.md)).
+- Migración `20261102_31_recognition_steps`.
+- Situaciones en el paso «¿Qué emoción es?»: una historia corta opcional junto
+  a la ilustración, con la pregunta «¿Cómo se siente?». El servidor rechaza
+  situaciones con DNI, correos o teléfonos. Migración
+  `20261102_32_recognition_situations`.
+- Modo accesible en los protocolos: pictogramas junto a cada emoción, botones
+  y letra más grandes, sin animaciones y pausas del doble. El editor propone
+  menos opciones y más tiempo. Migración `20261102_33_accessible_protocols`.
+- Plantillas de protocolos: el docente comparte un protocolo suyo con su
+  grupo y sus usuarios lo copian como protocolo propio («Copiar y
+  modificar»); también se puede duplicar uno propio. Migración
+  `20261102_34_protocol_templates`.
 - Ejercicios de práctica de expresiones en los protocolos: la persona recibe
   una instrucción y ve una señal de 0 a 1; se registra si logró la expresión
   pedida, en cuánto tiempo y si la señal estuvo visible, sin guardar imágenes
@@ -25,10 +43,47 @@ commit de cada grupo. La cronología commit por commit está en
   sigue aceptando), `PRACTICE_HOLD_SECONDS` y `PRACTICE_MAX_SECONDS`.
 - `GET /protocols/practice-defaults`: lo que el editor propone para un
   ejercicio nuevo.
+- Banco inicial de 18 dibujos de creación propia (seis emociones básicas, tres
+  variantes de piel y cabello), generados por el sistema y sin fotos de
+  personas. El administrador lo agrega con un botón en «Estímulos
+  institucionales» (`POST /stimuli/initial-bank`).
+- Plantilla de protocolo «Emociones básicas 4 a 6 años»: para niños, en modo
+  accesible, con un «¿Qué emoción es?» por emoción y dos opciones. Se copia
+  con «Usar la plantilla inicial» en Protocolos (`POST /protocols/starter`).
+- «Haz la misma cara»: un ejercicio de práctica que muestra una imagen como
+  modelo. La persona lee «Haz la misma cara» y ve la misma señal de 0 a 1. La
+  expresión pedida se toma de la imagen y no hay que elegirla. Quien conduce
+  ve «Imitar el modelo», y las métricas y la línea de tiempo lo indican.
+  Migración `20261104_35_imitation_steps` y contrato móvil 4.3 (`imitate`).
+- La «Guía de uso» es interactiva: buscador sin tildes, índice de temas,
+  temas plegables, pasos que se marcan como hechos (solo en ese navegador),
+  enlace a la pantalla de cada tema y «Preguntar a Emi».
+- Guía de uso: «Guía de uso», al final del menú de cada cuenta, explica paso a
+  paso las tareas de su papel con los nombres de los botones (`GET /guide`).
+  Emi recibe la misma guía de Usuario y Docente. Una prueba verifica que cada
+  nombre citado exista en la interfaz.
 - Migraciones `20261030_28_practice_steps` y `20261030_29_practice_feedback`.
 - Prueba e2e de una sesión con un ejercicio de práctica.
 
 ### Cambiado
+- La descripción fija de Emi (`docs/chatbot/emotv-descripcion-sim.md`) sigue el
+  objetivo vigente: agrega «¿Qué emoción es?», plantillas, modo accesible,
+  banco inicial y «Haz la misma cara», y quita las posturas, el examen simulado
+  y las imágenes abstractas (congelados). `sim-setup.md` explica qué cambiar en
+  el workflow de Sim. Contrato móvil 4.4 (solo documentación): las
+  estadísticas del Docente se piden con `scope=group`.
+- El conocimiento de Emi reemplaza el «Flujo de uso» por la guía de uso y
+  actualiza los protocolos con los pasos vigentes («¿Qué emoción es?»,
+  práctica y «Haz la misma cara»). Para no pasar el límite, los textos de las
+  expresiones viajan algo más cortos.
+- El docente supervisa y no conduce las sesiones de su grupo. «Por revisar»
+  (`GET /reviews`, con contador en el menú) reúne, del más antiguo al más
+  nuevo, los reportes enviados y los pedidos de eliminación, para revisarlos
+  cuando tenga tiempo. Sus sesiones propias son de demostración: se marcan así
+  y no cuentan en las estadísticas.
+- La medición de rendimiento de los modelos faciales ya no vence a los 30 días
+  y deja de ser requisito: sin ella, HSEmotion y FER+ funcionan con un
+  rendimiento de referencia. Se quita `EMOTION_BENCHMARK_MAX_AGE_DAYS`.
 - Práctica (§14.5): se puede pedir cualquier expresión del catálogo, incluido
   desprecio; el editor propone 20 s; hay una pausa de 2 s tras cada ejercicio,
   logrado o no; cuadros cada 250 ms y suavizado de 0,49 s.
@@ -36,6 +91,20 @@ commit de cada grupo. La cronología commit por commit está en
   descartan si no hay cupo; la pantalla de la persona envía un cuadro a la vez.
 - El Analizador cuenta imágenes y ejercicios por separado al elegir un
   protocolo.
+- Las imágenes abstractas con respuesta verbal («¿qué ves?») quedan congeladas
+  y ocultas porque no forman parte del objetivo. Con
+  `ABSTRACT_STIMULI_ENABLED=false` (predeterminado) no se suben, no se ofrecen
+  en el banco ni en el editor, y un protocolo que las usa pide reemplazarlas
+  antes de iniciar una sesión. Las sesiones, reportes y actas que ya las tienen
+  se siguen mostrando.
+- Las actividades corporales (posturas verificadas con MediaPipe) quedan
+  congeladas y ocultas porque no forman parte del objetivo. Con
+  `ACTIVITIES_ENABLED=false` (predeterminado) el Analizador termina en el
+  resultado de la expresión, no se inician ni se recomiendan actividades, el
+  catálogo solo se lee, Emi no las describe y el menú ya no muestra
+  Actividades ni Administrar actividades. Las sesiones anteriores con
+  actividad se siguen mostrando. El código, las pruebas y las tablas se
+  conservan para los criterios 5, 6 y 7.
 
 ### Corregido
 - El borrado de los datos de voluntarios incluye los resultados de práctica.

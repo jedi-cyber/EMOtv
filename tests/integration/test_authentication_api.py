@@ -142,7 +142,7 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
 
     def test_database_role_controls_protected_endpoint(self) -> None:
         student_token = self._login(self.student.email, self.student_password)
-        admin_token = self._login(self.admin.email, self.admin_password)
+        admin_token = self.authentication.create_access_token(self.admin)  # el admin entra con segundo factor
 
         denied = self.client.get(
             "/auth/users",
@@ -219,7 +219,7 @@ class AuthenticationApiIntegrationTests(unittest.TestCase):
 
     def test_student_cannot_get_or_list_another_students_sessions(self) -> None:
         token = self._login(self.student.email, self.student_password)
-        admin_token = self._login(self.admin.email, self.admin_password)
+        admin_token = self.authentication.create_access_token(self.admin)  # el admin entra con segundo factor
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
         # El administrador no conduce ni consulta sesiones.
         self.assertEqual(self.client.post("/sessions", json={}, headers=admin_headers).status_code, 403)

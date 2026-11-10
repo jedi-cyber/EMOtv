@@ -146,6 +146,10 @@ No se guarda en ningún archivo ni en los logs. Al iniciar sesión, EMOtv pedir�
 cambiarla. Si ya existe un administrador activo, el script se niega a crear
 otro (usa `--force` solo si de verdad necesitas una segunda cuenta).
 
+En el primer ingreso, después de la contraseña, EMOtv pide configurar una
+aplicación autenticadora en el celular: superadmin y admin entran siempre con
+contraseña y código ([security.md](security.md#cuentas-de-gestión-superadmin-y-admin)).
+
 Para crear cuentas de prueba de psicología y estudiante (solo pruebas
 técnicas, nunca personas reales):
 
@@ -381,8 +385,9 @@ candado en la barra de direcciones) y que otra aplicación no la esté usando.
 (`https://IP:8443`) esté en `CORS_ORIGINS` y la IP en `TRUSTED_HOSTS`; luego
 `docker compose --env-file .env.docker --profile https up -d`.
 
-**"Modelo bloqueado: Benchmark vencido".** El benchmark de FER+ tiene una
-vigencia de 30 días. Vuelve a medirlo con
+**"Modelo bloqueado".** La medición de los modelos no vence: el bloqueo se
+debe a que faltan los pesos o a que el servidor no tiene CPU o RAM libres en
+ese momento. Si faltan los pesos, vuelve a ejecutar
 `docker compose --env-file .env.docker up -d models`, que se ejecuta y termina
 solo.
 

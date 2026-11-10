@@ -58,8 +58,9 @@ cuerpo tal cual.
 | Cualquier otro fallo | — | 502 |
 
 `knowledge` lleva el conocimiento verificado de EMOtv que genera
-`emotv.application.emi_knowledge`: textos fijos (flujo de uso, sesiones y
-autorizaciones, protocolos y sesión con protocolo, línea de tiempo y métricas, estados
+`emotv.application.emi_knowledge`: textos fijos (la guía de uso de Usuario y
+Docente, que sale de `emotv.application.user_guide` igual que la página «Guía de
+uso»; sesiones y autorizaciones, protocolos, línea de tiempo y métricas, estados
 del reporte, limitaciones del reconocimiento facial, qué se guarda y roles) y,
 desde la base de datos, las cinco posturas, las actividades y sus pasos y los
 textos del catálogo de expresiones. Los textos fijos van primero: si hay que

@@ -24,7 +24,9 @@ class PostgresUserRepository:
                     password_hash=user.password_hash, role=user.role.value,
                     is_active=user.is_active, must_change_password=user.must_change_password,
                     token_version=user.token_version,
-                    created_at=user.created_at, password_reset_at=user.password_reset_at))
+                    created_at=user.created_at, password_reset_at=user.password_reset_at,
+                    mfa_secret=user.mfa_secret, mfa_enabled_at=user.mfa_enabled_at,
+                    mfa_last_step=user.mfa_last_step))
             else:
                 row.email, row.password_hash = user.email, user.password_hash
                 row.role, row.is_active = user.role.value, user.is_active
@@ -32,6 +34,8 @@ class PostgresUserRepository:
                 row.token_version = user.token_version
                 row.created_at = user.created_at
                 row.password_reset_at = user.password_reset_at
+                row.mfa_secret, row.mfa_enabled_at = user.mfa_secret, user.mfa_enabled_at
+                row.mfa_last_step = user.mfa_last_step
         return user
 
     def get_by_id(self, user_id: str) -> User | None:
@@ -66,8 +70,12 @@ class PostgresUserRepository:
         reset = row.password_reset_at
         if reset is not None and reset.tzinfo is None:
             reset = reset.replace(tzinfo=timezone.utc)
+        enabled = row.mfa_enabled_at
+        if enabled is not None and enabled.tzinfo is None:
+            enabled = enabled.replace(tzinfo=timezone.utc)
         return User(row.id, row.email, row.password_hash, Role(row.role), created,
-                    row.is_active, row.must_change_password, row.token_version, reset)
+                    row.is_active, row.must_change_password, row.token_version, reset,
+                    mfa_secret=row.mfa_secret, mfa_enabled_at=enabled, mfa_last_step=row.mfa_last_step)
 
 
 def _text(value: str, name: str) -> str:

@@ -17,10 +17,28 @@ from typing import Any, Literal
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
 from emotv.application.session_insights_service import SessionInsightsService
-from emotv.application.session_metrics import practice_by_target, practice_totals
+from emotv.application.session_metrics import (
+    game_sentence,
+    practice_by_target,
+    practice_totals,
+    recognition_by_target,
+    recognition_totals,
+)
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.expression_info import EXPRESSION_KEYS
-from emotv.domain.guided_session import PRACTICE_NOTICE, CaptureQuality, PracticeResult
+from emotv.domain.guided_session import (
+    DRAWING_NOTICE,
+    GAME_NOTICE,
+    PRACTICE_NOTICE,
+    RECOGNITION_NOTICE,
+    CaptureQuality,
+    DrawingResult,
+    GameOutcome,
+    GameResult,
+    PracticeResult,
+    RecognitionOutcome,
+    RecognitionResult,
+)
 from emotv.domain.questionnaire import FACES, QuestionKind
 from emotv.domain.role import Role
 from emotv.domain.session import EmotionalSession
@@ -82,6 +100,10 @@ class SessionStatisticsService:
             return tuple(self.group_user_ids(user.id))
         if scope != "mine":
             raise ValueError("Elige «Mis sesiones» o «Mi grupo»")
+        if user.role is Role.PSYCHOLOGIST:
+            # Las sesiones del docente son de demostración, para enseñar a su grupo:
+            # no cuentan en las estadísticas.
+            return ()
         return (user.id,)
 
     def _family(self, session: EmotionalSession) -> str | None:
@@ -124,6 +146,10 @@ class SessionStatisticsService:
             "coincidence": self._coincidence(selected),
             # Aparte de la coincidencia de estímulos: en un ejercicio se pide la expresión.
             "practice": self._practice(selected),
+            "recognition": self._recognition(selected),
+            # Dibujos y juegos, también por sesión y aparte (revisión 4.8).
+            "drawing": self._drawing(selected),
+            "games": self._games(selected),
             "protocols": self._protocol_options(in_scope),
             **self._questionnaires(selected, filters.questionnaire_id),
         }
@@ -200,6 +226,73 @@ class SessionStatisticsService:
         by_protocol.sort(key=lambda row: row["name"].lower())
         return {"sessions": len(per_session), "totals": practice_totals(everything),
                 "by_protocol": by_protocol, "by_target": practice_by_target(everything), "notice": PRACTICE_NOTICE}
+
+    def _drawing(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
+        """Dibujos de las sesiones elegidas: cuántos terminaron con una emoción
+        señalada y qué emociones se señalaron. El dibujo no se guarda ni se
+        interpreta. None si ninguna sesión tuvo dibujos."""
+        per_session: list[list[DrawingResult]] = [
+            list(self.insights.guided.list_drawing_results(session.id)) if session.protocol_id else []
+            for session in sessions]
+        per_session = [results for results in per_session if results]
+        if not per_session:
+            return None
+        everything = [item for results in per_session for item in results]
+        count = Counter(item.outcome for item in everything)
+        answered = count[RecognitionOutcome.ANSWERED]
+        chosen = Counter(item.chosen_expression for item in everything
+                         if item.outcome is RecognitionOutcome.ANSWERED and item.chosen_expression)
+        return {"sessions": len(per_session),
+                "totals": {"exercises": len(everything), "answered": answered,
+                           "timed_out": count[RecognitionOutcome.TIMED_OUT],
+                           "skipped": count[RecognitionOutcome.SKIPPED], "stopped": count[RecognitionOutcome.STOPPED],
+                           "sentence": f"Se señaló una emoción en {answered} de {len(everything)} "
+                                       f"{'dibujo' if len(everything) == 1 else 'dibujos'}."},
+                "by_expression": [{"expression": key, "count": value} for key, value in chosen.most_common()],
+                "notice": DRAWING_NOTICE}
+
+    def _games(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
+        """Juegos de las sesiones elegidas: rondas, emparejadas, a la primera,
+        ayudas e intentos, en total y por tipo de juego. Cuenta el primer intento
+        de cada juego; las repeticiones solo se cuentan. None si no hubo juegos."""
+        per_session = []
+        for session in sessions:
+            if not session.protocol_id:
+                continue
+            results = list(self.insights.guided.list_game_results(session.id))
+            if results:
+                per_session.append((results, list(self.insights.guided.list_game_attempts(session.id))))
+        if not per_session:
+            return None
+
+        def row(results: list[GameResult], attempts: int) -> dict[str, Any]:
+            count = Counter(item.outcome for item in results)
+            totals = {name: sum(getattr(item, name) for item in results)
+                      for name in ("rounds_total", "rounds_done", "matched", "first_try", "help_used")}
+            return {"games": len(results), "attempts": attempts,
+                    **{outcome.value: count[outcome] for outcome in GameOutcome}, **totals,
+                    "sentence": game_sentence(**totals)}
+
+        everything = [item for results, _ in per_session for item in results]
+        all_attempts = [item for _, attempts in per_session for item in attempts]
+        by_type = [{"game_type": game_type, **row([item for item in everything if item.game_type == game_type],
+                                                  sum(1 for item in all_attempts if item.game_type == game_type))}
+                   for game_type in sorted({item.game_type for item in everything})]
+        return {"sessions": len(per_session), "totals": row(everything, len(all_attempts)), "by_type": by_type,
+                "notice": GAME_NOTICE}
+
+    def _recognition(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
+        """Reconocimientos de las sesiones elegidas: totales y por emoción de la
+        imagen. None si ninguna sesión tuvo reconocimientos."""
+        per_session: list[list[RecognitionResult]] = [
+            list(self.insights.guided.list_recognition_results(session.id)) if session.protocol_id else []
+            for session in sessions]
+        per_session = [results for results in per_session if results]
+        if not per_session:
+            return None
+        everything = [item for results in per_session for item in results]
+        return {"sessions": len(per_session), "totals": recognition_totals(everything),
+                "by_target": recognition_by_target(everything), "notice": RECOGNITION_NOTICE}
 
     @staticmethod
     def _practice_row(results: list[PracticeResult]) -> dict[str, Any]:

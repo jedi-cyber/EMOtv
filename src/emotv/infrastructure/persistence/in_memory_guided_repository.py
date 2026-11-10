@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from threading import RLock
 
-from emotv.domain.guided_session import ExpressionCapture, GuidedRun, PracticeResult, SessionMarker, VerbalResponse
+from emotv.domain.guided_session import (
+    DrawingResult,
+    ExpressionCapture,
+    GameResult,
+    GuidedRun,
+    PracticeResult,
+    RecognitionResult,
+    SessionMarker,
+    VerbalResponse,
+)
 
 
 class InMemoryGuidedSessionRepository:
@@ -13,7 +22,10 @@ class InMemoryGuidedSessionRepository:
         self._captures: dict[str, list[ExpressionCapture]] = {}
         self._markers: dict[str, list[SessionMarker]] = {}
         self._verbal: dict[tuple[str, int], VerbalResponse] = {}
-        self._practice: dict[tuple[str, int], PracticeResult] = {}
+        self._practice: dict[tuple[str, int, int], PracticeResult] = {}
+        self._recognition: dict[tuple[str, int, int], RecognitionResult] = {}
+        self._drawing: dict[tuple[str, int, int], DrawingResult] = {}
+        self._game: dict[tuple[str, int, int], GameResult] = {}
         self._lock = RLock()
 
     # --- Estado -------------------------------------------------------------------
@@ -30,6 +42,10 @@ class InMemoryGuidedSessionRepository:
     def get_run_by_token_hash(self, token_hash: str) -> GuidedRun | None:
         with self._lock:
             return next((run for run in self._runs.values() if run.view_token_hash == token_hash), None)
+
+    def get_run_by_pairing_hash(self, code_hash: str) -> GuidedRun | None:
+        with self._lock:
+            return next((run for run in self._runs.values() if run.pairing_hash == code_hash), None)
 
     # --- Capturas y marcadores -------------------------------------------------------
 
@@ -65,10 +81,56 @@ class InMemoryGuidedSessionRepository:
 
     def save_practice_result(self, result: PracticeResult) -> PracticeResult:
         with self._lock:
-            self._practice[(result.session_id, result.step_index)] = result
+            self._practice[(result.session_id, result.step_index, result.attempt)] = result
         return result
 
     def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]:
+        """El primer intento de cada paso."""
+        return tuple(item for item in self.list_practice_attempts(session_id) if item.attempt == 1)
+
+    def list_practice_attempts(self, session_id: str) -> tuple[PracticeResult, ...]:
         with self._lock:
-            return tuple(sorted((item for (owner, _), item in self._practice.items() if owner == session_id),
-                                key=lambda item: item.step_index))
+            return tuple(sorted((item for (owner, _, _), item in self._practice.items() if owner == session_id),
+                                key=lambda item: (item.step_index, item.attempt)))
+
+    def save_recognition_result(self, result: RecognitionResult) -> RecognitionResult:
+        with self._lock:
+            self._recognition[(result.session_id, result.step_index, result.attempt)] = result
+        return result
+
+    def list_recognition_results(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        """El primer intento de cada paso."""
+        return tuple(item for item in self.list_recognition_attempts(session_id) if item.attempt == 1)
+
+    def list_recognition_attempts(self, session_id: str) -> tuple[RecognitionResult, ...]:
+        with self._lock:
+            return tuple(sorted((item for (owner, _, _), item in self._recognition.items() if owner == session_id),
+                                key=lambda item: (item.step_index, item.attempt)))
+
+    def save_drawing_result(self, result: DrawingResult) -> DrawingResult:
+        with self._lock:
+            self._drawing[(result.session_id, result.step_index, result.attempt)] = result
+        return result
+
+    def list_drawing_results(self, session_id: str) -> tuple[DrawingResult, ...]:
+        """El primer intento de cada paso."""
+        return tuple(item for item in self.list_drawing_attempts(session_id) if item.attempt == 1)
+
+    def list_drawing_attempts(self, session_id: str) -> tuple[DrawingResult, ...]:
+        with self._lock:
+            return tuple(sorted((item for (owner, _, _), item in self._drawing.items() if owner == session_id),
+                                key=lambda item: (item.step_index, item.attempt)))
+
+    def save_game_result(self, result: GameResult) -> GameResult:
+        with self._lock:
+            self._game[(result.session_id, result.step_index, result.attempt)] = result
+        return result
+
+    def list_game_results(self, session_id: str) -> tuple[GameResult, ...]:
+        """El primer intento de cada paso."""
+        return tuple(item for item in self.list_game_attempts(session_id) if item.attempt == 1)
+
+    def list_game_attempts(self, session_id: str) -> tuple[GameResult, ...]:
+        with self._lock:
+            return tuple(sorted((item for (owner, _, _), item in self._game.items() if owner == session_id),
+                                key=lambda item: (item.step_index, item.attempt)))

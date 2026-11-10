@@ -190,11 +190,67 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
    (un solo color para todas las expresiones) y el botón de parar siempre a la vista. */
 .participant-practice { display: grid; justify-items: center; gap: var(--space-lg); width: min(100%, 36rem); }
 .participant-instruction { margin: 0; color: var(--color-ink); font-size: var(--text-page-title); font-weight: var(--weight-bold); line-height: var(--leading-page-title); text-wrap: balance; }
+.participant-situation { max-width: 40ch; margin: 0; color: var(--color-ink); font-size: var(--text-section-title); line-height: 1.4; text-align: center; text-wrap: pretty; }
 .participant-illustration { max-width: 100%; max-height: 40dvh; object-fit: contain; border-radius: var(--radius-lg); }
 .practice-signal { display: grid; place-items: center; width: min(60vw, 240px); aspect-ratio: 1; border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-lg); background: var(--color-neutral-soft); }
 .practice-signal-fill { width: 100%; height: 100%; border-radius: var(--radius-lg); background: var(--color-primary); transform: scale(max(0.08, var(--practice-level, 0))); }
 .participant-achieved { min-height: 1.5em; margin: 0; color: var(--color-success); font-size: var(--text-section-title); font-weight: var(--weight-bold); }
+/* Reconocimiento: opciones grandes, fáciles de tocar para un niño. */
+.recognition-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-sm); width: 100%; }
+.recognition-option { min-height: 3.5rem; flex-direction: column; gap: var(--space-xs); font-size: var(--text-section-title); touch-action: manipulation; }
+.recognition-chosen { display: block; font-size: var(--text-body-md); font-weight: var(--weight-semibold); }
+.recognition-feedback { display: grid; gap: var(--space-xs); justify-items: center; text-align: center; }
+.recognition-note, .recognition-explanation { max-width: 40ch; margin: 0; color: var(--color-ink); line-height: 1.4; text-wrap: pretty; }
+.recognition-listen { min-height: 3rem; touch-action: manipulation; }
+.matching-game-round { margin: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }
+.matching-game-actions { justify-content: center; }
+.matching-game-actions .button { min-height: 3rem; touch-action: manipulation; }
+/* Resultados educativos: una fila por tipo de actividad. */
+.educational-summary { display: grid; gap: var(--space-xs); margin: 0; }
+.educational-summary > div { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: var(--space-sm); }
+.educational-summary dt { font-weight: var(--weight-semibold); color: var(--color-ink); }
+.educational-summary dd { margin: 0; }
+@media (max-width: 480px) { .educational-summary > div { grid-template-columns: 1fr; gap: 0; } }
+/* Buscar la misma emoción: cada opción es una cara, con su número debajo. */
+.similar-game-face { display: block; width: min(9rem, 100%); aspect-ratio: 1; object-fit: contain; border-radius: var(--radius-md, 8px); background: var(--color-canvas); }
+.similar-game-options .recognition-option { padding: var(--space-xs); }
+/* La opción elegida sigue legible aunque los botones queden deshabilitados. */
+.recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
+.recognition-answer { color: var(--color-ink); }
+/* Modo accesible: botones y letra más grandes, pictogramas y nada que se mueva. */
+.recognition-pictogram { display: block; font-size: 2.5rem; line-height: 1; }
+.participant-view--accessible .recognition-options { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-md); }
+.participant-view--accessible .recognition-option { min-height: 7rem; font-size: var(--text-page-title); }
+.participant-view--accessible .participant-situation { font-size: var(--text-page-title); }
+.participant-view--accessible .participant-actions .button { min-height: 3.5rem; }
+.participant-view--accessible *, .participant-view--accessible *::before, .participant-view--accessible *::after { animation: none !important; transition: none !important; }
 .participant-view > .participant-actions { position: sticky; bottom: 0; padding: var(--space-sm) 0; background: var(--color-canvas); }
+/* Dibujo táctil: el lienzo ocupa el ancho disponible; el dedo sobre él nunca
+   desplaza ni amplía la página. Hoja siempre blanca, para que todo color se vea. */
+.drawing-view { overscroll-behavior: contain; }
+.drawing-stage { align-content: start; }
+.drawing-activity { display: grid; justify-items: center; gap: var(--space-md); width: min(100%, 56rem); }
+.drawing-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-sm); }
+.drawing-tools { display: grid; gap: var(--space-sm); width: 100%; }
+.drawing-group { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-xs); }
+.drawing-swatch, .drawing-size { display: inline-flex; align-items: center; gap: var(--space-xs); min-height: 2.75rem; padding: 0 var(--space-sm); border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); cursor: pointer; font: inherit; font-size: var(--text-body-md); touch-action: manipulation; }
+/* La elección se marca con borde grueso y texto en negrita, no solo con color. */
+.drawing-swatch[aria-pressed="true"], .drawing-size[aria-pressed="true"] { border-color: var(--color-primary); box-shadow: inset 0 0 0 2px var(--color-primary); font-weight: var(--weight-bold); }
+.drawing-swatch-color { width: 1.25rem; height: 1.25rem; border: 1px solid var(--color-hairline-strong); border-radius: 50%; }
+.drawing-size-dot { border-radius: 50%; background: var(--color-ink); }
+.drawing-surface { width: 100%; }
+.drawing-canvas { display: block; width: 100%; height: min(60dvh, 34rem); border: 2px solid var(--color-hairline-strong); border-radius: var(--radius-lg); background: #fff; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.drawing-canvas[data-locked] { cursor: default; }
+.drawing-activity--full .drawing-canvas { height: 78dvh; }
+.drawing-finish { flex-direction: column; align-items: center; }
+.drawing-done { display: grid; justify-items: center; gap: var(--space-sm); }
+/* En un teléfono: consigna más corta de alto, lienzo casi del ancho y herramientas compactas. */
+@media (max-width: 40rem) {
+  .drawing-view { padding: var(--space-sm); }
+  .drawing-header .participant-instruction { font-size: var(--text-section-title); }
+  .drawing-canvas { height: 52dvh; }
+  .drawing-swatch, .drawing-size { min-height: 2.75rem; padding: 0 var(--space-xs); font-size: var(--text-body-sm); }
+}
 @media (prefers-reduced-motion: no-preference) {
   .practice-signal-fill { transition: transform 300ms ease-out; }
 }
@@ -264,6 +320,26 @@ kbd { margin-left: var(--space-xs); padding: 0 4px; border: 1px solid var(--colo
 .callout-success { border-color: var(--color-success); background: var(--color-success-soft); }
 .callout-warning { border-color: var(--color-warning); background: var(--color-warning-soft); }
 .callout-error { border-color: var(--color-error); background: var(--color-error-soft); }
+/* ---------- Guía de uso: índice, temas plegables y pasos marcables ---------- */
+.guide-toolbar input[type="search"] { width: 100%; }
+.guide-index { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin: var(--space-md) 0; }
+.guide-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--space-sm); border: 1px solid var(--color-hairline); border-radius: var(--radius-full); color: var(--color-charcoal); background: var(--color-canvas); font-size: var(--text-body-sm); text-decoration: none; }
+.guide-chip:hover { border-color: var(--color-primary); color: var(--color-primary-deep); }
+.guide-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.guide-chip.done { border-color: transparent; color: var(--color-success); background: var(--color-success-soft); }
+.guide-chip.done::before { content: "✓"; margin-right: var(--space-xxs); }
+.guide-topic { padding: 0; scroll-margin-top: var(--space-xl); }
+.guide-topic summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); padding: var(--space-md) var(--space-lg); cursor: pointer; list-style: none; }
+.guide-topic summary::-webkit-details-marker { display: none; }
+.guide-topic summary::after { content: ""; flex: none; width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.guide-topic details[open] summary::after { transform: rotate(225deg); }
+.guide-topic summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: var(--radius-lg); }
+.guide-topic summary h2 { flex: 1; margin: 0; }
+.guide-count { color: var(--color-slate); font-size: var(--text-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.guide-body { padding: 0 var(--space-lg) var(--space-lg); }
+.guide-steps { display: grid; gap: var(--space-sm); margin: 0; padding-left: var(--space-lg); }
+.guide-steps input:checked + span { color: var(--color-slate); text-decoration: line-through; }
+.guide mark { padding: 0 2px; border-radius: var(--radius-sm); color: inherit; background: var(--color-primary-soft); }
 .empty-state { margin: var(--space-lg) 0; padding: var(--space-lg); border: 1px dashed var(--color-hairline-strong); border-radius: var(--radius-lg); color: var(--color-slate); }
 .filter-bar { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-lg) 0 0; padding: var(--space-md); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); background: var(--color-canvas); }
 .filter-bar label { min-width: min(100%, 22rem); }
@@ -329,6 +405,8 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .form-grid .wide { grid-column: span 2; }
 .form-stack { display: grid; gap: var(--space-md); margin-top: var(--space-lg); }
 .form-stack label, .form-stack .form-field { display: grid; gap: var(--space-xs); }
+/* Una casilla dentro de un formulario sigue en línea con su texto. */
+.form-stack .checkbox { display: flex; gap: var(--space-sm); }
 .form-stack textarea { resize: vertical; }
 .recommendation-order { display: grid; gap: var(--space-xs); padding-left: var(--space-lg); }
 .recommendation-order li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-xs); }
