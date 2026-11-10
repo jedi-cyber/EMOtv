@@ -20,12 +20,12 @@ test.describe("Emi con el workflow simulado (Sim o n8n)", () => {
     const question = page.getByLabel("Tu pregunta", { exact: true });
     const send = page.getByRole("button", { name: "Enviar" });
 
-    await question.fill("¿Qué es una actividad en EMOtv?");
+    await question.fill("¿Qué es un protocolo en EMOtv?");
     await send.click();
     await expect(log.getByText(IN_SCOPE_ANSWER)).toBeVisible();
     const first = n8n.requests.at(-1)!;
     expect(first.key).toBeTruthy();
-    expect(first.body.question).toBe("¿Qué es una actividad en EMOtv?");
+    expect(first.body.question).toBe("¿Qué es un protocolo en EMOtv?");
     expect(first.body.request_id).toBeTruthy();
     expect(Array.isArray(first.body.history)).toBe(true);
     // Los resultados personales no se envían al LLM.

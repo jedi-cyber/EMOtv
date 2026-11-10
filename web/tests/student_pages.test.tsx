@@ -60,7 +60,7 @@ describe("Inicio del estudiante", () => {
     expect(await screen.findByRole("link", { name: "Empezar análisis" })).toHaveAttribute("href", "/analysis");
     const steps = within(screen.getByRole("list"));
     expect(steps.getAllByRole("listitem").map((item) => item.querySelector("strong")?.textContent)).toEqual([
-      "Encuadra tu rostro.", "Registra la expresión.", "Practica la actividad."]);
+      "Elige un protocolo.", "Confirma la autorización.", "Revisa lo registrado."]);
   });
 
   it("con sesiones muestra la última y «Nuevo análisis», sin tarjetas que repitan el menú", async () => {

@@ -17,7 +17,8 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   if (parts.length === 0 || parts[0] === "dashboard") return [{ label: "Inicio" }];
   const sessions = role === "student" ? "Mis sesiones" : "Sesiones";
   if (parts[0] === "activities") return [home, { label: "Actividades", ...(parts[1] ? { to: paths.activities } : {}) }, ...(parts[1] ? [{ label: "Detalle de actividad" }] : [])];
-  if (parts[0] === "analysis") return [home, { label: "Actividades", to: paths.activities }, { label: "Analizador" }];
+  if (parts[0] === "analysis") return [home, { label: "Analizador" }];
+  if (parts[0] === "guided") return [home, { label: sessions, to: paths.sessions }, { label: "Sesión con protocolo" }];
   if (parts[0] === "sessions" && parts[1] === "deletions") return [home, { label: sessions, to: paths.sessions }, { label: "Acta de eliminación" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];
   if (parts[0] === "students") return [home, { label: "Mi grupo", ...(parts[1] ? { to: paths.students } : {}) }, ...(parts[1] ? [{ label: "Sesiones del usuario" }] : [])];
@@ -28,6 +29,8 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   const labels: Record<string, string> = {
     users: role === "superadmin" ? "Cuenta de administrador" : "Cuentas y grupos", audit: "Auditoría",
     commitment: "Compromiso de confidencialidad", consent: "Consentimiento", statistics: "Estadísticas",
+    protocols: "Protocolos", questionnaires: "Cuestionarios", reviews: "Por revisar", guide: "Guía de uso",
+    stimuli: role === "admin" ? "Estímulos institucionales" : "Estímulos",
     unauthorized: "Acceso denegado", "connection-error": "Error de conexión",
   };
   return [home, { label: labels[parts[0]] ?? "Página no encontrada" }];

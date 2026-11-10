@@ -107,6 +107,7 @@ web/playwright-report/
 web/blob-report/
 web/e2e/fixtures/*
 !web/e2e/fixtures/README.md
+docs/thesis-evidence/*
 
 # Resultados exportados (p. ej. validación de la práctica): nunca van al repositorio.
 *.csv

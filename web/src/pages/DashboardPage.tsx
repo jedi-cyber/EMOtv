@@ -67,9 +67,9 @@ function StudentNextStep() {
     return <NextStepCard title="Cómo funciona un análisis"
       action={<ButtonLink variant="primary" to={paths.analysis}>Empezar análisis</ButtonLink>}>
       <ol className="next-step-steps">
-        <li><strong>Encuadra tu rostro.</strong> Colócate de frente a la cámara, con buena luz.</li>
-        <li><strong>Registra la expresión.</strong> Cuando la lectura sea estable, regístrala.</li>
-        <li><strong>Practica la actividad.</strong> Sigue las posturas de la actividad sugerida.</li>
+        <li><strong>Elige un protocolo.</strong> En el Analizador, elige uno o analiza la expresión sin protocolo.</li>
+        <li><strong>Confirma la autorización.</strong> Una sola confirmación, según con quién es la sesión.</li>
+        <li><strong>Revisa lo registrado.</strong> Al terminar ves la línea de tiempo y el reporte; tu docente lo revisa después.</li>
       </ol>
     </NextStepCard>;
   }

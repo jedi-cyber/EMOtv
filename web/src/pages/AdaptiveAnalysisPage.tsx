@@ -75,9 +75,10 @@ export function AnalysisGuide({ activity = false }: { activity?: boolean }) {
     <ul>
       <li><strong>Luz de frente.</strong> Ponte mirando hacia la ventana o la lámpara, no de espaldas a ella.</li>
       <li><strong>Rostro centrado.</strong> Mira a la cámara con la cara completa dentro del encuadre.</li>
-      <li><strong>{activity ? "Cuerpo completo." : "Para la actividad, aléjate."}</strong> {activity
+      {/* Las actividades de posturas están desactivadas: sin ellas no se pide alejarse. */}
+      {(activity || ACTIVITIES_ENABLED) && <li><strong>{activity ? "Cuerpo completo." : "Para la actividad, aléjate."}</strong> {activity
         ? "Aléjate hasta que la cámara vea tu cuerpo completo, de la cabeza a los pies, con espacio para mover los brazos."
-        : "Después del registro, colócate a unos dos metros para que la cámara vea tu cuerpo completo."}</li>
+        : "Después del registro, colócate a unos dos metros para que la cámara vea tu cuerpo completo."}</li>}
     </ul>
   </section>;
 }
