@@ -33,7 +33,7 @@ from emotv.domain.guided_session import (
     RecognitionResult,
     VerbalResponse,
 )
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 from emotv.domain.protocol import PRACTICE_TARGETS, ProtocolStep
 from emotv.domain.stimulus import Stimulus, StimulusKind
 
@@ -92,10 +92,12 @@ def stimulus_metrics(
                              "said": said.get(index), "shown_before_analyzer": step.shown_before_analyzer})
             continue
         expected = stimulus.expected_expression
-        rows = [_capture(item, expected) for item in items]
-        counted = next((row for row in rows if row["counted"]), None)
+        # Una imagen de asco, miedo o desprecio no se compara: EMOtv no estima esas expresiones.
+        comparable = expected in ESTIMATED_EXPRESSIONS
+        rows = [_capture(item, expected if comparable else None) for item in items]
+        counted = next((row for row in rows if row["counted"]), None) if comparable else None
         emotional.append({**base, "expected_expression": expected, "captures": rows,
-                          "counted": counted is not None,
+                          "comparable": comparable, "counted": counted is not None,
                           "matches_expected": counted["matches_expected"] if counted else None,
                           "excluded_captures": sum(1 for row in rows if not row["counted"])})
     counted = [item for item in emotional if item["counted"]]
@@ -105,6 +107,7 @@ def stimulus_metrics(
         "abstract": abstract,
         "totals": {
             "emotional_stimuli": len(emotional),
+            "not_comparable": sum(1 for item in emotional if not item["comparable"]),
             "counted": len(counted),
             "matched": matched,
             "excluded_captures": sum(item["excluded_captures"] for item in emotional),

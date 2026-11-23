@@ -13,7 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 import { toast } from "../components/Toaster";
@@ -111,10 +111,10 @@ export function ProtocolsPage() {
     && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
   const chosen = choice ? byId.get(choice) : undefined;
   // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
-  const imitable = recognizable(chosen) && (chosen?.expected_expression ?? "") in practiceTargetNames;
+  const imitable = recognizable(chosen) && isCameraTarget(chosen?.expected_expression);
   // Imágenes que sirven para el tipo elegido: reconocer e imitar necesitan una expresión esperada.
   const pickable = picking === "stimulus" ? offered : offered.filter((item) => recognizable(item)
-    && (picking !== "imitation" || (item.expected_expression ?? "") in practiceTargetNames));
+    && (picking !== "imitation" || isCameraTarget(item.expected_expression)));
   const missing = [
     draft.name.trim() === "" && "el nombre",
     draft.for_children === null && "para quién es",
@@ -385,7 +385,7 @@ export function ProtocolsPage() {
                   <div className="inline-actions">
                     <label>Expresión pedida<select value={step.target_expression ?? ""}
                       onChange={(event) => updateStep(index, { target_expression: event.target.value })}>
-                      {Object.entries(practiceTargetNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+                      {cameraTargets.map((key) => <option key={key} value={key}>{practiceTargetNames[key]}</option>)}
                     </select></label>
                     <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
                       onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>

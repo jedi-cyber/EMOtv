@@ -23,6 +23,7 @@ import onnxruntime as ort
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
 from emotv.config import EMOTIEFFLIB_B2_MODEL_PATH, HSEMOTION_MODEL_PATH
 from emotv.domain.cropped_face import CroppedFace
+from emotv.domain.expression_info import restrict_to_estimated
 from emotv.infrastructure.vision.emotion_classifier.emotion_classifier import session_options
 
 
@@ -95,7 +96,7 @@ class EmotiEffLibClassifier:
             raise ValueError(f"Salida de {self.display_name} inválida")
         exp = np.exp(logits - np.max(logits))
         probabilities = exp / exp.sum()
-        return {label: float(value) for label, value in zip(self.labels, probabilities)}
+        return restrict_to_estimated({label: float(value) for label, value in zip(self.labels, probabilities)})
 
 
 class HSEmotionClassifier(EmotiEffLibClassifier):

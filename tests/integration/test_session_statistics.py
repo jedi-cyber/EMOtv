@@ -47,7 +47,8 @@ def test_percentages_and_counts_use_only_good_quality_captures(env):  # noqa: F8
     capture(env, second, "happiness")
     body = statistics(env, env.user_1).json()
     rows = {row["expression"]: row for row in body["expressions"]["rows"]}
-    assert list(rows) == ["neutral", "happiness", "surprise", "sadness", "anger", "disgust", "fear", "contempt"]
+    # Las cinco que estima EMOtv; las otras tres solo aparecerían con capturas antiguas.
+    assert list(rows) == ["neutral", "happiness", "surprise", "sadness", "anger"]
     assert body["expressions"]["counted_captures"] == 4 and body["expressions"]["excluded_captures"] == 1
     assert (rows["happiness"]["captures"], rows["happiness"]["percent"], rows["happiness"]["sessions"]) == (3, 75.0, 2)
     assert (rows["neutral"]["captures"], rows["neutral"]["percent"], rows["neutral"]["sessions"]) == (1, 25.0, 1)

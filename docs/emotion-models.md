@@ -33,3 +33,14 @@ disponibilidad y el rendimiento del servidor, pues allí se ejecuta la inferenci
 el equipo del estudiante solo captura y envía imágenes. Su descarga, licencia declarada,
 preprocesamiento y límites están en [revisión de candidatos](emotion-model-candidates.md).
 No se afirma mayor precisión sin evaluación comparable en EMOtv.
+
+## Expresiones estimadas
+
+Los tres modelos entregan ocho clases, pero EMOtv estima solo cinco: neutral,
+felicidad, sorpresa, tristeza y enojo (`ESTIMATED_EXPRESSIONS` en
+`src/emotv/domain/expression_info.py`). Cada clasificador descarta asco, miedo
+y desprecio y reparte la probabilidad entre las cinco restantes, lo que equivale
+a un softmax sobre esas clases. Se decidió así el 23 de noviembre de 2026
+porque esas tres clases se confundían mucho entre sí y con las demás. Los
+detalles para la práctica, «Haz la misma cara» y las imágenes emocionales están
+en [práctica de expresiones](expression-practice.md), §14.1.

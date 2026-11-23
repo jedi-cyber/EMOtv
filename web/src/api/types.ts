@@ -695,9 +695,9 @@ export interface SessionGame {
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
-    captures: MetricCapture[]; counted: boolean; matches_expected: boolean | null; excluded_captures: number }[];
+    captures: MetricCapture[]; comparable?: boolean; counted: boolean; matches_expected: boolean | null; excluded_captures: number }[];
   abstract: { step_index: number; title: string; category: string; skipped: boolean; captures: MetricCapture[]; said: string | null }[];
-  totals: { emotional_stimuli: number; counted: number; matched: number; excluded_captures: number; sentence: string };
+  totals: { emotional_stimuli: number; not_comparable?: number; counted: number; matched: number; excluded_captures: number; sentence: string };
   abstract_notice: string | null;
   /** Ejercicios de práctica, aparte de la coincidencia de estímulos; null si no hubo. */
   practice?: SessionPractice | null;

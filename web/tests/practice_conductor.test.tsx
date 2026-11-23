@@ -43,8 +43,8 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
   it("elige la expresión pedida, el sostén y el tiempo máximo, y lo envía al servidor", async () => {
     await openEditor();
     const options = within(screen.getByLabelText("Expresión pedida")).getAllByRole("option").map((option) => option.textContent);
-    // Todo el catálogo: quien arma el protocolo elige, incluido desprecio.
-    expect(options).toEqual(["Alegría", "Sorpresa", "Tristeza", "Enojo", "Miedo", "Asco", "Cara tranquila", "Desprecio"]);
+    // Solo las cinco expresiones que estima EMOtv con la cámara.
+    expect(options).toEqual(["Alegría", "Sorpresa", "Tristeza", "Enojo", "Cara tranquila"]);
     await userEvent.selectOptions(screen.getByLabelText("Expresión pedida"), "surprise");
     await userEvent.clear(screen.getByLabelText("Sostener (s)"));
     await userEvent.type(screen.getByLabelText("Sostener (s)"), "3");

@@ -8,6 +8,7 @@ import onnxruntime as ort
 from emotv.config import EMOTION_MODEL_PATH, FACE_PADDING_RATIO
 from emotv.application.emotion_model_catalog import EmotionModelCatalog, FERPLUS_LABELS
 from emotv.domain.cropped_face import CroppedFace
+from emotv.domain.expression_info import restrict_to_estimated
 
 
 def session_options(intra_op_threads: int | None) -> ort.SessionOptions | None:
@@ -87,7 +88,7 @@ class FerPlusEmotionClassifier:
         return emotion, distribution[emotion]
 
     def predict_distribution(self, cropped_face: CroppedFace) -> dict[str, float]:
-        """Probabilidad de cada clase FER+ (suman 1)."""
+        """Probabilidad de cada expresión estimada (suman 1)."""
         # 1. Verificar que la imagen tenga el tamaño correcto
         img = cropped_face.image
         if img.shape[:2] != self.input_size:
@@ -116,7 +117,8 @@ class FerPlusEmotionClassifier:
         exp_logits = np.exp(logits - np.max(logits, axis=1, keepdims=True))
         probs = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
         probs = probs[0]  # (8,)
-        return {label: float(probability) for label, probability in zip(self.EMOTIONS, probs)}
+        # Solo las cinco expresiones que estima EMOtv, con la probabilidad repartida entre ellas.
+        return restrict_to_estimated({label: float(probability) for label, probability in zip(self.EMOTIONS, probs)})
 
 
 # Compatibilidad con los imports y scripts anteriores.

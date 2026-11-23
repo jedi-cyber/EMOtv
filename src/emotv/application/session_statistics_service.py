@@ -25,7 +25,7 @@ from emotv.application.session_metrics import (
     recognition_totals,
 )
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 from emotv.domain.guided_session import (
     DRAWING_NOTICE,
     GAME_NOTICE,
@@ -184,11 +184,13 @@ class SessionStatisticsService:
                 captures[item.emotion] += 1
                 in_sessions[item.emotion].add(session.id)
         counted = sum(captures.values())
+        # Las cinco que estima EMOtv; las otras tres solo si aparecen en sesiones antiguas.
+        keys = [key for key in EXPRESSION_KEYS if key in ESTIMATED_EXPRESSIONS or captures[key]]
         return {
             "counted_captures": counted,
             "excluded_captures": excluded,
             "rows": [{"expression": key, "captures": captures[key], "percent": _percent(captures[key], counted),
-                      "sessions": len(in_sessions[key])} for key in EXPRESSION_KEYS],
+                      "sessions": len(in_sessions[key])} for key in keys],
         }
 
     def _coincidence(self, sessions: list[EmotionalSession]) -> dict[str, int]:

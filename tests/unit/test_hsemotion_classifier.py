@@ -7,6 +7,7 @@ import pytest
 from emotv.application.emotion_model_catalog import FERPLUS_LABELS, EmotionModelCatalog
 from emotv.config import HSEMOTION_MODEL_PATH
 from emotv.domain.cropped_face import CroppedFace
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS
 from emotv.infrastructure.vision.emotion_classifier import EmotiEffLibB2Classifier, FerPlusEmotionClassifier
 from emotv.infrastructure.vision.emotion_classifier.hsemotion_classifier import (
     HSEMOTION_CLASSES, HSEMOTION_MODEL_ID, HSEMOTION_TO_EMOTV, HSEmotionClassifier, preprocess,
@@ -55,7 +56,8 @@ def _with_logits(logits):
     return classifier, calls
 
 
-@pytest.mark.parametrize("index,expected", [(1, "contempt"), (4, "happiness"), (5, "neutral"), (7, "surprise")])
+@pytest.mark.parametrize("index,expected", [(0, "anger"), (4, "happiness"), (5, "neutral"), (6, "sadness"),
+                                            (7, "surprise")])
 def test_prediction_uses_hsemotion_order(index, expected):
     logits = [0.0] * 8
     logits[index] = 4.0
@@ -63,9 +65,22 @@ def test_prediction_uses_hsemotion_order(index, expected):
     face = CroppedFace(np.full((40, 30, 3), 128, dtype=np.uint8), (0, 0, 30, 40), .9)
     distribution = classifier.predict_distribution(face)
     assert calls == [(1, 3, 224, 224)]
-    assert set(distribution) == set(FERPLUS_LABELS)
+    assert set(distribution) == set(ESTIMATED_EXPRESSIONS)
     assert sum(distribution.values()) == pytest.approx(1.0)
     assert classifier.predict(face)[0] == expected
+
+
+def test_contempt_disgust_and_fear_are_not_estimated():
+    # Asco, miedo y desprecio con el logit más alto: la estimación queda entre las cinco
+    # restantes, con la probabilidad repartida como un softmax sobre ellas.
+    logits = [1.0, 6.0, 6.0, 6.0, 2.0, 0.0, 0.0, 0.0]
+    classifier, _ = _with_logits(logits)
+    face = CroppedFace(np.full((40, 30, 3), 128, dtype=np.uint8), (0, 0, 30, 40), .9)
+    distribution = classifier.predict_distribution(face)
+    assert set(distribution) == set(ESTIMATED_EXPRESSIONS)
+    five = np.exp(np.array([1.0, 2.0, 0.0, 0.0, 0.0]))
+    assert distribution["happiness"] == pytest.approx(five[1] / five.sum())
+    assert classifier.predict(face)[0] == "happiness"
 
 
 def test_invalid_output_is_rejected():
@@ -100,11 +115,11 @@ def test_crops_differ_per_model_on_the_same_frame():
 
 
 @pytest.mark.skipif(not HSEMOTION_MODEL_PATH.is_file(), reason="Pesos HSEmotion no instalados (scripts/download_models.py)")
-def test_real_weights_load_and_return_eight_classes():
+def test_real_weights_load_and_return_the_five_estimated_expressions():
     classifier = HSEmotionClassifier()
     face = CroppedFace(np.full((120, 100, 3), 128, dtype=np.uint8), (0, 0, 100, 120), 1)
     distribution = classifier.predict_distribution(face)
-    assert set(distribution) == set(FERPLUS_LABELS)
+    assert set(distribution) == set(ESTIMATED_EXPRESSIONS)
     assert sum(distribution.values()) == pytest.approx(1.0, abs=1e-5)
 
 

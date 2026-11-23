@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 
 MAX_EXPOSURE_SECONDS = 120
 MAX_STEPS = 30
@@ -13,6 +13,11 @@ MAX_HOLD_SECONDS = 10
 # el protocolo decide; la validación con adultos muestra cuáles se registran mejor
 # (docs/expression-practice.md, §14.1).
 PRACTICE_TARGETS = EXPRESSION_KEYS
+# Lo que se puede pedir al armar o aplicar un protocolo: solo lo que EMOtv estima.
+# PRACTICE_TARGETS se conserva para leer protocolos y resultados antiguos.
+CAMERA_PRACTICE_TARGETS = ESTIMATED_EXPRESSIONS
+CAMERA_PRACTICE_PROBLEM = ("Los ejercicios con cámara piden una de las cinco expresiones que estima EMOtv: "
+                           "cara tranquila, alegría, sorpresa, tristeza o enojo")
 # Opciones de un paso de reconocimiento: la correcta y las distractoras.
 MIN_RECOGNITION_OPTIONS = 2
 MAX_RECOGNITION_OPTIONS = 4

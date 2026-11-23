@@ -154,7 +154,11 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
 
 ## 4. Expresiones que estima EMOtv
 
-Ocho expresiones, con sus nombres en la interfaz:
+Con la cámara, EMOtv estima cinco expresiones: Neutral, Felicidad, Sorpresa,
+Tristeza y Enojo. Los modelos distinguen también desagrado, miedo y desprecio,
+pero se confunden mucho, así que EMOtv no los estima. Siguen apareciendo en los
+pasos sin cámara («¿Qué emoción es?», dibujos y juegos) y en sesiones antiguas.
+Nombres de las ocho en la interfaz:
 
 | Clave interna | Nombre en EMOtv |
 | --- | --- |
@@ -167,8 +171,10 @@ Ocho expresiones, con sus nombres en la interfaz:
 | `fear` | Miedo |
 | `contempt` | Desprecio |
 
-En los ejercicios de práctica se pueden pedir todas menos desprecio, con estos
-nombres: Alegría, Sorpresa, Tristeza, Enojo, Miedo, Asco y Cara tranquila.
+En los ejercicios de práctica y en «Haz la misma cara» solo se piden las cinco
+que estima EMOtv, con estos nombres: Alegría, Sorpresa, Tristeza, Enojo y Cara
+tranquila. Una imagen de miedo, desagrado o desprecio no se compara con la
+expresión estimada.
 
 ## 5. Cuentas y papeles
 

@@ -16,7 +16,7 @@ export const expectedExpressionNames: Record<string, string> = {
   contempt: "Desprecio",
 };
 
-// Expresiones que se pueden pedir en un ejercicio de práctica: todo el catálogo.
+// Nombre de cada emoción en las actividades (práctica, reconocimiento, dibujo y juegos).
 export const practiceTargetNames: Record<string, string> = {
   happiness: "Alegría",
   surprise: "Sorpresa",
@@ -27,6 +27,11 @@ export const practiceTargetNames: Record<string, string> = {
   neutral: "Cara tranquila",
   contempt: "Desprecio",
 };
+// Las cinco expresiones que estima EMOtv con la cámara: las únicas que piden la
+// práctica y «Haz la misma cara» (igual que CAMERA_PRACTICE_TARGETS del servidor).
+export const cameraTargets = ["happiness", "surprise", "sadness", "anger", "neutral"];
+export const CAMERA_TARGET_PROBLEM = "Los ejercicios con cámara piden una de las cinco expresiones que estima EMOtv: cara tranquila, alegría, sorpresa, tristeza o enojo";
+export const isCameraTarget = (key: string | null | undefined) => key != null && cameraTargets.includes(key);
 // Lo que propone el editor si el servidor no responde (PRACTICE_HOLD_SECONDS y PRACTICE_MAX_SECONDS).
 export const DEFAULT_PRACTICE = { hold_seconds: 2, max_seconds: 20 };
 export const MAX_HOLD_SECONDS = 10;
@@ -79,6 +84,7 @@ export function recognizable(item: Stimulus | undefined): boolean {
 export function practiceProblem(step: { exposure_seconds: number; hold_seconds?: number | null; target_expression?: string | null }): string | null {
   const hold = step.hold_seconds ?? 0;
   if (!step.target_expression || !(step.target_expression in practiceTargetNames)) return "Una práctica indica la expresión que se pide";
+  if (!isCameraTarget(step.target_expression)) return CAMERA_TARGET_PROBLEM;
   if (!Number.isInteger(hold) || hold < 1 || hold > MAX_HOLD_SECONDS) return `La expresión se sostiene entre 1 y ${MAX_HOLD_SECONDS} segundos`;
   if (!Number.isInteger(step.exposure_seconds) || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)
     return `La exposición dura entre 1 y ${MAX_STEP_SECONDS} segundos`;

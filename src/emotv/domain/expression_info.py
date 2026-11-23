@@ -6,6 +6,21 @@ from enum import Enum
 
 # Clases que produce FER+; el catálogo informativo tiene una entrada por cada una.
 EXPRESSION_KEYS = ("neutral", "happiness", "surprise", "sadness", "anger", "disgust", "fear", "contempt")
+# Expresiones que estima EMOtv con la cámara. Los modelos entregan ocho clases,
+# pero asco, miedo y desprecio se confunden mucho entre sí y con las demás; la
+# estimación se limita a estas cinco. Las otras tres siguen en el catálogo para
+# los pasos sin cámara (reconocimiento, dibujo y juegos) y para sesiones antiguas.
+ESTIMATED_EXPRESSIONS = ("neutral", "happiness", "surprise", "sadness", "anger")
+
+
+def restrict_to_estimated(distribution: dict[str, float]) -> dict[str, float]:
+    """Deja solo las expresiones estimadas y reparte la probabilidad entre ellas
+    (equivale a un softmax sobre esas cinco clases)."""
+    kept = {key: distribution.get(key, 0.0) for key in ESTIMATED_EXPRESSIONS}
+    total = sum(kept.values())
+    if not total > 0:
+        raise ValueError("La distribución no tiene probabilidad en las expresiones estimadas")
+    return {key: value / total for key, value in kept.items()}
 
 COMMON_LIMITATION = (
     "El reconocimiento facial estima una expresión a partir de la imagen y no determina "

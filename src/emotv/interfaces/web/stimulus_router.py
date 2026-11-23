@@ -21,7 +21,7 @@ from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
 from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
                                    ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
-                                   MAX_RECOGNITION_OPTIONS, PRACTICE_TARGETS)
+                                   MAX_RECOGNITION_OPTIONS, CAMERA_PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -305,7 +305,7 @@ def create_stimulus_router(
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
             raise HTTPException(403, "Los protocolos los arman usuarios y docentes")
         return {"hold_seconds": practice.hold_seconds, "max_seconds": practice.max_seconds,
-                "targets": list(PRACTICE_TARGETS)}
+                "targets": list(CAMERA_PRACTICE_TARGETS)}
 
     @router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def get_protocol(protocol_id: str, user: User = Depends(current_user)):

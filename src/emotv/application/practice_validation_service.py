@@ -21,7 +21,7 @@ from emotv.application.session_metrics import APPLIED
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.expression_info import EXPRESSION_KEYS
 from emotv.domain.guided_session import PracticeResult
-from emotv.domain.protocol import Protocol, ProtocolKind, ProtocolStep
+from emotv.domain.protocol import CAMERA_PRACTICE_TARGETS, Protocol, ProtocolKind, ProtocolStep
 from emotv.domain.role import Role
 from emotv.domain.session import EmotionalSession
 from emotv.domain.user import User
@@ -29,8 +29,8 @@ from emotv.domain.user import User
 VALIDATION_PROTOCOL_NAME = "Validación con adultos"
 VALIDATION_DESCRIPTION = ("Un ejercicio por expresión, para medir si el modelo reconoce expresiones producidas a "
                           "propósito. Solo con adultos voluntarios (cuentas PRUEBA-NN). No se guardan imágenes.")
-# Todas las expresiones del modelo menos desprecio, en su orden.
-VALIDATION_TARGETS = tuple(key for key in EXPRESSION_KEYS if key != "contempt")
+# Las cinco expresiones que estima EMOtv, en su orden.
+VALIDATION_TARGETS = CAMERA_PRACTICE_TARGETS
 VALIDATION_HOLD_SECONDS = 2
 VALIDATION_MAX_SECONDS = 15
 DEMO = "demo"

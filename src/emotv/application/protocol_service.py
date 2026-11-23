@@ -47,7 +47,8 @@ from emotv.application.questionnaire_service import QuestionnaireNotFound, Quest
 from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
 from emotv.domain.guided_session import RECOGNITION_DISTRACTORS
-from emotv.domain.protocol import GAME_SIMILAR, Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
+from emotv.domain.protocol import (CAMERA_PRACTICE_PROBLEM, CAMERA_PRACTICE_TARGETS, GAME_SIMILAR, Protocol,
+                                   ProtocolKind, ProtocolStep, ProtocolSupports)
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
@@ -380,6 +381,9 @@ class ProtocolService:
                                      f"«{stimulus.title}» no la tiene")
                 step = replace(step, target_expression=stimulus.expected_expression)
             steps.append(step)
+        for step in steps:
+            if step.is_practice and step.target_expression not in CAMERA_PRACTICE_TARGETS:
+                raise ValueError(CAMERA_PRACTICE_PROBLEM)
         return replace(draft, steps=tuple(steps))
 
     @staticmethod
@@ -497,6 +501,10 @@ class ProtocolService:
         if is_validation_protocol(protocol) and not self.validation_usable(protocol):
             raise ProtocolUnavailable("El protocolo de validación solo se aplica en modo demo, con una cuenta "
                                       "de voluntario")
+        if any(step.is_practice and step.target_expression not in CAMERA_PRACTICE_TARGETS
+               for step in protocol.steps):
+            # Protocolo armado antes de limitar la estimación a cinco expresiones.
+            raise ProtocolUnavailable(f"Edita el protocolo antes de aplicarlo. {CAMERA_PRACTICE_PROBLEM}.")
         for stimulus_id in (item for step in protocol.steps for item in step.image_ids):
             try:
                 stimulus = self.stimuli.get(user, stimulus_id)

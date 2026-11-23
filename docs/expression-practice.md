@@ -535,6 +535,27 @@ prevalecen estas; lo que el código todavía no cumple está al final (§14.5).
 
 ### 14.1. Expresiones por protocolo
 
+> **Actualización del 23 de noviembre de 2026.** EMOtv estima solo cinco
+> expresiones con la cámara: neutral, felicidad, sorpresa, tristeza y enojo
+> (`ESTIMATED_EXPRESSIONS` en `domain/expression_info.py`). Los modelos siguen
+> entregando ocho clases, pero cada clasificador descarta asco, miedo y desprecio
+> y reparte la probabilidad entre las cinco restantes (un softmax sobre esas
+> clases), porque esas tres se confundían mucho entre sí y con las demás.
+> Consecuencias:
+>
+> - la práctica y «Haz la misma cara» solo piden esas cinco
+>   (`CAMERA_PRACTICE_TARGETS`); el editor solo las ofrece y el servidor
+>   rechaza las otras;
+> - un protocolo armado antes que pida miedo, asco o desprecio no se aplica
+>   hasta editarlo; `PRACTICE_TARGETS` conserva las ocho para leer protocolos
+>   y resultados antiguos;
+> - una imagen emocional de miedo, asco o desprecio se muestra con sus
+>   capturas, pero no entra en la coincidencia con la expresión esperada;
+> - la validación con adultos tiene un ejercicio por cada una de las cinco;
+> - reconocimiento, dibujo y juegos no usan la cámara y conservan las ocho.
+>
+> Lo que sigue en esta sección se conserva como registro de la decisión anterior.
+
 - Quien arma el protocolo (el practicante) elige qué expresiones incluye en los
   pasos de práctica. Cualquier expresión de `EXPRESSION_KEYS` es elegible,
   incluida `contempt`.

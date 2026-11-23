@@ -166,6 +166,9 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
       {metrics.totals.excluded_captures > 0 && <p className="muted">
         {metrics.totals.excluded_captures} {metrics.totals.excluded_captures === 1 ? "captura marcada por calidad se muestra" : "capturas marcadas por calidad se muestran"}, pero no cuenta en los totales.
       </p>}
+      {(metrics.totals.not_comparable ?? 0) > 0 && <p className="muted">
+        Las imágenes de asco, miedo o desprecio no se comparan: EMOtv solo estima neutral, felicidad, sorpresa, tristeza y enojo.
+      </p>}
       <div className="table-wrap"><table><thead><tr>
         <th>Estímulo</th><th>Expresión esperada</th><th>Expresión estimada</th><th>Probabilidad</th><th>Desde la aparición</th><th>Calidad</th><th>Coincide</th>
       </tr></thead><tbody>{metrics.emotional.flatMap((item) => item.captures.length === 0
@@ -178,7 +181,8 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
           <td>{percent(capture.probability)}</td>
           <td>{capture.seconds_since_stimulus} s</td>
           <td>{quality(capture)}</td>
-          <td>{capture.matches_expected == null ? "—" : capture.matches_expected ? "Sí" : "No"}{!capture.counted && <span className="muted"> (no cuenta)</span>}</td>
+          <td>{item.comparable === false ? <span className="muted">No se compara</span>
+            : <>{capture.matches_expected == null ? "—" : capture.matches_expected ? "Sí" : "No"}{!capture.counted && <span className="muted"> (no cuenta)</span>}</>}</td>
         </tr>))}</tbody></table></div>
     </>}
     {metrics.abstract.length > 0 && <>
