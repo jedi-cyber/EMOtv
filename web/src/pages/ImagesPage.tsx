@@ -14,6 +14,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { StimulusImage } from "../components/StimulusImage";
 import { audienceNames } from "../stimuli/labels";
+import { toast } from "../components/Toaster";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_BATCH = 20;
@@ -47,7 +48,6 @@ export function ImagesPage() {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [rejected, setRejected] = useState<{ title: string; message: string }[]>([]);
   const ready = files.length > 0 && files.every((item) => item.title.trim() && item.origin.trim() && item.audience && item.rights);
 
@@ -78,7 +78,7 @@ export function ImagesPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready) return;
-    setBusy(true); setError(""); setMessage(""); setRejected([]);
+    setBusy(true); setError(""); setRejected([]);
     const body = new FormData();
     for (const item of files) {
       body.append("files", item.file);
@@ -91,7 +91,7 @@ export function ImagesPage() {
       const result = await apiRequest<ImageUploadResult>("/own-stimuli", { method: "POST", body, token });
       const accepted = result.results.filter((item) => item.accepted).length;
       setRejected(result.results.filter((item) => !item.accepted).map((item) => ({ title: item.title, message: item.message ?? "" })));
-      setMessage(accepted > 0
+      toast.success(accepted > 0
         ? `${accepted === 1 ? "Se subió 1 imagen" : `Se subieron ${accepted} imágenes`}. Quedan «En revisión» hasta que tu docente las revise.`
         : "");
       close();
@@ -103,14 +103,13 @@ export function ImagesPage() {
   return <section>
     <PageHeader title="Imágenes"
       description="Tus imágenes para usar en tus protocolos. Tu docente revisa cada una antes de que puedas elegirla."
-      actions={<Button variant="primary" onClick={() => { setMessage(""); setRejected([]); setAdding(true); }}>Subir imágenes</Button>} />
+      actions={<Button variant="primary" onClick={() => { setRejected([]); setAdding(true); }}>Subir imágenes</Button>} />
     <Callout variant="info" role="note">
       No subas fotos de personas: el sistema revisa cada imagen y rechaza las que parecen mostrar a alguien. Esa revisión
       automática puede equivocarse, por eso tu docente también las revisa. Una imagen «En revisión» no se puede elegir en
       ningún protocolo.
     </Callout>
     <NoticeList />
-    {message && <Callout variant="success">{message}</Callout>}
     {rejected.map((item, index) => <Callout key={`${item.title}-${index}`} variant="error">«{item.title}»: {item.message}</Callout>)}
     {error && !adding && <Callout variant="error">{error}</Callout>}
 

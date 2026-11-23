@@ -16,6 +16,7 @@ import { paths } from "../routes/paths";
 import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
+import { toast } from "../components/Toaster";
 
 interface Draft {
   name: string;
@@ -71,7 +72,6 @@ export function ProtocolsPage() {
   const [questionnaireFor, setQuestionnaireFor] = useState<Moment | null>(null);
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const offered = stimuli.filter((item) => item.active && (!draft.for_children || suitableForChildren(item)));
   const unsuitableSteps = draft.for_children
@@ -144,7 +144,7 @@ export function ProtocolsPage() {
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
   }
   function openEditor(item: Protocol | null) {
-    setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
+    setEditing(item); setChoice(""); setError(""); setEditorOpen(true);
     setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children,
       supports: item.supports ?? (item.accessible ? { ...noSupports, pictograms: true, large_controls: true, pause: "long" } : noSupports), steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
@@ -154,13 +154,13 @@ export function ProtocolsPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
         method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
           post_questionnaire_id: draft.post_questionnaire_id || null }),
       });
-      setMessage(editing && saved.id !== editing.id
+      toast.success(editing && saved.id !== editing.id
         ? `Se creó la versión ${saved.version}: la anterior ya se usó en una sesión y se conserva sin cambios.`
         : editing ? "Protocolo actualizado." : "Protocolo guardado. Úsalo cuando quieras desde el Analizador.");
       close();
@@ -171,17 +171,17 @@ export function ProtocolsPage() {
 
   /** Copiar una plantilla del docente (o duplicar uno propio) y compartir uno propio con el grupo. */
   async function run(action: () => Promise<string>) {
-    setBusy(true); setError(""); setMessage("");
-    try { setMessage(await action()); await query.reload(); }
+    setBusy(true); setError("");
+    try { toast.success(await action()); await query.reload(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
     finally { setBusy(false); }
   }
 
   async function addValidation() {
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       await apiRequest("/practice-validation/protocol", { method: "POST", token });
-      setMessage("Se agregó el protocolo «Validación con adultos». Úsalo desde el Analizador.");
+      toast.success("Se agregó el protocolo «Validación con adultos». Úsalo desde el Analizador.");
       await Promise.all([query.reload(), validationQuery.reload()]);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo agregar el protocolo."); }
     finally { setBusy(false); }
@@ -212,7 +212,6 @@ export function ProtocolsPage() {
     <p className="muted">La plantilla inicial «Emociones básicas 4 a 6 años» es para niños y en modo accesible: seis dibujos
       del banco inicial, cada uno con dos opciones para elegir qué emoción es.</p>
     <NoticeList />
-    {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}
     {validation?.available && !validation.protocol_id && <Callout variant="info" role="note">
       <p>Cuenta de voluntario: puedes agregar el protocolo «Validación con adultos», con un ejercicio por cada expresión.

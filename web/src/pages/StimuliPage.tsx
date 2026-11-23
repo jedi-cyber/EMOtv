@@ -13,6 +13,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { StimulusImage } from "../components/StimulusImage";
 import { expectedExpressionNames, stimulusSummary } from "../stimuli/labels";
+import { toast } from "../components/Toaster";
 
 // Las imágenes abstractas están congeladas: solo se agregan imágenes emocionales.
 const emptyForm = {
@@ -33,7 +34,6 @@ export function StimuliPage() {
   const [file, setFile] = useState<File | null>(null);
   const [notParticipantPhoto, setNotParticipantPhoto] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [fileKey, setFileKey] = useState(0);
   const [adding, setAdding] = useState(false);
@@ -47,14 +47,14 @@ export function StimuliPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     const body = new FormData();
     body.append("file", file);
     for (const [key, value] of Object.entries(form)) body.append(key, value);
     body.append("not_a_participant_photo", String(notParticipantPhoto));
     try {
       const created = await apiRequest<Stimulus>("/stimuli", { method: "POST", body, token });
-      setMessage(`Se agregó «${created.title}». Las imágenes que agregas no pasan por revisión.`);
+      toast.success(`Se agregó «${created.title}». Las imágenes que agregas no pasan por revisión.`);
       setForm(emptyForm); setFile(null); setFileKey((key) => key + 1);
       setNotParticipantPhoto(false); setAdding(false);
       await query.reload();
@@ -63,10 +63,10 @@ export function StimuliPage() {
   }
 
   async function addInitialBank() {
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       const result = await apiRequest<{ added: number }>("/stimuli/initial-bank", { method: "POST", token });
-      setMessage(result.added > 0
+      toast.success(result.added > 0
         ? `Se agregaron ${result.added} dibujos del banco inicial. Ya se pueden usar en los protocolos.`
         : "El banco inicial ya estaba completo.");
       await query.reload();
@@ -75,7 +75,7 @@ export function StimuliPage() {
   }
 
   async function change(item: Stimulus, action: "approve" | "retire" | "restore") {
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       if (action === "approve") await apiRequest(`/stimuli/${encodeURIComponent(item.id)}/approve`, { method: "POST", token });
       else await apiRequest(`/stimuli/${encodeURIComponent(item.id)}/active`, {
@@ -91,12 +91,11 @@ export function StimuliPage() {
       description={isAdmin
         ? "Imágenes que pueden usar todos los usuarios y docentes de la Facultad."
         : "Imágenes que los usuarios de tu grupo pueden usar en sus protocolos, junto con las institucionales."}
-      actions={<Button variant="primary" type="button" onClick={() => { setError(""); setMessage(""); setAdding(true); }}>Agregar estímulo</Button>} />
+      actions={<Button variant="primary" type="button" onClick={() => { setError(""); setAdding(true); }}>Agregar estímulo</Button>} />
     <Callout variant="info" role="note">
       Un estímulo nunca es una fotografía de una persona evaluada. El sistema solo muestra y registra: no relaciona
       ninguna imagen con una condición.
     </Callout>
-    {message && <Callout variant="success">{message}</Callout>}
     {error && !adding && <Callout variant="error">{error}</Callout>}
     {isAdmin && !query.loading && !query.error && !items.some((item) => item.category === INITIAL_BANK_CATEGORY) &&
       <Callout variant="info" role="note">

@@ -17,6 +17,7 @@ import { AnswerList, QuestionnaireNote } from "../questionnaires/QuestionnaireFo
 import { SessionTimeline } from "../insights/SessionTimeline";
 import { StimulusMetrics } from "../insights/StimulusMetrics";
 import { ACTIVITIES_ENABLED } from "../routes/features";
+import { toast } from "../components/Toaster";
 
 const dateTime = (value: string) => new Date(value).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
 
@@ -41,7 +42,6 @@ export function SessionDetailPage() {
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [deleting, setDeleting] = useState<"request" | "delete" | null>(null);
   const [deletionBusy, setDeletionBusy] = useState(false);
   // Solo quien conduce la sesión la cancela: el docente no interrumpe el análisis de otra cuenta.
@@ -63,26 +63,26 @@ export function SessionDetailPage() {
 
   async function cancelSession() {
     if (!session) return;
-    setCancelling(true); setError(""); setMessage("");
+    setCancelling(true); setError("");
     try {
       await apiRequest<EmotionalSession>(`/sessions/${encodeURIComponent(session.id)}/cancel`, { method: "POST", token });
-      setConfirming(false); setMessage(recognitionKept ? "Actividad cancelada. La expresión registrada se conserva." : "La sesión fue cancelada correctamente."); await query.reload();
+      setConfirming(false); toast.success(recognitionKept ? "Actividad cancelada. La expresión registrada se conserva." : "La sesión fue cancelada correctamente."); await query.reload();
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo cancelar la sesión"); setConfirming(false); }
     finally { setCancelling(false); }
   }
   async function requestDeletion() {
     if (!session) return;
-    setDeletionBusy(true); setError(""); setMessage("");
+    setDeletionBusy(true); setError("");
     try {
       await apiRequest<EmotionalSession>(`/sessions/${encodeURIComponent(session.id)}/deletion-request`, { method: "POST", token });
-      setDeleting(null); setMessage("Pediste eliminar esta sesión. Tu docente la elimina y genera el acta."); await query.reload();
+      setDeleting(null); toast.success("Pediste eliminar esta sesión. Tu docente la elimina y genera el acta."); await query.reload();
     } catch (reason) { setDeleting(null); setError(reason instanceof Error ? reason.message : "No se pudo pedir la eliminación."); }
     finally { setDeletionBusy(false); }
   }
 
   async function deleteSession() {
     if (!session) return;
-    setDeletionBusy(true); setError(""); setMessage("");
+    setDeletionBusy(true); setError("");
     try {
       const certificate = await apiRequest<DeletionCertificate>(`/sessions/${encodeURIComponent(session.id)}/delete`, { method: "POST", token });
       navigate(paths.deletionCertificate(certificate.id));
@@ -94,7 +94,7 @@ export function SessionDetailPage() {
     <PageHeader title="Detalle de sesión" description={`Sesión iniciada el ${dateTime(session.started_at)}.`}
       actions={canCancel ? <Button variant="danger" onClick={() => setConfirming(true)}>Cancelar sesión</Button>
         : isStudent ? <ButtonLink variant="secondary" to={paths.analysis}>Nuevo análisis</ButtonLink> : undefined} />
-    {message && <Callout variant="success">{message}</Callout>}{error && <Callout variant="error">{error}</Callout>}
+    {error && <Callout variant="error">{error}</Callout>}
     {session.deletion_requested_at && <Callout variant="info" role="note">
       Se pidió eliminar esta sesión el {dateTime(session.deletion_requested_at)}.{canDelete ? " Puedes eliminarla y generar el acta." : " La elimina el docente."}
     </Callout>}

@@ -43,6 +43,7 @@ import { GuidePage } from "./pages/GuidePage";
 import { StatisticsPage } from "./pages/StatisticsPage";
 import { DeletionCertificatePage } from "./pages/DeletionCertificatePage";
 import { AuditPage } from "./pages/AuditPage";
+import { Toaster } from "./components/Toaster";
 
 export function App() {
   return (
@@ -91,6 +92,6 @@ export function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
-    </Routes><AssistantWidget /></ActiveSessionProvider></AssistantProvider></ExpressionCatalogProvider>
+    </Routes><AssistantWidget /><Toaster /></ActiveSessionProvider></AssistantProvider></ExpressionCatalogProvider>
   );
 }

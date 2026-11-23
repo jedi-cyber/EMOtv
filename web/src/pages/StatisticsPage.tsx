@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { expectedExpressionNames, gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 import type { PracticeRow } from "../api/types";
+import { toast } from "../components/Toaster";
 
 function averageText(value: number | null) {
   return value == null ? "—" : `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} s`;
@@ -75,7 +76,6 @@ export function StatisticsPage() {
   const [draft, setDraft] = useState<Filters>(initial);
   const [applied, setApplied] = useState<Filters>(initial);
   const [questionnaireId, setQuestionnaireId] = useState("");
-  const [copied, setCopied] = useState("");
   const result = useApiQuery<SessionStatistics>(query(applied, questionnaireId));
   const data = result.data && "sessions" in result.data ? result.data : null;
 
@@ -85,7 +85,7 @@ export function StatisticsPage() {
 
   function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCopied("");
+   
     setApplied(draft);
   }
 
@@ -147,9 +147,9 @@ export function StatisticsPage() {
     if (!data) return;
     try {
       await navigator.clipboard.writeText(tableText(data));
-      setCopied("Tabla copiada. Pégala en Excel u otra hoja de cálculo.");
+      toast.success("Tabla copiada. Pégala en Excel u otra hoja de cálculo.");
     } catch {
-      setCopied("No se pudo copiar. Selecciona la tabla y cópiala a mano.");
+      toast.error("No se pudo copiar. Selecciona la tabla y cópiala a mano.");
     }
   }
 
@@ -160,7 +160,6 @@ export function StatisticsPage() {
     <Callout variant="info" role="note">
       Estas estadísticas cuentan sesiones, no personas, y son estimaciones. No permiten sacar conclusiones sobre ninguna persona.
     </Callout>
-    {copied && <Callout variant="success">{copied}</Callout>}
 
     {isDocente && <p className="muted">Sesiones de tu grupo. Tus sesiones de demostración no cuentan.</p>}
 
@@ -314,7 +313,7 @@ export function StatisticsPage() {
       <h2 className="stat-heading">Cuestionarios</h2>
       {data.questionnaires.length === 0 ? <p className="muted">Ninguna de estas sesiones tiene cuestionarios respondidos.</p> : <>
         <div className="filter-bar">
-          <label>Cuestionario y versión<select value={questionnaireId} onChange={(event) => { setCopied(""); setQuestionnaireId(event.target.value); }}>
+          <label>Cuestionario y versión<select value={questionnaireId} onChange={(event) => { setQuestionnaireId(event.target.value); }}>
             <option value="">Elige un cuestionario</option>
             {data.questionnaires.map((item) => <option key={item.id} value={item.id}>
               {item.title} · versión {item.version} · {item.responses} {item.responses === 1 ? "respuesta" : "respuestas"}

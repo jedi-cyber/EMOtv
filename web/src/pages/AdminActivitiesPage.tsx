@@ -12,6 +12,7 @@ import { RecommendationsEditor, type ExpressionRecommendation } from "../compone
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { postureName } from "../components/PostureIcon";
+import { toast } from "../components/Toaster";
 
 type ActivityForm = Omit<Activity, "steps"> & { steps: ActivityStep[] };
 const emptyForm: ActivityForm = { id: "", name: "", description: "", required_posture: "arms_up", duration_seconds: 5, repetitions: 1, steps: [] };
@@ -25,13 +26,12 @@ export function AdminActivitiesPage() {
   const [selected, setSelected] = useState<Activity | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const activities = query.data ?? [];
   const recommendationsQuery = useApiQuery<ExpressionRecommendation[]>("/recommendations");
 
   function edit(activity: Activity) {
-    setForm({ ...activity, steps: activity.steps ?? [] }); setEditing(true); setEditorOpen(true); setMessage(""); setError("");
+    setForm({ ...activity, steps: activity.steps ?? [] }); setEditing(true); setEditorOpen(true); setError("");
   }
 
   function close() { setEditorOpen(false); setEditing(false); setForm(emptyForm); setError(""); }
@@ -59,10 +59,10 @@ export function AdminActivitiesPage() {
     if (normalized.steps.some((step) => !step.instruction.trim() || step.duration_seconds <= 0)) {
       setError("Cada paso necesita una instrucción y duración positivas."); return;
     }
-    setSaving(true); setError(""); setMessage("");
+    setSaving(true); setError("");
     try {
       await apiRequest<Activity>(editing ? `/activities/${encodeURIComponent(normalized.id)}` : "/activities", { method: editing ? "PUT" : "POST", body: JSON.stringify(normalized), token });
-      setMessage(editing ? "Actividad actualizada correctamente." : "Actividad creada correctamente.");
+      toast.success(editing ? "Actividad actualizada correctamente." : "Actividad creada correctamente.");
       setForm(emptyForm); setEditing(false); setEditorOpen(false); await Promise.all([query.reload(), recommendationsQuery.reload()]);
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo guardar la actividad"); }
     finally { setSaving(false); }
@@ -73,14 +73,14 @@ export function AdminActivitiesPage() {
     setDeleting(true); setError("");
     try {
       await apiRequest<void>(`/activities/${encodeURIComponent(selected.id)}`, { method: "DELETE", token });
-      setMessage("Actividad eliminada. Si estaba recomendada para alguna expresión, también se quitó de esas recomendaciones."); setSelected(null); await Promise.all([query.reload(), recommendationsQuery.reload()]);
+      toast.success("Actividad eliminada. Si estaba recomendada para alguna expresión, también se quitó de esas recomendaciones."); setSelected(null); await Promise.all([query.reload(), recommendationsQuery.reload()]);
     } catch (reason) { setError(reason instanceof ApiError ? reason.message : "No se pudo eliminar la actividad"); }
     finally { setDeleting(false); }
   }
 
   return <section><PageHeader title="Administrar actividades" description="Crea y actualiza las actividades corporales del catálogo local."
-      actions={<Button variant="primary" type="button" onClick={() => { close(); setMessage(""); setEditorOpen(true); }}>Crear actividad</Button>} />
-    {message && <Callout variant="success">{message}</Callout>}{error && !editorOpen && <Callout variant="error">{error}</Callout>}
+      actions={<Button variant="primary" type="button" onClick={() => { close(); setEditorOpen(true); }}>Crear actividad</Button>} />
+    {error && !editorOpen && <Callout variant="error">{error}</Callout>}
     <Modal open={editorOpen} title={editing ? `Editar: ${form.name}` : "Nueva actividad"} onClose={close} busy={saving}
       footer={<><Button variant="secondary" type="button" disabled={saving} onClick={close}>Cancelar</Button>
         <Button variant="primary" type="submit" form="activity-editor" disabled={saving}>{saving ? "Guardando…" : editing ? "Guardar cambios" : "Guardar actividad"}</Button></>}>

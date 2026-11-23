@@ -10,6 +10,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor, QuestionnairePreview } from "../questionnaires/QuestionnaireEditor";
 import { QuestionnaireNote } from "../questionnaires/QuestionnaireForm";
+import { toast } from "../components/Toaster";
 
 /** Constructor de cuestionarios para quien conduce la sesión. */
 export function QuestionnairesPage() {
@@ -21,14 +22,13 @@ export function QuestionnairesPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [preview, setPreview] = useState<Questionnaire | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  function openEditor(item: Questionnaire | null) { setEditing(item); setMessage(""); setError(""); setEditorOpen(true); }
+  function openEditor(item: Questionnaire | null) { setEditing(item); setError(""); setEditorOpen(true); }
 
   async function run(action: () => Promise<string>) {
-    setBusy(true); setError(""); setMessage("");
-    try { setMessage(await action()); await query.reload(); }
+    setBusy(true); setError("");
+    try { toast.success(await action()); await query.reload(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
     finally { setBusy(false); }
   }
@@ -44,11 +44,10 @@ export function QuestionnairesPage() {
         <Button variant="primary" onClick={() => openEditor(null)}>Nuevo cuestionario</Button>
       </>} />
     <p className="muted">La plantilla inicial tiene dos preguntas de caritas: cómo te sientes y qué tan tranquilo o inquieto estás.</p>
-    {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
 
     <QuestionnaireEditor open={editorOpen} editing={editing} onClose={() => setEditorOpen(false)}
-      onSaved={(_, text) => { setEditorOpen(false); setEditing(null); setMessage(text); void query.reload(); }} />
+      onSaved={(_, text) => { setEditorOpen(false); setEditing(null); toast.success(text); void query.reload(); }} />
 
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0}
       emptyMessage="Todavía no tienes cuestionarios. Crea uno o usa la plantilla inicial." onRetry={query.reload}
