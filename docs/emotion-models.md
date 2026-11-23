@@ -23,10 +23,12 @@ python scripts/emotion/download_emotion_model.py
 `FER+` sigue siendo el predeterminado del catálogo y de las actividades con
 actividad fija. En la lectura en vivo, el servidor usa
 `hsemotion_enet_b0_8_best_afew` (`HSEmotionClassifier`, ONNX) si su admisión es
-válida y, si no, FER+; la sesión registra cuál se usó. Se añadió también el
-adaptador opcional experimental `hardlyhumans_vit`. El selector web, visible
-solo para administración, permite dejar la elección automática o forzar FER+,
-HSEmotion o HardlyHumans antes de iniciar; el estudiante no elige. La elección depende de la
+válida y, si no, el siguiente modelo admitido; la sesión registra cuál se usó.
+También está `emotiefflib_enet_b2_8` (`EmotiEffLibB2Classifier`, ONNX,
+260×260), del mismo repositorio que HSEmotion: más preciso en AffectNet y unas
+tres veces más pesado. El superadministrador puede hacerlo predeterminado en
+«Modelos». Quien conduce puede elegir FER+, HSEmotion o EmotiEffLib B2 antes de
+iniciar. Licencias en [licencias de los modelos](licencias-modelos.md). La elección depende de la
 disponibilidad y el rendimiento del servidor, pues allí se ejecuta la inferencia;
 el equipo del estudiante solo captura y envía imágenes. Su descarga, licencia declarada,
 preprocesamiento y límites están en [revisión de candidatos](emotion-model-candidates.md).

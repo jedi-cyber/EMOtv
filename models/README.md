@@ -43,19 +43,31 @@ en `models/weights/emotion/emotion-ferplus-8.onnx`:
 python scripts/emotion/download_emotion_model.py
 ```
 
-Consultar [modelo predeterminado](../docs/emotion-models.md). La web permite
-elegir por tecnología entre FER+ ONNX y HardlyHumans ViT/PyTorch; no los clasifica
-por precisión. La admisión usa benchmarks y recursos del servidor. Véase
+Consultar [modelo predeterminado](../docs/emotion-models.md). La admisión usa
+benchmarks y recursos del servidor. Véase
 [medición y condiciones](../docs/emotion-model-candidates.md).
 
-### Alternativa experimental HardlyHumans ViT
+### EmotiEffLib: HSEmotion y EfficientNet-B2
 
-La ficha pública declara MIT; no se presenta como dominio público. Se instala
-de forma opcional con `python -m pip install -e ".[emotion-vit]"` y se descarga
-mediante `python scripts/emotion/download_hardlyhumans_model.py`. Pesos y ficha
-se guardan en `models/weights/hardlyhumans_vit/`, ignorado en Git. La fábrica
-permite elegirlo explícitamente, pero FER+ sigue siendo predeterminado.
-Consultar [candidatos y condiciones](../docs/emotion-model-candidates.md).
+`python scripts/download_models.py` descarga también los dos modelos ONNX de
+[EmotiEffLib](https://github.com/sb-ai-lab/EmotiEffLib), fijados al commit
+`af83348` y verificados con SHA-256:
+
+```text
+models/weights/emotion/enet_b0_8_best_afew.onnx   # HSEmotion, predeterminado en vivo
+models/weights/emotion/enet_b2_8.onnx             # EmotiEffLib B2, 260×260, más preciso y más pesado
+```
+
+Son opcionales: si faltan, la lectura en vivo usa el siguiente modelo admitido
+(al final, FER+). No se instala el paquete `emotiefflib`; los archivos se usan
+directamente con `onnxruntime`.
+
+## Licencias
+
+Cada modelo integrado tiene licencia permisiva (MIT o Apache-2.0). Los textos
+están en [`licenses/`](../licenses/) y el detalle, junto con los modelos
+quitados (HardlyHumans y un YOLO con licencia AGPL-3.0), en
+[licencias de los modelos](../docs/licencias-modelos.md).
 
 ## Política de versionado
 

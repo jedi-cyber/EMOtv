@@ -7,7 +7,7 @@ import pytest
 from emotv.application.emotion_model_catalog import FERPLUS_LABELS, EmotionModelCatalog
 from emotv.config import HSEMOTION_MODEL_PATH
 from emotv.domain.cropped_face import CroppedFace
-from emotv.infrastructure.vision.emotion_classifier import FerPlusEmotionClassifier, HardlyHumansEmotionClassifier
+from emotv.infrastructure.vision.emotion_classifier import EmotiEffLibB2Classifier, FerPlusEmotionClassifier
 from emotv.infrastructure.vision.emotion_classifier.hsemotion_classifier import (
     HSEMOTION_CLASSES, HSEMOTION_MODEL_ID, HSEMOTION_TO_EMOTV, HSEmotionClassifier, preprocess,
 )
@@ -85,7 +85,8 @@ def test_each_model_declares_its_own_crop():
     assert ferplus == dict(padding_ratio=0.2, target_size=(64, 64), grayscale=True, normalize=False)
     # Recorte oficial de HSEmotion: el rectángulo detectado, sin margen y en color.
     assert hsemotion == dict(padding_ratio=0.0, target_size=None, grayscale=False, normalize=False)
-    assert "padding_ratio" in HardlyHumansEmotionClassifier.face_preprocessor_options
+    # EmotiEffLib B2 usa el mismo recorte oficial que HSEmotion.
+    assert EmotiEffLibB2Classifier.face_preprocessor_options == hsemotion
 
 
 def test_crops_differ_per_model_on_the_same_frame():
@@ -105,3 +106,18 @@ def test_real_weights_load_and_return_eight_classes():
     distribution = classifier.predict_distribution(face)
     assert set(distribution) == set(FERPLUS_LABELS)
     assert sum(distribution.values()) == pytest.approx(1.0, abs=1e-5)
+
+
+def test_emotiefflib_b2_uses_260_pixels_and_the_same_classes():
+    face = np.random.default_rng(4).integers(0, 256, (90, 70, 3), dtype=np.uint8)
+    tensor = preprocess(face, 260)
+    assert tensor.shape == (1, 3, 260, 260) and tensor.dtype == np.float32
+    model = EmotionModelCatalog().get("emotiefflib_enet_b2_8")
+    assert model.input_size == (260, 260)
+    assert set(EmotiEffLibB2Classifier.labels) == set(FERPLUS_LABELS)
+    assert EmotiEffLibB2Classifier.labels == HSEmotionClassifier.labels
+
+
+def test_emotiefflib_b2_without_weights_says_how_to_install(tmp_path):
+    with pytest.raises(FileNotFoundError, match="scripts/download_models.py"):
+        EmotiEffLibB2Classifier(model_path=tmp_path / "missing.onnx")

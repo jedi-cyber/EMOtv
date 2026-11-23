@@ -129,9 +129,9 @@ class EmotionalSessionTests(unittest.TestCase):
         historical = EmotionalSession("historical", self.started_at)
         self.assertIsNone(historical.emotion_model_id)
         session = EmotionalSession("selected", self.started_at,
-                                   emotion_model_id=" HARDLYHUMANS_VIT ",
+                                   emotion_model_id=" EMOTIEFFLIB_ENET_B2_8 ",
                                    emotion_model_version=" Revision-A ")
-        self.assertEqual(session.emotion_model_id, "hardlyhumans_vit")
+        self.assertEqual(session.emotion_model_id, "emotiefflib_enet_b2_8")
         self.assertEqual(session.emotion_model_version, "Revision-A")
         for fields in ({"emotion_model_id": "ferplus_onnx"},
                        {"emotion_model_version": "1.0"}):

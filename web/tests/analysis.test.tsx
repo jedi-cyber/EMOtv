@@ -12,7 +12,7 @@ vi.mock("../src/routes/features", () => ({ ACTIVITIES_ENABLED: true }));
 
 const { admissions, requestedPaths } = vi.hoisted(() => ({ requestedPaths: [] as (string | null)[], admissions: { value: [
   { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] as string[] },
-  { model_id: "hardlyhumans_vit", state: "WARNING", reasons: ["Latencia elevada"] },
+  { model_id: "emotiefflib_enet_b2_8", state: "WARNING", reasons: ["Latencia elevada"] },
 ] } }));
 vi.mock("../src/api/useApiQuery", () => ({ useApiQuery: (path: string | null) => (requestedPaths.push(path), { data: path === null ? null : path === "/analysis/models" ? admissions.value : { id: "arms_up_5s", name: "Brazos arriba", description: "Mantén ambos brazos arriba", required_posture: "arms_up", duration_seconds: 5, repetitions: 1 }, loading: false, error: "", reload: vi.fn() }) }));
 vi.mock("../src/api/http", async (original) => ({ ...await original<typeof import("../src/api/http")>(), apiRequest: vi.fn() }));
@@ -50,7 +50,7 @@ async function begin() {
 beforeEach(() => {
   admissions.value = [
     { model_id: "ferplus_onnx", state: "SUPPORTED", reasons: [] },
-    { model_id: "hardlyhumans_vit", state: "WARNING", reasons: ["Latencia elevada"] },
+    { model_id: "emotiefflib_enet_b2_8", state: "WARNING", reasons: ["Latencia elevada"] },
   ];
   requestedPaths.length = 0;
   Socket.instances = []; vi.stubGlobal("WebSocket", Socket);
@@ -80,11 +80,11 @@ describe("cámara y ciclo de actividad", () => {
     await userEvent.click(screen.getByRole("button", { name: "Permitir cámara e iniciar" }));
     expect(apiRequest).not.toHaveBeenCalled(); expect(getMedia).not.toHaveBeenCalled();
   });
-  it("muestra advertencias para HardlyHumans", async () => {
-    page(false, "superadmin"); await userEvent.selectOptions(screen.getByRole("combobox"), "hardlyhumans_vit");
+  it("muestra advertencias para EmotiEffLib B2", async () => {
+    page(false, "superadmin"); await userEvent.selectOptions(screen.getByRole("combobox"), "emotiefflib_enet_b2_8");
     expect(screen.getByText(/Modelo con advertencias: Latencia elevada/)).toBeInTheDocument();
   });
-  it.each(["ferplus_onnx", "hardlyhumans_vit"])("administración envía el modelo %s al WebSocket", async (modelId) => {
+  it.each(["ferplus_onnx", "emotiefflib_enet_b2_8"])("administración envía el modelo %s al WebSocket", async (modelId) => {
     camera(vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }));
     const view = page(false, "superadmin");
     const selector = screen.getByRole("combobox", { name: "Modelo de reconocimiento facial" });

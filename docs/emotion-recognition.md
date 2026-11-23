@@ -29,8 +29,8 @@ Docente revisa los resultados.
 
 ## Armado del protocolo
 
-En el editor de protocolos se elige una imagen y se pulsa **Agregar como «¿Qué
-emoción es?»**. Solo hay dos ajustes, ya propuestos:
+En el editor de protocolos, dentro de «Agregar un paso», se toca la tarjeta
+**«¿Qué emoción es?»**, se elige la imagen y se pulsa **Agregar paso**. Solo hay dos ajustes, ya propuestos:
 
 | Ajuste | Por defecto | Límites |
 | --- | --- | --- |

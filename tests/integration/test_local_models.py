@@ -13,7 +13,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from emotv.application import ActivityCatalog, AuthenticationService, IdentityRegistrationService, SessionService
-from emotv.application.local_model_service import FERPLUS_MODEL_ID, HSEMOTION_MODEL_ID, LocalModelService
+from emotv.application.local_model_service import (
+    EMOTIEFFLIB_B2_MODEL_ID,
+    FERPLUS_MODEL_ID,
+    HSEMOTION_MODEL_ID,
+    LocalModelService,
+)
 from emotv.config import LiveExpressionSettings
 from emotv.domain import Role, SessionType, User
 from emotv.infrastructure.persistence import (
@@ -76,7 +81,7 @@ def env():
     admin = users.save(User("admin-models", "superadmin@example.com", auth.hash_password("admin-password-123"),
                             Role.SUPERADMIN, datetime.now(timezone.utc)))
     sessions = SessionService(PostgresSessionRepository(factory), consent_repository=consents)
-    states = {HSEMOTION_MODEL_ID: "SUPPORTED", FERPLUS_MODEL_ID: "SUPPORTED", "hardlyhumans_vit": "BLOCKED"}
+    states = {HSEMOTION_MODEL_ID: "SUPPORTED", EMOTIEFFLIB_B2_MODEL_ID: "SUPPORTED", FERPLUS_MODEL_ID: "SUPPORTED"}
 
     def admission(model_id):
         state = states[model_id]
@@ -148,7 +153,7 @@ def test_session_rejects_a_requested_model_without_admission(env):
 
 def test_default_losing_admission_uses_the_backup_and_records_it(env):
     env.client.put("/admin/models/default", headers=env.headers(env.admin), json={"model_id": HSEMOTION_MODEL_ID})
-    env.states[HSEMOTION_MODEL_ID] = "BLOCKED"
+    env.states[HSEMOTION_MODEL_ID] = env.states[EMOTIEFFLIB_B2_MODEL_ID] = "BLOCKED"
     session_id, message = env.open_session(env.student_user)
     assert message["type"] == "ready" and message["emotion_model_id"] == FERPLUS_MODEL_ID
     assert env.sessions.get_session(session_id).emotion_model_id == FERPLUS_MODEL_ID
@@ -160,8 +165,24 @@ def test_default_losing_admission_uses_the_backup_and_records_it(env):
     assert body["fallback_model_id"] == FERPLUS_MODEL_ID
 
 
+def test_hsemotion_without_admission_falls_back_to_emotiefflib_b2(env):
+    env.states[HSEMOTION_MODEL_ID] = "BLOCKED"
+    session_id, message = env.open_session(env.student_user)
+    assert message["type"] == "ready" and message["emotion_model_id"] == EMOTIEFFLIB_B2_MODEL_ID
+    assert env.sessions.get_session(session_id).emotion_model_id == EMOTIEFFLIB_B2_MODEL_ID
+    assert env.settings.get().fallback_model_id == EMOTIEFFLIB_B2_MODEL_ID
+
+
+def test_emotiefflib_b2_can_be_the_default(env):
+    assert env.client.put("/admin/models/default", headers=env.headers(env.admin),
+                          json={"model_id": EMOTIEFFLIB_B2_MODEL_ID}).status_code == 200
+    _, message = env.open_session(env.student_user)
+    assert message["emotion_model_id"] == EMOTIEFFLIB_B2_MODEL_ID
+    assert env.settings.get().default_model_id == EMOTIEFFLIB_B2_MODEL_ID
+
+
 def test_without_any_admitted_model_the_session_is_blocked(env):
-    env.states[HSEMOTION_MODEL_ID] = env.states[FERPLUS_MODEL_ID] = "BLOCKED"
+    env.states[HSEMOTION_MODEL_ID] = env.states[EMOTIEFFLIB_B2_MODEL_ID] = env.states[FERPLUS_MODEL_ID] = "BLOCKED"
     session_id, message = env.open_session(env.student_user)
     assert message["type"] == "error"
     assert env.sessions.get_session(session_id).emotion_model_id is None
@@ -183,10 +204,11 @@ def test_conductor_sees_local_models_without_operational_details(env):
     models = env.client.get("/analysis/models", headers=env.headers(env.student_user)).json()
     assert models == [
         {"model_id": HSEMOTION_MODEL_ID, "state": "SUPPORTED", "is_default": True},
+        {"model_id": EMOTIEFFLIB_B2_MODEL_ID, "state": "SUPPORTED", "is_default": False},
         {"model_id": FERPLUS_MODEL_ID, "state": "BLOCKED", "is_default": False},
     ]
     _, message = env.open_session(env.student_user, "hardlyhumans_vit")
-    assert message["type"] == "error" and message["code"] == 4403
+    assert message["type"] == "error" and message["code"] == 4400
 
 
 def test_only_the_superadmin_reads_or_changes_the_configuration(env):
@@ -206,7 +228,7 @@ def test_models_page_reports_checks_and_who_changed_the_default(env):
     assert body["default_model_id"] == FERPLUS_MODEL_ID
     assert body["changed_by"] == "superadmin@example.com" and body["changed_at"]
     by_id = {item["model_id"]: item for item in body["models"]}
-    assert set(by_id) == {HSEMOTION_MODEL_ID, FERPLUS_MODEL_ID}
+    assert set(by_id) == {HSEMOTION_MODEL_ID, EMOTIEFFLIB_B2_MODEL_ID, FERPLUS_MODEL_ID}
     assert by_id[FERPLUS_MODEL_ID]["is_default"] and not by_id[HSEMOTION_MODEL_ID]["is_default"]
     assert by_id[FERPLUS_MODEL_ID]["checks"] == {"weights_verified": True, "benchmark_current": True}
     assert by_id[FERPLUS_MODEL_ID]["p95_ms"] == 40.0

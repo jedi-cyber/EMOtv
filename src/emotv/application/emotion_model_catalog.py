@@ -36,11 +36,12 @@ DEFAULT_EMOTION_MODELS = (
         emotion_labels=FERPLUS_LABELS,
     ),
     EmotionModel(
-        id="hardlyhumans_vit",
-        name="HardlyHumans ViT (experimental)",
-        description="Alternativa facial de ocho clases; requiere dependencias opcionales y benchmark antes de uso web.",
-        version="736c91353cf79a0e0c9a86256982be7d9d7c1591",
-        input_size=(224, 224),
+        id="emotiefflib_enet_b2_8",
+        name="EmotiEffLib EfficientNet-B2",
+        description="Modelo ONNX de ocho clases (enet_b2_8) de EmotiEffLib: más preciso en AffectNet y más pesado en CPU.",
+        # Mismo commit de sb-ai-lab/EmotiEffLib que HSEmotion; fija el archivo de pesos.
+        version="af833487321c3efdcb1768a91a6c656a1986fdf6",
+        input_size=(260, 260),
         emotion_labels=FERPLUS_LABELS,
     ),
 )

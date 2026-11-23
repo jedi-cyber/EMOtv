@@ -18,7 +18,7 @@ from emotv.application.ports import UserRepository
 from emotv.domain import Role, User
 from emotv.interfaces.web.auth_router import create_current_user_dependency
 
-LocalModelId = Literal["hsemotion_enet_b0_8_best_afew", "ferplus_onnx"]
+LocalModelId = Literal["hsemotion_enet_b0_8_best_afew", "emotiefflib_enet_b2_8", "ferplus_onnx"]
 
 
 class ModelChecks(BaseModel):

@@ -85,15 +85,15 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
   quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
   que la necesitan.
-- **Dibujo** («Agregar dibujo»): la persona dibuja con el dedo
+- **Dibujo** (tarjeta «Dibujo» en «Agregar un paso»): la persona dibuja con el dedo
   (colores, grosor, borrador, «Deshacer» y «Limpiar»), pulsa «Terminé» y elige
   qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y EMOtv no lo
   interpreta**: solo se registra la emoción elegida, los tiempos y quién
   respondió. Emi tampoco interpreta dibujos.
 - **Juegos**, de 2 a 6 rondas, sin puntaje:
-  - «Agregar juego de emparejar»: la persona ve una cara y toca el nombre de su
+  - «Juego: empareja la emoción»: la persona ve una cara y toca el nombre de su
     emoción;
-  - «Agregar juego: busca la misma emoción»: ve una cara arriba y elige otra
+  - «Juego: busca la misma emoción»: ve una cara arriba y elige otra
     cara («Cara 1», «Cara 2»…) que muestre la misma emoción.
 
   Si elige otra, se la invita a mirar otra vez; tras dos intentos, se muestra

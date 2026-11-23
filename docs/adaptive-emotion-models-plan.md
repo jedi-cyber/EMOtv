@@ -7,9 +7,11 @@ iniciales de ingeniería, no una validación clínica ni garantía de servicio.
 
 ## Punto de partida versionable
 
-`EmotionModelCatalog` registra FER+ ONNX (`ferplus_onnx`, predeterminado) y
-HardlyHumans ViT/PyTorch (`hardlyhumans_vit`, experimental). Ambos implementan
-`EmotionClassifier` mediante adaptadores. La web presenta **tipos de modelo**,
+`EmotionModelCatalog` registra FER+ ONNX (`ferplus_onnx`), HSEmotion
+(`hsemotion_enet_b0_8_best_afew`) y EmotiEffLib B2 (`emotiefflib_enet_b2_8`),
+todos en ONNX. Implementan `EmotionClassifier` mediante adaptadores.
+HardlyHumans ViT se quitó el 23 de noviembre de 2026 por no usarse
+(ver [licencias de los modelos](licencias-modelos.md)). La web presenta **tipos de modelo**,
 no niveles de precisión ni una comparación de exactitud que no se ha medido.
 
 El benchmark común mide carga, latencia, CPU y RSS de `predict` con entradas

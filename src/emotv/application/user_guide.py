@@ -47,9 +47,8 @@ GUIDE: tuple[GuideTopic, ...] = (
            "modificar» copia una plantilla de tu docente.",
            "«Nuevo protocolo» pregunta si es para adultos o para niños. «Modo accesible» pone pictogramas, botones "
            "grandes y pausas más largas.",
-           "Los pasos pueden ser una imagen, «¿Qué emoción es?», un ejercicio de práctica, «Haz la misma cara» (la "
-           "imagen es el modelo), «Agregar dibujo», «Agregar juego de emparejar» o «Agregar juego: busca la misma "
-           "emoción».",
+           "En «Agregar un paso»: «Juego: empareja la emoción», «Juego: busca la misma emoción», «¿Qué emoción "
+           "es?», «Dibujo», práctica, «Haz la misma cara» o una imagen.",
            note="Con niños solo se ofrecen imágenes «Para niños» aprobadas. EMOtv no calcula puntajes."),
     _topic("own-images", "Subir imágenes propias", (USER,),
            "En «Imágenes», «Subir imágenes». Nunca fotografías de personas evaluadas.",

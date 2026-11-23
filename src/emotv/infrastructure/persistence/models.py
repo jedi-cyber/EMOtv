@@ -874,7 +874,7 @@ class LocalModelSettingsRecord(Base):
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_local_model_settings_single_row"),
         CheckConstraint(
-            "default_model_id IN ('hsemotion_enet_b0_8_best_afew', 'ferplus_onnx')",
+            "default_model_id IN ('hsemotion_enet_b0_8_best_afew', 'emotiefflib_enet_b2_8', 'ferplus_onnx')",
             name="ck_local_model_settings_default_model",
         ),
         CheckConstraint(

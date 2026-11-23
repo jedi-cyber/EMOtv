@@ -5,7 +5,7 @@ from emotv.infrastructure.vision.emotion_classifier.model_admission import Serve
 
 def main() -> None:
     admission = ServerModelAdmission()
-    for model_id in ("ferplus_onnx", "hardlyhumans_vit"):
+    for model_id in admission.paths:
         result = admission.evaluate(model_id)
         reasons = "; ".join(result["reasons"]) or "sin restricciones"
         weights, report = admission.paths[model_id]

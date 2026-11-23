@@ -61,7 +61,7 @@ def test_recognition_rejects_other_registered_model(service):
     started = service.start_session()
     service.record_emotion_model(started.id, "ferplus_onnx", "1.0")
     with pytest.raises(ValueError):
-        service.record_recognition(started.id, "sadness", 0.8, "hardlyhumans_vit", "rev")
+        service.record_recognition(started.id, "sadness", 0.8, "emotiefflib_enet_b2_8", "rev")
 
 
 def test_finish_without_activity_marks_skipped(service):

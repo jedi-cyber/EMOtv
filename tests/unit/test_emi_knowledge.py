@@ -171,7 +171,7 @@ def test_emi_explica_las_actividades_educativas_y_sus_apoyos():
     assert "EMOtv no diagnostica ni interpreta dibujos, respuestas ni juegos" in section
     assert "nunca valoran" in section
     # La guía de uso nombra las actividades nuevas.
-    for button in ("«Agregar dibujo»", "«Agregar juego de emparejar»", "«Agregar juego: busca la misma emoción»"):
+    for button in ("«Dibujo»", "«Juego: empareja la emoción»", "«Juego: busca la misma emoción»", "«Agregar un paso»"):
         assert button in text, button
     for item in seeded_items():
         assert item.what_it_is.split(". ")[0] in text, item.label_es

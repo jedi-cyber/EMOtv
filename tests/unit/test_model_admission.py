@@ -108,17 +108,21 @@ def test_live_models_still_need_their_weights(evaluator):
     assert result["reasons"] == ["Pesos no instalados en el servidor"]
 
 
-def test_the_experimental_model_still_needs_its_own_report(evaluator, monkeypatch, tmp_path):
+def test_a_removed_model_is_not_allowed(evaluator):
     service, _, _ = evaluator
-    folder = tmp_path / "vit"
-    folder.mkdir()
-    for name in ("model.safetensors", "config.json", "preprocessor_config.json"):
-        (folder / name).write_bytes(b"{}")
-    monkeypatch.setattr(module.importlib.util, "find_spec", lambda name: object())
-    service.paths["hardlyhumans_vit"] = folder / "model.safetensors", tmp_path / "missing.json"
     result = service.evaluate("hardlyhumans_vit")
     assert result["state"] == "BLOCKED"
-    assert result["reasons"] == ["Falta un benchmark validado; ejecuta el script de medición"]
+    assert result["reasons"] == ["Modelo no permitido"]
+
+
+def test_emotiefflib_b2_without_report_uses_its_reference_figures(evaluator, tmp_path):
+    service, _, _ = evaluator
+    weights = tmp_path / "enet_b2_8.onnx"
+    weights.write_bytes(b"onnx")
+    service.paths["emotiefflib_enet_b2_8"] = weights, tmp_path / "missing.json"
+    result = service.evaluate("emotiefflib_enet_b2_8")
+    assert result["checks"] == {"weights_verified": False, "benchmark_current": False}
+    assert result["metrics"]["p95_ms"] == module.REFERENCE_FIGURES["emotiefflib_enet_b2_8"]["p95_ms"]
 
 
 def test_server_load_blocks_without_invalidating_the_checks(evaluator, monkeypatch):

@@ -14,9 +14,11 @@ from emotv.application.ports.local_model_settings_repository import LocalModelSe
 from emotv.domain.local_model_settings import LocalModelSettings
 
 HSEMOTION_MODEL_ID = "hsemotion_enet_b0_8_best_afew"
+EMOTIEFFLIB_B2_MODEL_ID = "emotiefflib_enet_b2_8"
 FERPLUS_MODEL_ID = "ferplus_onnx"
 # Únicos modelos de expresión que pueden ser predeterminados o elegirse en una sesión.
-LOCAL_MODEL_IDS = (HSEMOTION_MODEL_ID, FERPLUS_MODEL_ID)
+# El orden es también el del respaldo: se prueba el primero admitido que no sea el predeterminado.
+LOCAL_MODEL_IDS = (HSEMOTION_MODEL_ID, EMOTIEFFLIB_B2_MODEL_ID, FERPLUS_MODEL_ID)
 INITIAL_DEFAULT_MODEL_ID = HSEMOTION_MODEL_ID
 ADMITTED_STATES = ("SUPPORTED", "WARNING")
 
@@ -101,11 +103,14 @@ class LocalModelService:
         choice = ModelChoice(default, self.evaluate(default))
         if choice.admitted:
             return choice
-        backup = next(model_id for model_id in LOCAL_MODEL_IDS if model_id != default)
-        fallback = ModelChoice(backup, self.evaluate(backup), fallback=True)
-        if fallback.admitted:
-            self._record_fallback(settings, backup, choice.admission)
-        return fallback
+        first: ModelChoice | None = None
+        for backup in (model_id for model_id in LOCAL_MODEL_IDS if model_id != default):
+            fallback = ModelChoice(backup, self.evaluate(backup), fallback=True)
+            if fallback.admitted:
+                self._record_fallback(settings, backup, choice.admission)
+                return fallback
+            first = first or fallback
+        return first if first is not None else choice
 
     def _record_fallback(self, settings: LocalModelSettings, backup: str, admission: dict | None) -> None:
         reasons = "; ".join((admission or {}).get("reasons") or [])

@@ -96,7 +96,7 @@ class SessionServiceTests(unittest.TestCase):
         selected = self.service.record_emotion_model(session.id, "ferplus_onnx", "1.0")
         self.assertEqual(self.service.record_emotion_model(session.id, "ferplus_onnx", "1.0"), selected)
         with self.assertRaises(ValueError):
-            self.service.record_emotion_model(session.id, "hardlyhumans_vit", "revision")
+            self.service.record_emotion_model(session.id, "emotiefflib_enet_b2_8", "revision")
         cancelled = self.service.cancel_session(session.id)
         self.assertEqual((cancelled.emotion_model_id, cancelled.emotion_model_version),
                          ("ferplus_onnx", "1.0"))

@@ -3,15 +3,16 @@
 Uso:
     python scripts/download_models.py                 # descarga lo que falte
     python scripts/download_models.py --check         # solo verifica, no descarga
-    python scripts/download_models.py --include-experimental
-    python scripts/download_models.py --ensure-benchmark models/weights/benchmarks/ferplus.json         --ensure-hsemotion-benchmark models/weights/benchmarks/hsemotion.json
+    python scripts/download_models.py --ensure-benchmark models/weights/benchmarks/ferplus.json \
+        --ensure-hsemotion-benchmark models/weights/benchmarks/hsemotion.json \
+        --ensure-emotiefflib-b2-benchmark models/weights/benchmarks/emotiefflib-b2.json
 
 Es idempotente: si un archivo ya existe con el SHA-256 esperado no se descarga.
 Un archivo con hash distinto se reemplaza (o se informa con --check).
-HSEmotion (lectura en vivo predeterminada) se descarga siempre, pero es
-opcional: si falta o su benchmark no es válido, la API usa FER+.
-hardlyhumans_vit solo se descarga con --include-experimental y requiere el
-extra opcional emotion-vit.
+HSEmotion (lectura en vivo predeterminada) y EmotiEffLib enet_b2_8 se
+descargan siempre, pero son opcionales: si faltan o su benchmark no es válido,
+la API usa el siguiente modelo admitido (al final, FER+). Licencias y origen
+de cada archivo: docs/licencias-modelos.md.
 """
 
 from __future__ import annotations
@@ -34,8 +35,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from emotv.config import (  # noqa: E402
+    EMOTIEFFLIB_B2_MODEL_PATH,
+    EMOTIEFFLIB_B2_MODEL_URL,
     EMOTION_MODEL_PATH,
-    HARDLYHUMANS_MODEL_DIR,
     HSEMOTION_MODEL_PATH,
     HSEMOTION_MODEL_URL,
     POSE_MODEL_PATH,
@@ -84,6 +86,13 @@ OPTIONAL_WEIGHTS = (
         HSEMOTION_MODEL_URL,
         HSEMOTION_MODEL_PATH,
         "7aa2ea31c1311f4f8aa9d3fdb085d418dd4e7a48c4b9ed41df8c044f91d0213f",
+    ),
+    # Mismo repositorio y commit; el archivo no cambió desde entonces.
+    ModelWeight(
+        "EmotiEffLib enet_b2_8",
+        EMOTIEFFLIB_B2_MODEL_URL,
+        EMOTIEFFLIB_B2_MODEL_PATH,
+        "180a9d4845b59393de4511598a0d1d34b705034691ea32959ce5009db7cf52b7",
     ),
 )
 
@@ -144,6 +153,7 @@ def ensure_weights(*, check_only: bool = False, weights=None) -> list[str]:
 BENCHMARKED_MODELS = {
     "ferplus_onnx": ("FER+", "FERPLUS_BENCHMARK_PATH"),
     "hsemotion_enet_b0_8_best_afew": ("HSEmotion", "HSEMOTION_BENCHMARK_PATH"),
+    "emotiefflib_enet_b2_8": ("EmotiEffLib B2", "EMOTIEFFLIB_B2_BENCHMARK_PATH"),
 }
 
 
@@ -177,40 +187,34 @@ def ensure_benchmark(report: Path, model_id: str = "ferplus_onnx") -> None:
     print(f"[ok] benchmark {name} medido")
 
 
-def ensure_experimental() -> None:
-    if HARDLYHUMANS_MODEL_DIR.exists():
-        print("[ok] hardlyhumans_vit (experimental) ya instalado")
-        return
-    from scripts.emotion.download_hardlyhumans_model import download_model
-
-    print("[descargando] hardlyhumans_vit (experimental)")
-    download_model()
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="Solo verificar; no descargar")
-    parser.add_argument("--include-experimental", action="store_true",
-                        help="Descargar también hardlyhumans_vit (opcional)")
     parser.add_argument("--ensure-benchmark", type=Path, metavar="INFORME",
                         help="Medir el benchmark FER+ en este entorno si el informe falta o es de otro entorno")
     parser.add_argument("--ensure-hsemotion-benchmark", type=Path, metavar="INFORME",
                         help="Igual para HSEmotion; si falla, la API usará FER+")
+    parser.add_argument("--ensure-emotiefflib-b2-benchmark", type=Path, metavar="INFORME",
+                        help="Igual para EmotiEffLib enet_b2_8; si falla, se usa su rendimiento de referencia")
     args = parser.parse_args(argv)
 
     problems = ensure_weights(check_only=args.check)
     optional_missing = ensure_weights(check_only=args.check, weights=OPTIONAL_WEIGHTS)
     if optional_missing:
-        print("[aviso] Opcionales pendientes (la lectura en vivo usará FER+): " + ", ".join(optional_missing))
-    if args.include_experimental and not args.check:
-        ensure_experimental()
+        print("[aviso] Opcionales pendientes (la lectura en vivo usará otro modelo admitido): " + ", ".join(optional_missing))
     if args.ensure_benchmark and not problems and not args.check:
         ensure_benchmark(args.ensure_benchmark)
-    if args.ensure_hsemotion_benchmark and not optional_missing and not args.check:
+    optional_benchmarks = (
+        (args.ensure_hsemotion_benchmark, "hsemotion_enet_b0_8_best_afew", "HSEmotion enet_b0_8_best_afew"),
+        (args.ensure_emotiefflib_b2_benchmark, "emotiefflib_enet_b2_8", "EmotiEffLib enet_b2_8"),
+    )
+    for report, model_id, weight_name in optional_benchmarks:
+        if report is None or args.check or weight_name in optional_missing:
+            continue
         try:
-            ensure_benchmark(args.ensure_hsemotion_benchmark, "hsemotion_enet_b0_8_best_afew")
+            ensure_benchmark(report, model_id)
         except RuntimeError as error:
-            print(f"[aviso] HSEmotion sin benchmark válido ({error}); la lectura en vivo usará FER+")
+            print(f"[aviso] {BENCHMARKED_MODELS[model_id][0]} sin benchmark válido ({error}); usa su rendimiento de referencia")
     if problems:
         print("Pesos pendientes: " + ", ".join(problems))
         return 1

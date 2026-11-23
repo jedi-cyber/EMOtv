@@ -24,7 +24,7 @@ import numpy as np
 import onnxruntime as ort
 import psutil
 
-from emotv.config import EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR, HSEMOTION_MODEL_PATH
+from emotv.config import EMOTIEFFLIB_B2_MODEL_PATH, EMOTION_MODEL_PATH, HSEMOTION_MODEL_PATH
 from emotv.domain import CroppedFace
 from emotv.infrastructure.vision.emotion_classifier import create_emotion_classifier
 from emotv.infrastructure.vision.face_detection.yunet_face_detector import FaceDetection, YuNetFaceDetector
@@ -35,8 +35,10 @@ from emotv.shared.performance.model_benchmark import benchmark_concurrent, bench
 MODEL_WEIGHTS = {
     "ferplus_onnx": Path(EMOTION_MODEL_PATH),
     "hsemotion_enet_b0_8_best_afew": Path(HSEMOTION_MODEL_PATH),
-    "hardlyhumans_vit": HARDLYHUMANS_MODEL_DIR / "model.safetensors",
+    "emotiefflib_enet_b2_8": Path(EMOTIEFFLIB_B2_MODEL_PATH),
 }
+# Tamaño de entrada nativo de cada adaptador.
+INPUT_SIDE = {"ferplus_onnx": 64, "hsemotion_enet_b0_8_best_afew": 224, "emotiefflib_enet_b2_8": 260}
 FRAME_SIZE = (640, 480)
 # Misma calidad JPEG que envía el analizador web (canvas.toBlob(..., .72)).
 JPEG_QUALITY = 72
@@ -51,7 +53,7 @@ def benchmark_faces(model_id: str) -> tuple[list[CroppedFace], str]:
     # Each adapter receives its native input; predict includes its preprocessing.
     if model_id not in MODEL_WEIGHTS:
         raise ValueError(f"Modelo no integrado: {model_id}")
-    size = 64 if model_id == "ferplus_onnx" else 224
+    size = INPUT_SIDE[model_id]
     shape = (16, size, size) if model_id == "ferplus_onnx" else (16, size, size, 3)
     images = np.random.default_rng(2026).integers(0, 256, shape, dtype=np.uint8)
     description = f"16 synthetic {'grayscale' if size == 64 else 'BGR color'} uint8 images, {size}x{size}, seed 2026; not accuracy evaluation"
@@ -94,18 +96,12 @@ def session_step(model_id: str, threads: int, seed: int):
 
 
 def runtime_metadata(classifier, model_id: str) -> dict:
-    if model_id != "hardlyhumans_vit":
-        options = classifier.session.get_session_options()
-        return dict(backend="onnxruntime", onnxruntime=ort.__version__,
-                    providers=classifier.session.get_providers(),
-                    intra_op_threads=options.intra_op_num_threads,
-                    inter_op_threads=options.inter_op_num_threads)
-    torch = classifier._torch
-    import transformers
-    return dict(backend="pytorch", device="cpu", torch=torch.__version__,
-                transformers=transformers.__version__,
-                intra_op_threads=torch.get_num_threads(),
-                inter_op_threads=torch.get_num_interop_threads())
+    # Todos los modelos integrados son ONNX en CPU.
+    options = classifier.session.get_session_options()
+    return dict(backend="onnxruntime", onnxruntime=ort.__version__,
+                providers=classifier.session.get_providers(),
+                intra_op_threads=options.intra_op_num_threads,
+                inter_op_threads=options.inter_op_num_threads)
 
 
 def main(argv=None) -> int:

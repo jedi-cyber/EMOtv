@@ -73,7 +73,7 @@ de datos» de Docker).
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-python scripts/download_models.py        # YuNet, FER+, MediaPipe Pose y HSEmotion (opcional), con SHA-256
+python scripts/download_models.py        # YuNet, FER+, MediaPipe Pose, HSEmotion y EmotiEffLib B2 (opcionales), con SHA-256
 copy .env.example .env                   # DATABASE_URL, JWT_SECRET_KEY, ...
 python -m alembic upgrade head
 python -m uvicorn emotv.interfaces.web.app:app --reload   # API en :8000
@@ -119,7 +119,7 @@ valores reales.
 | `LIVE_CALIBRATION_MIN_INCREASE` | aumento mínimo respecto a la base neutral (en memoria) para sugerir una expresión |
 | `MAX_CONCURRENT_ANALYSES`, `MAX_ACTIVE_SESSIONS`, `ANALYSIS_BUSY_WAIT_SECONDS`, `LIVE_IDLE_TIMEOUT_SECONDS`, `ONNX_THREADS_PER_SESSION` | protección de carga del análisis ([arquitectura](docs/architecture.md#protección-de-carga-del-análisis)) |
 | `API_CPUS`, `API_MEMORY_LIMIT` | límites de CPU y memoria del contenedor `api` (solo Docker) |
-| `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
+| `EMOTION_*`, `FERPLUS_BENCHMARK_PATH`, `HSEMOTION_BENCHMARK_PATH`, `EMOTIEFFLIB_B2_BENCHMARK_PATH` | admisión de cada modelo facial según su benchmark en el servidor |
 | `CHAT_PROVIDER`, `SIM_WORKFLOW_URL`, `SIM_API_KEY`, `CHAT_TIMEOUT_SECONDS` | workflow de Emi en Sim (`sim`, por defecto); sin URL o clave, el chat responde 503 ([docs/chatbot/sim-setup.md](docs/chatbot/sim-setup.md)) |
 | `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_KEY` | solo con `CHAT_PROVIDER=n8n`, el workflow anterior |
 | `CHAT_*` | historial, retención (90 días) y límites de uso de Emi |
@@ -156,6 +156,6 @@ valores reales.
 - [Consentimiento demo](docs/consent-demo.md) · [Protocolo con voluntarios](docs/testing/volunteer-protocol.md)
 - [Pruebas e2e](docs/testing/e2e.md) · [Lista de pruebas manuales](docs/testing/manual-checklist.md) · [Pruebas](tests/README.md)
 - [Emi](docs/chatbot-emi.md) · [Catálogo de expresiones](docs/expression-catalog.md) · [Actividades secuenciales](docs/sequential-activities.md)
-- [Modelos faciales](docs/emotion-models.md) · [Línea base FER+](docs/ferplus-baseline.md) · [Posturas](docs/pose-estimation.md)
+- [Modelos faciales](docs/emotion-models.md) · [Licencias de los modelos](docs/licencias-modelos.md) · [Línea base FER+](docs/ferplus-baseline.md) · [Posturas](docs/pose-estimation.md)
 - [Evidencia para la tesis](docs/thesis-evidence/README.md) · [CHANGELOG](CHANGELOG.md)
 - [Frontend](web/README.md) · [Scripts](scripts/README.md) · [Modelos y pesos](models/README.md)

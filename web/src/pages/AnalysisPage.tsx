@@ -1,3 +1,4 @@
+import { emotionModelName } from "../sessions/labels";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
@@ -273,10 +274,10 @@ function ManualActivityAnalysisPage() {
       <legend>Modelo de reconocimiento facial</legend>
       <label htmlFor="emotion-model">Modelo de reconocimiento facial</label>
       <select id="emotion-model" value={emotionModelId} onChange={(event) => setEmotionModelId(event.target.value)} aria-describedby="emotion-model-help">
-        <option value="ferplus_onnx" disabled={modelsQuery.data?.find((item) => item.model_id === "ferplus_onnx")?.state === "BLOCKED"}>FER+ · ONNX (predeterminado)</option>
-        <option value="hardlyhumans_vit" disabled={modelsQuery.data?.find((item) => item.model_id === "hardlyhumans_vit")?.state === "BLOCKED"}>HardlyHumans · ViT/PyTorch (experimental)</option>
+        {(["ferplus_onnx", "hsemotion_enet_b0_8_best_afew", "emotiefflib_enet_b2_8"] as const).map((id) => <option key={id} value={id}
+          disabled={modelsQuery.data?.find((item) => item.model_id === id)?.state === "BLOCKED"}>{emotionModelName(id)} · ONNX</option>)}
       </select>
-      <p id="emotion-model-help" className="muted">Elige el modelo que prefieras según su disponibilidad y rendimiento en el servidor. FER+ suele requerir menos recursos; HardlyHumans puede tardar más y usar más RAM. En esta versión el análisis ocurre en el servidor, no en tu dispositivo. No se ha demostrado que uno reconozca mejor las emociones en EMOtv. Puedes cambiarlo antes de iniciar la sesión.</p>
+      <p id="emotion-model-help" className="muted">Elige el modelo que prefieras según su disponibilidad y rendimiento en el servidor. FER+ suele requerir menos recursos; EmotiEffLib B2 puede tardar más y usar más RAM. En esta versión el análisis ocurre en el servidor, no en tu dispositivo. No se ha demostrado que uno reconozca mejor las emociones en EMOtv. Puedes cambiarlo antes de iniciar la sesión.</p>
       <PageState {...modelsQuery} onRetry={modelsQuery.reload} />
       {selectedAdmission && <Callout variant={selectedAdmission.state === "BLOCKED" ? "error" : selectedAdmission.state === "WARNING" ? "warning" : "info"}>
         {admissionNames[selectedAdmission.state]}: {selectedAdmission.reasons.join("; ") || "recursos suficientes según la evaluación del servidor"}
@@ -288,7 +289,7 @@ function ManualActivityAnalysisPage() {
       <aside className="analysis-panel">
         <p className="step-caption">Etapa {stepIndex + 1} de {analysisSteps.length}</p>
         <ol className="analysis-steps" aria-label="Etapas del análisis">{analysisSteps.map((step, index) => <li key={step} className={index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"} aria-current={index === stepIndex ? "step" : undefined}>{step}</li>)}</ol>
-        {canChooseModel && <p>Modelo facial: {emotionModelId === "ferplus_onnx" ? "FER+ · ONNX" : "HardlyHumans · ViT/PyTorch (experimental)"}</p>}
+        {canChooseModel && <p>Modelo facial: {emotionModelName(emotionModelId)} · ONNX</p>}
         {status.admission?.state === "WARNING" && <Callout variant="warning">{status.admission.reasons.join("; ")}</Callout>}
         <span role="status" aria-live="polite" className={`analysis-state state-${status.state}`}>{stateNames[status.state ?? ""] ?? "En curso"}</span>
         <h2>{status.message}</h2><p>{status.step ? `Paso ${(status.step_index ?? 0) + 1} de ${status.step_count ?? 1}: ${status.step.instruction}` : activity?.description}</p>
