@@ -39,7 +39,8 @@ Toda sesión empieza en el **Analizador**:
    navegador pide permiso para usar la cámara. La imagen de la cámara se obtiene en el navegador; el servidor nunca
    abre una cámara.
 5. Cada imagen se envía al servidor de EMOtv, que detecta el rostro (YuNet),
-   estima la expresión con un modelo local (HSEmotion; FER+ como respaldo) y
+   estima la expresión con un modelo local (HSEmotion; EmotiEffLib B2 como
+   alternativa y FER+ como respaldo) y
    descarta la imagen. Puede hacerse antes una calibración neutral: «Mantén el
    rostro relajado y mira a la cámara».
 6. La expresión se registra cuando la lectura es estable (por defecto, la misma
