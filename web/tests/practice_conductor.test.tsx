@@ -37,7 +37,7 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Práctica de expresiones");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar ejercicio de práctica" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ejercicio de práctica" }));
   }
 
   it("elige la expresión pedida, el sostén y el tiempo máximo, y lo envía al servidor", async () => {

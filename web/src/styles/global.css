@@ -160,6 +160,38 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .stimulus-thumb-empty { display: grid; place-items: center; font-size: var(--text-caption); }
 .protocol-step { align-items: flex-start; flex-wrap: wrap; }
 .protocol-step input[type="number"] { width: 6rem; }
+.protocol-editor { gap: var(--space-lg); }
+.protocol-section { display: grid; gap: var(--space-sm); padding-top: var(--space-md); border-top: 1px solid var(--color-hairline); }
+.protocol-editor > .protocol-section:first-of-type { padding-top: 0; border-top: 0; }
+.protocol-section h3 { display: flex; align-items: center; gap: var(--space-xs); margin: 0; font-size: var(--text-card-title); line-height: var(--leading-card-title); }
+.protocol-section > .muted { margin: 0; }
+.protocol-section-number { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--color-primary-soft); color: var(--color-primary-deep); font-size: var(--text-body-sm); font-weight: var(--weight-bold); }
+.protocol-details summary { width: fit-content; color: var(--color-primary); font-size: var(--text-body-sm); font-weight: var(--weight-semibold); cursor: pointer; }
+.protocol-details summary:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+.protocol-details[open] summary { margin-bottom: var(--space-sm); }
+.protocol-details fieldset { margin: 0; padding: var(--space-md); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); }
+.protocol-details legend { padding: 0 var(--space-xxs); font-weight: var(--weight-semibold); }
+.protocol-flow { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.protocol-moment { position: relative; display: grid; gap: var(--space-sm); padding: 0 0 var(--space-lg) var(--space-lg); border-left: 2px solid var(--color-hairline); margin-left: 6px; }
+.protocol-moment:last-child { padding-bottom: 0; border-left-color: transparent; }
+.protocol-moment::before { content: ""; position: absolute; left: -7px; top: 4px; width: 12px; height: 12px; border: 2px solid var(--color-primary); border-radius: 50%; background: var(--color-canvas); }
+.protocol-moment h4 { margin: 0; font-size: var(--text-body-md); line-height: 1.3; }
+.protocol-moment > .muted { margin: 0; }
+.protocol-steps { margin: 0; }
+.step-catalog { display: grid; gap: var(--space-sm); padding: var(--space-md); border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); background: var(--color-surface); }
+.step-catalog h5 { margin: 0; font-size: var(--text-body-md); }
+.step-catalog-group { display: grid; gap: var(--space-xs); }
+.step-catalog-head { margin: 0; font-size: var(--text-body-sm); }
+.step-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--space-xs); }
+.step-option { display: grid; gap: var(--space-xxs); align-content: start; padding: var(--space-sm); border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.step-option strong { font-size: var(--text-body-sm); }
+.step-option span { color: var(--color-slate); font-size: var(--text-caption); line-height: var(--leading-caption); }
+.step-option:hover { border-color: var(--color-primary); }
+.step-option:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.step-option.is-selected { border: 2px solid var(--color-primary); padding: calc(var(--space-sm) - 1px); background: var(--color-primary-soft); }
+.step-picker { display: grid; gap: var(--space-sm); margin: 0; padding: var(--space-md); border: 1px solid var(--color-primary); border-radius: var(--radius-md); background: var(--color-canvas); }
+.step-picker p { margin: 0; }
+.protocol-missing { margin: 0; color: var(--color-warning); font-size: var(--text-body-sm); font-weight: var(--weight-semibold); }
 .questionnaire-form { display: grid; gap: var(--space-md); }
 .questionnaire-form .question { display: grid; gap: var(--space-sm); margin: 0; padding: 0; border: 0; }
 .questionnaire-form legend { padding: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }

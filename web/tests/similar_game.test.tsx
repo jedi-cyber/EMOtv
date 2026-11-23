@@ -78,7 +78,7 @@ describe("«Busca la misma emoción» en el editor", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para adultos/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Misma emoción");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar juego: busca la misma emoción" }));
+    await userEvent.click(screen.getByRole("button", { name: "Juego: busca la misma emoción" }));
     expect(screen.getByText("1. Juego: busca la misma emoción")).toBeInTheDocument();
     expect(screen.getByText(/otra imagen de la misma emoción que se ve distinta \(nunca la misma imagen repetida\)/)).toBeInTheDocument();
     expect(screen.getByLabelText("Caras para elegir")).toHaveValue("2");

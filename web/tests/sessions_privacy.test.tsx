@@ -95,10 +95,13 @@ describe("protocolos", () => {
     await userEvent.click(screen.getByRole("button", { name: "Nuevo protocolo" }));
     const dialog = screen.getByRole("dialog", { name: "Nuevo protocolo" });
     expect(within(dialog).getByRole("group", { name: "¿Para adultos o para niños?" })).toBeInTheDocument();
-    expect(within(dialog).queryByLabelText("Nombre")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Guardar protocolo" })).toBeDisabled();
+    expect(within(dialog).getByText("Para guardar falta: el nombre, para quién es, al menos un paso.")).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("radio", { name: /Para adultos/ }));
-    expect(within(dialog).getByLabelText("Nombre")).toBeInTheDocument();
+    expect(within(dialog).getByText("Para guardar falta: el nombre, al menos un paso.")).toBeInTheDocument();
+    // Los juegos se ven en el catálogo de pasos, junto a los demás tipos.
+    expect(within(dialog).getByRole("button", { name: "Juego: empareja la emoción" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Juego: busca la misma emoción" })).toBeInTheDocument();
     expect(within(dialog).getAllByRole("button", { name: "Crear cuestionario" })).toHaveLength(2);
   });
 

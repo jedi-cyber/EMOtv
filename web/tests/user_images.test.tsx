@@ -138,7 +138,8 @@ describe("imágenes propias en los protocolos", () => {
     withUser("student", <ProtocolsPage />);
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
-    const options = within(screen.getByLabelText("Imagen")).getAllByRole("option").map((option) => option.textContent);
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar una imagen" }));
+    const options = within(screen.getByLabelText(/^Imagen para/)).getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["Elige una imagen", "Para todos — Imagen propia · Para niños"]);
   });
 

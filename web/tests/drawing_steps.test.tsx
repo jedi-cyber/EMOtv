@@ -106,7 +106,7 @@ describe("el dibujo en el editor de protocolos", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Dibujar emociones");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar dibujo" }));
+    await userEvent.click(screen.getByRole("button", { name: "Dibujo" }));
     expect(screen.getByText("1. Dibujo: una cara con una emoción")).toBeInTheDocument();
     expect(screen.getByLabelText("Tiempo para dibujar (s)")).toHaveValue(90);
     vi.mocked(apiRequest).mockResolvedValue({ id: "p1", version: 1 } as never);
