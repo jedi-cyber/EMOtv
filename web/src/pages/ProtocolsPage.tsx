@@ -48,7 +48,9 @@ function anySupport(supports: ProtocolSupports) {
 }
 
 /** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
-type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "practice" | "imitation" | "stimulus";
+// «Ejercicio de práctica» ya no se ofrece: para pedir expresiones de palabra está
+// «Usar el analizador». Los ejercicios que ya tiene un protocolo se siguen editando.
+type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "imitation" | "stimulus";
 /** Lo que se está arrastrando en el editor: un paso de la lista o una tarjeta de «Agregar un paso». */
 type Dragging = { from: "step"; index: number } | { from: "catalog"; key: StepChoice };
 type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
@@ -65,7 +67,6 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
     { key: "analyzer", title: "Usar el analizador", text: "La cámara estima la expresión mientras tú pides de palabra las emociones que quieras. Pasas al siguiente paso cuando terminas." },
     { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
     { key: "rated", title: "Juego: imita la cara", text: "Ve una imagen y hace la misma cara. La cámara estima la expresión y tú la valoras de 1 a 5 estrellas; la persona no ve tu valoración.", image: true },
-    { key: "practice", title: "Ejercicio de práctica", text: "Se pide una expresión y una señal simple crece al acercarse." },
     { key: "imitation", title: "Haz la misma cara", text: "Ve una imagen y hace la misma cara.", image: true },
     { key: "stimulus", title: "Mostrar una imagen", text: "Se muestra una imagen mientras se estima la expresión facial.", image: true },
   ] },
@@ -195,7 +196,6 @@ export function ProtocolsPage() {
   /** Los pasos que agrega una tarjeta sin imagen. */
   function newSteps(key: Exclude<StepChoice, ImageChoice>): ProtocolStep[] {
     const base = { capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false };
-    if (key === "camera") return cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds());
     // Sin imagen ni expresión pedida: quien conduce pide de palabra y pasa al siguiente cuando termina.
     if (key === "analyzer") return [{ ...base, kind: "analyzer", stimulus_id: null, exposure_seconds: ANALYZER_SECONDS }];
     // Sin imagen ni opciones: la persona dibuja y pulsa «Terminé».
@@ -206,9 +206,7 @@ export function ProtocolsPage() {
       rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
       exposure_seconds: accessibleOn(draft.supports)
         ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds }];
-    return [{ ...base, kind: "practice", stimulus_id: null, target_expression: "happiness",
-      hold_seconds: practiceDefaults.hold_seconds,
-      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds }];
+    return cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds());
   }
   function isImageChoice(key: StepChoice): key is ImageChoice {
     return key === "recognition" || key === "imitation" || key === "rated" || key === "stimulus";
@@ -735,7 +733,7 @@ export function ProtocolsPage() {
                 {picking !== "stimulus" && <p className="muted">Solo aparecen imágenes emocionales con una expresión esperada: es la respuesta del paso.</p>}
               </div> : !stimuliQuery.loading && (offered.length === 0 || picking) && <div className="empty-state step-picker">
                 <p>{offered.length === 0
-                  ? `${draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."} Los juegos, el dibujo y la práctica no las necesitan.`
+                  ? `${draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."} Los juegos, el dibujo y «Usar el analizador» no las necesitan.`
                   : "Ninguna imagen disponible indica una expresión esperada."}
                   {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
                 <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>

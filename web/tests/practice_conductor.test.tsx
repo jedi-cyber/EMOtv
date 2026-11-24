@@ -29,15 +29,19 @@ function withUser(element: React.ReactNode, path = "/") {
 beforeEach(() => { data.value = {}; vi.mocked(apiRequest).mockReset(); });
 
 describe("ejercicios de práctica en el editor de protocolos", () => {
+  // «Ejercicio de práctica» ya no está en «Agregar un paso»: se edita el de un protocolo guardado.
   async function openEditor() {
     data.value["/stimuli"] = [
       { id: "a", title: "Sol", kind: "emotional", intensity: "mild", audience: "children", scope: "group", approved: true, active: true, category: "Dibujo", min_age: 1 },
     ];
+    data.value["/protocols"] = [{ id: "p1", family_id: "p1", version: 1, name: "Práctica de expresiones", description: "",
+      for_children: true, pre_questionnaire_id: null, post_questionnaire_id: null, created_at: "2026-10-30T10:00:00Z",
+      owned_by_me: true, used: false, needs_image: false,
+      steps: [{ kind: "practice", stimulus_id: null, target_expression: "happiness", hold_seconds: 2, exposure_seconds: 20,
+        capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] }];
     withUser(<ProtocolsPage />);
-    await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
-    await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
-    await userEvent.type(screen.getByLabelText("Nombre"), "Práctica de expresiones");
-    await userEvent.click(screen.getByRole("button", { name: "Ejercicio de práctica" }));
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Práctica de expresiones»" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Editar" }));
   }
 
   it("elige la expresión pedida, el sostén y el tiempo máximo, y lo envía al servidor", async () => {
@@ -50,24 +54,24 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
     await userEvent.type(screen.getByLabelText("Sostener (s)"), "3");
     await userEvent.selectOptions(screen.getByLabelText("Ilustración (opcional)"), "a");
     vi.mocked(apiRequest).mockResolvedValue({ id: "p1", version: 1 } as never);
-    await userEvent.click(screen.getByRole("button", { name: "Guardar protocolo" }));
-    const [, init] = vi.mocked(apiRequest).mock.calls.find(([path]) => path === "/protocols")!;
+    await userEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    const [, init] = vi.mocked(apiRequest).mock.calls.find(([path]) => path === "/protocols/p1")!;
     const body = JSON.parse(String(init?.body));
     expect(body.for_children).toBe(true);
     expect(body.steps).toEqual([{ kind: "practice", stimulus_id: "a", target_expression: "surprise", hold_seconds: 3,
       exposure_seconds: 20, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }]);
   });
 
-  it("propone el sostén y el tiempo máximo que configura el servidor", async () => {
-    data.value["/protocols/practice-defaults"] = { hold_seconds: 4, max_seconds: 30, targets: [] };
+  it("«Agregar un paso» ya no ofrece el ejercicio de práctica: lo reemplaza «Usar el analizador»", async () => {
     await openEditor();
-    expect(screen.getByLabelText("Sostener (s)")).toHaveValue(4);
-    expect(screen.getByLabelText("Tiempo máximo (s)")).toHaveValue(30);
+    expect(screen.queryByRole("button", { name: /^Ejercicio de práctica/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Usar el analizador/ })).toBeInTheDocument();
+    expect(screen.getByText(/1\. Ejercicio de práctica: Alegría/)).toBeInTheDocument();
   });
 
   it("muestra las reglas del dominio en español y no deja guardar", async () => {
     await openEditor();
-    const save = screen.getByRole("button", { name: "Guardar protocolo" });
+    const save = screen.getByRole("button", { name: "Guardar cambios" });
     expect(save).toBeEnabled();
     await userEvent.clear(screen.getByLabelText("Sostener (s)"));
     await userEvent.type(screen.getByLabelText("Sostener (s)"), "12");
@@ -85,7 +89,7 @@ describe("ejercicios de práctica en el editor de protocolos", () => {
     await openEditor();
     expect(screen.getByLabelText("Ilustración (opcional)")).toHaveValue("");
     expect(screen.queryByText(/Necesita una imagen/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Guardar protocolo" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
   });
 
   it("la lista cuenta imágenes y ejercicios", () => {

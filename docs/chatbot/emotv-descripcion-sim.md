@@ -168,7 +168,9 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   lograste!» al sostenerla. No ve etiquetas, probabilidades ni calidad. Quien
   conduce puede saltar un ejercicio o apagar la señal. El resultado se describe
   («Logró la expresión pedida en 3 de 5 ejercicios») y nunca valora a la
-  persona. Es actividad guiada, no terapia ni evaluación diagnóstica. Una
+  persona. Es actividad guiada, no terapia ni evaluación diagnóstica. Ya no se
+  agrega como paso suelto («Usar el analizador» lo reemplaza); los protocolos
+  que lo tienen lo conservan, y sigue dentro del juego con cámara. Una
   variante, «Haz la misma cara», muestra un dibujo como modelo y pide la misma
   expresión que muestra el dibujo; quien conduce ve «Imitar el modelo».
 - **Funciones que no están disponibles**: las actividades de posturas, el
