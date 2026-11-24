@@ -119,6 +119,8 @@ export interface ProtocolStep {
   game_type?: GameType | null;
   rounds?: number | null;
   game_stimulus_ids?: string[];
+  /** Solo una práctica sin imagen: su ronda (1, 2, 3…) en el juego con cámara «Muestra la emoción». */
+  game_round?: number | null;
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -273,6 +275,16 @@ export interface GuidedStep {
   hold_seconds?: number | null;
   option_count?: number | null;
   imitate?: boolean;
+  game_round?: number | null;
+}
+
+/** Ronda del juego con cámara: una estrella por ronda lograda (null si todavía
+ * no termina) y, al terminar la última, cuántas se lograron. Sin puntos. */
+export interface CameraGameRound {
+  round: number;
+  rounds: number;
+  stars: (boolean | null)[];
+  summary: string | null;
 }
 
 /** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
@@ -282,6 +294,7 @@ export interface GuidedPractice {
   imitate?: boolean;
   level: number | null;
   achieved: boolean;
+  camera_game?: CameraGameRound;
 }
 
 export interface GuidedPracticeResult {
@@ -470,6 +483,8 @@ export interface ParticipantPractice {
   achieved: boolean;
   message: string | null;
   frame_interval_ms: number;
+  /** Solo en el juego con cámara «Muestra la emoción». */
+  camera_game?: CameraGameRound;
 }
 
 /** Reconocimiento en la pantalla de la persona: la pregunta, las opciones y, al

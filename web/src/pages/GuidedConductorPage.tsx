@@ -265,8 +265,11 @@ export function GuidedConductorPage() {
     </div>}
 
     {step && state && isPractice && <div className="card form-stack">
-      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica{attemptCaption(state)}{supportsCaption(state)}</p>
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · {state.practice?.camera_game
+        ? `juego con cámara · ronda ${state.practice.camera_game.round} de ${state.practice.camera_game.rounds}`
+        : "ejercicio de práctica"}{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>{step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
+      {state.practice?.camera_game && <p className="muted">«Muestra la emoción»: la persona ve una estrella por cada ronda lograda. Sin puntos.</p>}
       {step.imitate && <p className="muted">La persona ve la imagen y lee «Haz la misma cara».</p>}
       <StepTimer seconds={state.remaining_seconds} />
       {state.practice && <>
@@ -276,6 +279,7 @@ export function GuidedConductorPage() {
         <p role="status">{state.practice.achieved
           ? `Logró la expresión pedida. ${state.waiting_for_conductor ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El ejercicio avanza en un momento."}`
           : `Se registra como lograda cuando la sostiene ${step.hold_seconds} s.`}</p>
+        {state.practice.camera_game?.summary && <p role="status">{state.practice.camera_game.summary}</p>}
       </>}
       {state.waiting_for_conductor && <Button variant="primary" disabled={busy} onClick={() => { void act("/continue"); }}>Seguir</Button>}
       {state.can_repeat && <Button disabled={busy} onClick={() => { void act("/repeat"); }}>Repetir este ejercicio</Button>}
@@ -405,7 +409,7 @@ export function GuidedConductorPage() {
       <h2>Ejercicios de práctica</h2>
       <p>Logró la expresión pedida en {practiceResults.filter((item) => item.outcome === "achieved").length} de {practiceResults.length} {practiceResults.length === 1 ? "ejercicio" : "ejercicios"}{repeated.some((item) => item.step_kind === "practice") ? " (primer intento de cada uno)" : ""}.</p>
       <ul className="card-list">{practiceResults.map((item) => <li key={item.step_index} className="row-card">
-        <span>Paso {item.step_index + 1} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
+        <span>Paso {item.step_index + 1}{state?.steps[item.step_index]?.game_round ? ` · juego con cámara, ronda ${state.steps[item.step_index].game_round}` : ""} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
           {item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}
           {item.feedback_visible ? "" : " · sin la señal visible"}</span>
         {repeatsOf(item.step_index, "practice").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "practice")}</ul>}

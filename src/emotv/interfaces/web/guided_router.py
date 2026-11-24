@@ -126,6 +126,16 @@ class GameView(BaseModel):
     last_round: bool
 
 
+class CameraGameView(BaseModel):
+    """Una ronda del juego con cámara: en qué ronda va, una estrella por cada ronda
+    lograda (None si todavía no termina) y, al final, cuántas logró. Sin puntos."""
+
+    round: int
+    rounds: int
+    stars: list[bool | None]
+    summary: str | None = None
+
+
 class PracticeView(BaseModel):
     """Un ejercicio de práctica: instrucción, nivel de 0 a 1 (nulo si la señal
     está apagada) y si se logró. Nunca la expresión detectada ni probabilidades."""
@@ -135,6 +145,8 @@ class PracticeView(BaseModel):
     achieved: bool
     message: str | None
     frame_interval_ms: int
+    # Solo en una ronda del juego con cámara («Muestra la emoción»).
+    camera_game: CameraGameView | None = None
 
 
 class ParticipantView(BaseModel):
@@ -305,7 +317,11 @@ def create_guided_router(
         hidden |= {"supports"} if view.supports is None else set()
         # Una estación de examen no recibe la actividad: no sabe qué se mide.
         hidden |= {"activity"} if view.activity is None else set()
-        return view.model_dump(exclude=hidden)
+        shown = view.model_dump(exclude=hidden)
+        # La ronda del juego con cámara solo aparece en el juego: los demás ejercicios quedan como antes.
+        if shown.get("practice") is not None and shown["practice"].get("camera_game") is None:
+            shown["practice"].pop("camera_game", None)
+        return shown
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:

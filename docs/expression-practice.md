@@ -434,6 +434,16 @@ niños ni dice nada sobre el estado emocional de nadie.
 | `a4db041` | Protocolo «Validación con adultos» y exportación CSV agregada (§10); el borrado de voluntarios incluye `practice_results` |
 | (imitar) | «Haz la misma cara»: `ProtocolStep.imitate`, migración `20261104_35_imitation_steps`, botón «Agregar como «Haz la misma cara»» en el editor, «Imitar el modelo» para quien conduce, `imitate` en métricas y línea de tiempo (contrato móvil 4.3) |
 
+| (juego con cámara) | «Muestra la emoción»: `ProtocolStep.game_round`, migración `20261124_45_camera_game`, tarjeta «Juego con cámara: muestra la emoción» en el editor (un bloque de 2 a 6 rondas seguidas que se mueve y se quita entero), estrellas por ronda y «Lograste X de Y caras» en la pantalla de la persona, `game_round` en métricas y línea de tiempo (contrato móvil 4.13) |
+
+**Juego con cámara.** Cada ronda es un ejercicio de práctica sin imagen con su
+número (`game_round` 1, 2, 3…), así que usa el mismo seguimiento, los mismos
+resultados y las mismas métricas. El dominio exige rondas seguidas y al menos
+dos por juego. La pantalla de la persona recibe `practice.camera_game`
+(`round`, `rounds`, `stars` con `true`, `false` o `null` para la ronda en curso,
+y `summary` solo al terminar la última ronda). No hay puntos ni puntaje: las
+estrellas cuentan rondas logradas.
+
 **Flujo.** Quien conduce arma en **Protocolos** un protocolo con uno o más
 ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo
 elige en el **Analizador** y confirma la autorización. Tras la calibración

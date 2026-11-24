@@ -46,6 +46,10 @@ PRACTICE_INSTRUCTIONS = {
 # Imitar un modelo: la ilustración muestra la cara que se pide.
 IMITATION_INSTRUCTION = "Haz la misma cara"
 PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
+# Juego con cámara: al terminar la última ronda se dice cuántas caras se
+# lograron. Describe lo ocurrido; no es un puntaje ni valora a la persona.
+CAMERA_GAME_NAME = "Muestra la emoción"
+CAMERA_GAME_SUMMARY = "Lograste {achieved} de {rounds} caras."
 # Aviso fijo junto a todo resultado de práctica.
 PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "
                    "precisión con niños no está validada. El resultado describe el ejercicio, no el "

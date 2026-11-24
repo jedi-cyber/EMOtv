@@ -32,6 +32,11 @@ MIN_GAME_ROUNDS = 2
 MAX_GAME_ROUNDS = 6
 DEFAULT_GAME_ROUNDS = 3
 DEFAULT_GAME_OPTIONS = 2
+# Juego con cámara («Muestra la emoción»): rondas seguidas de práctica, cada una
+# pide una de las cinco expresiones que estima EMOtv. Sin puntos: cada ronda se
+# logra o no, y al final se dice cuántas se lograron.
+CAMERA_GAME_HOLD_SECONDS = 2
+CAMERA_GAME_ROUND_SECONDS = 20
 # Historia corta de una situación («A Lucía se le cayó su helado»).
 MAX_SITUATION_CHARS = 200
 # Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
@@ -167,6 +172,9 @@ class ProtocolStep:
     game_type: str | None = None
     rounds: int | None = None
     game_stimulus_ids: tuple[str, ...] = ()
+    # Ronda (1, 2, 3…) de un juego con cámara: una práctica sin imagen dentro de
+    # un bloque de rondas seguidas (lo valida Protocol).
+    game_round: int | None = None
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
@@ -183,6 +191,13 @@ class ProtocolStep:
             raise ValueError("Solo un ejercicio de práctica imita un modelo")
         if self.imitate and not (isinstance(self.stimulus_id, str) and self.stimulus_id.strip()):
             raise ValueError("«Haz la misma cara» necesita la imagen del modelo")
+        if self.game_round is not None:
+            if isinstance(self.game_round, bool) or not isinstance(self.game_round, int):
+                raise TypeError("game_round debe ser un entero")
+            if not 1 <= self.game_round <= MAX_GAME_ROUNDS:
+                raise ValueError(f"Un juego con cámara tiene como máximo {MAX_GAME_ROUNDS} rondas")
+            if kind is not StepKind.PRACTICE or self.imitate or self.stimulus_id:
+                raise ValueError("Una ronda del juego con cámara es una práctica sin imagen")
         if self.situation is not None:
             if not isinstance(self.situation, str):
                 raise TypeError("situation debe ser un texto")
@@ -266,6 +281,13 @@ class ProtocolStep:
                    target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate)
 
     @classmethod
+    def camera_game_round(cls, target_expression: str, game_round: int,
+                          hold_seconds: int = CAMERA_GAME_HOLD_SECONDS,
+                          max_seconds: int = CAMERA_GAME_ROUND_SECONDS) -> ProtocolStep:
+        return cls(None, max_seconds, 0, kind=StepKind.PRACTICE, target_expression=target_expression,
+                   hold_seconds=hold_seconds, game_round=game_round)
+
+    @classmethod
     def recognition(cls, stimulus_id: str, max_seconds: int, option_count: int = DEFAULT_RECOGNITION_OPTIONS,
                     target_expression: str | None = None, situation: str | None = None) -> ProtocolStep:
         return cls(stimulus_id, max_seconds, 0, kind=StepKind.RECOGNITION, target_expression=target_expression,
@@ -299,6 +321,10 @@ class ProtocolStep:
         """Las imágenes de una ronda, en el orden en que se guardaron."""
         size = self.images_per_round
         return self.game_stimulus_ids[round_index * size:(round_index + 1) * size]
+
+    @property
+    def is_camera_game(self) -> bool:
+        return self.game_round is not None
 
     @property
     def is_drawing(self) -> bool:
@@ -336,6 +362,37 @@ class ProtocolStep:
     def uses_camera(self) -> bool:
         """Una imagen con captura o un ejercicio de práctica; un reconocimiento, un dibujo o un juego no."""
         return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE)
+
+
+def camera_game_blocks(steps: tuple[ProtocolStep, ...]) -> list[range]:
+    """Los juegos con cámara del protocolo: los índices de cada bloque de rondas."""
+    blocks: list[range] = []
+    start: int | None = None
+    for index, step in enumerate((*steps, None)):
+        round_number = step.game_round if step is not None else None
+        if start is not None and round_number != index - start + 1:
+            blocks.append(range(start, index))
+            start = None
+        if start is None and round_number == 1:
+            start = index
+    return blocks
+
+
+def camera_game_position(steps: tuple[ProtocolStep, ...], index: int) -> tuple[range, int] | None:
+    """El bloque del juego con cámara al que pertenece el paso y su ronda (desde 0)."""
+    for block in camera_game_blocks(steps):
+        if index in block:
+            return block, index - block.start
+    return None
+
+
+def _check_camera_games(steps: tuple[ProtocolStep, ...]) -> None:
+    covered = {index for block in camera_game_blocks(steps) for index in block}
+    rounds = {index for index, step in enumerate(steps) if step.is_camera_game}
+    if rounds != covered:
+        raise ValueError("Las rondas del juego con cámara van seguidas: 1, 2, 3…")
+    if any(len(block) < MIN_GAME_ROUNDS for block in camera_game_blocks(steps)):
+        raise ValueError(f"Un juego con cámara tiene al menos {MIN_GAME_ROUNDS} rondas")
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,6 +465,7 @@ class Protocol:
                 raise ValueError("Un examen simulado no tiene modo accesible ni apoyos, ni se comparte como plantilla")
         elif not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
+        _check_camera_games(steps)
         if (self.approved_at is None) != (self.approved_by_user_id is None):
             raise ValueError("La aprobación requiere fecha y quien aprueba")
         for name in ("created_at", "approved_at", "superseded_at"):

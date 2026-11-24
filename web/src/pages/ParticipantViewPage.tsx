@@ -28,7 +28,9 @@ export function PracticeStage({ practice, imageUrl, readAloud = false }: {
     if (readAloud) speakText(practice.instruction);
     return () => { if (readAloud) stopExerciseSpeech(); };
   }, [readAloud, practice.instruction]);
+  const game = practice.camera_game;
   return <div className="participant-practice">
+    {game && <CameraGameStars game={game} />}
     <p className="participant-instruction">{practice.instruction}</p>
     {imageUrl && <img className="participant-illustration" src={imageUrl} alt="Imagen de apoyo" />}
     {level != null && <div className="practice-signal" role="meter" aria-label="Señal del ejercicio"
@@ -36,7 +38,26 @@ export function PracticeStage({ practice, imageUrl, readAloud = false }: {
       style={{ "--practice-level": level } as CSSProperties}>
       <span className="practice-signal-fill" />
     </div>}
-    <p className="participant-achieved" role="status" aria-live="polite">{practice.achieved ? practice.message : ""}</p>
+    <p className="participant-achieved" role="status" aria-live="polite">
+      {[practice.achieved ? practice.message : null, game?.summary].filter(Boolean).join(" ")}</p>
+  </div>;
+}
+
+/**
+ * Juego con cámara: «Ronda 2 de 5» y una estrella por ronda. Llena si se logró,
+ * vacía si terminó sin lograrse y tenue si todavía no se juega. No hay puntos
+ * ni comparación; al final, «Lograste 3 de 5 caras».
+ */
+function CameraGameStars({ game }: { game: NonNullable<ParticipantPractice["camera_game"]> }) {
+  const achieved = game.stars.filter((item) => item === true).length;
+  return <div className="camera-game">
+    <p className="matching-game-round">Ronda {game.round} de {game.rounds}</p>
+    <p className="camera-game-stars" role="img"
+      aria-label={`${achieved} ${achieved === 1 ? "cara lograda" : "caras logradas"} de ${game.rounds}`}>
+      {game.stars.map((item, index) => <span key={index} aria-hidden="true"
+        className={`camera-game-star${item === true ? " is-achieved" : item === false ? " is-missed" : ""}`}>
+        {item === true ? "★" : "☆"}</span>)}
+    </p>
   </div>;
 }
 

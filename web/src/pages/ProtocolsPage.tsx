@@ -17,6 +17,7 @@ import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_P
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 import { toast } from "../components/Toaster";
+import { CAMERA_GAME, cameraGameSteps, itemRange, moveItem, removeItem, replaceItem } from "../stimuli/cameraGame";
 
 interface Draft {
   name: string;
@@ -44,7 +45,7 @@ function anySupport(supports: ProtocolSupports) {
 }
 
 /** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
-type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "practice" | "imitation" | "stimulus";
+type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "camera" | "practice" | "imitation" | "stimulus";
 type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "stimulus">;
 const stepCatalog: { group: string; hint: string; items: { key: StepChoice; title: string; text: string; image?: boolean }[] }[] = [
   { group: "Juegos", hint: "Sin cámara: se juegan con botones.", items: [
@@ -56,6 +57,7 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
     { key: "drawing", title: "Dibujo", text: "Dibuja una cara y señala qué emoción quiso representar. El dibujo no se guarda." },
   ] },
   { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
+    { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
     { key: "practice", title: "Ejercicio de práctica", text: "Se pide una expresión y una señal simple crece al acercarse." },
     { key: "imitation", title: "Haz la misma cara", text: "Ve una imagen y hace la misma cara.", image: true },
     { key: "stimulus", title: "Mostrar una imagen", text: "Se muestra una imagen mientras se estima la expresión facial.", image: true },
@@ -128,11 +130,13 @@ export function ProtocolsPage() {
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
     update({ steps: draft.steps.map((step, position) => position === index ? { ...step, ...changes } : step) });
   }
-  function move(index: number, offset: number) {
-    const steps = [...draft.steps];
-    const [step] = steps.splice(index, 1);
-    steps.splice(index + offset, 0, step);
-    update({ steps });
+  // Un juego con cámara se mueve y se quita entero: sus rondas van seguidas.
+  function move(index: number, offset: -1 | 1) { update({ steps: moveItem(draft.steps, index, offset) }); }
+  function cameraGameSeconds() {
+    return accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, CAMERA_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : CAMERA_GAME.exposure_seconds;
+  }
+  function addCameraGame() {
+    update({ steps: [...draft.steps, ...cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds())] });
   }
   function addStep() {
     if (!choice) return;
@@ -180,6 +184,7 @@ export function ProtocolsPage() {
     setPicking(null);
     if (key === "matching" || key === "similar") addGame(key);
     else if (key === "drawing") addDrawing();
+    else if (key === "camera") addCameraGame();
     else addPractice();
   }
   function addPicked() {
@@ -338,18 +343,50 @@ export function ProtocolsPage() {
           <li className="protocol-moment">
             <h4>Antes de empezar</h4>
             {questionnaireSelect("pre")}
-            <p className="muted">Se responde antes de la calibración. Se aplica la versión vigente del cuestionario.</p>
+            <p className="muted">Se responde antes de los pasos. Se aplica la versión vigente del cuestionario.</p>
           </li>
           <li className="protocol-moment">
             <h4>Pasos{draft.steps.length > 0 ? ` (${draft.steps.length})` : ""}</h4>
             {draft.steps.length === 0 && <p className="muted">Todavía no hay pasos. Elige al menos uno aquí abajo.</p>}
             <ol className="card-list protocol-steps">{draft.steps.map((step, index) => {
               const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
+              const [itemStart, itemEnd] = itemRange(draft.steps, index);
               const order = <>
-                <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
-                <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
-                <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
+                <Button size="sm" disabled={itemStart === 0} onClick={() => move(index, -1)}>Subir</Button>
+                <Button size="sm" disabled={itemEnd >= draft.steps.length} onClick={() => move(index, 1)}>Bajar</Button>
+                <Button size="sm" variant="ghost" onClick={() => update({ steps: removeItem(draft.steps, index) })}>Quitar</Button>
               </>;
+              if (step.game_round) {
+                // Las rondas de un juego con cámara se muestran como un solo paso, en la primera.
+                if (itemStart !== index) return null;
+                const block = draft.steps.slice(itemStart, itemEnd);
+                const hold = step.hold_seconds ?? CAMERA_GAME.hold_seconds;
+                const updateBlock = (changes: Partial<ProtocolStep>) => update({ steps: replaceItem(draft.steps, index,
+                  block.map((round) => ({ ...round, ...changes }))) });
+                const problem = block.map(practiceProblem).find((item) => item !== null);
+                return <li key={`camera-game-${index}`} className="row-card protocol-step">
+                  <div>
+                    <strong>{index + 1}–{itemEnd}. Juego con cámara: muestra la emoción</strong>
+                    <span>En cada ronda se pide una emoción y una barra crece al acercarse. Si la sostiene, gana una estrella; al final se ve «Lograste X de {block.length} caras». Sin puntos.</span>
+                    <span className="muted">Emociones: {block.map((round) => practiceTargetNames[round.target_expression ?? ""] ?? "—").join(", ")}.</span>
+                    {problem && <span role="alert">{problem}.</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Rondas<select value={block.length} onChange={(event) => update({ steps: replaceItem(draft.steps, index,
+                      cameraGameSteps(Number(event.target.value), hold, step.exposure_seconds)) })}>
+                      {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
+                        .map((count) => <option key={count} value={count}>{count}</option>)}
+                    </select></label>
+                    <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={hold}
+                      onChange={(event) => updateBlock({ hold_seconds: Number(event.target.value) })} /></label>
+                    <label>Tiempo por ronda (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateBlock({ exposure_seconds: Number(event.target.value) })} /></label>
+                    <Button size="sm" onClick={() => update({ steps: replaceItem(draft.steps, index,
+                      cameraGameSteps(block.length, hold, step.exposure_seconds)) })}>Otras emociones</Button>
+                    {order}
+                  </div>
+                </li>;
+              }
               if (step.kind === "practice" && step.imitate) {
                 const problem = practiceProblem(step);
                 const unsuitableModel = draft.for_children && stimulus != null && !suitableForChildren(stimulus);

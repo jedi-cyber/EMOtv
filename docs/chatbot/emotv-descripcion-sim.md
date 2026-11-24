@@ -106,6 +106,12 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   Si elige otra, se la invita a mirar otra vez; tras dos intentos, se muestra
   la respuesta con una explicación sencilla. «Ayuda» quita una opción una vez
   por ronda.
+- **Juego con cámara «Muestra la emoción»** (tarjeta en «Expresión con la
+  cámara»), de 2 a 6 rondas: en cada ronda se pide una de las cinco expresiones
+  que estima EMOtv y una barra crece al acercarse. Si la sostiene unos segundos,
+  aparece una estrella; al final se ve «Lograste X de Y caras». **Sin puntos**:
+  solo describe lo ocurrido, no valora a la persona y no muestra la expresión
+  detectada. Las imágenes de la cámara no se guardan.
 - **Repetir un paso**: quien conduce puede pulsar «Repetir este paso», «Repetir
   este ejercicio», «Repetir este dibujo» o «Repetir el juego».
 - **Apoyos del protocolo**: «Modo accesible» junta pictogramas, botones

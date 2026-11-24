@@ -490,6 +490,9 @@ PROTOCOL_STEP_PRACTICE = (
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
     "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "
     "AND (kind = 'game' OR (game_type IS NULL AND rounds IS NULL AND game_stimulus_ids IS NULL))")
+# Ronda de un juego con cámara: una práctica sin imagen (migración 20261124_45).
+# Solo la propia columna (migración 20261124_45); el resto lo valida el dominio.
+PROTOCOL_STEP_GAME_ROUND = "game_round IS NULL OR game_round BETWEEN 1 AND 6"
 
 
 class ProtocolStepRecord(Base):
@@ -502,6 +505,7 @@ class ProtocolStepRecord(Base):
         CheckConstraint(PROTOCOL_STEP_KIND, name="ck_protocol_steps_kind"),
         CheckConstraint(PROTOCOL_STEP_STIMULUS, name="ck_protocol_steps_stimulus"),
         CheckConstraint(PROTOCOL_STEP_PRACTICE, name="ck_protocol_steps_practice"),
+        CheckConstraint(PROTOCOL_STEP_GAME_ROUND, name="ck_protocol_steps_game_round"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     protocol_id: Mapped[str] = mapped_column(
@@ -524,6 +528,8 @@ class ProtocolStepRecord(Base):
     game_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     game_stimulus_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Ronda de un juego con cámara («Muestra la emoción»).
+    game_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

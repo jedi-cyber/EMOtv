@@ -63,6 +63,8 @@ from emotv.domain.guided_session import (
     PAIRING_LENGTH,
     PAIRING_SECONDS,
     PRACTICE_ACHIEVED_MESSAGE,
+    CAMERA_GAME_NAME,
+    CAMERA_GAME_SUMMARY,
     IMITATION_INSTRUCTION,
     PRACTICE_INSTRUCTIONS,
     QUALITY_RETRY_SECONDS,
@@ -113,7 +115,8 @@ from emotv.domain.guided_session import (
     VerbalResponse,
 )
 from emotv.domain.protocol import (ACCESSIBLE_PAUSE_FACTOR, GAME_SIMILAR, NO_TIME_LIMIT_SECONDS,
-                                   WAIT_PAUSE_SECONDS, PauseMode, Protocol, ProtocolStep, StepKind)
+                                   WAIT_PAUSE_SECONDS, PauseMode, Protocol, ProtocolStep, StepKind,
+                                   camera_game_position)
 from emotv.domain.session import EmotionalSession
 from emotv.domain.session_state import SessionState
 from emotv.domain.stimulus import Stimulus, StimulusKind
@@ -756,9 +759,40 @@ class GuidedSessionService:
                        and run.step_started_at is not None and tracker.started_at == run.step_started_at.timestamp())
             level = 1.0 if achieved else round(tracker.level, 2) if current else 0.0
         instruction = IMITATION_INSTRUCTION if step.imitate else PRACTICE_INSTRUCTIONS[step.target_expression]
-        return {"instruction": instruction, "level": level, "achieved": achieved,
-                "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
-                "frame_interval_ms": self.practice.frame_interval_ms}
+        shown = {"instruction": instruction, "level": level, "achieved": achieved,
+                 "message": PRACTICE_ACHIEVED_MESSAGE if achieved else None,
+                 "frame_interval_ms": self.practice.frame_interval_ms}
+        # Solo en una ronda del juego con cámara: fuera del juego, el ejercicio no cambia.
+        game = self._camera_game(run, step, achieved)
+        if game is not None:
+            shown["camera_game"] = game
+        return shown
+
+    def _camera_game(self, run: GuidedRun, step: ProtocolStep, achieved: bool) -> dict[str, Any] | None:
+        """En una ronda del juego con cámara: en qué ronda va, si logró cada ronda
+        ya jugada (una estrella por cada una; None si todavía no termina) y, al
+        terminar la última, cuántas logró. Sin puntos ni comparación."""
+        if not step.is_camera_game:
+            return None
+        position = camera_game_position(self._protocol(self._session(run.session_id)).steps, run.step_index)
+        if position is None:
+            return None
+        block, current = position
+        done = {item.step_index: item.outcome is PracticeOutcome.ACHIEVED
+                for item in self.repository.list_practice_results(run.session_id) if item.step_index in block}
+        ended = run.next_capture_due is not None   # en la pausa: logrado o vencido
+        stars: list[bool | None] = []
+        for index in block:
+            if index < run.step_index:
+                stars.append(done.get(index, False))
+            elif index == run.step_index:
+                stars.append(achieved if ended else None)
+            else:
+                stars.append(None)
+        last = current == len(block) - 1
+        summary = (CAMERA_GAME_SUMMARY.format(achieved=sum(item is True for item in stars), rounds=len(block))
+                   if last and ended else None)
+        return {"round": current + 1, "rounds": len(block), "stars": stars, "summary": summary}
 
     def _practice_achieved(self, run: GuidedRun, step: ProtocolStep) -> bool:
         """En pausa tras un logro. La pausa tras vencer el tiempo empieza justo en
@@ -772,8 +806,11 @@ class GuidedSessionService:
         """Lo que ve quien conduce en un ejercicio: la expresión pedida, el nivel
         en vivo (aunque la señal de la persona esté apagada) y si se logró."""
         participant = self._participant_practice(replace(run, practice_feedback=True), step)
-        return {"target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
-                "imitate": step.imitate, "level": participant["level"], "achieved": participant["achieved"]}
+        shown = {"target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
+                 "imitate": step.imitate, "level": participant["level"], "achieved": participant["achieved"]}
+        if "camera_game" in participant:
+            shown["camera_game"] = participant["camera_game"]
+        return shown
 
     def practice_frame_drops_when_busy(self, token: str) -> bool:
         """Si el cuadro de esta pantalla es de un ejercicio de práctica en curso:
@@ -1306,7 +1343,8 @@ class GuidedSessionService:
             else:
                 kind, name = {StepKind.RECOGNITION: ("recognition", "¿Qué emoción es?"),
                               StepKind.DRAWING: ("drawing", "Dibuja una cara"),
-                              StepKind.PRACTICE: ("practice", "Práctica de expresiones")}.get(
+                              StepKind.PRACTICE: ("practice", CAMERA_GAME_NAME if step.is_camera_game
+                                                  else "Práctica de expresiones")}.get(
                     step.kind, ("stimulus", "Mira la imagen"))
             return {"kind": kind, "name": name, "number": run.step_index + 1, "total": total}
         return {"kind": "waiting", "name": "En un momento empezamos", "number": None, "total": total}
@@ -1537,7 +1575,7 @@ class GuidedSessionService:
                        "step_kind": item.kind.value, "target_expression": item.target_expression,
                        "hold_seconds": item.hold_seconds, "option_count": item.option_count,
                        "situation": item.situation, "imitate": item.imitate,
-                       "game_type": item.game_type, "rounds": item.rounds}
+                       "game_type": item.game_type, "rounds": item.rounds, "game_round": item.game_round}
                       for index, item in enumerate(steps)],
             # Nulo sin límite de tiempo: el paso no vence.
             "remaining_seconds": (max(0.0, step.seconds_limit - self._seconds(run.step_started_at))

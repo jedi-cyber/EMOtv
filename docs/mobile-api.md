@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.12 (2026-11-07). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona) y la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.13 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
@@ -883,7 +883,7 @@ aplicados se informan aparte.
 
 | Campo | Tipo | Nulo | Notas |
 | --- | --- | --- | --- |
-| `exercises[]` | objeto | no | Por ejercicio, en orden: `step_index` (int), `target_expression` (string), `hold_seconds` (int), `max_seconds` (int), `imitate` (boolean, desde 4.3; puede faltar en un servidor anterior: tratarlo como `false`), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si la sesión no llegó a él), `seconds_to_achieve` (number, nulo), `peak_level` (number de 0 a 1, nulo), `relative_to_calibration` (boolean, nulo), `feedback_visible` (boolean, nulo) |
+| `exercises[]` | objeto | no | Por ejercicio, en orden: `step_index` (int), `target_expression` (string), `hold_seconds` (int), `max_seconds` (int), `imitate` (boolean, desde 4.3; puede faltar en un servidor anterior: tratarlo como `false`), `game_round` (int, nulo; desde 4.13: ronda del juego con cámara «Muestra la emoción»), `outcome` ([`practice_outcome`](#valores-enumerados), nulo si la sesión no llegó a él), `seconds_to_achieve` (number, nulo), `peak_level` (number de 0 a 1, nulo), `relative_to_calibration` (boolean, nulo), `feedback_visible` (boolean, nulo) |
 | `totals` | [`PracticeTotals`](#practicetotals) | no | Además: `exercises` (int, todos los del protocolo) y `not_reached` (int) |
 | `by_target[]` | [`PracticeRow`](#practicerow) | no | Por expresión pedida, con `target_expression` |
 | `notice` | string | no | Aviso fijo: se muestra siempre junto a los ejercicios |
@@ -1075,6 +1075,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.13 | 2026-11-24 | Compatible con la 4.12: solo campos nuevos y opcionales. `game_round` (int, nulo) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio es una ronda del juego con cámara «Muestra la emoción». En la pantalla de la persona, `practice.camera_game` (`round`, `rounds`, `stars`, `summary`). Sin puntos. No hay rutas nuevas |
 | 4.12 | 2026-11-07 | Solo documentación, compatible con la 4.11: «Busca la misma emoción» (`game_type` `similar`) en Android, con `GET /participant-view/{token}/game/option/{key}`. No hay rutas ni campos nuevos |
 | 4.11 | 2026-11-07 | Solo documentación, compatible con la 4.10: el bloque `game` de `GET /participant-view/{token}`, `GET /participant-view/{token}/stimulus` y `POST /participant-view/{token}/game` para el juego de emparejar en Android. No hay rutas ni campos nuevos |
 | 4.10 | 2026-11-07 | Solo documentación, compatible con la 4.9: el bloque `drawing` de `GET /participant-view/{token}` y `POST /participant-view/{token}/answer` para el dibujo táctil en Android. El dibujo no sale del dispositivo. No hay rutas ni campos nuevos |

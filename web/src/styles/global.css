@@ -219,6 +219,12 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-actions { display: flex; justify-content: center; gap: var(--space-md); }
 .participant-camera { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 /* Vista previa: un espejo pequeño en una esquina; no tapa la instrucción ni el botón de parar. */
+/* Juego con cámara: una estrella por ronda; la lograda se llena (forma y color, no solo color). */
+.camera-game { display: grid; justify-items: center; gap: var(--space-xs); }
+.camera-game-stars { display: flex; gap: var(--space-xs); margin: 0; font-size: 2.25rem; line-height: 1; }
+.camera-game-star { color: var(--color-slate); opacity: 0.45; }
+.camera-game-star.is-missed { opacity: 1; }
+.camera-game-star.is-achieved { color: var(--color-primary); opacity: 1; }
 .participant-camera--preview { position: fixed; top: var(--space-md); right: var(--space-md); z-index: 1; width: clamp(9rem, 22vw, 16rem); height: auto; aspect-ratio: 4 / 3; object-fit: cover; opacity: 1; transform: scaleX(-1); border-radius: var(--radius-lg); background: var(--color-ink); }
 /* Práctica de expresiones: instrucción grande, figura que crece con el nivel
    (un solo color para todas las expresiones) y el botón de parar siempre a la vista. */

@@ -205,6 +205,8 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
         exercises.append({
             "step_index": index, "target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
             "max_seconds": step.exposure_seconds, "imitate": step.imitate,
+            # Ronda de un juego con cámara («Muestra la emoción»), o None.
+            "game_round": step.game_round,
             # None: la sesión no llegó a este ejercicio.
             "outcome": item.outcome.value if item else None,
             "seconds_to_achieve": item.seconds_to_achieve if item else None,
@@ -404,6 +406,8 @@ def _plural(count: int, one: str, many: str) -> str:
 
 def _activity(kind: str, exercise: dict[str, Any]) -> str:
     if kind == "practice":
+        if exercise.get("game_round"):
+            return f"Juego con cámara, ronda {exercise['game_round']}"
         return "Haz la misma cara" if exercise.get("imitate") else "Práctica facial"
     if kind == "game":
         return GAME_NAMES.get(exercise.get("game_type") or "", "Juego")
