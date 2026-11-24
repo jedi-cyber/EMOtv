@@ -246,14 +246,16 @@ describe("salida accidental", () => {
     expect(screen.getByText("Mira la imagen y dibuja una cara con la emoción que sientes.")).toBeInTheDocument();
     stroke(canvas(), [[10, 10], [60, 60]]);
     await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
-    await userEvent.click(screen.getByRole("button", { name: /Tristeza/ }));
+    // Solo se dibuja: no se pregunta qué emoción se quiso dibujar.
+    expect(screen.queryByText("¿Qué emoción quisiste dibujar?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Tristeza/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Terminaste el dibujo.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Siguiente imagen" }));
 
     expect(screen.getByText("Imagen 2 de 2")).toBeInTheDocument();
     expect(screen.getByTestId("imagen-a")).toBeInTheDocument();
     stroke(canvas(), [[10, 10], [60, 60]]);
     await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
-    await userEvent.click(screen.getByRole("button", { name: /Alegría/ }));
     await userEvent.click(screen.getByRole("button", { name: "Terminar" }));
     expect(screen.getByRole("heading", { name: "Dibuja una cara" })).toBeInTheDocument();
   });

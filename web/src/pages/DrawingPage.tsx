@@ -15,8 +15,9 @@ export const MAX_DRAWING_IMAGES = 10;
  * Actividad de dibujo a pantalla completa, con el aspecto de la pantalla de la
  * persona. Antes de empezar, quien conduce elige imágenes aprobadas (la persona
  * dibuja una cara a partir de cada una, en el orden elegido) o empieza sin
- * imagen. No crea una sesión ni usa la cámara, y no registra nada: el dibujo y
- * la emoción elegida quedan solo en esta pantalla mientras está abierta.
+ * imagen. Solo se dibuja: no se pregunta qué emoción se quiso dibujar. No crea
+ * una sesión ni usa la cámara, y no registra nada: el dibujo queda solo en esta
+ * pantalla mientras está abierta.
  */
 export function DrawingPage() {
   const navigate = useNavigate();
@@ -74,7 +75,7 @@ export function DrawingPage() {
       </div>
       : <div className="participant-view-stage drawing-stage">
         {image && <p className="muted" role="status">Imagen {index + 1} de {plan.length}</p>}
-        <DrawingActivity key={image?.id ?? "sin-imagen"} onDrawingChange={setHasDrawing}
+        <DrawingActivity key={image?.id ?? "sin-imagen"} onDrawingChange={setHasDrawing} askEmotion={false}
           model={image ? <StimulusImage id={image.id} alt="Imagen para mirar antes de dibujar" className="drawing-model" /> : undefined}
           next={image ? (last ? { label: "Terminar", onSelect: restart }
             : { label: "Siguiente imagen", onSelect: () => { setIndex(index + 1); setHasDrawing(false); } }) : undefined} />
