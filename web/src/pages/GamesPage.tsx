@@ -13,7 +13,7 @@ export function GamesPage() {
     <div className="card-grid">
       <article className="card">
         <h2>Dibuja una cara</h2>
-        <p>La persona dibuja una expresión y señala qué emoción quiso mostrar. No crea una sesión, no usa la cámara y no guarda el dibujo.</p>
+        <p>Elige imágenes para que la persona dibuje una cara a partir de cada una, o dibuja sin imagen. Después señala qué emoción quiso mostrar. No crea una sesión, no usa la cámara y no guarda el dibujo.</p>
         <ButtonLink variant="primary" to={paths.drawing}>Actividad de dibujo</ButtonLink>
       </article>
       <article className="card">

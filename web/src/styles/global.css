@@ -288,6 +288,14 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
    desplaza ni amplía la página. Hoja siempre blanca, para que todo color se vea. */
 .drawing-view { overscroll-behavior: contain; }
 .drawing-stage { align-content: start; }
+.drawing-setup { display: grid; gap: var(--space-md); width: min(100%, 56rem); text-align: left; }
+.drawing-setup h1 { margin: 0; }
+.drawing-pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: var(--space-sm); margin: 0; padding: 0; list-style: none; }
+.drawing-pick { position: relative; display: grid; justify-items: center; gap: var(--space-xs); width: 100%; padding: var(--space-sm); border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); cursor: pointer; font-size: var(--text-body-sm); }
+.drawing-pick .stimulus-thumb { width: 100%; height: 5.5rem; }
+.drawing-pick[aria-pressed="true"] { border-color: var(--color-primary); box-shadow: inset 0 0 0 2px var(--color-primary); }
+.drawing-pick:disabled { color: var(--color-steel); cursor: not-allowed; }
+.drawing-pick-order { position: absolute; top: var(--space-xs); right: var(--space-xs); display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font-weight: var(--weight-bold); }
 .drawing-activity { display: grid; justify-items: center; gap: var(--space-md); width: min(100%, 56rem); }
 .drawing-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-sm); }
 .drawing-tools { display: grid; gap: var(--space-sm); width: 100%; }

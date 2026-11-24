@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { speakText, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { Button } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -10,6 +10,8 @@ import {
 } from "./strokes";
 
 export const DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción.";
+/** Con una imagen para mirar (igual que DRAWING_IMAGE_INSTRUCTION del servidor). */
+export const DRAWING_IMAGE_INSTRUCTION = "Mira la imagen y dibuja una cara con la emoción que sientes.";
 export const DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?";
 /** Las emociones para señalar lo que se quiso dibujar; el dibujo no se clasifica. */
 export const DRAWING_EMOTIONS = ["happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral"];
@@ -40,11 +42,15 @@ export const DRAWING_TIME_UP = "Terminó el tiempo para dibujar.";
  * pantalla: se borra al limpiar, al dibujar otra vez y al salir o recargar. No
  * se envía al servidor ni se guarda en el navegador, y EMOtv no lo interpreta.
  */
-export function DrawingActivity({ onDrawingChange, session }: {
+export function DrawingActivity({ onDrawingChange, session, model, next }: {
   /** Avisa si hay un dibujo en pantalla (para confirmar antes de salir). */
   onDrawingChange?(hasDrawing: boolean): void;
   /** Como paso de un protocolo; sin él, la actividad suelta (se puede dibujar otra vez). */
   session?: DrawingSessionStep;
+  /** Actividad suelta: imagen que la persona mira antes de dibujar; no se compara con el dibujo. */
+  model?: ReactNode;
+  /** Actividad suelta con varias imágenes: pasar a la siguiente al terminar. */
+  next?: { label: string; onSelect(): void };
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -72,7 +78,7 @@ export function DrawingActivity({ onDrawingChange, session }: {
     setPhase("done");
     setChosen(session?.chosen ?? null);
   }, [sessionDone, session?.chosen]);
-  const instruction = session?.instruction ?? DRAWING_INSTRUCTION;
+  const instruction = session?.instruction ?? (model ? DRAWING_IMAGE_INSTRUCTION : DRAWING_INSTRUCTION);
   const question = session?.question ?? DRAWING_QUESTION;
   const options = session?.options ?? DRAWING_EMOTIONS.map((key) => ({ key, label: practiceTargetNames[key] }));
   const readAloud = Boolean(session?.readAloud);
@@ -210,6 +216,7 @@ export function DrawingActivity({ onDrawingChange, session }: {
     </div>
 
     {session?.imageUrl && <img className="drawing-model" src={session.imageUrl} alt="Imagen para mirar antes de dibujar" />}
+    {!session && model}
 
     {/* Primero el lienzo; debajo, las herramientas al alcance del pulgar. */}
     <div className="drawing-surface">
@@ -268,7 +275,10 @@ export function DrawingActivity({ onDrawingChange, session }: {
         {session ? (session.message ?? (session.finished && !session.chosen ? DRAWING_TIME_UP : ""))
           : chosen ? `Dibujaste ${practiceTargetNames[chosen].toLowerCase()}.` : ""}</p>
       {/* En una sesión, repetir el paso lo decide quien conduce. */}
-      {!session && <Button variant="primary" onClick={again}>Dibujar otra vez</Button>}
+      {!session && <div className="inline-actions">
+        {next && <Button variant="primary" onClick={next.onSelect}>{next.label}</Button>}
+        <Button variant={next ? "secondary" : "primary"} onClick={again}>Dibujar otra vez</Button>
+      </div>}
     </div>}
 
     <ConfirmDialog open={confirmClear} title="Limpiar el lienzo" message="Se borrará todo el dibujo. ¿Quieres limpiarlo?"
