@@ -107,7 +107,7 @@ class StepKind(str, Enum):
     Reconocimiento: se muestra una imagen emocional y la persona elige qué
     emoción es entre unas pocas opciones. Juego: varias rondas en las que la
     persona relaciona una imagen con el nombre de su emoción. Dibujo: la persona dibuja una cara
-    en su pantalla y señala qué emoción quiso representar; el dibujo no sale
+    en su pantalla y pulsa «Terminé», sin señalar una emoción; el dibujo no sale
     del dispositivo ni se interpreta."""
 
     STIMULUS = "stimulus"

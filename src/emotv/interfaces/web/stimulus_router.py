@@ -56,7 +56,7 @@ class StepModel(BaseModel):
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
     # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
     # una imagen emocional y la persona elige qué emoción es. «drawing»: la
-    # persona dibuja una cara y señala qué emoción quiso representar. «game»: juego
+    # persona dibuja una cara y pulsa «Terminé». «game»: juego
     # de emparejar imágenes con el nombre de su emoción.
     kind: Literal["stimulus", "practice", "recognition", "drawing", "game"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)

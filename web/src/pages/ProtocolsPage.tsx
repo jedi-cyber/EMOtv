@@ -519,8 +519,8 @@ export function ProtocolsPage() {
                   <div>
                     <strong>{index + 1}. Dibujo: {stimulus ? `la emoción que siente al ver «${stimulus.title}»` : "una cara con una emoción"}</strong>
                     <span>{stimulus
-                      ? "La persona mira la imagen, dibuja una cara con la emoción que siente y después señala cuál es."
-                      : "La persona dibuja en su pantalla y después señala qué emoción quiso dibujar."} El dibujo no se envía ni se guarda, y EMOtv no lo compara con la imagen.</span>
+                      ? "La persona mira la imagen, dibuja una cara con la emoción que siente y pulsa «Terminé»."
+                      : "La persona dibuja una cara en su pantalla y pulsa «Terminé»."} El dibujo no se envía ni se guarda, y EMOtv no lo compara con la imagen.</span>
                     {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La imagen ya no está disponible: elige otra o quítala.</span>}
                     {draft.for_children && stimulus != null && !suitableForChildren(stimulus) && <span>La imagen no se puede usar con niños: quítala o elige una «Para niños».</span>}
                   </div>
