@@ -479,7 +479,8 @@ class QuestionnaireResponseRecord(Base):
 # pedida, y el único paso que puede durar más de 120 s (hasta 600).
 PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game', 'analyzer')"
 PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game', 'analyzer') OR stimulus_id IS NOT NULL"
-PROTOCOL_STEP_EXPOSURE = "exposure_seconds BETWEEN 1 AND 600 AND (kind = 'analyzer' OR exposure_seconds <= 120)"
+# Solo la propia columna; el tope de 120 s de los demás pasos va en ck_protocol_steps_practice.
+PROTOCOL_STEP_EXPOSURE = "exposure_seconds BETWEEN 1 AND 600"
 # Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
     "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
@@ -495,6 +496,7 @@ PROTOCOL_STEP_PRACTICE = (
     "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL) OR "
     "(kind = 'analyzer' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count IS NULL AND capture_after_seconds = 0)) "
+    "AND (kind = 'analyzer' OR exposure_seconds <= 120) "
     "AND (situation IS NULL OR kind = 'recognition') "
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
     "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "

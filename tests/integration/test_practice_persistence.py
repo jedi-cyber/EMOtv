@@ -219,8 +219,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
     guided.save_practice_result(result())
     assert guided.list_practice_results("ses1") == (result(),)
     for values in ({"stimulus_id": None, "kind": "stimulus"},
-                   # Las restricciones anteriores siguen vigentes.
-                   {"stimulus_id": "s1", "kind": "stimulus", "exposure_seconds": 200}):
+                   # Las restricciones anteriores siguen vigentes (ck_protocol_steps_exposure
+                   # llega hasta 600 s; el tope de 120 de una imagen lo pone 20261124_50).
+                   {"stimulus_id": "s1", "kind": "stimulus", "exposure_seconds": 700}):
         with pytest.raises(IntegrityError):
             with factory.begin() as db:
                 db.add(ProtocolStepRecord(**{"id": "x2", "protocol_id": "p1", "position": 9, "exposure_seconds": 10,
