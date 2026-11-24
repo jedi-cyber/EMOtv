@@ -206,6 +206,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
     # La tabla recreada por esta migración recibe también la de los intentos (20261106_39).
     from tests.integration.test_step_attempts import bring_to_current
     bring_to_current(engine, "practice_results")
+    # Y la valoración de quien conduce (20261124_46).
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE practice_results ADD COLUMN conductor_stars INTEGER"))
     assert {"kind", "target_expression", "hold_seconds"} <= _step_columns(engine)
     found = PostgresProtocolRepository(factory).get("p1")
     # Los pasos existentes quedan como estímulos, igual que antes.

@@ -481,7 +481,7 @@ PROTOCOL_STEP_PRACTICE = (
     "AND option_count IS NULL) OR "
     "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0) OR "
-    "(kind = 'drawing' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "(kind = 'drawing' AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count IS NULL AND capture_after_seconds = 0) OR "
     "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type IN ('matching', 'similar') "
@@ -493,6 +493,8 @@ PROTOCOL_STEP_PRACTICE = (
 # Ronda de un juego con cámara: una práctica sin imagen (migración 20261124_45).
 # Solo la propia columna (migración 20261124_45); el resto lo valida el dominio.
 PROTOCOL_STEP_GAME_ROUND = "game_round IS NULL OR game_round BETWEEN 1 AND 6"
+# Valoración de quien conduce, de 1 a 5 estrellas (migración 20261124_46).
+PRACTICE_CONDUCTOR_STARS = "conductor_stars IS NULL OR conductor_stars BETWEEN 1 AND 5"
 
 
 class ProtocolStepRecord(Base):
@@ -530,6 +532,8 @@ class ProtocolStepRecord(Base):
     game_stimulus_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     # Ronda de un juego con cámara («Muestra la emoción»).
     game_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # «Juego: imita la cara»: quien conduce valora la imitación (migración 20261124_46).
+    conductor_rating: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -745,6 +749,7 @@ class PracticeResultRecord(Base):
         CheckConstraint("(outcome = 'achieved') = (seconds_to_achieve IS NOT NULL)",
                         name="ck_practice_results_achieved"),
         CheckConstraint("peak_level >= 0 AND peak_level <= 1", name="ck_practice_results_peak"),
+        CheckConstraint(PRACTICE_CONDUCTOR_STARS, name="ck_practice_results_conductor_stars"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -764,6 +769,8 @@ class PracticeResultRecord(Base):
     emotion_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # «Juego: imita la cara»: la valoración de quien conduce (migración 20261124_46).
+    conductor_stars: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class SessionReportRecord(Base):

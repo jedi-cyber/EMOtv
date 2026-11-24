@@ -45,8 +45,8 @@ function anySupport(supports: ProtocolSupports) {
 }
 
 /** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
-type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "camera" | "practice" | "imitation" | "stimulus";
-type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "stimulus">;
+type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "camera" | "rated" | "practice" | "imitation" | "stimulus";
+type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
 const stepCatalog: { group: string; hint: string; items: { key: StepChoice; title: string; text: string; image?: boolean }[] }[] = [
   { group: "Juegos", hint: "Sin cámara: se juegan con botones.", items: [
     { key: "matching", title: "Juego: empareja la emoción", text: "Relaciona cada imagen con el nombre de su emoción." },
@@ -58,12 +58,18 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
   ] },
   { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
     { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
+    { key: "rated", title: "Juego: imita la cara", text: "Ve una imagen y hace la misma cara. La cámara estima la expresión y tú la valoras de 1 a 5 estrellas; la persona no ve tu valoración.", image: true },
     { key: "practice", title: "Ejercicio de práctica", text: "Se pide una expresión y una señal simple crece al acercarse." },
     { key: "imitation", title: "Haz la misma cara", text: "Ve una imagen y hace la misma cara.", image: true },
     { key: "stimulus", title: "Mostrar una imagen", text: "Se muestra una imagen mientras se estima la expresión facial.", image: true },
   ] },
 ];
-const imageChoiceTitle: Record<ImageChoice, string> = { recognition: "¿Qué emoción es?", imitation: "Haz la misma cara", stimulus: "Mostrar una imagen" };
+const imageChoiceTitle: Record<ImageChoice, string> = { recognition: "¿Qué emoción es?", imitation: "Haz la misma cara", rated: "Juego: imita la cara", stimulus: "Mostrar una imagen" };
+
+/** Una ronda del juego sin imagen elegida la completa EMOtv al guardar: no se envía el hueco. */
+function withoutEmptyImages(step: ProtocolStep): ProtocolStep {
+  return step.game_stimulus_ids ? { ...step, game_stimulus_ids: step.game_stimulus_ids.filter(Boolean) } : step;
+}
 
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
 function suitableForChildren(item: Stimulus) {
@@ -112,11 +118,13 @@ export function ProtocolsPage() {
   const drawingProblems = draft.steps.filter((step) => (step.kind === "drawing" || step.kind === "game")
     && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
   const chosen = choice ? byId.get(choice) : undefined;
+  // Imágenes para una ronda de «Empareja la emoción»: emocionales con su expresión esperada.
+  const matchable = offered.filter((item) => recognizable(item));
   // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
   const imitable = recognizable(chosen) && isCameraTarget(chosen?.expected_expression);
   // Imágenes que sirven para el tipo elegido: reconocer e imitar necesitan una expresión esperada.
   const pickable = picking === "stimulus" ? offered : offered.filter((item) => recognizable(item)
-    && (picking !== "imitation" || isCameraTarget(item.expected_expression)));
+    && ((picking !== "imitation" && picking !== "rated") || isCameraTarget(item.expected_expression)));
   const missing = [
     draft.name.trim() === "" && "el nombre",
     draft.for_children === null && "para quién es",
@@ -150,9 +158,9 @@ export function ProtocolsPage() {
       exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
     setChoice(""); setPicking(null);
   }
-  function addImitation() {
+  function addImitation(rated = false) {
     if (!imitable || !chosen) return;
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true,
+    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true, conductor_rating: rated,
       target_expression: chosen.expected_expression, hold_seconds: practiceDefaults.hold_seconds,
       exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
@@ -180,7 +188,7 @@ export function ProtocolsPage() {
   }
   function choose(key: StepChoice) {
     setChoice("");
-    if (key === "recognition" || key === "imitation" || key === "stimulus") { setPicking(key); return; }
+    if (key === "recognition" || key === "imitation" || key === "rated" || key === "stimulus") { setPicking(key); return; }
     setPicking(null);
     if (key === "matching" || key === "similar") addGame(key);
     else if (key === "drawing") addDrawing();
@@ -190,6 +198,7 @@ export function ProtocolsPage() {
   function addPicked() {
     if (picking === "recognition") addRecognition();
     else if (picking === "imitation") addImitation();
+    else if (picking === "rated") addImitation(true);
     else addStep();
   }
   function openEditor(item: Protocol | null) {
@@ -206,7 +215,7 @@ export function ProtocolsPage() {
     setBusy(true); setError("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
-        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
+        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, steps: draft.steps.map(withoutEmptyImages), accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
           post_questionnaire_id: draft.post_questionnaire_id || null }),
       });
       toast.success(editing && saved.id !== editing.id
@@ -393,8 +402,9 @@ export function ProtocolsPage() {
                 const modelName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
                 return <li key={`imitation-${index}`} className="row-card protocol-step">
                   <div>
-                    <strong>{index + 1}. Haz la misma cara: {stimulus?.title ?? "Imagen no disponible"}</strong>
+                    <strong>{index + 1}. {step.conductor_rating ? "Juego: imita la cara" : "Haz la misma cara"}: {stimulus?.title ?? "Imagen no disponible"}</strong>
                     {modelName && <span>La persona ve la imagen y hace la misma cara. Expresión pedida: {modelName} (la expresión esperada de la imagen).</span>}
+                    {step.conductor_rating && <span className="muted">Al terminar, tú la valoras de 1 a 5 estrellas y el paso espera tu valoración. La persona no la ve; EMOtv no la calcula ni la suma.</span>}
                     {problem && <span role="alert">{problem}.</span>}
                     {unsuitableModel && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
                     {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
@@ -442,10 +452,21 @@ export function ProtocolsPage() {
               if (step.kind === "drawing") {
                 return <li key={`drawing-${index}`} className="row-card protocol-step">
                   <div>
-                    <strong>{index + 1}. Dibujo: una cara con una emoción</strong>
-                    <span>La persona dibuja en su pantalla y después señala qué emoción quiso dibujar. El dibujo no se envía ni se guarda.</span>
+                    <strong>{index + 1}. Dibujo: {stimulus ? `la emoción que siente al ver «${stimulus.title}»` : "una cara con una emoción"}</strong>
+                    <span>{stimulus
+                      ? "La persona mira la imagen, dibuja una cara con la emoción que siente y después señala cuál es."
+                      : "La persona dibuja en su pantalla y después señala qué emoción quiso dibujar."} El dibujo no se envía ni se guarda, y EMOtv no lo compara con la imagen.</span>
+                    {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La imagen ya no está disponible: elige otra o quítala.</span>}
+                    {draft.for_children && stimulus != null && !suitableForChildren(stimulus) && <span>La imagen no se puede usar con niños: quítala o elige una «Para niños».</span>}
                   </div>
                   <div className="inline-actions">
+                    <label>Imagen para mirar (opcional)<select value={step.stimulus_id ?? ""}
+                      onChange={(event) => updateStep(index, { stimulus_id: event.target.value || null })}>
+                      <option value="">Sin imagen</option>
+                      {step.stimulus_id && !offered.some((item) => item.id === step.stimulus_id) &&
+                        <option value={step.stimulus_id}>{stimulus?.title ?? "Imagen no disponible"}</option>}
+                      {offered.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                    </select></label>
                     <label>Tiempo para dibujar (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
                       onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
                     {order}
@@ -464,7 +485,23 @@ export function ProtocolsPage() {
                       : "En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones."} Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
                     <span className="muted">{similar
                       ? `EMOtv elige las imágenes emocionales aprobadas${children} al guardar. En cada ronda, la pareja es otra imagen de la misma emoción que se ve distinta (nunca la misma imagen repetida), y las demás caras son de otras emociones y se parecen más a la de arriba: así se elige por la emoción y no por el parecido. Necesita al menos dos imágenes distintas por emoción.`
-                      : `EMOtv elige una imagen emocional aprobada por ronda${children}, de emociones distintas, al guardar.`}</span>
+                      : `Elige la imagen de cada ronda, o deja «La elige EMOtv» y se completa al guardar con una imagen emocional aprobada${children}. Puedes usar las imágenes que subiste y aprobó tu docente; las fotografías de personas las agrega el docente.`}</span>
+                    {!similar && <div className="inline-actions game-round-images">{Array.from({ length: rounds }, (_, round) => {
+                      const ids = step.game_stimulus_ids ?? [];
+                      const current = ids[round] ?? "";
+                      const known = current ? byId.get(current) : undefined;
+                      return <label key={round}>Imagen de la ronda {round + 1}<select value={current} onChange={(event) => {
+                        const next = Array.from({ length: rounds }, (_, position) => ids[position] ?? "");
+                        next[round] = event.target.value;
+                        updateStep(index, { game_stimulus_ids: next });
+                      }}>
+                        <option value="">La elige EMOtv</option>
+                        {current && !matchable.some((item) => item.id === current) &&
+                          <option value={current}>{known?.title ?? "Imagen no disponible"}</option>}
+                        {matchable.map((item) => <option key={item.id} value={item.id}
+                          disabled={item.id !== current && ids.includes(item.id)}>{item.title} — {practiceTargetNames[item.expected_expression ?? ""] ?? ""}</option>)}
+                      </select></label>;
+                    })}</div>}
                   </div>
                   <div className="inline-actions">
                     <label>Rondas<select value={rounds} onChange={(event) => {

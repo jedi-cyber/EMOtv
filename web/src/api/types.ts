@@ -121,6 +121,8 @@ export interface ProtocolStep {
   game_stimulus_ids?: string[];
   /** Solo una práctica sin imagen: su ronda (1, 2, 3…) en el juego con cámara «Muestra la emoción». */
   game_round?: number | null;
+  /** «Juego: imita la cara»: una imitación que quien conduce valora de 1 a 5 estrellas. */
+  conductor_rating?: boolean;
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -276,6 +278,7 @@ export interface GuidedStep {
   option_count?: number | null;
   imitate?: boolean;
   game_round?: number | null;
+  conductor_rating?: boolean;
 }
 
 /** Ronda del juego con cámara: una estrella por ronda lograda (null si todavía
@@ -295,6 +298,8 @@ export interface GuidedPractice {
   level: number | null;
   achieved: boolean;
   camera_game?: CameraGameRound;
+  /** «Juego: imita la cara»: las estrellas de quien conduce y si ya puede valorar. La persona no las ve. */
+  rating?: { stars: number | null; can_rate: boolean };
 }
 
 export interface GuidedPracticeResult {
@@ -305,6 +310,7 @@ export interface GuidedPracticeResult {
   peak_level: number;
   relative_to_calibration: boolean;
   feedback_visible: boolean;
+  conductor_stars?: number | null;
 }
 
 export type RecognitionOutcome = "answered" | "timed_out" | "skipped" | "stopped";

@@ -49,6 +49,10 @@ PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
 # Juego con cámara: al terminar la última ronda se dice cuántas caras se
 # lograron. Describe lo ocurrido; no es un puntaje ni valora a la persona.
 CAMERA_GAME_NAME = "Muestra la emoción"
+# «Juego: imita la cara»: imita la imagen y, al terminar, quien conduce la valora
+# de 1 a 5 estrellas. La persona no ve la valoración: solo este mensaje.
+RATED_IMITATION_NAME = "Imita la cara"
+RATED_IMITATION_WAIT = "¡Gracias! Espera un momento."
 CAMERA_GAME_SUMMARY = "Lograste {achieved} de {rounds} caras."
 # Aviso fijo junto a todo resultado de práctica.
 PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "
@@ -105,6 +109,9 @@ RECOGNITION_DISTRACTORS = ("happiness", "sadness", "anger", "fear", "surprise", 
 # quiso representar. El dibujo no sale del dispositivo y no se interpreta: solo
 # se registra la emoción que señaló y los tiempos.
 DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción."
+# Con una imagen: la persona la mira y dibuja la emoción que siente. EMOtv no
+# relaciona el dibujo ni la emoción elegida con la imagen.
+DRAWING_IMAGE_INSTRUCTION = "Mira la imagen y dibuja una cara con la emoción que sientes."
 DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?"
 # Aviso fijo junto a todo resultado de dibujo.
 DRAWING_NOTICE = ("Describe la emoción que la persona señaló en cada dibujo. EMOtv no ve ni interpreta los "
@@ -415,12 +422,19 @@ class PracticeResult:
     seconds_to_achieve: float | None = None
     # 1 es el primero; las métricas y las estadísticas cuentan solo ese.
     attempt: int = 1
+    # «Juego: imita la cara»: las estrellas (1 a 5) que marcó quien conduce. Es
+    # su valoración, no la de EMOtv; la persona no la ve.
+    conductor_stars: int | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "session_id"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} es obligatorio")
+        if self.conductor_stars is not None and (
+                isinstance(self.conductor_stars, bool) or not isinstance(self.conductor_stars, int)
+                or not 1 <= self.conductor_stars <= 5):
+            raise ValueError("La valoración de quien conduce va de 1 a 5 estrellas")
         outcome = PracticeOutcome(self.outcome)
         object.__setattr__(self, "outcome", outcome)
         if self.target_expression not in PRACTICE_TARGETS:

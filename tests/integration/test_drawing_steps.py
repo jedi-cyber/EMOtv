@@ -64,11 +64,13 @@ def results(env, session_id):  # noqa: F811
 # --- Dominio y armado del protocolo ------------------------------------------------------
 
 
-def test_un_dibujo_no_lleva_imagen_expresion_ni_opciones():
+def test_un_dibujo_no_lleva_expresion_ni_opciones():
     item = ProtocolStep.drawing(60)
     assert item.kind is StepKind.DRAWING and item.is_drawing and item.is_timed and not item.uses_camera
-    for extra in ({"stimulus_id": "img-1"}, {"target_expression": "happiness"}, {"option_count": 3},
-                  {"hold_seconds": 2}):
+    # Puede llevar una imagen para mirar antes de dibujar; sigue sin usar la cámara.
+    with_image = ProtocolStep.drawing(60, stimulus_id="img-1")
+    assert with_image.stimulus_id == "img-1" and not with_image.uses_camera
+    for extra in ({"target_expression": "happiness"}, {"option_count": 3}, {"hold_seconds": 2}):
         values = {"stimulus_id": None, **extra}
         with pytest.raises(ValueError):
             ProtocolStep(values.pop("stimulus_id"), 60, 0, kind=StepKind.DRAWING, **values)
@@ -91,7 +93,9 @@ def test_el_protocolo_guarda_el_paso_de_dibujo(env):  # noqa: F811
     response = env.client.post("/protocols", headers=headers(env, env.user_1), json={
         "name": "Dibujo", "description": "", "for_children": False,
         "steps": [{**drawing(), "stimulus_id": emotional["id"]}]})
-    assert response.status_code == 422
+    # Con una imagen para mirar antes de dibujar (desde 20261124_46).
+    assert response.status_code == 201, response.text
+    assert response.json()["steps"][0]["stimulus_id"] == emotional["id"]
 
 
 # --- Sesión ---------------------------------------------------------------------------------

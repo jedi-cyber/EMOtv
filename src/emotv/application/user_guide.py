@@ -45,10 +45,9 @@ GUIDE: tuple[GuideTopic, ...] = (
            "En «Cuestionarios», «Usar la plantilla inicial» o «Nuevo cuestionario».",
            "En «Protocolos», «Usar la plantilla inicial» agrega «Emociones básicas 4 a 6 años», para niños. «Copiar y "
            "modificar» copia una plantilla de tu docente.",
-           "«Nuevo protocolo» pregunta si es para adultos o para niños. «Modo accesible» pone pictogramas, botones "
-           "grandes y pausas más largas.",
+           "«Nuevo protocolo» pregunta si es para adultos o para niños; «Modo accesible» adapta la pantalla.",
            "En «Agregar un paso»: «Juego: empareja la emoción», «Juego: busca la misma emoción», «Juego con cámara: "
-           "muestra la emoción», «¿Qué emoción es?», «Dibujo», práctica, «Haz la misma cara» o una imagen.",
+           "muestra la emoción», «Juego: imita la cara», «¿Qué emoción es?», «Dibujo», práctica, «Haz la misma cara» o una imagen.",
            note="Con niños solo se ofrecen imágenes «Para niños» aprobadas. EMOtv no calcula puntajes."),
     _topic("own-images", "Subir imágenes propias", (USER,),
            "En «Imágenes», «Subir imágenes». Nunca fotografías de personas evaluadas.",
@@ -72,8 +71,8 @@ GUIDE: tuple[GuideTopic, ...] = (
            "«Redactar el reporte» y «Enviar a revisión». Si vuelve con observaciones, corrígelo y reenvíalo.",
            "«Pedir que se elimine» borra la sesión cuando tu docente lo ejecuta."),
     _topic("supervise", "Supervisar al grupo", (DOCENTE,),
-           "No estás en cada sesión: «Por revisar» reúne los reportes enviados y los pedidos de eliminación, del más "
-           "antiguo al más nuevo.",
+           "No estás en cada sesión: «Por revisar» reúne los reportes enviados y los pedidos de "
+           "eliminación.",
            "En un reporte, «Comentar» cada sección y luego «Aprobar» o «Devolver con observaciones».",
            "En un pedido de eliminación, abre la sesión y «Eliminar la sesión».",
            "En «Imágenes por revisar» apruebas o eliminas las que subió tu grupo.",

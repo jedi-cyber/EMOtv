@@ -58,6 +58,29 @@ const seconds = (value: number) => value.toLocaleString("es-PE", { maximumFracti
 const time = (value: string) => new Date(value).toLocaleTimeString("es-PE", { timeStyle: "medium" });
 
 /** Cuenta regresiva del paso; sin límite de tiempo (nulo), lo dice. */
+/**
+ * «Juego: imita la cara»: quien conduce marca de 1 a 5 estrellas al terminar la
+ * imitación. Es su valoración: EMOtv no la calcula ni la combina con la
+ * expresión estimada, y la persona no la ve. El paso espera hasta que se marque.
+ */
+function ConductorRating({ rating, busy, onRate }: {
+  rating: { stars: number | null; can_rate: boolean }; busy: boolean; onRate(stars: number): void;
+}) {
+  return <fieldset className="conductor-rating">
+    <legend>Tu valoración de la imitación (la persona no la ve)</legend>
+    <div className="conductor-rating-stars">{[1, 2, 3, 4, 5].map((value) => <Button key={value} size="sm"
+      variant={rating.stars != null && value <= rating.stars ? "primary" : "secondary"}
+      aria-pressed={rating.stars === value} disabled={busy || !rating.can_rate}
+      aria-label={`${value} ${value === 1 ? "estrella" : "estrellas"}`} onClick={() => onRate(value)}>
+      {rating.stars != null && value <= rating.stars ? "★" : "☆"}</Button>)}</div>
+    <p className="muted" role="status">{!rating.can_rate
+      ? "Podrás valorar cuando termine la imitación."
+      : rating.stars == null
+      ? "Marca de 1 a 5 estrellas para seguir con el paso siguiente."
+      : `Marcaste ${rating.stars} de 5. Puedes cambiarla mientras sigue este paso.`}</p>
+  </fieldset>;
+}
+
 function StepTimer({ seconds: remaining }: { seconds: number | null | undefined }) {
   return remaining == null
     ? <p className="readout-md">Sin límite de tiempo</p>
@@ -268,15 +291,19 @@ export function GuidedConductorPage() {
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · {state.practice?.camera_game
         ? `juego con cámara · ronda ${state.practice.camera_game.round} de ${state.practice.camera_game.rounds}`
         : "ejercicio de práctica"}{attemptCaption(state)}{supportsCaption(state)}</p>
-      <h2>{step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
+      <h2>{step.conductor_rating ? "Imita la cara" : step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
       {state.practice?.camera_game && <p className="muted">«Muestra la emoción»: la persona ve una estrella por cada ronda lograda. Sin puntos.</p>}
       {step.imitate && <p className="muted">La persona ve la imagen y lee «Haz la misma cara».</p>}
+      {state.practice?.rating && <ConductorRating rating={state.practice.rating} busy={busy}
+        onRate={(stars) => { void act("/rating", { stars }); }} />}
       <StepTimer seconds={state.remaining_seconds} />
       {state.practice && <>
         <label>Nivel en vivo
           <meter min={0} max={1} value={state.practice.level ?? 0}>{Math.round((state.practice.level ?? 0) * 100)} %</meter>
         </label>
-        <p role="status">{state.practice.achieved
+        <p role="status">{state.practice.rating?.can_rate
+          ? `${state.practice.achieved ? "La cámara estimó la expresión pedida." : "Terminó el tiempo."} Tu valoración es aparte.`
+          : state.practice.achieved
           ? `Logró la expresión pedida. ${state.waiting_for_conductor ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El ejercicio avanza en un momento."}`
           : `Se registra como lograda cuando la sostiene ${step.hold_seconds} s.`}</p>
         {state.practice.camera_game?.summary && <p role="status">{state.practice.camera_game.summary}</p>}
@@ -411,7 +438,8 @@ export function GuidedConductorPage() {
       <ul className="card-list">{practiceResults.map((item) => <li key={item.step_index} className="row-card">
         <span>Paso {item.step_index + 1}{state?.steps[item.step_index]?.game_round ? ` · juego con cámara, ronda ${state.steps[item.step_index].game_round}` : ""} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
           {item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}
-          {item.feedback_visible ? "" : " · sin la señal visible"}</span>
+          {item.feedback_visible ? "" : " · sin la señal visible"}
+          {item.conductor_stars != null ? ` · tu valoración: ${item.conductor_stars} de 5 estrellas` : ""}</span>
         {repeatsOf(item.step_index, "practice").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "practice")}</ul>}
       </li>)}</ul>
     </section>}

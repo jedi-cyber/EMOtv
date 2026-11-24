@@ -149,6 +149,12 @@ class PracticeView(BaseModel):
     camera_game: CameraGameView | None = None
 
 
+class RatingRequest(BaseModel):
+    """«Juego: imita la cara»: las estrellas que marca quien conduce. La persona no las ve."""
+
+    stars: int = Field(ge=1, le=5)
+
+
 class ParticipantView(BaseModel):
     """Lo único que recibe la pantalla de la persona evaluada."""
 
@@ -279,6 +285,12 @@ def create_guided_router(
         """Enciende o apaga la señal del nivel en la pantalla de la persona."""
         run = guarded(lambda: service().set_practice_feedback(user, session_id, request.visible))
         return {"practice_feedback": run.practice_feedback}
+
+    @router.post("/guided-sessions/{session_id}/rating")
+    def rating(session_id: str, request: RatingRequest, user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce valora de 1 a 5 estrellas la imitación que acaba de terminar."""
+        run = guarded(lambda: service().rate(user, session_id, request.stars))
+        return {"phase": run.phase.value}
 
     @router.post("/guided-sessions/{session_id}/recognition")
     def recognition(session_id: str, request: RecognitionAnswerRequest,

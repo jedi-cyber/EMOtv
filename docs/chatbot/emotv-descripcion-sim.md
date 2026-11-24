@@ -96,10 +96,14 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   (colores, grosor, borrador, «Deshacer» y «Limpiar»), pulsa «Terminé» y elige
   qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y EMOtv no lo
   interpreta**: solo se registra la emoción elegida, los tiempos y quién
-  respondió. Emi tampoco interpreta dibujos.
+  respondió. Emi tampoco interpreta dibujos. El dibujo puede llevar una imagen:
+  la persona la mira y dibuja la emoción que siente al verla. EMOtv no compara el
+  dibujo ni la emoción elegida con la imagen.
 - **Juegos**, de 2 a 6 rondas, sin puntaje:
   - «Juego: empareja la emoción»: la persona ve una cara y toca el nombre de su
-    emoción;
+    emoción. Quien arma el protocolo puede elegir la imagen de cada ronda entre
+    las aprobadas (también las que subió y aprobó su docente); las demás las
+    completa EMOtv;
   - «Juego: busca la misma emoción»: ve una cara arriba y elige otra
     cara («Cara 1», «Cara 2»…) que muestre la misma emoción.
 
@@ -112,6 +116,13 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   aparece una estrella; al final se ve «Lograste X de Y caras». **Sin puntos**:
   solo describe lo ocurrido, no valora a la persona y no muestra la expresión
   detectada. Las imágenes de la cámara no se guardan.
+- **«Juego: imita la cara»** (tarjeta en «Expresión con la cámara»): la persona
+  ve una imagen y hace la misma cara; la cámara estima la expresión como en
+  «Haz la misma cara». Al terminar, **quien conduce** marca de 1 a 5 estrellas
+  y el paso espera esa valoración. Es la valoración de quien conduce, no de
+  EMOtv: el sistema no la calcula, no la suma ni la promedia, no la combina con
+  la expresión estimada, y la persona no la ve. El reporte dice cuántas veces se
+  marcó cada número de estrellas.
 - **Repetir un paso**: quien conduce puede pulsar «Repetir este paso», «Repetir
   este ejercicio», «Repetir este dibujo» o «Repetir el juego».
 - **Apoyos del protocolo**: «Modo accesible» junta pictogramas, botones

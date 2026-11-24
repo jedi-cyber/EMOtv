@@ -283,7 +283,7 @@ export function ParticipantViewPage() {
           ? <DrawingActivity key={drawing.round} onDrawingChange={setHasDrawing} session={{
             instruction: drawing.instruction, question: drawing.question, options: drawing.options,
             finished: drawing.finished, chosen: drawing.chosen, message: drawing.message,
-            onChoose: answer, readAloud: Boolean(supports?.read_aloud) }} />
+            onChoose: answer, readAloud: Boolean(supports?.read_aloud), imageUrl }} />
           : game
           ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame} loadOption={loadGameOption}
             pictograms={Boolean(supports?.pictograms)} readAloud={Boolean(supports?.read_aloud)} />

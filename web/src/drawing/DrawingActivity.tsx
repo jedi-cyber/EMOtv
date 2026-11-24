@@ -28,6 +28,8 @@ export interface DrawingSessionStep {
   /** Envía solo la emoción elegida; el dibujo no sale de la pantalla. */
   onChoose(key: string): Promise<void>;
   readAloud?: boolean;
+  /** Imagen que la persona mira antes de dibujar la emoción que siente; no se compara con el dibujo. */
+  imageUrl?: string | null;
 }
 
 export const DRAWING_TIME_UP = "Terminó el tiempo para dibujar.";
@@ -206,6 +208,8 @@ export function DrawingActivity({ onDrawingChange, session }: {
         speakText(phase === "drawing" ? instruction : question);
       }}>Escuchar</Button>}
     </div>
+
+    {session?.imageUrl && <img className="drawing-model" src={session.imageUrl} alt="Imagen para mirar antes de dibujar" />}
 
     {/* Primero el lienzo; debajo, las herramientas al alcance del pulgar. */}
     <div className="drawing-surface">

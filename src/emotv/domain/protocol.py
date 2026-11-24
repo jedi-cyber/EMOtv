@@ -37,6 +37,8 @@ DEFAULT_GAME_OPTIONS = 2
 # logra o no, y al final se dice cuántas se lograron.
 CAMERA_GAME_HOLD_SECONDS = 2
 CAMERA_GAME_ROUND_SECONDS = 20
+# Valoración de quien conduce en «Juego: imita la cara»: de 1 a 5 estrellas.
+MAX_CONDUCTOR_STARS = 5
 # Historia corta de una situación («A Lucía se le cayó su helado»).
 MAX_SITUATION_CHARS = 200
 # Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
@@ -141,8 +143,10 @@ class ProtocolStep:
     historia corta que acompaña a la ilustración: con ella la pregunta es
     «¿Qué emoción muestra la cara?». La respuesta sigue siendo la expresión de la imagen.
 
-    En un dibujo no hay estímulo, expresión pedida ni opciones que configurar:
-    exposure_seconds es el tiempo máximo. Solo se registra la emoción que la
+    En un dibujo no hay expresión pedida ni opciones que configurar:
+    exposure_seconds es el tiempo máximo. Puede llevar una imagen (stimulus_id)
+    que la persona mira antes de dibujar la emoción que siente al verla; EMOtv
+    no relaciona el dibujo ni la emoción elegida con la imagen. Solo se registra la emoción que la
     persona señaló y los tiempos, nunca el dibujo. No analiza la cámara.
 
     En un juego (game_type «matching»), rounds es cuántas imágenes se emparejan y
@@ -175,6 +179,10 @@ class ProtocolStep:
     # Ronda (1, 2, 3…) de un juego con cámara: una práctica sin imagen dentro de
     # un bloque de rondas seguidas (lo valida Protocol).
     game_round: int | None = None
+    # «Juego: imita la cara»: una imitación («Haz la misma cara») que, al
+    # terminar, quien conduce valora de 1 a 5 estrellas. La persona no la ve y
+    # EMOtv no la calcula ni la combina con la expresión estimada.
+    conductor_rating: bool = False
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
@@ -191,6 +199,10 @@ class ProtocolStep:
             raise ValueError("Solo un ejercicio de práctica imita un modelo")
         if self.imitate and not (isinstance(self.stimulus_id, str) and self.stimulus_id.strip()):
             raise ValueError("«Haz la misma cara» necesita la imagen del modelo")
+        if not isinstance(self.conductor_rating, bool):
+            raise TypeError("conductor_rating debe ser verdadero o falso")
+        if self.conductor_rating and not self.imitate:
+            raise ValueError("Solo «Juego: imita la cara» lleva la valoración de quien conduce")
         if self.game_round is not None:
             if isinstance(self.game_round, bool) or not isinstance(self.game_round, int):
                 raise TypeError("game_round debe ser un entero")
@@ -248,9 +260,8 @@ class ProtocolStep:
                 raise ValueError("El juego tiene más imágenes que rondas")
             return
         if kind is StepKind.DRAWING:
-            if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
-                    or self.option_count is not None):
-                raise ValueError("Un dibujo no tiene imagen, expresión pedida, tiempo de sostén ni opciones")
+            if self.target_expression is not None or self.hold_seconds is not None or self.option_count is not None:
+                raise ValueError("Un dibujo no tiene expresión pedida, tiempo de sostén ni opciones")
             return
         if kind is StepKind.RECOGNITION:
             if self.target_expression is not None and self.target_expression not in EXPRESSION_KEYS:
@@ -276,9 +287,11 @@ class ProtocolStep:
 
     @classmethod
     def practice(cls, target_expression: str, hold_seconds: int, max_seconds: int,
-                 illustration_id: str | None = None, imitate: bool = False) -> ProtocolStep:
+                 illustration_id: str | None = None, imitate: bool = False,
+                 conductor_rating: bool = False) -> ProtocolStep:
         return cls(illustration_id, max_seconds, 0, kind=StepKind.PRACTICE,
-                   target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate)
+                   target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate,
+                   conductor_rating=conductor_rating)
 
     @classmethod
     def camera_game_round(cls, target_expression: str, game_round: int,
@@ -294,8 +307,8 @@ class ProtocolStep:
                    option_count=option_count, situation=situation)
 
     @classmethod
-    def drawing(cls, max_seconds: int) -> ProtocolStep:
-        return cls(None, max_seconds, 0, kind=StepKind.DRAWING)
+    def drawing(cls, max_seconds: int, stimulus_id: str | None = None) -> ProtocolStep:
+        return cls(stimulus_id, max_seconds, 0, kind=StepKind.DRAWING)
 
     @classmethod
     def matching_game(cls, rounds: int = DEFAULT_GAME_ROUNDS, option_count: int = DEFAULT_GAME_OPTIONS,

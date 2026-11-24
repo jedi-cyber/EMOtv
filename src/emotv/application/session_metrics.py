@@ -207,6 +207,9 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
             "max_seconds": step.exposure_seconds, "imitate": step.imitate,
             # Ronda de un juego con cámara («Muestra la emoción»), o None.
             "game_round": step.game_round,
+            # «Juego: imita la cara»: quien conduce lo valora; sus estrellas, o None.
+            "conductor_rating": step.conductor_rating,
+            "conductor_stars": item.conductor_stars if item else None,
             # None: la sesión no llegó a este ejercicio.
             "outcome": item.outcome.value if item else None,
             "seconds_to_achieve": item.seconds_to_achieve if item else None,
@@ -215,13 +218,39 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
             "feedback_visible": item.feedback_visible if item else None,
         })
     found = [by_step[index] for index, _ in practice_steps if index in by_step]
-    return {
+    block = {
         "exercises": exercises,
         "totals": {**practice_totals(found), "exercises": len(exercises),
                    "not_reached": sum(1 for item in exercises if item["outcome"] is None)},
         "by_target": practice_by_target(found),
         "notice": PRACTICE_NOTICE,
     }
+    rated = [item for item in exercises if item["conductor_rating"]]
+    if rated:
+        block["conductor_ratings"] = conductor_ratings(rated)
+    return block
+
+
+CONDUCTOR_RATING_NOTICE = ("Son las estrellas que marcó quien condujo la sesión, no un cálculo de EMOtv. No se "
+                           "suman ni se promedian, y la persona no las vio.")
+
+
+def _stars(count: int) -> str:
+    return _plural(count, "estrella", "estrellas")
+
+
+def conductor_ratings(exercises: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """«Juego: imita la cara»: cuántas imitaciones valoró quien conduce y cuántas
+    veces marcó cada número de estrellas. Solo cuenta; no suma ni promedia."""
+    stars = [item["conductor_stars"] for item in exercises if item["conductor_stars"] is not None]
+    by_stars = [{"stars": value, "count": stars.count(value)} for value in range(5, 0, -1) if value in stars]
+    if stars:
+        detail = ", ".join(f"{_stars(row['stars'])} en {row['count']}" for row in by_stars)
+        sentence = f"Quien conduce valoró {len(stars)} de {len(exercises)}: {detail}."
+    else:
+        sentence = "Quien conduce no valoró ninguna imitación."
+    return {"items": len(exercises), "rated": len(stars), "by_stars": by_stars, "sentence": sentence,
+            "notice": CONDUCTOR_RATING_NOTICE}
 
 
 # --- Reconocimiento de emociones ------------------------------------------------------------
@@ -408,6 +437,8 @@ def _activity(kind: str, exercise: dict[str, Any]) -> str:
     if kind == "practice":
         if exercise.get("game_round"):
             return f"Juego con cámara, ronda {exercise['game_round']}"
+        if exercise.get("conductor_rating"):
+            return "Juego: imita la cara"
         return "Haz la misma cara" if exercise.get("imitate") else "Práctica facial"
     if kind == "game":
         return GAME_NAMES.get(exercise.get("game_type") or "", "Juego")

@@ -187,7 +187,7 @@ class PostgresProtocolRepository:
             option_count=step.option_count, situation=step.situation, imitate=step.imitate,
             game_type=step.game_type, rounds=step.rounds,
             game_stimulus_ids=list(step.game_stimulus_ids) if step.is_game else None,
-            game_round=step.game_round)
+            game_round=step.game_round, conductor_rating=step.conductor_rating)
             for position, step in enumerate(item.steps))
 
     @staticmethod
@@ -213,7 +213,8 @@ class PostgresProtocolRepository:
                                      situation=step.situation, imitate=bool(step.imitate),
                                      game_type=step.game_type, rounds=step.rounds,
                                      game_stimulus_ids=tuple(step.game_stimulus_ids or ()),
-                                     game_round=step.game_round)
+                                     game_round=step.game_round,
+                                     conductor_rating=bool(step.conductor_rating))
                          for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:

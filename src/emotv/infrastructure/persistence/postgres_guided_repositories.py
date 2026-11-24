@@ -197,6 +197,7 @@ class PostgresGuidedSessionRepository:
             row.emotion_model_version = result.emotion_model_version
             row.started_at = result.started_at
             row.ended_at = result.ended_at
+            row.conductor_stars = result.conductor_stars
         return result
 
     def list_practice_results(self, session_id: str) -> tuple[PracticeResult, ...]:
@@ -220,7 +221,8 @@ class PostgresGuidedSessionRepository:
                 analyzed_frames=row.analyzed_frames, flagged_frames=row.flagged_frames,
                 emotion_model_id=row.emotion_model_id, emotion_model_version=row.emotion_model_version,
                 started_at=_aware(row.started_at), ended_at=_aware(row.ended_at),
-                seconds_to_achieve=row.seconds_to_achieve, attempt=row.attempt) for row in rows)
+                seconds_to_achieve=row.seconds_to_achieve, attempt=row.attempt,
+                conductor_stars=row.conductor_stars) for row in rows)
 
     # --- Resultados de los reconocimientos ---------------------------------------------
 

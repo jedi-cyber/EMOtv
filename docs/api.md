@@ -193,6 +193,7 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `POST` | `/guided-sessions/{id}/start` | «Empezar»: desde `ready` empieza el primer paso (o la fase `live` sin protocolo). También saca de `calibration` una sesión que quedó ahí antes de quitar la calibración |
 | `POST` | `/guided-sessions/{id}/calibration` | Solo para una sesión que quedó en `calibration` antes de 2026-11-24; las nuevas no pasan por esa fase (`409`) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
+| `POST` | `/guided-sessions/{id}/rating` | «Juego: imita la cara»: `stars` de 1 a 5, la valoración de quien conduce al terminar la imitación (`409` antes de que termine o si el paso no la lleva). El paso espera esta valoración; la pantalla de la persona nunca la recibe |
 | `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |
 | `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |
 | `POST` | `/guided-sessions/{id}/verbal-responses` | `step_index` y `text`: lo que la persona dice ver en una abstracta que lo pide, cifrado |

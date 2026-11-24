@@ -61,7 +61,7 @@ EDUCATIONAL = """## Actividades educativas y apoyos
 - «¿Qué emoción es?», dibujos y juegos no usan la cámara; si falla, «Continuar sin cámara» sigue con ellos.
 - Dibujo: la persona dibuja con el dedo, pulsa «Terminé» y elige qué emoción quiso dibujar. El dibujo no se guarda ni se envía y EMOtv no lo interpreta.
 - Juegos de 2 a 6 rondas: emparejar (nombrar la emoción de una cara) y «Busca la misma emoción» (elegir la cara con la misma emoción que la de arriba). «Ayuda» quita una opción.
-- Juego con cámara: una estrella por cara lograda, sin puntos.
+- Estrellas: una por cara lograda en «Muestra la emoción»; en «Juego: imita la cara» las marca quien conduce, no EMOtv.
 - Apoyos: pictogramas, botones grandes, voz alta, sin límite de tiempo y pausas («Modo accesible» junta varios). Un paso se puede repetir.
 - Android: tras «Vincular Android», la persona escribe el código en «Abrir una actividad con código» (vence en 5 minutos, un solo uso); dibuja y juega sin cámara ni cuenta.
 - Los resultados describen, nunca valoran. EMOtv no diagnostica ni interpreta dibujos, respuestas ni juegos."""

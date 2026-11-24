@@ -85,6 +85,7 @@ class StepModel(BaseModel):
                                          max_length=MAX_GAME_ROUNDS * (MAX_RECOGNITION_OPTIONS + 1))
     # Solo una práctica: su ronda (1, 2, 3…) en un juego con cámara.
     game_round: int | None = None
+    conductor_rating: bool = False
 
 
 class SupportsModel(BaseModel):
@@ -200,7 +201,8 @@ def create_stimulus_router(
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                              option_count=step.option_count, situation=step.situation, imitate=step.imitate,
                              game_type=step.game_type, rounds=step.rounds,
-                             game_stimulus_ids=list(step.game_stimulus_ids), game_round=step.game_round)
+                             game_stimulus_ids=list(step.game_stimulus_ids), game_round=step.game_round,
+                             conductor_rating=step.conductor_rating)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
@@ -221,7 +223,8 @@ def create_stimulus_router(
                                        rounds=(DEFAULT_GAME_ROUNDS if step.kind == "game" and step.rounds is None
                                                else step.rounds),
                                        game_stimulus_ids=tuple(step.game_stimulus_ids),
-                                       game_round=step.game_round)
+                                       game_round=step.game_round,
+                                       conductor_rating=step.conductor_rating)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

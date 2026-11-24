@@ -81,7 +81,7 @@ describe("el juego en el editor de protocolos", () => {
     await userEvent.type(screen.getByLabelText("Nombre"), "Emparejar");
     await userEvent.click(screen.getByRole("button", { name: "Juego: empareja la emoción" }));
     expect(screen.getByText("1. Juego: empareja la emoción")).toBeInTheDocument();
-    expect(screen.getByText(/una imagen emocional aprobada por ronda «Para niños»/)).toBeInTheDocument();
+    expect(screen.getByText(/se completa al guardar con una imagen emocional aprobada «Para niños»/)).toBeInTheDocument();
     expect(screen.getByLabelText("Opciones por ronda")).toHaveValue("2");
     await userEvent.selectOptions(screen.getByLabelText("Rondas"), "5");
     await userEvent.selectOptions(screen.getByLabelText("Opciones por ronda"), "3");
