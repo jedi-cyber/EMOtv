@@ -475,8 +475,11 @@ class QuestionnaireResponseRecord(Base):
 # El dibujo, sin imagen ni opciones que configurar (migración 20261106_40).
 # El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41);
 # «Busca la misma emoción» (game_type 'similar', migración 20261107_42).
-PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game')"
-PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game') OR stimulus_id IS NOT NULL"
+# «Usar el analizador» (kind 'analyzer', migración 20261124_49): sin imagen ni expresión
+# pedida, y el único paso que puede durar más de 120 s (hasta 600).
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game', 'analyzer')"
+PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game', 'analyzer') OR stimulus_id IS NOT NULL"
+PROTOCOL_STEP_EXPOSURE = "exposure_seconds BETWEEN 1 AND 600 AND (kind = 'analyzer' OR exposure_seconds <= 120)"
 # Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
     "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
@@ -489,7 +492,9 @@ PROTOCOL_STEP_PRACTICE = (
     "AND option_count IS NULL AND capture_after_seconds = 0) OR "
     "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type IN ('matching', 'similar') "
-    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL)) "
+    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL) OR "
+    "(kind = 'analyzer' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "AND option_count IS NULL AND capture_after_seconds = 0)) "
     "AND (situation IS NULL OR kind = 'recognition') "
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
     "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "
@@ -505,7 +510,7 @@ class ProtocolStepRecord(Base):
     __tablename__ = "protocol_steps"
     __table_args__ = (
         UniqueConstraint("protocol_id", "position", name="uq_protocol_steps_position"),
-        CheckConstraint("exposure_seconds BETWEEN 1 AND 120", name="ck_protocol_steps_exposure"),
+        CheckConstraint(PROTOCOL_STEP_EXPOSURE, name="ck_protocol_steps_exposure"),
         CheckConstraint("capture_after_seconds >= 0 AND capture_after_seconds <= exposure_seconds",
                         name="ck_protocol_steps_capture"),
         CheckConstraint(PROTOCOL_STEP_KIND, name="ck_protocol_steps_kind"),

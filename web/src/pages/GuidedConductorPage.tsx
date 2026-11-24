@@ -203,6 +203,9 @@ export function GuidedConductorPage() {
   const isRecognition = step?.step_kind === "recognition";
   const isDrawing = step?.step_kind === "drawing";
   const isGame = step?.step_kind === "game";
+  const isAnalyzer = step?.step_kind === "analyzer";
+  // «Usar el analizador»: la última expresión estimada primero.
+  const latestCaptures = isAnalyzer ? [...stepCaptures].reverse().slice(0, 6) : [];
   const gameResults = state?.game_results ?? [];
   const recognitionResults = state?.recognition_results ?? [];
   const drawingResults = state?.drawing_results ?? [];
@@ -226,7 +229,7 @@ export function GuidedConductorPage() {
     const detail = state?.game?.option_details?.find((item) => item.key === key);
     return similarGame && detail ? `Cara ${key} (${targetName(detail.expression)})` : targetName(key);
   };
-  const cameraStep = (state?.phase === "stimuli" && (isPractice || step?.step_kind === "stimulus"))
+  const cameraStep = (state?.phase === "stimuli" && (isPractice || isAnalyzer || step?.step_kind === "stimulus"))
     || state?.phase === "ready" || state?.phase === "calibration";
   // Seguir sin cámara: antes de empezar o en un paso que la usa, si la sesión todavía la usa.
   const canContinueWithoutCamera = active && state?.has_protocol && state.uses_camera !== false && !state.camera_off && cameraStep;
@@ -388,7 +391,26 @@ export function GuidedConductorPage() {
       <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar el juego</Button>
     </div>}
 
-    {step && state && !isPractice && !isRecognition && !isDrawing && !isGame && <div className="card form-stack">
+    {step && state && isAnalyzer && <div className="card form-stack">
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · usar el analizador{supportsCaption(state)}</p>
+      <h2>Usar el analizador</h2>
+      <p className="muted">Pide de palabra la expresión que quieras («muestra alegría», «ahora sorpresa»). La cámara estima la expresión facial cada pocos segundos; la persona no ve lo que estima. Es una estimación, no un diagnóstico.</p>
+      <p className="readout-md" role="timer">Quedan {Math.ceil(state.remaining_seconds ?? 0)} s como máximo</p>
+      <p role="status">{state.capture_status.length > 0
+        ? `Reintentando la captura: ${state.capture_status.map((item) => issueNames[item] ?? item).join(", ")}.`
+        : latestCaptures[0]?.emotion
+        ? `Expresión estimada ahora: ${expressionLabel(latestCaptures[0].emotion)}.`
+        : "Esperando la primera estimación."}</p>
+      {latestCaptures.length > 0 && <ul className="card-list" aria-label="Últimas estimaciones">{latestCaptures.map((item) => <li key={item.id} className="row-card">
+        <span>{item.seconds_since_stimulus} s · {item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "Sin expresión estimada"}</span>
+        {item.quality === "good" ? <StatusChip tone="success">Buena calidad</StatusChip>
+          : <StatusChip tone="neutral">Marcada: {item.quality_issues.map((issue) => issueNames[issue] ?? issue).join(", ")}</StatusChip>}
+      </li>)}</ul>}
+      <p className="muted">Usa los marcadores o una nota breve para anotar qué pediste en cada momento.</p>
+      <Button variant="primary" disabled={busy} onClick={() => { void act("/analyzer-done"); }}>Siguiente paso</Button>
+    </div>}
+
+    {step && state && !isPractice && !isRecognition && !isDrawing && !isGame && !isAnalyzer && <div className="card form-stack">
       <p className="step-caption">Imagen {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
       <h2>{step.title}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>

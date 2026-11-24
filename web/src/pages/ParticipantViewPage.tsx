@@ -183,9 +183,10 @@ export function ParticipantViewPage() {
   const capturing = Boolean(view?.capture_frames) && !ended;
   const withoutCamera = view?.uses_camera === false;
   // La persona se ve a sí misma (como en un espejo) al esperar el inicio, en los
-  // ejercicios de práctica y en la lectura en vivo; no mientras mira una imagen o juega.
+  // ejercicios de práctica, en «Usar el analizador» y en la lectura en vivo; no
+  // mientras mira una imagen o juega.
   const previewing = !ended && !withoutCamera && view != null
-    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice));
+    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice) || view.activity?.kind === "analyzer");
   const cameraOn = capturing || previewing;
   // Si la sesión siguió sin cámara, el aviso del problema ya no hace falta.
   useEffect(() => { if (withoutCamera) setCameraError(""); }, [withoutCamera]);

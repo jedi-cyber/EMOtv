@@ -52,6 +52,10 @@ CAMERA_GAME_NAME = "Muestra la emoción"
 # «Juego: imita la cara»: imita la imagen y, al terminar, quien conduce la valora
 # de 1 a 5 estrellas. La persona no ve la valoración: solo este mensaje.
 RATED_IMITATION_NAME = "Imita la cara"
+# «Usar el analizador»: quien conduce pide de palabra las expresiones. La pantalla
+# de la persona no muestra ninguna expresión estimada.
+ANALYZER_NAME = "Expresiones con la cámara"
+ANALYZER_MESSAGE = "Mira a la cámara y haz la expresión que te pidan."
 RATED_IMITATION_WAIT = "¡Gracias! Espera un momento."
 CAMERA_GAME_SUMMARY = "Lograste {achieved} de {rounds} caras."
 # Aviso fijo junto a todo resultado de práctica.

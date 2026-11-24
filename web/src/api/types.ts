@@ -91,7 +91,7 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
-export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "game";
+export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "game" | "analyzer";
 
 export interface ProtocolStep {
   /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
@@ -565,7 +565,7 @@ export interface ParticipantViewState {
 }
 
 export interface ParticipantActivity {
-  kind: "waiting" | "questionnaire" | "stimulus" | "practice" | "recognition" | "drawing" | "game" | "live" | "finished";
+  kind: "waiting" | "questionnaire" | "stimulus" | "practice" | "recognition" | "drawing" | "game" | "analyzer" | "live" | "finished";
   name: string;
   number: number | null;
   total: number | null;

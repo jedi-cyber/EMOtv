@@ -63,6 +63,8 @@ from emotv.domain.guided_session import (
     PAIRING_LENGTH,
     PAIRING_SECONDS,
     PRACTICE_ACHIEVED_MESSAGE,
+    ANALYZER_MESSAGE,
+    ANALYZER_NAME,
     CAMERA_GAME_NAME,
     RATED_IMITATION_NAME,
     RATED_IMITATION_WAIT,
@@ -987,6 +989,22 @@ class GuidedSessionService:
         self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
         return run
 
+    def finish_analyzer(self, user: User, session_id: str) -> GuidedRun:
+        """«Siguiente paso» en «Usar el analizador»: quien conduce terminó de pedir
+        expresiones. El paso se registra como hecho, no como saltado."""
+        run, session = self._conducted(user, session_id)
+        run = self._tick(run)
+        if run.phase is not GuidedPhase.STIMULI:
+            raise GuidedConflict("No hay un paso «Usar el analizador» en curso")
+        protocol = self._protocol(session)
+        if not protocol.steps[run.step_index].is_analyzer:
+            raise GuidedConflict("El paso en curso no es «Usar el analizador»")
+        self._live_of(session_id).pending = None
+        run = self.repository.save_run(self._next_step(replace(run, next_capture_due=None), session, protocol,
+                                                       skipped=False))
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
+
     def participant_answer(self, token: str, expression: str) -> None:
         """La persona tocó una opción en su pantalla."""
         self._answer(self._tick(self._by_token(token)), expression, RecognitionAnswerer.PARTICIPANT)
@@ -1298,6 +1316,10 @@ class GuidedSessionService:
         live.pending = None
         if step is None:
             return replace(run, next_capture_due=(run.next_capture_due or 0.0) + ABSTRACT_CAPTURE_INTERVAL)
+        if step.is_analyzer:
+            # «Usar el analizador»: una captura cada pocos segundos mientras dure el paso.
+            candidate = (run.next_capture_due or 0.0) + ABSTRACT_CAPTURE_INTERVAL
+            return replace(run, next_capture_due=candidate if candidate < step.exposure_seconds else None)
         stimulus = self.stimuli(step.stimulus_id)
         next_due = None
         if run.next_capture_due is not None and stimulus is not None and stimulus.kind is StimulusKind.ABSTRACT:
@@ -1431,6 +1453,7 @@ class GuidedSessionService:
             else:
                 kind, name = {StepKind.RECOGNITION: ("recognition", "¿Qué emoción es?"),
                               StepKind.DRAWING: ("drawing", "Dibuja una cara"),
+                              StepKind.ANALYZER: ("analyzer", ANALYZER_NAME),
                               StepKind.PRACTICE: ("practice", CAMERA_GAME_NAME if step.is_camera_game
                                                   else RATED_IMITATION_NAME if step.conductor_rating
                                                   else "Práctica de expresiones")}.get(
@@ -1817,6 +1840,8 @@ class GuidedSessionService:
         live = self._live.get(run.session_id)
         calibrating = run.phase is GuidedPhase.CALIBRATION and live is not None and live.calibration is not None \
             and live.calibration.state == CALIBRATING
+        analyzer = (run.phase is GuidedPhase.STIMULI
+                    and self._protocol(session).steps[run.step_index].is_analyzer)
         if session.exam_id is not None:
             # La persona sabe que se la analiza, pero no qué se mide ni en qué momento.
             station_messages = {
@@ -1841,7 +1866,7 @@ class GuidedSessionService:
         }
         return {
             "phase": run.phase.value,
-            "message": messages.get(run.phase),
+            "message": ANALYZER_MESSAGE if analyzer else messages.get(run.phase),
             "stimulus": stimulus,
             "remaining_seconds": remaining,
             # Un reconocimiento o un dibujo no analiza la cámara: la pantalla no envía cuadros.

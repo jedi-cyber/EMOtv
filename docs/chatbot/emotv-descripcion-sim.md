@@ -92,6 +92,14 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
   quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
   que la necesitan.
+- **Usar el analizador** (tarjeta en «Expresión con la cámara»): un paso sin
+  imagen ni expresión fijada. Quien conduce pide de palabra las expresiones que
+  quiera, ve la expresión que estima la cámara (la persona no la ve) y pulsa
+  «Siguiente paso» al terminar. EMOtv registra la estimación cada pocos
+  segundos, sin calificarla.
+- **Editor de protocolos**: los pasos se ordenan arrastrándolos por su asa o con
+  las flechas, y una tarjeta de «Agregar un paso» se puede arrastrar al lugar
+  donde se quiere.
 - **Dibujo** (tarjeta «Dibujo» en «Agregar un paso»): la persona dibuja con el dedo
   (colores, grosor, borrador, «Deshacer» y «Limpiar») y pulsa «Terminé». No se
   le pregunta qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y

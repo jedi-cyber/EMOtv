@@ -7,6 +7,9 @@ from enum import Enum
 from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 
 MAX_EXPOSURE_SECONDS = 120
+# «Usar el analizador»: quien conduce lo termina; este es solo su tiempo máximo.
+MAX_ANALYZER_SECONDS = 600
+DEFAULT_ANALYZER_SECONDS = 180
 MAX_STEPS = 30
 MAX_HOLD_SECONDS = 10
 # Expresiones que se pueden pedir en una práctica: todo el catálogo. Quien arma
@@ -108,13 +111,16 @@ class StepKind(str, Enum):
     emoción es entre unas pocas opciones. Juego: varias rondas en las que la
     persona relaciona una imagen con el nombre de su emoción. Dibujo: la persona dibuja una cara
     en su pantalla y pulsa «Terminé», sin señalar una emoción; el dibujo no sale
-    del dispositivo ni se interpreta."""
+    del dispositivo ni se interpreta. Analizador: la cámara estima la expresión
+    sin imagen ni expresión pedida; quien conduce pide de palabra lo que quiera
+    y pasa al siguiente paso cuando termina."""
 
     STIMULUS = "stimulus"
     PRACTICE = "practice"
     RECOGNITION = "recognition"
     DRAWING = "drawing"
     GAME = "game"
+    ANALYZER = "analyzer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,7 +235,10 @@ class ProtocolStep:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError(f"{name} debe ser un entero de segundos")
-        if not 1 <= self.exposure_seconds <= MAX_EXPOSURE_SECONDS:
+        if kind is StepKind.ANALYZER:
+            if not 1 <= self.exposure_seconds <= MAX_ANALYZER_SECONDS:
+                raise ValueError(f"«Usar el analizador» dura entre 1 y {MAX_ANALYZER_SECONDS} segundos")
+        elif not 1 <= self.exposure_seconds <= MAX_EXPOSURE_SECONDS:
             raise ValueError(f"La exposición dura entre 1 y {MAX_EXPOSURE_SECONDS} segundos")
         if not 0 <= self.capture_after_seconds <= self.exposure_seconds:
             raise ValueError("La captura automática ocurre durante la exposición")
@@ -258,6 +267,11 @@ class ProtocolStep:
             # Las que falten las completa el servicio de protocolos al guardar.
             if len(ids) > self.rounds * self.images_per_round:
                 raise ValueError("El juego tiene más imágenes que rondas")
+            return
+        if kind is StepKind.ANALYZER:
+            if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
+                    or self.option_count is not None):
+                raise ValueError("«Usar el analizador» no tiene imagen, expresión pedida, tiempo de sostén ni opciones")
             return
         if kind is StepKind.DRAWING:
             if self.target_expression is not None or self.hold_seconds is not None or self.option_count is not None:
@@ -311,6 +325,10 @@ class ProtocolStep:
         return cls(stimulus_id, max_seconds, 0, kind=StepKind.DRAWING)
 
     @classmethod
+    def analyzer(cls, max_seconds: int = DEFAULT_ANALYZER_SECONDS) -> ProtocolStep:
+        return cls(None, max_seconds, 0, kind=StepKind.ANALYZER)
+
+    @classmethod
     def matching_game(cls, rounds: int = DEFAULT_GAME_ROUNDS, option_count: int = DEFAULT_GAME_OPTIONS,
                       round_seconds: int = 30, stimulus_ids: tuple[str, ...] = ()) -> ProtocolStep:
         return cls(None, round_seconds, 0, kind=StepKind.GAME, game_type="matching", rounds=rounds,
@@ -344,6 +362,10 @@ class ProtocolStep:
         return self.kind is StepKind.DRAWING
 
     @property
+    def is_analyzer(self) -> bool:
+        return self.kind is StepKind.ANALYZER
+
+    @property
     def is_game(self) -> bool:
         return self.kind is StepKind.GAME
 
@@ -373,8 +395,9 @@ class ProtocolStep:
 
     @property
     def uses_camera(self) -> bool:
-        """Una imagen con captura o un ejercicio de práctica; un reconocimiento, un dibujo o un juego no."""
-        return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE)
+        """Una imagen con captura, un ejercicio de práctica o «Usar el analizador»;
+        un reconocimiento, un dibujo o un juego no."""
+        return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE, StepKind.ANALYZER)
 
 
 def camera_game_blocks(steps: tuple[ProtocolStep, ...]) -> list[range]:

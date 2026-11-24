@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.15 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, la 4.15 quita la pregunta del dibujo, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.16 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, la 4.15 quita la pregunta del dibujo, la 4.16 agrega el paso «Usar el analizador», y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
@@ -650,7 +650,8 @@ persona.
 `activity` tiene estos campos:
 
 - `kind`: `waiting`, `questionnaire`, `stimulus`, `practice`,
-  `recognition`, `drawing`, `game`, `live` o `finished`. La lista es abierta:
+  `recognition`, `drawing`, `game`, `analyzer` (desde 4.16), `live` o
+  `finished`. La lista es abierta:
   un valor desconocido se muestra como «Actividad».
 - `name`: texto para mostrar.
 - `number` y `total`: el paso y cuántos hay; son nulos fuera de los pasos.
@@ -1016,7 +1017,7 @@ aplicativo debe tolerar valores desconocidos (ver
 | `report_status` | `draft` (borrador), `submitted` (en revisión), `changes_requested` (con observaciones), `approved` (aprobado) | No |
 | `section` | `timeline`, `metrics`, `questionnaires`, `narrative`, `general` | No |
 | `report_action` | `created`, `edited`, `submitted`, `commented`, `returned`, `approved`, `closed`, `new_version`, `printed` | Sí |
-| `kind` (estímulo) | `emotional`, `abstract`; `practice` (4.1), `recognition` (4.2), `drawing` (4.5) y `game` (4.6) en la línea de tiempo | Sí |
+| `kind` (estímulo) | `emotional`, `abstract`; `practice` (4.1), `recognition` (4.2), `drawing` (4.5), `game` (4.6) y `analyzer` (4.16) en la línea de tiempo | Sí |
 | `practice_outcome` | `achieved` (logró la expresión pedida), `timed_out` (terminó el tiempo), `skipped` (se saltó), `stopped` (la sesión se detuvo) | Sí |
 | `recognition_outcome` | `answered` (respondió), `timed_out` (terminó el tiempo sin respuesta), `skipped` (se saltó), `stopped` (la sesión se detuvo) | Sí |
 | `target_expression` | `happiness`, `surprise`, `sadness`, `anger`, `fear`, `disgust`, `neutral` (cara tranquila) | Sí |
@@ -1079,6 +1080,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.16 | 2026-11-24 | Compatible con la 4.15. Nuevo tipo de paso `analyzer` («Usar el analizador»): sin imagen ni expresión pedida; quien conduce pide de palabra las expresiones y EMOtv registra la expresión estimada cada pocos segundos hasta que pulse «Siguiente paso» o venza su tiempo máximo (hasta 600 s). En `GET /participant-view/{token}`, `activity.kind` es `analyzer`, `stimulus` es nulo, `capture_frames` es verdadero y `message` dice «Mira a la cámara y haz la expresión que te pidan.»; nunca trae la expresión estimada. En la línea de tiempo, el paso llega con `kind` `analyzer` y `title` «Expresiones con la cámara», y sus capturas en `lanes.captures` como las de cualquier paso. No hay rutas nuevas para el aplicativo |
 | 4.15 | 2026-11-24 | Compatible con la 4.14. El paso de dibujo ya no pregunta qué emoción se quiso dibujar: en `GET /participant-view/{token}`, `drawing.question` llega nulo y `drawing.options` vacío; al pulsar «Terminé» el aplicativo envía `POST /participant-view/{token}/drawing-done`, sin cuerpo. Un aplicativo anterior que aún envía `POST …/answer` con una emoción termina el dibujo, pero la emoción no se guarda. En los resultados, un dibujo terminado llega con `outcome` `answered` y `chosen_expression` nulo (las sesiones anteriores conservan la emoción señalada); las frases cambian a «Terminó N de M dibujos.» y «Se terminó N de M dibujos.» |
 | 4.14 | 2026-11-24 | Compatible con la 4.13: solo campos nuevos y opcionales. «Juego: imita la cara»: `conductor_rating` y `conductor_stars` en `metrics.practice.exercises[]` y `metrics.practice.conductor_ratings` (cuántas veces quien conduce marcó cada número de estrellas). Un paso `drawing` puede traer `stimulus_id` (una imagen que la persona mira antes de dibujar). No hay rutas nuevas |
 | 4.13 | 2026-11-24 | Compatible con la 4.12: solo campos nuevos y opcionales. `game_round` (int, nulo) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio es una ronda del juego con cámara «Muestra la emoción». En la pantalla de la persona, `practice.camera_game` (`round`, `rounds`, `stars`, `summary`). Sin puntos. No hay rutas nuevas |

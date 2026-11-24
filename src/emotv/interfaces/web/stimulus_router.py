@@ -20,7 +20,7 @@ from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, 
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
 from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
-                                   ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+                                   ProtocolSupports, MAX_ANALYZER_SECONDS, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
                                    MAX_RECOGNITION_OPTIONS, CAMERA_PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
@@ -57,10 +57,12 @@ class StepModel(BaseModel):
     # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
     # una imagen emocional y la persona elige qué emoción es. «drawing»: la
     # persona dibuja una cara y pulsa «Terminé». «game»: juego
-    # de emparejar imágenes con el nombre de su emoción.
-    kind: Literal["stimulus", "practice", "recognition", "drawing", "game"] = "stimulus"
+    # de emparejar imágenes con el nombre de su emoción. «analyzer»: la cámara
+    # estima la expresión sin imagen; quien conduce pide de palabra las expresiones.
+    kind: Literal["stimulus", "practice", "recognition", "drawing", "game", "analyzer"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
-    exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
+    # Hasta 120 s; solo «analyzer» llega a 600 (lo valida el dominio).
+    exposure_seconds: int = Field(ge=1, le=MAX_ANALYZER_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
     record_verbal_response: bool = False
     # Solo imágenes abstractas: se muestran antes de la calibración, sin capturas.

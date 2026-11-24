@@ -46,6 +46,9 @@ export const ACCESSIBLE_RECOGNITION = { option_count: 2, max_seconds: 30 };
 export const ACCESSIBLE_TIME_FACTOR = 2;
 // Dibujo: tiempo para dibujar que propone el editor (el máximo en el modo accesible).
 export const DRAWING_SECONDS = 90;
+/** «Usar el analizador»: quien conduce lo termina; esto es solo su tiempo máximo. */
+export const ANALYZER_SECONDS = 180;
+export const MAX_ANALYZER_SECONDS = 600;
 /** Juego de emparejar: pocas opciones al empezar; quien arma el protocolo sube la dificultad. */
 export const DEFAULT_GAME = { rounds: 3, option_count: 2, exposure_seconds: 30 };
 export const MIN_GAME_ROUNDS = 2;
@@ -98,13 +101,15 @@ export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[]
   const recognitions = steps.filter((step) => step.kind === "recognition").length;
   const drawings = steps.filter((step) => step.kind === "drawing").length;
   const games = steps.filter((step) => step.kind === "game").length;
-  const images = steps.length - practices - recognitions - drawings - games;
+  const analyzers = steps.filter((step) => step.kind === "analyzer").length;
+  const images = steps.length - practices - recognitions - drawings - games - analyzers;
   const parts = [];
-  if (images > 0 || practices + recognitions + drawings + games === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (images > 0 || practices + recognitions + drawings + games + analyzers === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
   if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
   if (recognitions > 0) parts.push(`${recognitions} ${recognitions === 1 ? "reconocimiento" : "reconocimientos"}`);
   if (drawings > 0) parts.push(`${drawings} ${drawings === 1 ? "dibujo" : "dibujos"}`);
   if (games > 0) parts.push(`${games} ${games === 1 ? "juego" : "juegos"}`);
+  if (analyzers > 0) parts.push(`${analyzers} ${analyzers === 1 ? "paso con el analizador" : "pasos con el analizador"}`);
   return parts;
 }
 
@@ -142,6 +147,8 @@ export function protocolStepLines(steps: ProtocolStep[], titleOf: (id: string) =
       lines.push(`¿Qué emoción es? con ${image(step.stimulus_id)}${step.situation ? " y una historia" : ""} · ${step.option_count ?? DEFAULT_RECOGNITION.option_count} opciones`);
     } else if (step.kind === "drawing") {
       lines.push(`Dibujo${step.stimulus_id ? ` mirando ${image(step.stimulus_id)}` : ""} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "analyzer") {
+      lines.push(`Usar el analizador: tú pides las expresiones · hasta ${seconds(step.exposure_seconds)}`);
     } else if (step.kind === "game") {
       lines.push(`${gameTypeNames[step.game_type ?? "matching"] ?? "Juego"}: ${step.rounds ?? DEFAULT_GAME.rounds} rondas`);
     } else {

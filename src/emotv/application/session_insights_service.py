@@ -15,7 +15,7 @@ from emotv.application.authorization_service import AuthorizationService
 from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, game_sentence,
                                                practice_metrics, recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.guided_session import RECOGNITION_NAMES, GuidedPhase
+from emotv.domain.guided_session import ANALYZER_NAME, RECOGNITION_NAMES, GuidedPhase
 from emotv.domain.protocol import Protocol
 from emotv.domain.session import EmotionalSession
 from emotv.domain.stimulus import Stimulus
@@ -121,8 +121,9 @@ class SessionInsightsService:
             # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
             kind = ("practice" if step.is_practice else "recognition" if step.is_recognition
                     else "drawing" if step.is_drawing else "game" if step.is_game
+                    else "analyzer" if step.is_analyzer
                     else stimulus.kind.value if stimulus else "")
-            titles[index] = (stimulus.title if stimulus else "", kind)
+            titles[index] = (ANALYZER_NAME if step.is_analyzer else stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
         practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
         recognition = ({item.step_index: item for item in self.guided.list_recognition_results(session.id)}

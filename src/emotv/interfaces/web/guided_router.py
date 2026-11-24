@@ -306,6 +306,12 @@ def create_guided_router(
         run = guarded(lambda: service().finish_drawing(user, session_id))
         return {"phase": run.phase.value}
 
+    @router.post("/guided-sessions/{session_id}/analyzer-done")
+    def analyzer_done(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """«Siguiente paso» en «Usar el analizador»: quien conduce terminó de pedir expresiones."""
+        run = guarded(lambda: service().finish_analyzer(user, session_id))
+        return {"phase": run.phase.value}
+
     @router.post("/guided-sessions/{session_id}/game")
     def game(session_id: str, request: GameActionRequest, user: User = Depends(current_user)) -> dict[str, str]:
         """Quien conduce registra la emoción que la persona señaló, pide la ayuda o pasa de ronda."""

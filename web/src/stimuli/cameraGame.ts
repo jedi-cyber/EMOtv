@@ -54,6 +54,26 @@ export function removeItem(steps: ProtocolStep[], index: number): ProtocolStep[]
   return [...steps.slice(0, start), ...steps.slice(end)];
 }
 
+/**
+ * Mueve el elemento entero que contiene index para que empiece en la posición at
+ * (un índice de pasos de 0 a steps.length, contado antes de moverlo). Un juego con
+ * cámara se mueve entero; at dentro del propio elemento no cambia nada.
+ */
+export function moveItemTo(steps: ProtocolStep[], index: number, at: number): ProtocolStep[] {
+  const [start, end] = itemRange(steps, index);
+  if (at >= start && at <= end) return steps;
+  const item = steps.slice(start, end);
+  const rest = [...steps.slice(0, start), ...steps.slice(end)];
+  const position = at > end ? at - item.length : at;
+  return [...rest.slice(0, position), ...item, ...rest.slice(position)];
+}
+
+/** Inserta pasos nuevos en la posición at (al final si se pasa de largo). */
+export function insertItems(steps: ProtocolStep[], at: number, items: ProtocolStep[]): ProtocolStep[] {
+  const position = Math.max(0, Math.min(at, steps.length));
+  return [...steps.slice(0, position), ...items, ...steps.slice(position)];
+}
+
 /** Reemplaza el bloque que empieza en index por otros pasos (por ejemplo, con otras rondas). */
 export function replaceItem(steps: ProtocolStep[], index: number, next: ProtocolStep[]): ProtocolStep[] {
   const [start, end] = itemRange(steps, index);

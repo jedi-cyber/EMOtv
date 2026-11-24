@@ -197,6 +197,7 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `POST` | `/guided-sessions/{id}/start` | «Empezar»: desde `ready` empieza el primer paso (o la fase `live` sin protocolo). También saca de `calibration` una sesión que quedó ahí antes de quitar la calibración |
 | `POST` | `/guided-sessions/{id}/calibration` | Solo para una sesión que quedó en `calibration` antes de 2026-11-24; las nuevas no pasan por esa fase (`409`) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
+| `POST` | `/guided-sessions/{id}/analyzer-done` | «Siguiente paso» en «Usar el analizador» (paso `analyzer`): quien conduce terminó de pedir expresiones; el paso queda hecho, no saltado (`409` si el paso en curso no es ese) |
 | `POST` | `/guided-sessions/{id}/drawing-done` | Quien conduce marca que la persona terminó de dibujar (`409` si el paso ya terminó o no es un dibujo) |
 | `POST` | `/guided-sessions/{id}/rating` | «Juego: imita la cara»: `stars` de 1 a 5, la valoración de quien conduce al terminar la imitación (`409` antes de que termine o si el paso no la lleva). El paso espera esta valoración; la pantalla de la persona nunca la recibe |
 | `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |

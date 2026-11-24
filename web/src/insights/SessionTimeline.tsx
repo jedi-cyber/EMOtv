@@ -106,6 +106,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
       : item.kind === "recognition" ? `¿Qué emoción es? ${recognitionText(item)}`
       : item.kind === "drawing" ? `Dibujo: ${drawingText(item)}`
       : item.kind === "game" ? `${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
+      : item.kind === "analyzer" ? `Usar el analizador: quien conduce pide las expresiones${item.skipped ? " (se saltó)" : ""}`
       : `Aparece el estímulo «${item.title}»${item.skipped ? " (se saltó)" : ""}` })),
     ...captures.map((item) => ({ time: item.time, text: `Captura: ${item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "sin expresión estimada"}${item.quality === "flagged" ? ", marcada por calidad" : ""}` })),
     ...said.map((item) => ({ time: item.time, text: `Dijo ver en «${item.title}»: ${item.text}` })),
@@ -124,6 +125,7 @@ export function SessionTimeline({ timeline, expressionLabel, eventsOpen = false 
         : item.kind === "recognition" ? `${seconds(item.start ?? 0)} · ¿Qué emoción es? ${recognitionText(item)}`
         : item.kind === "drawing" ? `${seconds(item.start ?? 0)} · Dibujo: ${drawingText(item)}`
         : item.kind === "game" ? `${seconds(item.start ?? 0)} · ${gameTypeNames[item.game_type ?? "matching"]}: ${gameText(item)}`
+        : item.kind === "analyzer" ? `${seconds(item.start ?? 0)} · Usar el analizador`
         : `${seconds(item.start ?? 0)} · ${item.title}${item.kind === "abstract" ? " (abstracta)" : ""}${item.skipped ? " · se saltó" : ""}`}</title>
     </g>),
     captures: captures.map((item, index) => <g key={index}>

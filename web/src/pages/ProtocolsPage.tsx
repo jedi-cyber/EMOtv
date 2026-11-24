@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent } from "react";
 import { apiRequest } from "../api/http";
 import type { GameType, PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
@@ -16,11 +16,11 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, ANALYZER_SECONDS, MAX_ANALYZER_SECONDS, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 import { toast } from "../components/Toaster";
-import { CAMERA_GAME, cameraGameSteps, itemRange, moveItem, removeItem, replaceItem } from "../stimuli/cameraGame";
+import { CAMERA_GAME, cameraGameSteps, insertItems, itemRange, moveItem, moveItemTo, removeItem, replaceItem } from "../stimuli/cameraGame";
 
 interface Draft {
   name: string;
@@ -48,7 +48,9 @@ function anySupport(supports: ProtocolSupports) {
 }
 
 /** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
-type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "camera" | "rated" | "practice" | "imitation" | "stimulus";
+type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "practice" | "imitation" | "stimulus";
+/** Lo que se está arrastrando en el editor: un paso de la lista o una tarjeta de «Agregar un paso». */
+type Dragging = { from: "step"; index: number } | { from: "catalog"; key: StepChoice };
 type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
 const stepCatalog: { group: string; hint: string; items: { key: StepChoice; title: string; text: string; image?: boolean }[] }[] = [
   { group: "Juegos", hint: "Sin cámara: se juegan con botones.", items: [
@@ -60,6 +62,7 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
     { key: "drawing", title: "Dibujo", text: "Dibuja una cara y pulsa «Terminé». No se pregunta qué emoción quiso dibujar y el dibujo no se guarda." },
   ] },
   { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
+    { key: "analyzer", title: "Usar el analizador", text: "La cámara estima la expresión mientras tú pides de palabra las emociones que quieras. Pasas al siguiente paso cuando terminas." },
     { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
     { key: "rated", title: "Juego: imita la cara", text: "Ve una imagen y hace la misma cara. La cámara estima la expresión y tú la valoras de 1 a 5 estrellas; la persona no ve tu valoración.", image: true },
     { key: "practice", title: "Ejercicio de práctica", text: "Se pide una expresión y una señal simple crece al acercarse." },
@@ -104,6 +107,11 @@ export function ProtocolsPage() {
   const [choice, setChoice] = useState("");
   // Tipo de paso con imagen que se está agregando: muestra el selector de imagen.
   const [picking, setPicking] = useState<ImageChoice | null>(null);
+  // Dónde va el paso con imagen al elegirla: donde se soltó la tarjeta, o al final.
+  const [pickAt, setPickAt] = useState<number | null>(null);
+  // Arrastrar y soltar: qué se arrastra y en qué posición caería (índice de pasos).
+  const [dragging, setDragging] = useState<Dragging | null>(null);
+  const [dropAt, setDropAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Protocolo que se mira sin editar y protocolo que se va a eliminar.
@@ -121,8 +129,9 @@ export function ProtocolsPage() {
   const recognitionProblems = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.kind === "recognition"
     && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
       || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
-  const drawingProblems = draft.steps.filter((step) => (step.kind === "drawing" || step.kind === "game")
-    && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
+  const drawingProblems = draft.steps.filter((step) => ((step.kind === "drawing" || step.kind === "game")
+    && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS))
+    || (step.kind === "analyzer" && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_ANALYZER_SECONDS))).length;
   const chosen = choice ? byId.get(choice) : undefined;
   // Imágenes para una ronda de «Empareja la emoción»: emocionales con su expresión esperada.
   const matchable = offered.filter((item) => recognizable(item));
@@ -159,57 +168,91 @@ export function ProtocolsPage() {
   function cameraGameSeconds() {
     return accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, CAMERA_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : CAMERA_GAME.exposure_seconds;
   }
-  function addCameraGame() {
-    update({ steps: [...draft.steps, ...cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds())] });
+  /** Agrega pasos en la posición at (al final por omisión). */
+  function insert(items: ProtocolStep[], at: number | null = null) {
+    update({ steps: insertItems(draft.steps, at ?? draft.steps.length, items) });
   }
   function addStep() {
     if (!choice) return;
-    update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice(""); setPicking(null);
+    insert([{ stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
   function addRecognition() {
     if (!recognizable(chosen)) return;
     const defaults = accessibleOn(draft.supports) ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
-    update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
-      exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice(""); setPicking(null);
+    insert([{ kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
+      exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
   function addImitation(rated = false) {
     if (!imitable || !chosen) return;
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true, conductor_rating: rated,
+    insert([{ kind: "practice", stimulus_id: choice, imitate: true, conductor_rating: rated,
       target_expression: chosen.expected_expression, hold_seconds: practiceDefaults.hold_seconds,
       exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice(""); setPicking(null);
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
-  function addPractice() {
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness",
-      hold_seconds: practiceDefaults.hold_seconds,
-      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-  }
-  function addDrawing() {
-    // Sin imagen ni opciones: la persona dibuja y señala la emoción que quiso representar.
-    update({ steps: [...draft.steps, { kind: "drawing", stimulus_id: null,
-      exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-  }
-  function addGame(gameType: GameType) {
+  /** Los pasos que agrega una tarjeta sin imagen. */
+  function newSteps(key: Exclude<StepChoice, ImageChoice>): ProtocolStep[] {
+    const base = { capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false };
+    if (key === "camera") return cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds());
+    // Sin imagen ni expresión pedida: quien conduce pide de palabra y pasa al siguiente cuando termina.
+    if (key === "analyzer") return [{ ...base, kind: "analyzer", stimulus_id: null, exposure_seconds: ANALYZER_SECONDS }];
+    // Sin imagen ni opciones: la persona dibuja y pulsa «Terminé».
+    if (key === "drawing") return [{ ...base, kind: "drawing", stimulus_id: null,
+      exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS }];
     // Pocas opciones al empezar. Las imágenes las elige el servidor del banco aprobado.
-    update({ steps: [...draft.steps, { kind: "game", game_type: gameType, stimulus_id: null,
+    if (key === "matching" || key === "similar") return [{ ...base, kind: "game", game_type: key as GameType, stimulus_id: null,
       rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
       exposure_seconds: accessibleOn(draft.supports)
-        ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+        ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds }];
+    return [{ ...base, kind: "practice", stimulus_id: null, target_expression: "happiness",
+      hold_seconds: practiceDefaults.hold_seconds,
+      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds }];
   }
-  function choose(key: StepChoice) {
+  function isImageChoice(key: StepChoice): key is ImageChoice {
+    return key === "recognition" || key === "imitation" || key === "rated" || key === "stimulus";
+  }
+  /** Tocar o soltar una tarjeta: los pasos con imagen piden elegirla y van donde se soltó. */
+  function choose(key: StepChoice, at: number | null = null) {
     setChoice("");
-    if (key === "recognition" || key === "imitation" || key === "rated" || key === "stimulus") { setPicking(key); return; }
-    setPicking(null);
-    if (key === "matching" || key === "similar") addGame(key);
-    else if (key === "drawing") addDrawing();
-    else if (key === "camera") addCameraGame();
-    else addPractice();
+    if (isImageChoice(key)) { setPicking(key); setPickAt(at); return; }
+    setPicking(null); setPickAt(null);
+    insert(newSteps(key), at);
+  }
+
+  // --- Arrastrar y soltar -------------------------------------------------------------
+  function startDrag(event: DragEvent<HTMLElement>, item: Dragging, image?: Element | null) {
+    setDragging(item);
+    try {
+      event.dataTransfer.effectAllowed = item.from === "step" ? "move" : "copy";
+      event.dataTransfer.setData("text/plain", item.from === "step" ? `paso ${item.index + 1}` : item.key);
+      if (image) event.dataTransfer.setDragImage(image, 24, 24);
+    } catch { /* sin dataTransfer (pruebas): basta el estado */ }
+  }
+  function endDrag() { setDragging(null); setDropAt(null); }
+  /** Sobre un paso: cae antes o después de él según la mitad que se señale. */
+  function overStep(event: DragEvent<HTMLLIElement>, index: number) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const [start, end] = itemRange(draft.steps, index);
+    const box = event.currentTarget.getBoundingClientRect();
+    setDropAt(box.height > 0 && event.clientY > box.top + box.height / 2 ? end : start);
+  }
+  function overList(event: DragEvent<HTMLElement>) {
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.target === event.currentTarget) setDropAt(draft.steps.length);
+  }
+  function drop(event: DragEvent<HTMLElement>) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const at = dropAt ?? draft.steps.length;
+    if (dragging.from === "step") update({ steps: moveItemTo(draft.steps, dragging.index, at) });
+    else choose(dragging.key, at);
+    endDrag();
   }
   function addPicked() {
     if (picking === "recognition") addRecognition();
@@ -218,12 +261,12 @@ export function ProtocolsPage() {
     else addStep();
   }
   function openEditor(item: Protocol | null) {
-    setEditing(item); setChoice(""); setPicking(null); setError(""); setEditorOpen(true);
+    setEditing(item); setChoice(""); setPicking(null); setPickAt(null); endDrag(); setError(""); setEditorOpen(true);
     setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children,
       supports: item.supports ?? (item.accessible ? { ...noSupports, pictograms: true, large_controls: true, pause: "long" } : noSupports), steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
   }
-  function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setPicking(null); setEditorOpen(false); }
+  function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setPicking(null); setPickAt(null); endDrag(); setEditorOpen(false); }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -411,12 +454,30 @@ export function ProtocolsPage() {
             <h4>Pasos{draft.steps.length > 0 ? ` (${draft.steps.length})` : ""}</h4>
             <div className="protocol-steps-layout">
             <div className="protocol-steps-column">
-            {draft.steps.length === 0 && <p className="muted">Todavía no hay pasos. Elige al menos uno en «Agregar un paso».</p>}
-            <ol ref={stepsRef} className="card-list protocol-steps">{draft.steps.map((step, index) => {
+            {draft.steps.length === 0 ? <p className={`muted step-drop-empty${dragging ? " is-drop-target" : ""}`}
+              onDragOver={(event) => { if (dragging) { event.preventDefault(); setDropAt(0); } }} onDrop={drop}>
+              Todavía no hay pasos. Toca una tarjeta de «Agregar un paso» o arrástrala aquí.</p>
+              : <p className="muted">Arrastra un paso por su asa o usa las flechas. También puedes arrastrar una tarjeta de «Agregar un paso» al lugar donde la quieras.</p>}
+            <ol ref={stepsRef} className="card-list protocol-steps" onDragOver={overList} onDrop={drop}
+              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null); }}>{draft.steps.map((step, index) => {
               const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
               const [itemStart, itemEnd] = itemRange(draft.steps, index);
+              // Línea donde caería lo que se arrastra, y el paso que se mueve, atenuado.
+              const stepClass = (position: number) => {
+                const [start, end] = itemRange(draft.steps, position);
+                const moving = dragging?.from === "step" && itemRange(draft.steps, dragging.index)[0] === start;
+                return ["row-card protocol-step", moving && "is-dragging",
+                  dragging && dropAt === start && "is-drop-before",
+                  dragging && dropAt === end && end === draft.steps.length && "is-drop-after"].filter(Boolean).join(" ");
+              };
               // Arriba a la derecha de cada paso: subir, bajar y quitar, sin desplazarse.
               const order = <span className="step-order" role="group" aria-label={`Orden del paso ${index + 1}`}>
+                <span className="step-order-button step-drag-handle" draggable title="Arrastrar para mover"
+                  data-testid={`arrastrar-paso-${index + 1}`}
+                  onDragStart={(event) => startDrag(event, { from: "step", index }, event.currentTarget.closest("li"))}
+                  onDragEnd={endDrag}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.4" /><circle cx="13" cy="5" r="1.4" /><circle cx="7" cy="10" r="1.4" /><circle cx="13" cy="10" r="1.4" /><circle cx="7" cy="15" r="1.4" /><circle cx="13" cy="15" r="1.4" /></svg>
+                </span>
                 <button type="button" className="step-order-button" aria-label={`Subir el paso ${index + 1}`} title="Subir"
                   disabled={itemStart === 0} onClick={() => move(index, -1)}>
                   <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 12 5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -438,7 +499,7 @@ export function ProtocolsPage() {
                 const updateBlock = (changes: Partial<ProtocolStep>) => update({ steps: replaceItem(draft.steps, index,
                   block.map((round) => ({ ...round, ...changes }))) });
                 const problem = block.map(practiceProblem).find((item) => item !== null);
-                return <li key={`camera-game-${index}`} className="row-card protocol-step">
+                return <li key={`camera-game-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}–{itemEnd}. Juego con cámara: muestra la emoción</strong>
                     <span>En cada ronda se pide una emoción y una barra crece al acercarse. Si la sostiene, gana una estrella; al final se ve «Lograste X de {block.length} caras». Sin puntos.</span>
@@ -465,7 +526,7 @@ export function ProtocolsPage() {
                 const problem = practiceProblem(step);
                 const unsuitableModel = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
                 const modelName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
-                return <li key={`imitation-${index}`} className="row-card protocol-step">
+                return <li key={`imitation-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}. {step.conductor_rating ? "Juego: imita la cara" : "Haz la misma cara"}: {stimulus?.title ?? "Imagen no disponible"}</strong>
                     {modelName && <span>La persona ve la imagen y hace la misma cara. Expresión pedida: {modelName} (la expresión esperada de la imagen).</span>}
@@ -486,7 +547,7 @@ export function ProtocolsPage() {
               if (step.kind === "practice") {
                 const problem = practiceProblem(step);
                 const unsuitableIllustration = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
-                return <li key={`practice-${index}`} className="row-card protocol-step">
+                return <li key={`practice-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}. Ejercicio de práctica: {practiceTargetNames[step.target_expression ?? ""] ?? "elige la expresión"}</strong>
                     <span>Se pide la expresión y se espera que la persona la sostenga.</span>
@@ -514,8 +575,22 @@ export function ProtocolsPage() {
                   </div>
                 </li>;
               }
+              if (step.kind === "analyzer") {
+                return <li key={`analyzer-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. Usar el analizador</strong>
+                    <span>La cámara estima la expresión facial mientras tú pides de palabra las emociones que quieras. Tú ves la expresión estimada; la persona no. Pulsas «Siguiente paso» cuando terminas.</span>
+                    <span className="muted">El protocolo no fija ninguna expresión: EMOtv registra lo que estima cada pocos segundos, sin calificarlo.</span>
+                  </div>
+                  <div className="inline-actions">
+                    <label>Tiempo máximo (s)<input type="number" min={1} max={MAX_ANALYZER_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
               if (step.kind === "drawing") {
-                return <li key={`drawing-${index}`} className="row-card protocol-step">
+                return <li key={`drawing-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}. Dibujo: {stimulus ? `la emoción que siente al ver «${stimulus.title}»` : "una cara con una emoción"}</strong>
                     <span>{stimulus
@@ -542,7 +617,7 @@ export function ProtocolsPage() {
                 const rounds = step.rounds ?? DEFAULT_GAME.rounds;
                 const similar = step.game_type === "similar";
                 const children = draft.for_children ? " «Para niños»" : "";
-                return <li key={`game-${index}`} className="row-card protocol-step">
+                return <li key={`game-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}. Juego: {similar ? "busca la misma emoción" : "empareja la emoción"}</strong>
                     <span>{similar
@@ -589,7 +664,7 @@ export function ProtocolsPage() {
               const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
               if (step.kind === "recognition") {
                 const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
-                return <li key={`recognition-${index}`} className="row-card protocol-step">
+                return <li key={`recognition-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                   <div>
                     <strong>{index + 1}. {step.situation ? "Situación" : "¿Qué emoción es?"} {stimulus?.title ?? "Imagen no disponible"}</strong>
                     {answerName && <span>La persona elige entre varias emociones. Respuesta: {answerName} (la expresión esperada de la imagen).</span>}
@@ -613,7 +688,7 @@ export function ProtocolsPage() {
                   </div>
                 </li>;
               }
-              return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
+              return <li key={`${step.stimulus_id}-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
                 <div>
                   <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
                   {stimulus && <span>{stimulusSummary(stimulus)}</span>}
@@ -641,19 +716,21 @@ export function ProtocolsPage() {
                 <div className="step-catalog-grid">{group.items.map((item) => <button key={item.key} type="button"
                   className={`step-option${picking === item.key ? " is-selected" : ""}`}
                   aria-labelledby={`step-option-${item.key}-title`} aria-describedby={`step-option-${item.key}`}
-                  aria-pressed={item.image ? picking === item.key : undefined} onClick={() => choose(item.key)}>
+                  aria-pressed={item.image ? picking === item.key : undefined} onClick={() => choose(item.key)}
+                  draggable onDragStart={(event) => startDrag(event, { from: "catalog", key: item.key })} onDragEnd={endDrag}>
                   <strong id={`step-option-${item.key}-title`}>{item.title}</strong>
                   <span id={`step-option-${item.key}`}>{item.text}{item.image ? " Lleva una imagen." : ""}</span>
                 </button>)}</div>
               </div>)}
               {picking && pickable.length > 0 ? <div className="step-picker">
+                {pickAt != null && pickAt < draft.steps.length && <p className="muted">Se agrega como paso {pickAt + 1}.</p>}
                 <label>Imagen para «{imageChoiceTitle[picking]}»<select value={choice} onChange={(event) => setChoice(event.target.value)}>
                   <option value="">Elige una imagen</option>
                   {pickable.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
                 </select></label>
                 <div className="inline-actions">
                   <Button variant="primary" disabled={!choice} onClick={addPicked}>Agregar paso</Button>
-                  <Button variant="ghost" onClick={() => { setPicking(null); setChoice(""); }}>Cancelar</Button>
+                  <Button variant="ghost" onClick={() => { setPicking(null); setChoice(""); setPickAt(null); }}>Cancelar</Button>
                 </div>
                 {picking !== "stimulus" && <p className="muted">Solo aparecen imágenes emocionales con una expresión esperada: es la respuesta del paso.</p>}
               </div> : !stimuliQuery.loading && (offered.length === 0 || picking) && <div className="empty-state step-picker">
