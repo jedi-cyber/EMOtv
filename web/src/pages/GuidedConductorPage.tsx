@@ -203,8 +203,9 @@ export function GuidedConductorPage() {
     const detail = state?.game?.option_details?.find((item) => item.key === key);
     return similarGame && detail ? `Cara ${key} (${targetName(detail.expression)})` : targetName(key);
   };
-  const cameraStep = (state?.phase === "stimuli" && (isPractice || step?.step_kind === "stimulus")) || state?.phase === "calibration";
-  // Seguir sin cámara: en la calibración o en un paso que la usa, si la sesión todavía la usa.
+  const cameraStep = (state?.phase === "stimuli" && (isPractice || step?.step_kind === "stimulus"))
+    || state?.phase === "ready" || state?.phase === "calibration";
+  // Seguir sin cámara: antes de empezar o en un paso que la usa, si la sesión todavía la usa.
   const canContinueWithoutCamera = active && state?.has_protocol && state.uses_camera !== false && !state.camera_off && cameraStep;
 
   return <section>
@@ -254,19 +255,12 @@ export function GuidedConductorPage() {
         : <Button variant="primary" disabled={busy} onClick={() => { void act("/advance"); }}>Continuar</Button>}
     </div>}
 
-    {state?.phase === "calibration" && <div className="card form-stack">
-      <h2>Calibración neutral</h2>
-      <p>Pide a la persona que mire la pantalla con el rostro relajado unos segundos.</p>
-      {state.calibration.notice && <Callout variant="warning">{state.calibration.notice}</Callout>}
-      {state.calibration.state === "calibrating"
-        ? <p role="status">Calibrando… {Math.round(state.calibration.progress * 100)} %</p>
-        : <Button variant="primary" disabled={busy} onClick={() => { void act("/calibration"); }}>Iniciar calibración</Button>}
-    </div>}
-
-    {state?.phase === "ready" && (state.uses_camera === false || state.camera_off) && <div className="card form-stack">
+    {(state?.phase === "ready" || state?.phase === "calibration") && <div className="card form-stack">
       <h2>Lista para empezar</h2>
-      <p>{state.camera_off ? "La sesión sigue sin cámara" : "Esta sesión no usa la cámara"}: no hay calibración. El tiempo del primer paso corre desde que pulses «Empezar».</p>
-      <p className="muted">Si la persona usa su pantalla, ábrela antes de empezar.</p>
+      <p>{state.camera_off ? "La sesión sigue sin cámara. " : state.uses_camera === false ? "Esta sesión no usa la cámara. " : ""}El tiempo del primer paso corre desde que pulses «Empezar».</p>
+      <p className="muted">{state.uses_camera === false || state.camera_off
+        ? "Si la persona usa su pantalla, ábrela antes de empezar."
+        : "Abre antes la pantalla de la persona: ahí pide permiso para la cámara y muestra la vista previa, para que la persona se acomode frente a ella."}</p>
       <Button variant="primary" disabled={busy} onClick={() => { void act("/start"); }}>Empezar</Button>
     </div>}
 

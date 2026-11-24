@@ -55,8 +55,9 @@ Toda sesión empieza en el **Analizador**:
    psicológico de la persona. El botón «Preguntar a Emi sobre esta expresión»
    abre a Emi con una pregunta general y editable, sin datos de la sesión.
 
-Con protocolo, la sesión sigue sus pasos: cuestionario previo, calibración
-neutral, los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
+Con protocolo, la sesión sigue sus pasos: cuestionario previo, «Lista para
+empezar» (sin calibración: la pantalla de la persona muestra la vista previa
+de la cámara y quien conduce pulsa «Empezar»), los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
 práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. La
 persona evaluada ve los pasos en su propia pantalla («Abrir la pantalla de la
 persona», o en Android con «Vincular Android»), sin resultados, y puede pedir
@@ -74,6 +75,11 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   admite imágenes leves y aprobadas. Uno ya usado no se edita: se crea una
   versión nueva. El «Modo accesible» usa dos opciones con pictograma, botones
   grandes y más tiempo por paso.
+- **Juegos**: en el menú, «Juegos» reúne la actividad de dibujo («Dibuja una
+  cara») y una versión de prueba de «Empareja la emoción» y «Busca la misma
+  emoción», con caras dibujadas y tres rondas. Nada de esto crea una sesión,
+  usa la cámara ni guarda datos; sirve para conocer los juegos antes de
+  ponerlos en un protocolo.
 - **Plantillas y banco inicial**: «Usar la plantilla inicial» copia el
   protocolo «Emociones básicas 4 a 6 años» (para niños y en modo accesible). El
   banco inicial trae dibujos de expresiones listos para usar. Un Docente puede

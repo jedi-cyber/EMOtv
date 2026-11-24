@@ -20,7 +20,7 @@ export function DrawingPage() {
       <DrawingActivity onDrawingChange={setHasDrawing} />
     </div>
     <div className="participant-actions">
-      <Button variant="ghost" onClick={() => { navigate(paths.analysis); }}>Salir</Button>
+      <Button variant="ghost" onClick={() => { navigate(paths.games); }}>Salir</Button>
     </div>
   </main>;
 }

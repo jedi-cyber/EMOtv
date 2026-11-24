@@ -207,7 +207,7 @@ describe("salida accidental", () => {
   function page() {
     const router = createMemoryRouter([
       { path: "/drawing", element: <DrawingPage /> },
-      { path: "/analysis", element: <p>Analizador</p> },
+      { path: "/games", element: <p>Juegos</p> },
     ], { initialEntries: ["/drawing"] });
     render(<RouterProvider router={router} />);
     return router;
@@ -216,7 +216,7 @@ describe("salida accidental", () => {
   it("sin dibujo, salir no pregunta", async () => {
     const router = page();
     await userEvent.click(screen.getByRole("button", { name: "Salir" }));
-    expect(router.state.location.pathname).toBe("/analysis");
+    expect(router.state.location.pathname).toBe("/games");
   });
 
   it("con un dibujo, salir pide confirmación y avisa que se borra; cerrar la pestaña también avisa", async () => {
@@ -233,6 +233,6 @@ describe("salida accidental", () => {
     expect(router.state.location.pathname).toBe("/drawing");
     await userEvent.click(screen.getByRole("button", { name: "Salir" }));
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Salir y borrar" }));
-    expect(await screen.findByText("Analizador")).toBeInTheDocument();
+    expect(await screen.findByText("Juegos")).toBeInTheDocument();
   });
 });

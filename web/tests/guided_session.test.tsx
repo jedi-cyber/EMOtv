@@ -14,7 +14,7 @@ vi.mock("../src/api/http", async (original) => ({
 
 const NOTICE = "Registro descriptivo. Una sesión breve no permite sacar conclusiones a partir de una imagen.";
 const baseState: GuidedState = {
-  session_id: "s1", session_code: "S-4F7K2Q", phase: "calibration", audience: "adulto", has_protocol: true, stop_reason: null, step_index: null, step_count: 2,
+  session_id: "s1", session_code: "S-4F7K2Q", phase: "ready", audience: "adulto", has_protocol: true, stop_reason: null, step_index: null, step_count: 2,
   steps: [
     { index: 0, stimulus_id: "e1", title: "Paisaje", kind: "emotional", exposure_seconds: 6, capture_after_seconds: 2, record_verbal_response: false, shown_before_analyzer: false },
     { index: 1, stimulus_id: "a1", title: "Forma", kind: "abstract", exposure_seconds: 8, capture_after_seconds: 2, record_verbal_response: true, shown_before_analyzer: false },
@@ -91,17 +91,28 @@ describe("sesión sin cámara (solo reconocimientos)", () => {
   it("quien conduce no ve la calibración y empieza el primer paso con «Empezar»", async () => {
     conductor(ready);
     const start = await screen.findByRole("button", { name: "Empezar" });
-    expect(screen.getByText(/no usa la cámara: no hay calibración/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Iniciar calibración" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Esta sesión no usa la cámara/)).toBeInTheDocument();
     await userEvent.click(start);
     expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/start", expect.objectContaining({ method: "POST" }));
     expect(apiRequest).not.toHaveBeenCalledWith("/guided-sessions/s1/calibration", expect.anything());
   });
 
-  it("con cámara sigue mostrando la calibración", async () => {
-    conductor(baseState);
-    expect(await screen.findByRole("button", { name: "Iniciar calibración" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Empezar" })).not.toBeInTheDocument();
+  it("con cámara tampoco hay calibración: se empieza con «Empezar»", async () => {
+    conductor({ ...baseState, phase: "ready", uses_camera: true });
+    expect(await screen.findByRole("button", { name: "Empezar" })).toBeInTheDocument();
+    expect(screen.getByText(/muestra la vista previa/)).toBeInTheDocument();
+    expect(screen.queryByText(/calibración/i)).not.toBeInTheDocument();
+  });
+
+  it("con cámara, la persona ve la vista previa mientras espera, sin enviar cuadros", async () => {
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    participant({ phase: "ready", message: "En un momento empezamos.", stimulus: null,
+      remaining_seconds: null, capture_frames: false, frame_interval_ms: 500, abstract_notice: null, uses_camera: true });
+    expect(await screen.findByLabelText("Vista previa de la cámara")).toHaveClass("participant-camera--preview");
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    expect(apiRequest).not.toHaveBeenCalledWith("/participant-view/tok/frames", expect.anything());
   });
 
   it("la pantalla de la persona espera sin pedir la cámara", async () => {
@@ -116,7 +127,7 @@ describe("sesión sin cámara (solo reconocimientos)", () => {
 });
 
 describe("sin cámara en una sesión que la usa", () => {
-  const participantView: ParticipantViewState = { phase: "calibration", message: "Mira a la pantalla con el rostro relajado.",
+  const participantView: ParticipantViewState = { phase: "live", message: "Mira a la pantalla con naturalidad.",
     stimulus: null, remaining_seconds: null, capture_frames: true, frame_interval_ms: 500, abstract_notice: null };
 
   it("si se niega el permiso, la persona sabe qué puede seguir haciendo y quien conduce recibe el motivo", async () => {

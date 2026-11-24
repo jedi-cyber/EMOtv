@@ -158,7 +158,7 @@ class GuidedPhase(str, Enum):
     POST_QUESTIONNAIRE = "post_questionnaire"
     LIVE = "live"                         # sin protocolo (móvil): registro periódico hasta terminar
     WAITING = "waiting"                   # estación de examen sin consentimiento: no se analiza nada
-    READY = "ready"                       # estación calibrada, o sesión sin cámara: espera que se inicie
+    READY = "ready"                       # estación calibrada, o sesión guiada: espera que se inicie
     EXAM = "exam"                         # examen en curso: una fila cada medio segundo
     FINISHED = "finished"
     STOPPED = "stopped"

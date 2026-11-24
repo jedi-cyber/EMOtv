@@ -28,17 +28,12 @@ def create(env, *steps, for_children=False, user=None):  # noqa: F811
 
 
 def start(env, *steps):  # noqa: F811
-    """Sesión con protocolo de prácticas armado por la API, ya calibrada y en el primer ejercicio."""
+    """Sesión con protocolo de prácticas armado por la API, ya en el primer ejercicio."""
     response = create(env, *steps)
     assert response.status_code == 201, response.text
     session_id, token = guided(env, response.json())
     env.frame_result = NEUTRAL
-    assert post(env, session_id, "calibration").status_code == 200
-    for _ in range(5):
-        frame(env, token)
-        wait(env, 0.6)
-    wait(env, 0.5)
-    frame(env, token)
+    assert post(env, session_id, "start").status_code == 200
     assert state(env, session_id)["phase"] == "stimuli"
     return session_id, token
 

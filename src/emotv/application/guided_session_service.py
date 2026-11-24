@@ -1,7 +1,8 @@
 """Sesión que ejecuta un protocolo: cuestionario previo, imágenes abstractas
-antes del analizador, calibración neutral, estímulos con capturas controladas
-por calidad, y cuestionario posterior. En el aplicativo móvil, una sesión sin
-protocolo hace la calibración y después la fase live: una captura cada pocos
+antes del analizador, espera de «Empezar» (ready, sin calibración: la pantalla
+de la persona muestra la vista previa de la cámara), estímulos con capturas
+controladas por calidad, y cuestionario posterior. Una sesión sin protocolo
+espera «Empezar» y después pasa a la fase live: una captura cada pocos
 segundos hasta que quien conduce la termina.
 
 La autorización se confirma una sola vez, al iniciar la sesión (POST /sessions);
@@ -334,11 +335,9 @@ class GuidedSessionService:
         return self._to_analyzer(run, session, protocol)
 
     def _to_analyzer(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol) -> GuidedRun:
-        """Con cámara, la calibración neutral; sin cámara (solo reconocimientos),
-        la sesión queda lista (ready) hasta que quien conduce pulsa «Empezar»: no
-        se calibra ni se envían cuadros, y el tiempo del primer paso no corre antes."""
-        if self._camera_active(run, session):
-            return replace(run, phase=GuidedPhase.CALIBRATION, step_started_at=None, next_capture_due=None)
+        """La sesión queda lista (ready) hasta que quien conduce pulsa «Empezar»,
+        con cámara o sin ella: no hay calibración, y el tiempo del primer paso no
+        corre antes. Mientras espera, la pantalla de la persona no envía cuadros."""
         return replace(run, phase=GuidedPhase.READY, step_started_at=None, next_capture_due=None)
 
     def _first_step(self, run: GuidedRun, session: EmotionalSession, protocol: Protocol) -> GuidedRun:
@@ -1213,7 +1212,7 @@ class GuidedSessionService:
         run = GuidedRun(session_id=session.id, owner_user_id=user.id, created_at=self.clock(),
                         confirmed_at=session.authorization_confirmed_at, view_token_hash=hash_token(token))
         if protocol is None:
-            run = replace(run, phase=GuidedPhase.CALIBRATION)
+            run = replace(run, phase=GuidedPhase.READY)
         elif session.pre_questionnaire_id:
             run = replace(run, phase=GuidedPhase.PRE_QUESTIONNAIRE)
         else:
@@ -1326,13 +1325,20 @@ class GuidedSessionService:
         raise GuidedConflict("No hay nada que continuar en esta fase")
 
     def start(self, user: User, session_id: str) -> GuidedRun:
-        """«Empezar» en una sesión sin cámara: el tiempo del primer paso corre desde ahora."""
+        """«Empezar»: el tiempo del primer paso corre desde ahora. Sin protocolo,
+        empieza el registro periódico de la expresión. Una sesión que quedó en la
+        calibración (antes de quitarla) también empieza así."""
         run, session = self._conducted(user, session_id)
-        if session.exam_id is not None or self._camera_active(run, session):
-            raise GuidedConflict("Esta sesión empieza con la calibración")
-        if run.phase is not GuidedPhase.READY:
+        if session.exam_id is not None:
+            raise GuidedConflict("El examen empieza cuando el docente lo indica")
+        if run.phase not in (GuidedPhase.READY, GuidedPhase.CALIBRATION):
             raise GuidedConflict("La sesión ya empezó o todavía tiene el cuestionario previo")
-        return self.repository.save_run(self._first_step(run, session, self._protocol(session)))
+        if session.protocol_id is None:
+            run = replace(run, phase=GuidedPhase.LIVE, step_index=0, step_started_at=self.clock(),
+                          next_capture_due=0.0)
+        else:
+            run = self._first_step(run, session, self._protocol(session))
+        return self.repository.save_run(run)
 
     def continue_without_camera(self, user: User, session_id: str) -> GuidedRun:
         """La cámara no está disponible (permiso denegado, sin cámara o falla): la

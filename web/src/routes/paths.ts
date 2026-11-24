@@ -34,6 +34,10 @@ export const paths = {
   guidedSessionPattern: "/guided/:sessionId",
   participantView: (token: string) => `/participant-view/${encodeURIComponent(token)}`,
   participantViewPattern: "/participant-view/:token",
+  // Juegos de prueba: sin sesión, sin cámara y sin registro.
+  games: "/games",
+  game: (kind: string) => `/games/${encodeURIComponent(kind)}`,
+  gamePattern: "/games/:kind",
   // Actividad de dibujo: a pantalla completa, sin sesión ni registro.
   drawing: "/drawing",
   // Examen simulado congelado (docs/escenario-examen.md): sin rutas ni menú.

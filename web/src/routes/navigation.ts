@@ -26,6 +26,9 @@ const activitiesItem: readonly NavigationItem[] = ACTIVITIES_ENABLED
   ? [{ to: paths.activities, label: "Actividades", icon: "activity" }]
   : [];
 
+/** Juegos de prueba y la actividad de dibujo: sin sesión ni cámara. */
+const gamesItem: NavigationItem = { to: paths.games, label: "Juegos", icon: "games" };
+
 /** Guía de uso: la ven todas las cuentas, con los temas de su papel. */
 const guideItem: NavigationItem = { to: paths.guide, label: "Guía de uso", icon: "document", placement: "footer" };
 
@@ -36,6 +39,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.analysis, label: "Analizador", icon: "analysis" },
     { to: paths.sessions, label: "Mis sesiones", icon: "sessions" },
     { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
+    gamesItem,
     ...activitiesItem,
     ...material,
     { to: paths.images, label: "Imágenes", icon: "document", group: "Mi material" },
@@ -50,6 +54,7 @@ export const navigationByRole: Record<UserRole, readonly NavigationItem[]> = {
     { to: paths.sessions, label: "Sesiones", icon: "sessions" },
     { to: paths.students, label: "Mi grupo", icon: "users" },
     { to: paths.statistics, label: "Estadísticas", icon: "statistics" },
+    gamesItem,
     ...activitiesItem,
     { to: paths.stimuli, label: "Estímulos", icon: "manage" },
     { to: paths.imageReview, label: "Imágenes por revisar", icon: "shield", counter: "imageReview" },

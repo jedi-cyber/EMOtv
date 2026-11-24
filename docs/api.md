@@ -174,10 +174,12 @@ auditoría registra solo la cantidad.
 ## Sesión con protocolo
 
 Orden: cuestionario previo, imágenes abstractas marcadas "antes del analizador"
-(sin capturas), calibración neutral, estímulos del protocolo con capturas y, si
-el protocolo lo indica, cuestionario posterior. Sin protocolo, después de la
-calibración la fase es `live`: una lectura cada 3 segundos hasta que quien
-conduce termina. La confirmación ya se dio al crear la sesión: aquí no se pide
+(sin capturas), espera de «Empezar» (fase `ready`), estímulos del protocolo con
+capturas y, si el protocolo lo indica, cuestionario posterior. Desde 2026-11-24
+no hay calibración neutral en estas sesiones: en `ready` la pantalla de la
+persona muestra la vista previa de la cámara (sin enviar cuadros) y el tiempo
+del primer paso corre desde `POST /start`. Sin protocolo, después de «Empezar»
+la fase es `live`: una lectura cada 3 segundos hasta que quien conduce termina. La confirmación ya se dio al crear la sesión: aquí no se pide
 otra. El servidor lleva el tiempo de cada exposición, así quien conduce y la
 persona evaluada pueden usar dispositivos distintos. Las rutas internas
 conservan el nombre `participant-view` (pantalla de la persona).
@@ -188,7 +190,8 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `POST` | `/guided-sessions/{id}/view-link` | Reemplaza el enlace (el anterior deja de valer) |
 | `GET` | `/guided-sessions/{id}` | Quien conduce: código, público, fase, paso, tiempo restante, estado de la captura, capturas, marcadores y lo que la persona dijo ver |
 | `POST` | `/guided-sessions/{id}/advance` | Continúa tras el cuestionario previo o posterior (`409` si falta responderlo) |
-| `POST` | `/guided-sessions/{id}/calibration` | Inicia la calibración neutral (solo después del cuestionario previo) |
+| `POST` | `/guided-sessions/{id}/start` | «Empezar»: desde `ready` empieza el primer paso (o la fase `live` sin protocolo). También saca de `calibration` una sesión que quedó ahí antes de quitar la calibración |
+| `POST` | `/guided-sessions/{id}/calibration` | Solo para una sesión que quedó en `calibration` antes de 2026-11-24; las nuevas no pasan por esa fase (`409`) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
 | `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |
 | `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |

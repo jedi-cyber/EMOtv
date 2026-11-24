@@ -70,7 +70,8 @@ del banco inicial. Úsala en el Analizador.
 | --- | --- | --- | --- | --- |
 | Confirmación | Sin confirmar la autorización firmada no se puede empezar. | | | |
 | Pantalla de la persona | «Crear el enlace de la pantalla de la persona» y «Abrir la pantalla de la persona» la abren en otra ventana o dispositivo. No muestra resultados, etiquetas, probabilidades ni calidad. | | | |
-| Calibración | Con la cara tranquila, la calibración termina y empieza el primer paso. | | | |
+| Lista para empezar | Sin calibración: la pantalla de la persona muestra la vista previa de la cámara (como un espejo) y, al pulsar «Empezar», empieza el primer paso. | | | |
+| Juegos | En el menú, «Juegos» abre el dibujo y la versión de prueba de los dos juegos, sin crear una sesión ni usar la cámara. | | | |
 | «¿Qué emoción es?» en modo accesible | Se ven el dibujo, dos opciones con pictograma y botones grandes. Tras elegir se lee el nombre de la emoción del dibujo, sin valorar la respuesta. | | | |
 | Ejercicio de práctica | Se lee la instrucción («Muestra alegría»). La señal crece al acercarse y aparece «¡Lo lograste!» al sostenerla. Si se vence el tiempo, no hay mensaje de fracaso. | | | |
 | «Haz la misma cara» | Se ven el dibujo y «Haz la misma cara». Quien conduce ve «Imitar el modelo» y la expresión pedida. | | | |

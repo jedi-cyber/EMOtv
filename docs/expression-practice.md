@@ -299,9 +299,12 @@ Propuesta:
 No se agrega ninguna fase. Un ejercicio de práctica es un paso dentro de
 `STIMULI`: `_tick` y `_receive` ramifican por `step.kind`.
 
-- `PRE_QUESTIONNAIRE`, `POST_QUESTIONNAIRE`, `CALIBRATION`: sin cambios. La
-  calibración ya ocurre antes de `STIMULI`, así que la práctica siempre la tiene,
-  salvo tras un reinicio del servidor (§3, paso 4).
+- `PRE_QUESTIONNAIRE`, `POST_QUESTIONNAIRE`: sin cambios. **Actualización
+  2026-11-24:** las sesiones guiadas ya no pasan por `CALIBRATION`; esperan en
+  `READY` (con la vista previa de la cámara en la pantalla de la persona) hasta
+  «Empezar». Sin base neutral, el nivel de la práctica usa siempre la
+  probabilidad directa de la expresión pedida (`relative_to_calibration =
+  False`), el mismo cálculo que ya se usaba al pedir neutral o tras un reinicio.
 - `BEFORE_ANALYZER`: no admite pasos de práctica (lo valida el dominio).
 - `STIMULI` con pasos de imagen: mismo código y mismas capturas; los pasos de
   imagen y de práctica pueden alternarse en un protocolo.

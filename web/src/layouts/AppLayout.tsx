@@ -18,6 +18,7 @@ export function breadcrumbs(pathname: string, role: UserRole): Crumb[] {
   const sessions = role === "student" ? "Mis sesiones" : "Sesiones";
   if (parts[0] === "activities") return [home, { label: "Actividades", ...(parts[1] ? { to: paths.activities } : {}) }, ...(parts[1] ? [{ label: "Detalle de actividad" }] : [])];
   if (parts[0] === "analysis") return [home, { label: "Analizador" }];
+  if (parts[0] === "games") return [home, { label: "Juegos", ...(parts[1] ? { to: paths.games } : {}) }, ...(parts[1] ? [{ label: "Juego de prueba" }] : [])];
   if (parts[0] === "guided") return [home, { label: sessions, to: paths.sessions }, { label: "Sesión con protocolo" }];
   if (parts[0] === "sessions" && parts[1] === "deletions") return [home, { label: sessions, to: paths.sessions }, { label: "Acta de eliminación" }];
   if (parts[0] === "sessions") return [home, { label: sessions, ...(parts[1] ? { to: paths.sessions } : {}) }, ...(parts[1] ? [{ label: "Detalle de sesión" }] : [])];

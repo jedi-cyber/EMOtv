@@ -161,6 +161,11 @@ export function ParticipantViewPage() {
 
   const capturing = Boolean(view?.capture_frames) && !ended;
   const withoutCamera = view?.uses_camera === false;
+  // La persona se ve a sí misma (como en un espejo) al esperar el inicio, en los
+  // ejercicios de práctica y en la lectura en vivo; no mientras mira una imagen o juega.
+  const previewing = !ended && !withoutCamera && view != null
+    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice));
+  const cameraOn = capturing || previewing;
   // Si la sesión siguió sin cámara, el aviso del problema ya no hace falta.
   useEffect(() => { if (withoutCamera) setCameraError(""); }, [withoutCamera]);
 
@@ -171,7 +176,7 @@ export function ParticipantViewPage() {
   }
 
   useEffect(() => {
-    if (!capturing) { releaseCamera(); return; }
+    if (!cameraOn) { releaseCamera(); return; }
     let timer: number | undefined;
     let stopped = false;
     async function start() {
@@ -183,7 +188,8 @@ export function ParticipantViewPage() {
           if (videoRef.current) { videoRef.current.srcObject = streamRef.current; await videoRef.current.play().catch(() => undefined); }
         }
         setCameraError("");
-        timer = window.setInterval(sendFrame, interval);
+        // La vista previa sola no envía cuadros.
+        if (capturing) timer = window.setInterval(sendFrame, interval);
       } catch (reason) {
         if (stopped) return;
         releaseCamera();
@@ -208,7 +214,7 @@ export function ParticipantViewPage() {
     }
     void start();
     return () => { stopped = true; if (timer) window.clearInterval(timer); };
-  }, [capturing, base, interval, oneAtATime]);
+  }, [cameraOn, capturing, base, interval, oneAtATime]);
 
   // Al salir, cerrar o recargar la pestaña la cámara se apaga.
   useEffect(() => {
@@ -238,7 +244,9 @@ export function ParticipantViewPage() {
   const supports = view?.supports ?? (view?.accessible ? { pictograms: true, large_controls: true, read_aloud: false } : null);
   return <main className={`participant-view${supports?.large_controls ? " participant-view--accessible" : ""}`}>
     {/* Sin cámara (solo reconocimientos) no se monta el video. */}
-    {view?.uses_camera !== false && <video ref={videoRef} className="participant-camera" playsInline muted aria-hidden="true" />}
+    {view?.uses_camera !== false && <video ref={videoRef} playsInline muted
+      className={`participant-camera${previewing ? " participant-camera--preview" : ""}`}
+      aria-hidden={!previewing} aria-label={previewing ? "Vista previa de la cámara" : undefined} />}
     <canvas ref={canvasRef} hidden />
     <div className="participant-view-stage">
       {finished

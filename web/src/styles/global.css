@@ -218,6 +218,8 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .participant-notice { margin: var(--space-sm) 0; color: var(--color-slate); font-size: var(--text-body-sm); text-align: center; }
 .participant-actions { display: flex; justify-content: center; gap: var(--space-md); }
 .participant-camera { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* Vista previa: un espejo pequeño en una esquina; no tapa la instrucción ni el botón de parar. */
+.participant-camera--preview { position: fixed; top: var(--space-md); right: var(--space-md); z-index: 1; width: clamp(9rem, 22vw, 16rem); height: auto; aspect-ratio: 4 / 3; object-fit: cover; opacity: 1; transform: scaleX(-1); border-radius: var(--radius-lg); background: var(--color-ink); }
 /* Práctica de expresiones: instrucción grande, figura que crece con el nivel
    (un solo color para todas las expresiones) y el botón de parar siempre a la vista. */
 .participant-practice { display: grid; justify-items: center; gap: var(--space-lg); width: min(100%, 36rem); }

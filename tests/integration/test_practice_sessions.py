@@ -28,20 +28,14 @@ def practice_protocol(env, *steps, for_children=False):  # noqa: F811
     return {"id": item.id, "for_children": for_children}
 
 
-def start(env, *steps, calibrated=True):  # noqa: F811
-    """Sesión en el primer ejercicio, con la base neutral de la calibración."""
+def start(env, *steps):  # noqa: F811
+    """Sesión en el primer ejercicio: sin calibración, «Empezar» lo inicia."""
     session_id, token = guided(env, practice_protocol(env, *steps))
     env.frame_result = NEUTRAL
-    assert post(env, session_id, "calibration").status_code == 200
-    for _ in range(5):
-        frame(env, token)
-        wait(env, 0.6)
-    wait(env, 0.5)
-    frame(env, token)                            # este cuadro cierra la calibración y empieza el ejercicio
+    assert state(env, session_id)["phase"] == "ready"
+    assert post(env, session_id, "start").status_code == 200
     current = state(env, session_id)
     assert current["phase"] == "stimuli" and current["step_index"] == 0
-    if not calibrated:
-        env.guided._live.pop(session_id, None)  # como tras un reinicio: la base se perdió
     return session_id, token
 
 
@@ -65,7 +59,7 @@ def test_sostener_la_expresion_pedida_la_logra_y_avanza_tras_la_pausa(env):  # n
     send(env, token, HAPPY, count=5)            # el nivel cruza el umbral al 0.5 s y se sostiene 2 s
     [item] = results(env, session_id)
     assert item.outcome is PracticeOutcome.ACHIEVED and item.seconds_to_achieve == 2.5
-    assert item.relative_to_calibration is True and item.feedback_visible is True
+    assert item.relative_to_calibration is False and item.feedback_visible is True
     assert item.target_expression == "happiness" and 0.6 <= item.peak_level <= 1.0
     assert (item.analyzed_frames, item.flagged_frames) == (5, 0)
     assert item.emotion_model_id == "hsemotion_enet_b0_8_best_afew"
@@ -123,16 +117,8 @@ def test_un_cuadro_malo_no_sube_el_nivel_y_reinicia_el_sosten(env):  # noqa: F81
     assert (item.analyzed_frames, item.flagged_frames) == (8, 2)
 
 
-def test_con_calibracion_el_nivel_es_relativo_a_la_base(env):  # noqa: F811
+def test_el_nivel_usa_la_probabilidad_directa(env):  # noqa: F811
     session_id, token = start(env, ProtocolStep.practice("surprise", 2, 20))
-    # Sorpresa 0.30 con base 0.05: (0.30 - 0.05) / 0.95 ≈ 0.26, por debajo del umbral.
-    send(env, token, FrameAssessment((), "neutral", 0.7, {"neutral": 0.7, "surprise": 0.30}), count=10)
-    tracker = env.guided._live[session_id].practice
-    assert tracker.relative is True and 0.25 <= tracker.level <= 0.27
-
-
-def test_sin_calibracion_el_nivel_usa_la_probabilidad_directa(env):  # noqa: F811
-    session_id, token = start(env, ProtocolStep.practice("surprise", 2, 20), calibrated=False)
     send(env, token, FrameAssessment((), "neutral", 0.7, {"neutral": 0.7, "surprise": 0.30}), count=10)
     tracker = env.guided._live[session_id].practice
     assert tracker.relative is False and 0.29 <= tracker.level <= 0.30
@@ -141,7 +127,7 @@ def test_sin_calibracion_el_nivel_usa_la_probabilidad_directa(env):  # noqa: F81
     assert item.outcome is PracticeOutcome.ACHIEVED and item.relative_to_calibration is False
 
 
-def test_pedir_neutral_usa_la_probabilidad_directa_aunque_haya_calibracion(env):  # noqa: F811
+def test_pedir_neutral_tambien_se_logra(env):  # noqa: F811
     session_id, token = start(env, ProtocolStep.practice("neutral", 1, 20))
     send(env, token, NEUTRAL, count=5)
     [item] = results(env, session_id)
@@ -197,7 +183,7 @@ def test_una_ilustracion_se_muestra_y_no_cuenta_como_estimulo(env):  # noqa: F81
 
 def test_si_ya_se_analiza_un_cuadro_de_la_sesion_el_siguiente_se_descarta(env):  # noqa: F811
     session_id, token = start(env)
-    live = env.guided._live[session_id]
+    live = env.guided._live_of(session_id)
     live.analyzing = True
     assessed = env.frames_assessed
     send(env, token, HAPPY, count=3)

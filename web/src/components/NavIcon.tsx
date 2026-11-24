@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type NavIconName = "home" | "activity" | "analysis" | "sessions" | "students" | "users" | "manage" | "chat" | "document" | "shield" | "camera-off" | "guided" | "statistics";
+type NavIconName = "home" | "activity" | "analysis" | "sessions" | "students" | "users" | "manage" | "chat" | "document" | "shield" | "camera-off" | "guided" | "statistics" | "games";
 
 export function NavIcon({ name }: { name: NavIconName }) {
   const paths: Record<NavIconName, ReactNode> = {
@@ -16,6 +16,7 @@ export function NavIcon({ name }: { name: NavIconName }) {
     shield: <><path d="M12 3 5 6v6c0 4.2 3 7.7 7 9 4-1.3 7-4.8 7-9V6z" /><path d="m9 12 2 2 4-4" /></>,
     statistics: <><path d="M4 20h16" /><path d="M7 16v-5M12 16V6M17 16v-8" /></>,
     guided: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m10 9 5 3-5 3z" /></>,
+    games: <><rect x="2" y="7" width="20" height="11" rx="4" /><path d="M7 11v3M5.5 12.5h3" /><circle cx="15.5" cy="11.5" r="0.6" fill="currentColor" /><circle cx="17.5" cy="13.5" r="0.6" fill="currentColor" /></>,
     "camera-off": <><path d="M3 3l18 18" /><path d="M9 6h6l1 2h3a2 2 0 0 1 2 2v8M17.5 19H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2" /><path d="M10 10.5a3 3 0 0 0 4 4" /></>,
   };
   return <svg className="nav-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;

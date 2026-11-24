@@ -53,14 +53,22 @@ GUIDE: tuple[GuideTopic, ...] = (
     _topic("own-images", "Subir imágenes propias", (USER,),
            "En «Imágenes», «Subir imágenes». Nunca fotografías de personas evaluadas.",
            "EMOtv busca personas en cada imagen y luego la revisa tu docente: se usa solo si la aprueba."),
+    _topic("games", "Probar los juegos", (USER, DOCENTE),
+           "En «Juegos», «Dibuja una cara» abre el dibujo: la persona dibuja una cara y señala qué emoción quiso "
+           "mostrar.",
+           "«Jugar la prueba» abre una versión de prueba de «Empareja la emoción» o «Busca la misma emoción», con "
+           "caras dibujadas y tres rondas.",
+           note="Nada de esto crea una sesión, usa la cámara ni guarda datos. En una sesión, los juegos se agregan "
+                "a un protocolo."),
     _topic("conduct", "Conducir una sesión", (USER, DOCENTE),
            "En el «Analizador» elige un protocolo, o ninguno y con quién es la sesión: Conmigo, Un adulto o Un niño o "
            "niña.",
            "Confirma la autorización y anota el código de la sesión (por ejemplo, S-4F7K2Q) en el formato firmado.",
            "Con protocolo, «Crear el enlace de la pantalla de la persona» y «Abrir la pantalla de la persona» (o "
            "«Copiar enlace» para otro dispositivo). Esa pantalla no muestra resultados.",
-           "Calibra con la cara tranquila; los pasos avanzan solos. Puedes saltar un paso, apagar la señal de la "
-           "práctica y marcar «Se distrajo», «Se rió», «Lloró» o «Pidió parar».",
+           "Con la pantalla de la persona abierta (ahí se ve la vista previa de la cámara), pulsa «Empezar»; los "
+           "pasos avanzan solos. Puedes saltar un paso, apagar la señal de la práctica y marcar «Se distrajo», "
+           "«Se rió», «Lloró» o «Pidió parar».",
            "Si la persona o su tutor lo piden, detén la sesión: «La persona pidió parar» o «El tutor pidió parar».",
            note="La cámara se abre en el navegador; cada imagen se analiza en memoria y se descarta."),
     _topic("after", "Después de la sesión", (USER,),

@@ -84,21 +84,14 @@ def wait(env, seconds):  # noqa: F811
 
 
 def calibrate(env, session_id, token):  # noqa: F811
-    assert post(env, session_id, "calibration").status_code == 200
-    for _ in range(5):
-        assert frame(env, token).json() == {"received": True}
-        wait(env, 0.6)
-    wait(env, 0.5)
-    frame(env, token)
+    """Ya no hay calibración: «Empezar» lleva la sesión a su primer paso."""
+    assert state(env, session_id)["phase"] == "ready"
+    assert post(env, session_id, "start").status_code == 200
 
 
 def begin_steps(env, session_id, token):  # noqa: F811
-    """Lleva la sesión a su primer paso: calibra si el protocolo usa la cámara;
-    uno solo de reconocimientos espera «Empezar»."""
-    phase = state(env, session_id)["phase"]
-    if phase == "calibration":
-        calibrate(env, session_id, token)
-    elif phase == "ready":
+    """Lleva la sesión a su primer paso: con cámara o sin ella, espera «Empezar»."""
+    if state(env, session_id)["phase"] == "ready":
         assert post(env, session_id, "start").status_code == 200
 
 
@@ -107,13 +100,13 @@ def begin_steps(env, session_id, token):  # noqa: F811
 def test_the_confirmation_happens_once_at_the_start(env):  # noqa: F811
     emotional, _ = stimuli(env)
     session_id, token = guided(env, protocol(env, [step(emotional)]))
-    # No hay una segunda confirmación dentro de la sesión: empieza en la calibración.
-    assert state(env, session_id)["phase"] == "calibration"
+    # No hay una segunda confirmación ni calibración: la sesión espera «Empezar».
+    assert state(env, session_id)["phase"] == "ready"
     assert post(env, session_id, "confirm", {"authorization_confirmed": True}).status_code in (404, 405)
     assert state(env, session_id)["captures"] == []
     child_session, _ = guided(env, protocol(env, [step(emotional)], for_children=True))
     current = state(env, child_session)
-    assert current["phase"] == "calibration" and current["audience"] == "infantil"
+    assert current["phase"] == "ready" and current["audience"] == "infantil"
     assert current["session_code"].startswith("S-")
 
 
@@ -129,7 +122,7 @@ def test_a_session_without_a_confirmed_authorization_cannot_be_prepared(env):  #
 def test_without_a_protocol_the_session_is_the_live_reading(env):  # noqa: F811
     session_id, token = guided(env, session_type="infantil")
     current = state(env, session_id)
-    assert current["phase"] == "calibration" and current["has_protocol"] is False and current["step_count"] == 0
+    assert current["phase"] == "ready" and current["has_protocol"] is False and current["step_count"] == 0
     calibrate(env, session_id, token)
     assert state(env, session_id)["phase"] == "live"
     # Un niño sin protocolo no ve ninguna imagen ni cuestionario: solo la lectura.
@@ -149,18 +142,18 @@ def test_without_a_protocol_the_session_is_the_live_reading(env):  # noqa: F811
     assert session.state.value == "completed" and session.initial_emotion == "happiness"
 
 
-def test_the_pre_questionnaire_goes_before_calibration(env):  # noqa: F811
+def test_the_pre_questionnaire_goes_before_the_start(env):  # noqa: F811
     emotional, _ = stimuli(env)
     pre = create_questionnaire(env, env.user_1, items=[{"id": "a", "kind": "faces", "text": "¿Cómo estás?", "required": True}])
     session_id, token = guided(env, protocol(env, [step(emotional)], pre=pre))
     assert state(env, session_id)["phase"] == "pre_questionnaire"
-    assert post(env, session_id, "calibration").status_code == 409
+    assert post(env, session_id, "start").status_code == 409
     assert post(env, session_id, "advance").status_code == 409
     assert view(env, token).json()["capture_frames"] is False
     answer = env.client.post(f"/sessions/{session_id}/questionnaires/pre", headers=headers(env, env.user_1),
                              json={"answers": {"a": 3}, "entry_mode": "participant"})
     assert answer.status_code == 201
-    assert post(env, session_id, "advance").json()["phase"] == "calibration"
+    assert post(env, session_id, "advance").json()["phase"] == "ready"
 
 
 def test_the_flow_follows_the_protocol(env):  # noqa: F811
@@ -177,7 +170,7 @@ def test_the_flow_follows_the_protocol(env):  # noqa: F811
     frame(env, token)
     assert post(env, session_id, "verbal-responses", {"step_index": 0, "text": "Una mariposa"}).status_code == 201
     wait(env, 4)
-    assert state(env, session_id)["phase"] == "calibration"
+    assert state(env, session_id)["phase"] == "ready"
     calibrate(env, session_id, token)
     current = state(env, session_id)
     assert current["phase"] == "stimuli" and current["step_index"] == 1
