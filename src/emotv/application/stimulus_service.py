@@ -220,6 +220,13 @@ class StimulusService:
         self.audit.record(user, AuditAction.APPROVE, RESOURCE, stimulus.id)
         return approved
 
+    def delete(self, user: User, stimulus_id: str) -> None:
+        """Quien gestiona el estímulo lo elimina: se borra el archivo y deja de
+        ofrecerse. Un protocolo que lo usa pide elegir otra imagen."""
+        stimulus = self._managed(user, stimulus_id)
+        self.repository.remove(stimulus.id, self.clock())
+        self.audit.record(user, AuditAction.DELETE, RESOURCE, stimulus.id)
+
     def set_active(self, user: User, stimulus_id: str, active: bool) -> Stimulus:
         """Retira o vuelve a ofrecer un estímulo; los protocolos que ya lo usan lo conservan."""
         stimulus = self._managed(user, stimulus_id)

@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from emotv.application import AuthenticationService
@@ -160,6 +160,12 @@ def create_questionnaire_router(
                  status_code=201)
     def copy(questionnaire_id: str, user: User = Depends(current_user)):
         return to_model(guarded(lambda: service().copy(user, questionnaire_id)), user)
+
+    @router.delete("/questionnaires/{questionnaire_id}", status_code=204)
+    def delete(questionnaire_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien lo armó lo elimina; las respuestas de las sesiones se conservan."""
+        guarded(lambda: service().delete(user, questionnaire_id))
+        return Response(status_code=204)
 
     @router.put("/questionnaires/{questionnaire_id}/share", response_model=QuestionnaireResponseModel)
     def share(questionnaire_id: str, request: ShareRequest, user: User = Depends(current_user)):

@@ -447,6 +447,9 @@ class Protocol:
     accessible: bool = False
     shared_with_group: bool = False
     supports: ProtocolSupports | None = None
+    # Eliminado por quien lo armó: ya no se lista ni se aplica. Las sesiones que
+    # lo usaron lo conservan para su línea de tiempo y su reporte.
+    deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id", "name"):
@@ -481,7 +484,7 @@ class Protocol:
         _check_camera_games(steps)
         if (self.approved_at is None) != (self.approved_by_user_id is None):
             raise ValueError("La aprobación requiere fecha y quien aprueba")
-        for name in ("created_at", "approved_at", "superseded_at"):
+        for name in ("created_at", "approved_at", "superseded_at", "deleted_at"):
             value = getattr(self, name)
             if value is not None and (value.tzinfo is None or value.utcoffset() is None):
                 raise ValueError(f"{name} debe incluir zona horaria")

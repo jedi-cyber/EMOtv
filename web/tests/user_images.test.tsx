@@ -72,6 +72,22 @@ describe("imágenes del usuario", () => {
     expect(screen.getByText(/se eliminará/)).toBeInTheDocument();
     expect(screen.getByText("Aprobada")).toBeInTheDocument();
   });
+
+  it("el menú de tres puntos muestra la imagen en grande y la elimina tras confirmar", async () => {
+    state.data["/own-stimuli"] = [image("1")];
+    vi.mocked(apiRequest).mockResolvedValue(undefined as never);
+    withUser("student", <ImagesPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Imagen 1»" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Vista previa", "Eliminar"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Vista previa" }));
+    expect(screen.getByRole("dialog", { name: "Imagen 1" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Imagen 1»" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Eliminar" }));
+    expect(screen.getByRole("alertdialog", { name: "Eliminar imagen" })).toHaveTextContent("te pedirá elegir otra imagen");
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    expect(apiRequest).toHaveBeenCalledWith("/own-stimuli/1", expect.objectContaining({ method: "DELETE" }));
+  });
 });
 
 describe("imágenes por revisar", () => {

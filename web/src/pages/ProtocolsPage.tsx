@@ -6,14 +6,17 @@ import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
+import { ActionsMenu } from "../components/ActionsMenu";
+import type { ActionsMenuItem } from "../components/ActionsMenu";
 import { Checkbox } from "../components/Checkbox";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 import { toast } from "../components/Toaster";
@@ -103,6 +106,9 @@ export function ProtocolsPage() {
   const [picking, setPicking] = useState<ImageChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Protocolo que se mira sin editar y protocolo que se va a eliminar.
+  const [preview, setPreview] = useState<Protocol | null>(null);
+  const [removing, setRemoving] = useState<Protocol | null>(null);
   const offered = stimuli.filter((item) => item.active && (!draft.for_children || suitableForChildren(item)));
   const unsuitableSteps = draft.for_children
     ? draft.steps.filter((step) => { const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined; return stimulus != null && !suitableForChildren(stimulus); }).length
@@ -233,6 +239,43 @@ export function ProtocolsPage() {
     try { toast.success(await action()); await query.reload(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
     finally { setBusy(false); }
+  }
+
+  function questionnaireTitle(id: string | null) {
+    if (!id) return null;
+    const found = questionnaires.find((item) => item.id === id);
+    return found ? `«${found.title}»` : "un cuestionario";
+  }
+
+  async function remove() {
+    const item = removing;
+    if (!item) return;
+    await run(async () => {
+      await apiRequest(`/protocols/${encodeURIComponent(item.id)}`, { method: "DELETE", token });
+      return `Se eliminó «${item.name}». Las sesiones que lo usaron conservan su registro.`;
+    });
+    setRemoving(null);
+  }
+
+  function actions(item: Protocol): ActionsMenuItem[] {
+    const items: ActionsMenuItem[] = [{ label: "Vista previa", onSelect: () => setPreview(item) }];
+    if (item.owned_by_me) items.push({ label: "Editar", onSelect: () => openEditor(item) });
+    if (item.owned_by_me || item.shared_with_group) items.push({
+      label: item.owned_by_me ? "Duplicar" : "Copiar y modificar", disabled: busy,
+      onSelect: () => { void run(async () => {
+        await apiRequest(`/protocols/${encodeURIComponent(item.id)}/copy`, { method: "POST", token });
+        return `Se agregó una copia de «${item.name}» a tus protocolos. Puedes editarla y usarla en el Analizador.`;
+      }); },
+    });
+    if (isDocente && item.owned_by_me) items.push({
+      label: item.shared_with_group ? "Dejar de compartir" : "Compartir con mi grupo", disabled: busy,
+      onSelect: () => { void run(async () => {
+        await apiRequest(`/protocols/${encodeURIComponent(item.id)}/share`, { method: "PUT", token, body: JSON.stringify({ shared: !item.shared_with_group }) });
+        return item.shared_with_group ? "Tu grupo ya no ve este protocolo como plantilla." : "Tu grupo puede copiar este protocolo como plantilla.";
+      }); },
+    });
+    if (item.owned_by_me) items.push({ label: "Eliminar", danger: true, disabled: busy, onSelect: () => setRemoving(item) });
+    return items;
   }
 
   async function addValidation() {
@@ -639,17 +682,23 @@ export function ProtocolsPage() {
       </div>
       <div className="inline-actions">
         {item.owned_by_me && !item.needs_image && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
-        {item.owned_by_me && <Button onClick={() => openEditor(item)}>Editar</Button>}
-        {(item.owned_by_me || item.shared_with_group) && <Button variant={item.owned_by_me ? "secondary" : "primary"} disabled={busy}
-          onClick={() => { void run(async () => {
-            await apiRequest(`/protocols/${encodeURIComponent(item.id)}/copy`, { method: "POST", token });
-            return `Se agregó una copia de «${item.name}» a tus protocolos. Puedes editarla y usarla en el Analizador.`;
-          }); }}>{item.owned_by_me ? "Duplicar" : "Copiar y modificar"}</Button>}
-        {isDocente && item.owned_by_me && <Button disabled={busy} onClick={() => { void run(async () => {
-          await apiRequest(`/protocols/${encodeURIComponent(item.id)}/share`, { method: "PUT", token, body: JSON.stringify({ shared: !item.shared_with_group }) });
-          return item.shared_with_group ? "Tu grupo ya no ve este protocolo como plantilla." : "Tu grupo puede copiar este protocolo como plantilla.";
-        }); }}>{item.shared_with_group ? "Dejar de compartir" : "Compartir con mi grupo"}</Button>}
+        <ActionsMenu name={item.name} items={actions(item)} />
       </div>
     </li>)}</ul>}
+
+    <Modal open={preview !== null} title={preview ? `Vista previa: ${preview.name}` : "Vista previa"} onClose={() => setPreview(null)}>
+      {preview && <div className="protocol-preview">
+        <p className="muted">{preview.for_children ? "Para niños" : "Para adultos"} · Versión {preview.version}{preview.description ? ` · ${preview.description}` : ""}</p>
+        <ol>
+          {questionnaireTitle(preview.pre_questionnaire_id) && <li>Antes de empezar: cuestionario {questionnaireTitle(preview.pre_questionnaire_id)}</li>}
+          {protocolStepLines(preview.steps, (id) => byId.get(id)?.title).map((line, index) => <li key={index}>{line}</li>)}
+          {questionnaireTitle(preview.post_questionnaire_id) && <li>Al terminar: cuestionario {questionnaireTitle(preview.post_questionnaire_id)}</li>}
+        </ol>
+      </div>}
+    </Modal>
+
+    <ConfirmDialog open={removing !== null} title="Eliminar protocolo" confirmLabel="Eliminar" confirming={busy}
+      message={removing ? `Se eliminará «${removing.name}» de tus protocolos y ya no se podrá usar en el Analizador. Las sesiones que lo usaron conservan su registro${removing.shared_with_group ? ", y tu grupo deja de verlo como plantilla" : ""}.` : ""}
+      onConfirm={() => { void remove(); }} onCancel={() => setRemoving(null)} />
   </section>;
 }

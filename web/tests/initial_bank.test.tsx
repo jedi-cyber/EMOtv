@@ -48,3 +48,20 @@ describe("banco inicial de dibujos", () => {
     expect(screen.queryByRole("button", { name: "Agregar el banco inicial" })).not.toBeInTheDocument();
   });
 });
+
+describe("menú de tres puntos de un estímulo", () => {
+  it("quien lo gestiona lo retira o lo elimina; los demás solo lo miran", async () => {
+    vi.mocked(apiRequest).mockResolvedValue(undefined as never);
+    const view = page("psychologist", [{ ...drawing, can_manage: false }]);
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Alegría 1»" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Vista previa"]);
+    view.unmount();
+    page("admin", [{ ...drawing, approved: false }]);
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Alegría 1»" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Vista previa", "Aprobar", "Retirar", "Eliminar"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Eliminar" }));
+    expect(screen.getByRole("alertdialog", { name: "Eliminar estímulo" })).toHaveTextContent("usa «Retirar»");
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    expect(apiRequest).toHaveBeenCalledWith("/stimuli/s1", expect.objectContaining({ method: "DELETE" }));
+  });
+});

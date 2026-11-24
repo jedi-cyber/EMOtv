@@ -157,9 +157,22 @@ class ProtocolService:
 
     def get(self, user: User, protocol_id: str) -> Protocol:
         protocol = self.repository.get(protocol_id)
-        if protocol is None or not self.can_view(user, protocol):
+        if protocol is None or protocol.deleted_at is not None or not self.can_view(user, protocol):
             raise ProtocolNotFound(protocol_id)
         return protocol
+
+    def delete(self, user: User, protocol_id: str) -> None:
+        """Quien armó el protocolo lo elimina: deja de listarse, de aplicarse y de
+        ofrecerse como plantilla. Las sesiones que ya lo usaron lo conservan
+        para su línea de tiempo y su reporte, y las copias de otros no cambian."""
+        self._require_conductor(user)
+        protocol = self.get(user, protocol_id)
+        if protocol.owner_user_id != user.id:
+            raise PermissionError("Solo quien armó el protocolo puede eliminarlo")
+        if not protocol.current:
+            raise PermissionError("Elimina la versión vigente del protocolo")
+        self.repository.replace(replace(protocol, deleted_at=self.clock(), shared_with_group=False))
+        self.audit.record(user, AuditAction.DELETE, RESOURCE, protocol.id)
 
     def is_used(self, protocol: Protocol) -> bool:
         return self.repository.is_used(protocol.id)

@@ -128,6 +128,19 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .user-menu-role { display: block; margin: var(--space-xxs) 0 var(--space-md); color: var(--color-slate); font-size: var(--text-caption); }
 .user-menu-logout { width: 100%; }
 
+/* ---------- Menú de tres puntos (acciones de un elemento) ---------- */
+.actions-menu { position: relative; flex: none; }
+.actions-menu-trigger { display: grid; place-items: center; width: var(--control-height); height: var(--control-height); padding: 0; border: 1px solid transparent; border-radius: var(--radius-md); background: transparent; color: var(--color-slate); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
+.actions-menu-trigger svg { width: 20px; height: 20px; }
+.actions-menu-trigger:hover, .actions-menu-trigger[aria-expanded="true"] { background: var(--color-surface); color: var(--color-ink); }
+.actions-menu-panel { position: absolute; right: 0; top: 100%; z-index: var(--z-account-menu); display: grid; min-width: 12rem; margin-top: var(--space-xxs); padding: var(--space-xxs); border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); }
+.actions-menu-panel.align-start { right: auto; left: 0; }
+.actions-menu-item { min-height: var(--control-height-sm); padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-ink); cursor: pointer; font-size: var(--text-body-sm); text-align: left; white-space: nowrap; }
+.actions-menu-item:hover:not(:disabled), .actions-menu-item:focus-visible { background: var(--color-surface); }
+.actions-menu-item:disabled { color: var(--color-steel); cursor: not-allowed; }
+.actions-menu-item.danger { color: var(--color-error); }
+.actions-menu-item.danger:hover:not(:disabled), .actions-menu-item.danger:focus-visible { background: var(--color-error-soft); }
+
 /* ---------- Encabezado de página ---------- */
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-md); margin-bottom: var(--space-xl); }
 .page-heading .lead { margin: 0; }
@@ -157,6 +170,9 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .stimulus-row { justify-content: flex-start; align-items: flex-start; }
 .stimulus-row > div:last-child { margin-left: auto; }
 .stimulus-thumb { flex: none; width: 96px; height: 72px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-neutral-soft); object-fit: contain; }
+.stimulus-preview { display: block; width: 100%; max-height: 60vh; border-radius: var(--radius-md); background: var(--color-neutral-soft); object-fit: contain; }
+.stimulus-preview.stimulus-thumb-empty { min-height: 12rem; }
+.protocol-preview ol { display: grid; gap: var(--space-xs); margin: var(--space-sm) 0 0; padding-left: var(--space-lg); }
 .stimulus-thumb-empty { display: grid; place-items: center; font-size: var(--text-caption); }
 .protocol-step { align-items: flex-start; flex-wrap: wrap; }
 .protocol-step input[type="number"] { width: 6rem; }

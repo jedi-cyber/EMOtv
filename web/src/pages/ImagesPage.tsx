@@ -4,9 +4,11 @@ import { apiRequest } from "../api/http";
 import type { ImageAudience, ImageUploadResult, UserImage } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
+import { ActionsMenu } from "../components/ActionsMenu";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { NoticeList } from "../components/NoticeList";
 import { PageHeader } from "../components/PageHeader";
@@ -49,6 +51,9 @@ export function ImagesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [rejected, setRejected] = useState<{ title: string; message: string }[]>([]);
+  // Imagen que se mira en grande y la que se va a eliminar.
+  const [preview, setPreview] = useState<UserImage | null>(null);
+  const [removing, setRemoving] = useState<UserImage | null>(null);
   const ready = files.length > 0 && files.every((item) => item.title.trim() && item.origin.trim() && item.audience && item.rights);
 
   useEffect(() => () => files.forEach((item) => URL.revokeObjectURL(item.preview)), [files]);
@@ -98,6 +103,18 @@ export function ImagesPage() {
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudieron subir las imágenes."); }
     finally { setBusy(false); }
+  }
+
+  async function deleteImage() {
+    const item = removing;
+    if (!item) return;
+    setBusy(true); setError("");
+    try {
+      await apiRequest(`/own-stimuli/${encodeURIComponent(item.id)}`, { method: "DELETE", token });
+      toast.success(`Se eliminó «${item.title}».`);
+      await query.reload();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo eliminar la imagen."); }
+    finally { setBusy(false); setRemoving(null); }
   }
 
   return <section>
@@ -169,6 +186,18 @@ export function ImagesPage() {
           Si tu docente no la revisa antes del {formatDate(item.expires_at)}, se eliminará.
         </span>}
       </div>
+      <ActionsMenu name={item.title} items={[
+        { label: "Vista previa", onSelect: () => setPreview(item) },
+        { label: "Eliminar", danger: true, disabled: busy, onSelect: () => setRemoving(item) },
+      ]} />
     </li>)}</ul>}
+
+    <Modal open={preview !== null} title={preview?.title ?? "Vista previa"} onClose={() => setPreview(null)}>
+      {preview && <StimulusImage id={preview.id} alt={preview.title} className="stimulus-preview"
+        path={`/own-stimuli/${encodeURIComponent(preview.id)}/file`} />}
+    </Modal>
+    <ConfirmDialog open={removing !== null} title="Eliminar imagen" confirmLabel="Eliminar" confirming={busy}
+      message={removing ? `Se eliminará «${removing.title}» y su archivo. Un protocolo que la usa te pedirá elegir otra imagen; las sesiones ya hechas conservan su registro.` : ""}
+      onConfirm={() => { void deleteImage(); }} onCancel={() => setRemoving(null)} />
   </section>;
 }

@@ -159,6 +159,12 @@ def create_user_image_router(
         content_type, data = guarded(lambda: service().image(user, stimulus_id, preview))
         return Response(content=data, media_type=content_type, headers={"Cache-Control": "no-store"})
 
+    @router.delete("/own-stimuli/{stimulus_id}", status_code=204)
+    def delete_own(stimulus_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien subió la imagen la elimina: se borra el archivo."""
+        guarded(lambda: service().delete_own(user, stimulus_id))
+        return Response(status_code=204)
+
     # --- Docente ---------------------------------------------------------------
 
     @router.get("/own-stimuli/review", response_model=ReviewResponse)

@@ -4,9 +4,12 @@ import { apiRequest } from "../api/http";
 import type { Stimulus, StimulusIntensity } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
+import { ActionsMenu } from "../components/ActionsMenu";
+import type { ActionsMenuItem } from "../components/ActionsMenu";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
@@ -37,6 +40,9 @@ export function StimuliPage() {
   const [error, setError] = useState("");
   const [fileKey, setFileKey] = useState(0);
   const [adding, setAdding] = useState(false);
+  // Estímulo que se mira en grande y el que se va a eliminar.
+  const [preview, setPreview] = useState<Stimulus | null>(null);
+  const [removing, setRemoving] = useState<Stimulus | null>(null);
   const ready = file != null && notParticipantPhoto
     && form.title.trim() && form.category.trim() && form.origin.trim() && form.license.trim();
 
@@ -84,6 +90,29 @@ export function StimuliPage() {
       await query.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo actualizar el estímulo."); }
     finally { setBusy(false); }
+  }
+
+  async function deleteStimulus() {
+    const item = removing;
+    if (!item) return;
+    setBusy(true); setError("");
+    try {
+      await apiRequest(`/stimuli/${encodeURIComponent(item.id)}`, { method: "DELETE", token });
+      toast.success(`Se eliminó «${item.title}».`);
+      await query.reload();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo eliminar el estímulo."); }
+    finally { setBusy(false); setRemoving(null); }
+  }
+
+  function actions(item: Stimulus): ActionsMenuItem[] {
+    const items: ActionsMenuItem[] = [{ label: "Vista previa", onSelect: () => setPreview(item) }];
+    if (!item.can_manage) return items;
+    if (!item.approved) items.push({ label: "Aprobar", disabled: busy, onSelect: () => { void change(item, "approve"); } });
+    items.push(item.active
+      ? { label: "Retirar", disabled: busy, onSelect: () => { void change(item, "retire"); } }
+      : { label: "Volver a ofrecer", disabled: busy, onSelect: () => { void change(item, "restore"); } });
+    items.push({ label: "Eliminar", danger: true, disabled: busy, onSelect: () => setRemoving(item) });
+    return items;
   }
 
   return <section>
@@ -150,12 +179,14 @@ export function StimuliPage() {
           {item.scope === "institution" && !isAdmin && <StatusChip tone="neutral">Institucional</StatusChip>}
         </span>
       </div>
-      {item.can_manage && <div className="inline-actions">
-        {!item.approved && <Button disabled={busy} onClick={() => { void change(item, "approve"); }}>Aprobar</Button>}
-        {item.active
-          ? <Button disabled={busy} onClick={() => { void change(item, "retire"); }}>Retirar</Button>
-          : <Button disabled={busy} onClick={() => { void change(item, "restore"); }}>Volver a ofrecer</Button>}
-      </div>}
+      <ActionsMenu name={item.title} items={actions(item)} />
     </li>)}</ul>}
+
+    <Modal open={preview !== null} title={preview?.title ?? "Vista previa"} onClose={() => setPreview(null)}>
+      {preview && <StimulusImage id={preview.id} alt={preview.title} className="stimulus-preview" />}
+    </Modal>
+    <ConfirmDialog open={removing !== null} title="Eliminar estímulo" confirmLabel="Eliminar" confirming={busy}
+      message={removing ? `Se eliminará «${removing.title}» y su archivo. Los protocolos que lo usan pedirán elegir otra imagen; las sesiones ya hechas conservan su registro. Si solo quieres dejar de ofrecerlo, usa «Retirar».` : ""}
+      onConfirm={() => { void deleteStimulus(); }} onCancel={() => setRemoving(null)} />
   </section>;
 }

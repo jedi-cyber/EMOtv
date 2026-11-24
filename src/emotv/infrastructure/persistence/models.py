@@ -392,6 +392,8 @@ class ProtocolRecord(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Eliminado por quien lo armó (migración 20261124_47); las sesiones lo conservan.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Práctica (estímulos y cuestionarios) o examen simulado (sin pasos).
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default="practice",
                                       server_default="practice")
@@ -444,6 +446,8 @@ class QuestionnaireRecord(Base):
     copied_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Eliminado por quien lo armó (migración 20261124_47); las sesiones lo conservan.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class QuestionnaireResponseRecord(Base):

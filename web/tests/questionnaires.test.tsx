@@ -97,15 +97,18 @@ describe("cuestionarios", () => {
     state.questionnaires = [questionnaire];
     vi.mocked(apiRequest).mockResolvedValue({} as never);
     const view = withUser("psychologist", <QuestionnairesPage />);
-    await userEvent.click(screen.getByRole("button", { name: "Compartir con mi grupo" }));
+    await userEvent.click(screen.getByRole("button", { name: `Más acciones para «${questionnaire.title}»` }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent))
+      .toEqual(["Vista previa", "Editar", "Duplicar", "Compartir con mi grupo", "Eliminar"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Compartir con mi grupo" }));
     expect(apiRequest).toHaveBeenCalledWith("/questionnaires/q1/share", expect.objectContaining({ method: "PUT", body: JSON.stringify({ shared: true }) }));
     view.unmount();
     state.questionnaires = [{ ...questionnaire, owned_by_me: false, shared_with_group: true }];
     withUser("student", <QuestionnairesPage />);
     expect(screen.getByText("Plantilla de tu docente")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Compartir con mi grupo" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Copiar y modificar" }));
+    await userEvent.click(screen.getByRole("button", { name: `Más acciones para «${questionnaire.title}»` }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Vista previa", "Copiar y modificar"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Copiar y modificar" }));
     expect(apiRequest).toHaveBeenCalledWith("/questionnaires/q1/copy", expect.objectContaining({ method: "POST" }));
     await userEvent.click(screen.getByRole("button", { name: "Usar la plantilla inicial" }));
     expect(apiRequest).toHaveBeenCalledWith("/questionnaires/starter", expect.objectContaining({ method: "POST" }));

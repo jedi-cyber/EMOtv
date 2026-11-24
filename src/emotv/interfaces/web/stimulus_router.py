@@ -284,6 +284,12 @@ def create_stimulus_router(
     def approve_stimulus(stimulus_id: str, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().approve(user, stimulus_id)), user)
 
+    @router.delete("/stimuli/{stimulus_id}", status_code=204)
+    def delete_stimulus(stimulus_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien gestiona el estímulo lo elimina: se borra el archivo."""
+        guarded(lambda: stimulus_service().delete(user, stimulus_id))
+        return Response(status_code=204)
+
     @router.put("/stimuli/{stimulus_id}/active", response_model=StimulusResponse)
     def set_stimulus_active(stimulus_id: str, request: StimulusActive, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().set_active(user, stimulus_id, request.active)),
@@ -329,5 +335,11 @@ def create_stimulus_router(
     def edit_protocol(protocol_id: str, request: ProtocolRequest, user: User = Depends(current_user)):
         """Si la versión ya se usó en una sesión, responde con la versión nueva."""
         return protocol_response(guarded(lambda: protocol_service().edit(user, protocol_id, draft(request))), user)
+
+    @router.delete("/protocols/{protocol_id}", status_code=204)
+    def delete_protocol(protocol_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien lo armó lo elimina; las sesiones que lo usaron lo conservan."""
+        guarded(lambda: protocol_service().delete(user, protocol_id))
+        return Response(status_code=204)
 
     return router

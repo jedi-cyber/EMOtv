@@ -113,9 +113,26 @@ class QuestionnaireService:
 
     def get(self, user: User, questionnaire_id: str) -> Questionnaire:
         questionnaire = self.repository.get(questionnaire_id)
-        if questionnaire is None or not self.can_use(user, questionnaire):
+        if questionnaire is None or questionnaire.deleted_at is not None or not self.can_use(user, questionnaire):
             raise QuestionnaireNotFound(questionnaire_id)
         return questionnaire
+
+    def delete(self, user: User, questionnaire_id: str) -> None:
+        """Quien armó el cuestionario lo elimina: deja de listarse y de
+        ofrecerse como plantilla. Las respuestas de las sesiones se conservan. Si
+        un protocolo vigente lo aplica, primero hay que quitarlo de ese protocolo."""
+        self._require_conductor(user)
+        questionnaire = self.get(user, questionnaire_id)
+        if questionnaire.owner_user_id != user.id:
+            raise PermissionError("Solo quien armó el cuestionario puede eliminarlo")
+        if not questionnaire.current:
+            raise PermissionError("Elimina la versión vigente del cuestionario")
+        using = self.repository.protocols_using(questionnaire.family_id)
+        if using:
+            names = ", ".join(f"«{name}»" for name in using)
+            raise ValueError(f"Lo usa el protocolo {names}: quítalo de ese protocolo o elimina el protocolo primero")
+        self.repository.replace(replace(questionnaire, deleted_at=self.clock(), shared_with_group=False))
+        self.audit.record(user, AuditAction.DELETE, RESOURCE, questionnaire.id)
 
     def is_used(self, questionnaire: Questionnaire) -> bool:
         return self.repository.is_used(questionnaire.id)

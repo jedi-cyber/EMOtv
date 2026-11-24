@@ -114,3 +114,39 @@ export function stimulusSummary(item: Stimulus): string {
   if (item.expected_expression) parts.splice(2, 0, `espera ${expectedExpressionNames[item.expected_expression] ?? item.expected_expression}`);
   return parts.join(" · ");
 }
+
+function seconds(value: number) { return `${value} s`; }
+
+/** Una línea por paso para la vista previa de un protocolo: qué se aplica, sin
+ * resultados. Las rondas seguidas del juego con cámara se cuentan como un solo juego. */
+export function protocolStepLines(steps: ProtocolStep[], titleOf: (id: string) => string | undefined): string[] {
+  const lines: string[] = [];
+  const image = (id: string | null | undefined) => {
+    const title = id ? titleOf(id) : undefined;
+    return title ? `«${title}»` : "una imagen";
+  };
+  const target = (key: string | null | undefined) => (key ? practiceTargetNames[key] ?? key : "").toLowerCase();
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (step.kind === "practice" && step.game_round != null) {
+      let rounds = 1;
+      while (steps[index + 1]?.kind === "practice" && (steps[index + 1].game_round ?? 0) > 1) { rounds += 1; index += 1; }
+      lines.push(`Juego con cámara «Muestra la emoción»: ${rounds} rondas`);
+    } else if (step.kind === "practice" && step.conductor_rating) {
+      lines.push(`Juego: imita la cara con ${image(step.stimulus_id)} · quien conduce valora de 1 a 5 estrellas`);
+    } else if (step.kind === "practice" && step.imitate) {
+      lines.push(`Haz la misma cara que ${image(step.stimulus_id)} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "practice") {
+      lines.push(`Práctica: muestra ${target(step.target_expression)} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "recognition") {
+      lines.push(`¿Qué emoción es? con ${image(step.stimulus_id)}${step.situation ? " y una historia" : ""} · ${step.option_count ?? DEFAULT_RECOGNITION.option_count} opciones`);
+    } else if (step.kind === "drawing") {
+      lines.push(`Dibujo${step.stimulus_id ? ` mirando ${image(step.stimulus_id)}` : ""} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "game") {
+      lines.push(`${gameTypeNames[step.game_type ?? "matching"] ?? "Juego"}: ${step.rounds ?? DEFAULT_GAME.rounds} rondas`);
+    } else {
+      lines.push(`Imagen ${image(step.stimulus_id)} · ${seconds(step.exposure_seconds)}`);
+    }
+  }
+  return lines;
+}
