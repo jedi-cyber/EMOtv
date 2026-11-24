@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { apiRequest } from "../api/http";
 import type { GameType, PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
@@ -139,6 +139,16 @@ export function ProtocolsPage() {
   const stepProblems = unsuitableSteps + missingSteps + practiceProblems + recognitionProblems + drawingProblems;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
     && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0 && drawingProblems === 0;
+
+  // Al agregar un paso, se muestra en la lista sin tener que buscarlo.
+  const stepsRef = useRef<HTMLOListElement>(null);
+  const stepCount = useRef(0);
+  useEffect(() => {
+    if (draft.steps.length > stepCount.current) {
+      stepsRef.current?.lastElementChild?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    }
+    stepCount.current = draft.steps.length;
+  }, [draft.steps.length]);
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
@@ -320,7 +330,7 @@ export function ProtocolsPage() {
       <Button disabled={busy} onClick={() => { void addValidation(); }}>Agregar «Validación con adultos»</Button>
     </Callout>}
 
-    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy}
+    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy} wide
       footer={<>
         <Button disabled={busy} onClick={close}>Cancelar</Button>
         <Button variant="primary" type="submit" form="protocol-editor" disabled={busy || !ready}>
@@ -399,15 +409,27 @@ export function ProtocolsPage() {
           </li>
           <li className="protocol-moment">
             <h4>Pasos{draft.steps.length > 0 ? ` (${draft.steps.length})` : ""}</h4>
-            {draft.steps.length === 0 && <p className="muted">Todavía no hay pasos. Elige al menos uno aquí abajo.</p>}
-            <ol className="card-list protocol-steps">{draft.steps.map((step, index) => {
+            <div className="protocol-steps-layout">
+            <div className="protocol-steps-column">
+            {draft.steps.length === 0 && <p className="muted">Todavía no hay pasos. Elige al menos uno en «Agregar un paso».</p>}
+            <ol ref={stepsRef} className="card-list protocol-steps">{draft.steps.map((step, index) => {
               const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
               const [itemStart, itemEnd] = itemRange(draft.steps, index);
-              const order = <>
-                <Button size="sm" disabled={itemStart === 0} onClick={() => move(index, -1)}>Subir</Button>
-                <Button size="sm" disabled={itemEnd >= draft.steps.length} onClick={() => move(index, 1)}>Bajar</Button>
-                <Button size="sm" variant="ghost" onClick={() => update({ steps: removeItem(draft.steps, index) })}>Quitar</Button>
-              </>;
+              // Arriba a la derecha de cada paso: subir, bajar y quitar, sin desplazarse.
+              const order = <span className="step-order" role="group" aria-label={`Orden del paso ${index + 1}`}>
+                <button type="button" className="step-order-button" aria-label={`Subir el paso ${index + 1}`} title="Subir"
+                  disabled={itemStart === 0} onClick={() => move(index, -1)}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 12 5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <button type="button" className="step-order-button" aria-label={`Bajar el paso ${index + 1}`} title="Bajar"
+                  disabled={itemEnd >= draft.steps.length} onClick={() => move(index, 1)}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 8 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <button type="button" className="step-order-button step-order-remove" aria-label={`Quitar el paso ${index + 1}`} title="Quitar"
+                  onClick={() => update({ steps: removeItem(draft.steps, index) })}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m6 6 8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+                </button>
+              </span>;
               if (step.game_round) {
                 // Las rondas de un juego con cámara se muestran como un solo paso, en la primera.
                 if (itemStart !== index) return null;
@@ -611,6 +633,7 @@ export function ProtocolsPage() {
                 </div>
               </li>;
             })}</ol>
+            </div>
             <div className="step-catalog" role="region" aria-labelledby="step-catalog-title">
               <h5 id="step-catalog-title">Agregar un paso</h5>
               {stepCatalog.map((group) => <div key={group.group} className="step-catalog-group">
@@ -641,6 +664,7 @@ export function ProtocolsPage() {
                 <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>
                   {isDocente ? "Ir a Estímulos" : "Ir a Imágenes"}</ButtonLink></div>
               </div>}
+            </div>
             </div>
           </li>
           <li className="protocol-moment">

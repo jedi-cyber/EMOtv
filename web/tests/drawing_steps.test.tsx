@@ -120,6 +120,21 @@ describe("el dibujo en el editor de protocolos", () => {
       capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }]);
   });
 
+  it("cada paso se sube, se baja o se quita con flechas y una equis", async () => {
+    withUser(<ProtocolsPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Dibujo" }));
+    await userEvent.click(screen.getByRole("button", { name: /Juego: busca la misma emoción/ }));
+    expect(screen.getByText("1. Dibujo: una cara con una emoción")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Subir el paso 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bajar el paso 2" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Bajar el paso 1" }));
+    expect(screen.getByText("2. Dibujo: una cara con una emoción")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Quitar el paso 2" }));
+    expect(screen.queryByText(/Dibujo: una cara con una emoción/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Subir" })).not.toBeInTheDocument();
+  });
+
   it("el resumen del protocolo cuenta los dibujos", () => {
     expect(protocolStepParts([{ kind: "drawing" }, { kind: "drawing" }, { kind: "recognition" }]))
       .toEqual(["1 reconocimiento", "2 dibujos"]);

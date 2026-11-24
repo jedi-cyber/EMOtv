@@ -174,7 +174,23 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .stimulus-preview.stimulus-thumb-empty { min-height: 12rem; }
 .protocol-preview ol { display: grid; gap: var(--space-xs); margin: var(--space-sm) 0 0; padding-left: var(--space-lg); }
 .stimulus-thumb-empty { display: grid; place-items: center; font-size: var(--text-caption); }
-.protocol-step { align-items: flex-start; flex-wrap: wrap; }
+.protocol-step { position: relative; align-items: flex-start; flex-wrap: wrap; padding-right: calc(3 * var(--control-height-sm) + var(--space-md)); }
+/* Subir, bajar y quitar: arriba a la derecha de cada paso. */
+.step-order { position: absolute; top: var(--space-sm); right: var(--space-sm); display: inline-flex; gap: var(--space-xxs); }
+.step-order-button { display: grid; place-items: center; width: var(--control-height-sm); height: var(--control-height-sm); padding: 0; border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); background: var(--color-canvas); color: var(--color-ink); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard); }
+.step-order-button svg { width: 18px; height: 18px; }
+.step-order-button:hover:not(:disabled) { background: var(--color-surface); }
+.step-order-button:disabled { color: var(--color-steel); border-color: var(--color-hairline); cursor: not-allowed; }
+.step-order-remove { color: var(--color-error); }
+.step-order-remove:hover:not(:disabled) { background: var(--color-error-soft); }
+/* Pasos y «Agregar un paso» lado a lado: el catálogo queda a la vista al ordenar. */
+.protocol-steps-layout { display: grid; gap: var(--space-md); }
+.protocol-steps-column { display: grid; gap: var(--space-sm); align-content: start; min-width: 0; }
+@media (min-width: 1100px) {
+  .protocol-steps-layout { grid-template-columns: minmax(0, 1fr) minmax(19rem, 24rem); align-items: start; }
+  .protocol-steps-layout > .step-catalog { position: sticky; top: 0; max-height: calc(92dvh - 12rem); overflow-y: auto; }
+  .protocol-steps-layout .step-catalog-grid { grid-template-columns: 1fr; }
+}
 .protocol-step input[type="number"] { width: 6rem; }
 .protocol-editor { gap: var(--space-lg); }
 .protocol-section { display: grid; gap: var(--space-sm); padding-top: var(--space-md); border-top: 1px solid var(--color-hairline); }
@@ -482,6 +498,7 @@ td small { display: block; margin-top: 2px; color: var(--color-steel); }
 .modal-backdrop { position: fixed; inset: 0; z-index: var(--z-modal); display: grid; place-items: center; padding: var(--space-md); background: var(--color-backdrop); }
 .modal { display: flex; flex-direction: column; width: min(100%, var(--modal-max-width)); max-height: 85dvh; border-radius: var(--radius-lg); background: var(--color-canvas); }
 .modal[role="alertdialog"] { width: min(100%, 30rem); }
+.modal--wide { width: min(100%, 76rem); max-height: 92dvh; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-md); padding: var(--space-lg) var(--space-lg) var(--space-sm); }
 .modal-header h2 { margin: 0; }
 .modal-header h2:focus { outline: none; }
