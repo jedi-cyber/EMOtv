@@ -352,8 +352,8 @@ def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -
 
 
 def drawing_metrics(steps: Sequence[ProtocolStep], results: Iterable[DrawingResult]) -> dict[str, Any] | None:
-    """Dibujos de una sesión; None si el protocolo no tiene ninguno. Solo la
-    emoción que la persona señaló, sin compararla con nada."""
+    """Dibujos de una sesión; None si el protocolo no tiene ninguno. Solo si
+    terminó y los tiempos (y, en sesiones anteriores, la emoción que señaló)."""
     drawing_steps = [index for index, step in enumerate(steps) if step.is_drawing]
     if not drawing_steps:
         return None
@@ -378,7 +378,7 @@ def drawing_metrics(steps: Sequence[ProtocolStep], results: Iterable[DrawingResu
                    "timed_out": count[RecognitionOutcome.TIMED_OUT], "skipped": count[RecognitionOutcome.SKIPPED],
                    "stopped": count[RecognitionOutcome.STOPPED],
                    "not_reached": sum(1 for item in exercises if item["outcome"] is None),
-                   "sentence": f"Señaló una emoción en {answered} de {len(exercises)} "
+                   "sentence": f"Terminó {answered} de {len(exercises)} "
                                f"{'dibujo' if len(exercises) == 1 else 'dibujos'}."},
         "notice": DRAWING_NOTICE,
     }
@@ -489,8 +489,9 @@ def educational_summary(metrics: dict[str, Any], game_attempts: dict[int, int] |
         indicated = [{"expression": key, "count": count} for key, count in chosen.items()]
         listed = ", ".join(f"{names.get(item['expression'], item['expression']).lower()} ({item['count']})"
                            for item in indicated)
-        sentence = (f"Completó {totals['answered']} de {_plural(totals['exercises'], 'dibujo', 'dibujos')} "
-                    f"señalando una emoción" + (f": {listed}." if listed else "."))
+        # Las emociones señaladas solo existen en sesiones anteriores.
+        sentence = (f"Terminó {totals['answered']} de {_plural(totals['exercises'], 'dibujo', 'dibujos')}"
+                    + (f"; señaló {listed}." if listed else "."))
         result["drawing"] = {"exercises": totals["exercises"], "completed": totals["answered"],
                              "timed_out": totals["timed_out"], "indicated": indicated, "sentence": sentence}
 

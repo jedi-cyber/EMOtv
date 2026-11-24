@@ -96,7 +96,7 @@ export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "ga
 export interface ProtocolStep {
   /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
    * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es.
-   * «drawing»: la persona dibuja una cara y señala qué emoción quiso representar.
+   * «drawing»: la persona dibuja una cara y pulsa «Terminé» (no se pregunta qué emoción quiso dibujar).
    * «game»: juego de emparejar cada imagen con el nombre de su emoción. */
   kind?: StepKind;
   stimulus_id: string | null;
@@ -324,7 +324,8 @@ export interface GuidedRecognition {
   outcome: RecognitionOutcome | null;
 }
 
-/** Dibujo en curso para quien conduce: las emociones para registrar y la elegida. */
+/** Dibujo en curso para quien conduce: si terminó (options llega vacío; la emoción
+ * elegida solo existe en sesiones anteriores). */
 export interface GuidedDrawing {
   options: string[];
   chosen_expression: string | null;
@@ -507,11 +508,11 @@ export interface ParticipantRecognition {
   note?: string | null;
 }
 
-/** Dibujo en la pantalla de la persona: el dibujo se queda en el dispositivo;
- * solo se envía la emoción que eligió. */
+/** Dibujo en la pantalla de la persona: el dibujo se queda en el dispositivo; solo
+ * se avisa «Terminé». question es nulo y options vacío: no se pregunta qué emoción quiso dibujar. */
 export interface ParticipantDrawing {
   instruction: string;
-  question: string;
+  question: string | null;
   options: { key: string; label: string }[];
   /** Cambia con cada intento: se empieza un lienzo nuevo. */
   round: string;

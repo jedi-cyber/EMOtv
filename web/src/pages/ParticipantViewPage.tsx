@@ -248,6 +248,11 @@ export function ParticipantViewPage() {
     setView(await apiRequest<ParticipantViewState>(base));
   }
 
+  async function finishDrawing() {
+    await apiRequest(`${base}/drawing-done`, { method: "POST" });
+    setView(await apiRequest<ParticipantViewState>(base));
+  }
+
   const loadGameOption = useCallback((key: string) => apiBlob(`${base}/game/option/${encodeURIComponent(key)}`), [base]);
 
   async function playGame(action: GameAction, expression?: string) {
@@ -283,7 +288,7 @@ export function ParticipantViewPage() {
           ? <DrawingActivity key={drawing.round} onDrawingChange={setHasDrawing} session={{
             instruction: drawing.instruction, question: drawing.question, options: drawing.options,
             finished: drawing.finished, chosen: drawing.chosen, message: drawing.message,
-            onChoose: answer, readAloud: Boolean(supports?.read_aloud), imageUrl }} />
+            onChoose: answer, onFinish: finishDrawing, readAloud: Boolean(supports?.read_aloud), imageUrl }} />
           : game
           ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame} loadOption={loadGameOption}
             pictograms={Boolean(supports?.pictograms)} readAloud={Boolean(supports?.read_aloud)} />

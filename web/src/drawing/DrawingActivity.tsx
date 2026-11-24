@@ -18,17 +18,20 @@ export const DRAWING_EMOTIONS = ["happiness", "sadness", "anger", "fear", "surpr
 
 type Phase = "drawing" | "choosing" | "done";
 
-/** En un paso de un protocolo: lo que dice el servidor y cómo enviar la emoción elegida. */
+/** En un paso de un protocolo: lo que dice el servidor y cómo avisar que terminó. */
 export interface DrawingSessionStep {
   instruction: string;
-  question: string;
+  /** Nulo (y options vacío): no se pregunta qué emoción quiso dibujar. */
+  question: string | null;
   options: { key: string; label: string }[];
   /** El paso terminó: respondido (por la persona o por quien conduce) o sin tiempo. */
   finished: boolean;
   chosen: string | null;
   message: string | null;
-  /** Envía solo la emoción elegida; el dibujo no sale de la pantalla. */
+  /** Envía solo la emoción elegida (servidores anteriores); el dibujo no sale de la pantalla. */
   onChoose(key: string): Promise<void>;
+  /** «Terminé»: avisa que terminó, sin el dibujo ni una emoción. */
+  onFinish?(): Promise<void>;
   readAloud?: boolean;
   /** Imagen que la persona mira antes de dibujar la emoción que siente; no se compara con el dibujo. */
   imageUrl?: string | null;
@@ -83,15 +86,30 @@ export function DrawingActivity({ onDrawingChange, session, model, next, askEmot
     setChosen(session?.chosen ?? null);
   }, [sessionDone, session?.chosen]);
   const instruction = session?.instruction ?? (model ? DRAWING_IMAGE_INSTRUCTION : DRAWING_INSTRUCTION);
-  const question = session?.question ?? DRAWING_QUESTION;
+  const question = session ? session.question ?? DRAWING_QUESTION : DRAWING_QUESTION;
   const options = session?.options ?? DRAWING_EMOTIONS.map((key) => ({ key, label: practiceTargetNames[key] }));
   const readAloud = Boolean(session?.readAloud);
-  // En una sesión siempre se pregunta: es lo único que se registra del dibujo.
-  const asks = Boolean(session) || askEmotion;
+  // En una sesión pregunta solo si el servidor envía opciones (los anteriores lo hacían).
+  const asks = session ? session.options.length > 0 : askEmotion;
   const heading = phase === "drawing" || !asks ? instruction : question;
   useEffect(() => {
     if (readAloud && phase !== "done") speakText(heading);
   }, [readAloud, phase, heading]);
+
+  async function finish() {
+    if (asks) { setPhase("choosing"); return; }
+    if (!session?.onFinish) { setPhase("done"); return; }
+    setSending(true);
+    setSendError("");
+    try {
+      await session.onFinish();
+      setPhase("done");
+    } catch {
+      setSendError("No se pudo avisar que terminaste. Intenta de nuevo o avisa a quien conduce la sesión.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function choose(key: string) {
     if (!session) { setChosen(key); setPhase("done"); return; }
@@ -258,10 +276,11 @@ export function DrawingActivity({ onDrawingChange, session, model, next, askEmot
     </div>}
 
     {phase === "drawing" && <div className="inline-actions drawing-finish">
-      <Button variant="primary" disabled={!hasDrawing} onClick={() => { setPhase(asks ? "choosing" : "done"); }}>Terminé</Button>
-      <p className="muted">{session
+      <Button variant="primary" disabled={!hasDrawing || sending} onClick={() => { void finish(); }}>Terminé</Button>
+      <p className="muted">{session && asks
         ? "El dibujo se queda en esta pantalla: no se envía ni se guarda. Solo se registra la emoción que elijas."
         : "El dibujo se queda en esta pantalla: no se envía ni se guarda."}</p>
+      {phase === "drawing" && sendError && <p role="alert">{sendError}</p>}
     </div>}
 
     {phase === "choosing" && <>

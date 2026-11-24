@@ -118,10 +118,11 @@ export function StatisticsPage() {
     }
     if (stats.drawing) {
       rows.push([], ["Dibujos", stats.drawing.totals.sentence], [stats.drawing.notice],
-        ["Emoción señalada", "Dibujos"],
-        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]),
-        ["Sin emoción señalada (terminó el tiempo)", stats.drawing.totals.timed_out],
+        ["Terminados", stats.drawing.totals.answered], ["Terminó el tiempo", stats.drawing.totals.timed_out],
         ["Omitidos", stats.drawing.totals.skipped], ["Interrumpidos", stats.drawing.totals.stopped]);
+      // La emoción señalada solo existe en sesiones anteriores, cuando se preguntaba.
+      if (stats.drawing.by_expression.length > 0) rows.push(["Emoción señalada (sesiones anteriores)", "Dibujos"],
+        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]));
     }
     if (stats.games) {
       rows.push([], ["Juegos", stats.games.totals.sentence], [stats.games.notice],
@@ -271,11 +272,11 @@ export function StatisticsPage() {
         <h2 className="stat-heading">Dibujos</h2>
         <Callout variant="info" role="note">{data.drawing.notice}</Callout>
         <p>{data.drawing.totals.sentence} En {data.drawing.sessions} {data.drawing.sessions === 1 ? "sesión" : "sesiones"}.</p>
-        <p className="muted">Solo se cuenta la emoción que se señaló al terminar cada dibujo; no hay respuesta correcta.
+        <p className="muted">Solo se cuenta si cada dibujo se terminó; EMOtv no ve los dibujos y no hay respuesta correcta.
           {data.drawing.totals.timed_out + data.drawing.totals.skipped + data.drawing.totals.stopped > 0
             ? ` Terminó el tiempo en ${data.drawing.totals.timed_out}, se omitieron ${data.drawing.totals.skipped} y se interrumpieron ${data.drawing.totals.stopped}.` : ""}</p>
         {data.drawing.by_expression.length > 0 && <div className="table-wrap"><table className="data-table">
-          <thead><tr><th>Emoción señalada</th><th>Dibujos</th></tr></thead>
+          <thead><tr><th>Emoción señalada (sesiones anteriores)</th><th>Dibujos</th></tr></thead>
           <tbody>{data.drawing.by_expression.map((row) => <tr key={row.expression}>
             <td>{practiceTargetNames[row.expression] ?? row.expression}</td><td>{row.count}</td>
           </tr>)}</tbody>

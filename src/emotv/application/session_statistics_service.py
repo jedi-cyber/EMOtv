@@ -230,8 +230,8 @@ class SessionStatisticsService:
                 "by_protocol": by_protocol, "by_target": practice_by_target(everything), "notice": PRACTICE_NOTICE}
 
     def _drawing(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
-        """Dibujos de las sesiones elegidas: cuántos terminaron con una emoción
-        señalada y qué emociones se señalaron. El dibujo no se guarda ni se
+        """Dibujos de las sesiones elegidas: cuántos se terminaron y, en sesiones
+        anteriores, qué emociones se señalaron. El dibujo no se guarda ni se
         interpreta. None si ninguna sesión tuvo dibujos."""
         per_session: list[list[DrawingResult]] = [
             list(self.insights.guided.list_drawing_results(session.id)) if session.protocol_id else []
@@ -248,7 +248,7 @@ class SessionStatisticsService:
                 "totals": {"exercises": len(everything), "answered": answered,
                            "timed_out": count[RecognitionOutcome.TIMED_OUT],
                            "skipped": count[RecognitionOutcome.SKIPPED], "stopped": count[RecognitionOutcome.STOPPED],
-                           "sentence": f"Se señaló una emoción en {answered} de {len(everything)} "
+                           "sentence": f"Se {'terminó' if answered == 1 else 'terminaron'} {answered} de {len(everything)} "
                                        f"{'dibujo' if len(everything) == 1 else 'dibujos'}."},
                 "by_expression": [{"expression": key, "count": value} for key, value in chosen.most_common()],
                 "notice": DRAWING_NOTICE}

@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.14 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.15 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, la 4.15 quita la pregunta del dibujo, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
@@ -709,14 +709,16 @@ mientras una va en camino y, ante `409` o `422`, vuelve a leer el estado.
 **Paso de dibujo** (desde 4.10). Cuando `activity.kind` es `drawing`, el estado
 trae `drawing` con estos campos:
 
-- `instruction` y `question`: textos para mostrar.
-- `options[]`: cada una con `key` y `label`, las emociones para señalar.
+- `instruction`: texto para mostrar.
+- `question` y `options[]`: desde 4.15, `question` es nulo y `options` vacío,
+  porque no se pregunta qué emoción quiso dibujar. Un servidor anterior los
+  envía con las emociones para señalar.
 - `round`: cambia con cada intento. Un valor nuevo empieza un lienzo vacío:
   repetir el paso lo decide quien conduce en la web.
-- `finished`: el paso terminó, por una respuesta (de la persona o de quien
+- `finished`: el paso terminó, por «Terminé» (de la persona o de quien
   conduce) o porque venció el tiempo.
-- `chosen` y `message`: la emoción elegida y la frase para mostrar; son nulos
-  hasta que se responde.
+- `chosen` y `message`: `chosen` es nulo desde 4.15; `message` es «Terminaste
+  el dibujo.» al pulsar «Terminé» y nulo si venció el tiempo.
 
 La persona dibuja con el dedo. Herramientas, iguales que en la web:
 
@@ -727,13 +729,14 @@ La persona dibuja con el dedo. Herramientas, iguales que en la web:
 - limpiar, con confirmación;
 - «Terminé».
 
-Después señala la emoción con `POST /participant-view/{token}/answer`,
-cuyo cuerpo es `{"expression": "<key>"}`. El servidor rechaza cualquier otro
-campo (`422`).
+Al pulsar «Terminé», el aplicativo envía `POST
+/participant-view/{token}/drawing-done`, sin cuerpo (desde 4.15). Un servidor
+anterior que envía `options` espera, en cambio, la emoción con `POST
+/participant-view/{token}/answer` y el cuerpo `{"expression": "<key>"}`.
 
 **El dibujo nunca sale del dispositivo**: no se envía, no se guarda en disco ni
 en el estado guardado del sistema, y EMOtv no lo interpreta. Solo se registran
-la emoción elegida, los tiempos y quién respondió. El dibujo vive en la memoria
+si terminó, los tiempos y quién lo marcó. El dibujo vive en la memoria
 de la pantalla y se borra en estos casos:
 
 - al terminar el paso;
@@ -1076,6 +1079,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.15 | 2026-11-24 | Compatible con la 4.14. El paso de dibujo ya no pregunta qué emoción se quiso dibujar: en `GET /participant-view/{token}`, `drawing.question` llega nulo y `drawing.options` vacío; al pulsar «Terminé» el aplicativo envía `POST /participant-view/{token}/drawing-done`, sin cuerpo. Un aplicativo anterior que aún envía `POST …/answer` con una emoción termina el dibujo, pero la emoción no se guarda. En los resultados, un dibujo terminado llega con `outcome` `answered` y `chosen_expression` nulo (las sesiones anteriores conservan la emoción señalada); las frases cambian a «Terminó N de M dibujos.» y «Se terminó N de M dibujos.» |
 | 4.14 | 2026-11-24 | Compatible con la 4.13: solo campos nuevos y opcionales. «Juego: imita la cara»: `conductor_rating` y `conductor_stars` en `metrics.practice.exercises[]` y `metrics.practice.conductor_ratings` (cuántas veces quien conduce marcó cada número de estrellas). Un paso `drawing` puede traer `stimulus_id` (una imagen que la persona mira antes de dibujar). No hay rutas nuevas |
 | 4.13 | 2026-11-24 | Compatible con la 4.12: solo campos nuevos y opcionales. `game_round` (int, nulo) en `metrics.practice.exercises[]` y en los ejercicios de `lanes.stimuli`: el ejercicio es una ronda del juego con cámara «Muestra la emoción». En la pantalla de la persona, `practice.camera_game` (`round`, `rounds`, `stars`, `summary`). Sin puntos. No hay rutas nuevas |
 | 4.12 | 2026-11-07 | Solo documentación, compatible con la 4.11: «Busca la misma emoción» (`game_type` `similar`) en Android, con `GET /participant-view/{token}/game/option/{key}`. No hay rutas ni campos nuevos |

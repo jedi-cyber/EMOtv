@@ -160,7 +160,7 @@ def test_emi_explica_las_actividades_educativas_y_sus_apoyos():
     assert "[Conocimiento recortado" not in text
     section = text[text.index("## Actividades educativas y apoyos"):]
     section = section[:section.index("\n## ")]
-    for fact in ("«Continuar sin cámara»", "«Terminé»", "elige qué emoción quiso dibujar", "2 a 6 rondas",
+    for fact in ("«Continuar sin cámara»", "«Terminé»", "sin elegir emoción", "2 a 6 rondas",
                  "emparejar", "«Busca la misma emoción»", "«Ayuda» quita una opción", "pictogramas",
                  "botones grandes", "voz alta", "sin límite de tiempo", "«Modo accesible»",
                  "Un paso se puede repetir", "«Vincular Android»", "«Abrir una actividad con código»",

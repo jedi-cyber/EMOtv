@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { AnswerValue, MarkerKind, SessionTimeline as Timeline } from "../api/types";
 import { gameTypeNames, practiceTargetNames } from "../stimuli/labels";
-import { gameOutcomeNames, practiceOutcomeNames, recognitionOutcomeNames, secondsText } from "./StimulusMetrics";
+import { drawingOutcomeNames, gameOutcomeNames, practiceOutcomeNames, recognitionOutcomeNames, secondsText } from "./StimulusMetrics";
 
 const WIDTH = 1000;
 const LABEL = 170;
@@ -44,7 +44,7 @@ function repeatsText(item: Timeline["lanes"]["stimuli"][number]) {
     if (item.kind === "game") return ` · ${repeat.attempt}.º intento: ${repeat.sentence ?? ""}`;
     const outcome = item.kind === "practice"
       ? practiceOutcomeNames[repeat.outcome as keyof typeof practiceOutcomeNames].toLowerCase()
-      : recognitionOutcomeNames[repeat.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+      : (item.kind === "drawing" ? drawingOutcomeNames : recognitionOutcomeNames)[repeat.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
     const chosen = repeat.chosen_expression ? `: ${practiceTargetNames[repeat.chosen_expression] ?? repeat.chosen_expression}` : "";
     const seconds = item.kind === "practice" ? repeat.seconds_to_achieve : repeat.seconds_to_answer;
     return ` · ${repeat.attempt}.º intento: ${outcome}${chosen}${seconds != null ? ` a los ${secondsText(seconds)}` : ""}`;
@@ -60,13 +60,14 @@ function recognitionText(item: Timeline["lanes"]["stimuli"][number]) {
   return `«${item.title}» (${target}) · ${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase()}${chosen}${when}${repeatsText(item)}`;
 }
 
-/** Un dibujo: solo la emoción que la persona señaló (el dibujo no se guarda). */
+/** Un dibujo: si terminó y cuándo (el dibujo no se guarda). La emoción señalada
+ * solo existe en sesiones anteriores. */
 function drawingText(item: Timeline["lanes"]["stimuli"][number]) {
   if (!item.outcome) return item.skipped ? "se saltó" : "en curso";
   const when = item.seconds_to_answer != null ? ` a los ${secondsText(item.seconds_to_answer)}` : "";
   const outcome = item.chosen_expression
     ? `señaló ${(practiceTargetNames[item.chosen_expression] ?? item.chosen_expression).toLowerCase()}`
-    : recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames].toLowerCase();
+    : drawingOutcomeNames[item.outcome as keyof typeof drawingOutcomeNames].toLowerCase();
   return `${outcome}${when}${repeatsText(item)}`;
 }
 

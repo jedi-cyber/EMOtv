@@ -9,7 +9,7 @@ import { Checkbox } from "../components/Checkbox";
 import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
-import { gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
+import { drawingOutcomeNames, gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
@@ -217,7 +217,7 @@ export function GuidedConductorPage() {
         ? `${gameOutcomeNames[item.outcome as GameOutcome]}. ${gameSentence({ rounds_total: item.rounds_total ?? 0, rounds_done: item.rounds_done ?? 0, matched: item.matched ?? 0, first_try: item.first_try ?? 0, help_used: item.help_used ?? 0 })}`
         : kind === "practice"
         ? `${outcomeNames[item.outcome as GuidedPracticeResult["outcome"]]}${item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}`
-        : `${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames]}${item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}${item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}${item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}`}</span>
+        : `${(kind === "drawing" ? drawingOutcomeNames : recognitionOutcomeNames)[item.outcome as keyof typeof recognitionOutcomeNames]}${item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}${item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}${item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}`}</span>
     </li>);
   const targetName = (key?: string | null) => practiceTargetNames[key ?? ""] ?? "";
   const similarGame = state?.game?.game_type === "similar";
@@ -338,17 +338,16 @@ export function GuidedConductorPage() {
     {step && state && isDrawing && <div className="card form-stack">
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · dibujo{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>Dibujo: una cara con una emoción</h2>
-      <p className="muted">La persona dibuja en su pantalla y después elige qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda; no se analiza la cámara.</p>
+      <p className="muted">La persona dibuja en su pantalla y pulsa «Terminé». No se le pregunta qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda; no se analiza la cámara.</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.drawing && (state.drawing.outcome
         ? <p role="status">{state.drawing.chosen_expression
           ? `Señaló ${targetName(state.drawing.chosen_expression)}.`
-          : "Terminó el tiempo sin respuesta."} {state.waiting_for_conductor
+          : drawingOutcomeNames[state.drawing.outcome]}. {state.waiting_for_conductor
           ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El paso avanza en un momento."}</p>
         : <>
-          <p>La persona elige la emoción en su pantalla. Si la señala o la dice, regístrala aquí:</p>
-          <div className="inline-actions">{state.drawing.options.map((key) => <Button key={key} disabled={busy}
-            onClick={() => { void act("/recognition", { expression: key }); }}>{targetName(key)}</Button>)}</div>
+          <p>Si la persona terminó pero no pulsó «Terminé», márcalo aquí:</p>
+          <div className="inline-actions"><Button disabled={busy} onClick={() => { void act("/drawing-done"); }}>Terminó de dibujar</Button></div>
         </>)}
       {state.waiting_for_conductor && <Button variant="primary" disabled={busy} onClick={() => { void act("/continue"); }}>Seguir</Button>}
       {state.can_repeat && <Button disabled={busy} onClick={() => { void act("/repeat"); }}>Repetir este dibujo</Button>}
@@ -457,9 +456,9 @@ export function GuidedConductorPage() {
 
     {drawingResults.length > 0 && <section className="card">
       <h2>Dibujos</h2>
-      <p className="muted">Solo la emoción que la persona señaló: EMOtv no ve ni interpreta los dibujos.</p>
+      <p className="muted">Solo si terminó y en cuánto tiempo: EMOtv no ve ni interpreta los dibujos.</p>
       <ul className="card-list">{drawingResults.map((item) => <li key={item.step_index} className="row-card">
-        <span>Paso {item.step_index + 1} · {recognitionOutcomeNames[item.outcome]}
+        <span>Paso {item.step_index + 1} · {drawingOutcomeNames[item.outcome]}
           {item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}
           {item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}
           {item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}</span>

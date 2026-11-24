@@ -85,12 +85,13 @@ class RecognitionView(BaseModel):
 
 
 class DrawingView(BaseModel):
-    """Un paso de dibujo: la consigna, la pregunta y las emociones para señalar.
-    El dibujo se queda en la pantalla de la persona; aquí solo vuelve la emoción
-    que eligió, sin compararla con el dibujo."""
+    """Un paso de dibujo: la consigna y si terminó. El dibujo se queda en la
+    pantalla de la persona. Desde 20261124_48 no se pregunta qué emoción quiso
+    dibujar: question es nulo y options está vacío (campos para los aplicativos
+    anteriores); chosen solo existe en sesiones anteriores."""
 
     instruction: str
-    question: str
+    question: str | None = None
     options: list[RecognitionOption]
     # Cambia con cada intento: la pantalla empieza un lienzo nuevo.
     round: str
@@ -299,6 +300,12 @@ def create_guided_router(
         run = guarded(lambda: service().record_recognition(user, session_id, request.expression))
         return {"phase": run.phase.value}
 
+    @router.post("/guided-sessions/{session_id}/drawing-done")
+    def drawing_done(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce marca que la persona terminó de dibujar."""
+        run = guarded(lambda: service().finish_drawing(user, session_id))
+        return {"phase": run.phase.value}
+
     @router.post("/guided-sessions/{session_id}/game")
     def game(session_id: str, request: GameActionRequest, user: User = Depends(current_user)) -> dict[str, str]:
         """Quien conduce registra la emoción que la persona señaló, pide la ayuda o pasa de ronda."""
@@ -387,6 +394,12 @@ def create_guided_router(
         """La persona tocó una opción. Solo se confirma la recepción: si acertó
         no se devuelve (la pantalla muestra el nombre de la emoción en su estado)."""
         guarded(lambda: service().participant_answer(token, request.expression))
+        return {"received": True}
+
+    @router.post("/participant-view/{token}/drawing-done")
+    def participant_drawing_done(token: str) -> dict[str, bool]:
+        """La persona pulsó «Terminé». El dibujo no se envía: solo el aviso."""
+        guarded(lambda: service().participant_finish_drawing(token))
         return {"received": True}
 
     @router.post("/participant-view/{token}/game")

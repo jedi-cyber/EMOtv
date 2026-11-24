@@ -79,10 +79,9 @@ from emotv.domain.guided_session import (
     SITUATION_QUESTION,
     CAMERA_PROBLEMS,
     DRAWING_ANSWERS,
+    DRAWING_FINISHED,
     DRAWING_IMAGE_INSTRUCTION,
     DRAWING_INSTRUCTION,
-    DRAWING_OPTIONS,
-    DRAWING_QUESTION,
     GAME_FINISHED,
     GAME_FOUND,
     GAME_MISSES_BEFORE_ANSWER,
@@ -934,9 +933,12 @@ class GuidedSessionService:
         if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
             raise GuidedConflict("No hay un reconocimiento en curso")
         step = self._protocol(session).steps[run.step_index]
-        if not (step.is_recognition or step.is_drawing):
+        if step.is_drawing:
+            # Un aplicativo anterior aún envía una emoción: termina el dibujo sin guardarla.
+            return self._finish_drawing(run, by)
+        if not step.is_recognition:
             raise GuidedConflict("No hay un reconocimiento en curso")
-        options = DRAWING_OPTIONS if step.is_drawing else self._recognition_options(session.id, run.step_index, step)
+        options = self._recognition_options(session.id, run.step_index, step)
         if expression not in options:
             raise ValueError("Esa opción no se mostró en este paso")
         with self._practice_lock:
@@ -947,14 +949,43 @@ class GuidedSessionService:
             elapsed = self._seconds(fresh.step_started_at)
             if fresh.next_capture_due is not None or elapsed >= self._limit(self._protocol(session), step):
                 raise GuidedConflict("Este paso ya terminó")
-            if step.is_drawing:
-                self._store_drawing(fresh, session, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
+            self._store_recognition(fresh, session, step, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
                                     chosen=expression, seconds=round(elapsed, 2), by=by)
-            else:
-                self._store_recognition(fresh, session, step, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
-                                        chosen=expression, seconds=round(elapsed, 2), by=by)
             return self.repository.save_run(replace(
                 fresh, next_capture_due=elapsed + self._step_pause(self._protocol(session))))
+
+    def _finish_drawing(self, run: GuidedRun, by: RecognitionAnswerer) -> GuidedRun:
+        """«Terminé»: registra que el dibujo terminó y en cuánto tiempo, sin
+        preguntar qué emoción se quiso dibujar. Después de la pausa, el paso avanza."""
+        session = self._session(run.session_id)
+        if run.phase is not GuidedPhase.STIMULI or session.protocol_id is None:
+            raise GuidedConflict("No hay un dibujo en curso")
+        step = self._protocol(session).steps[run.step_index]
+        if not step.is_drawing:
+            raise GuidedConflict("No hay un dibujo en curso")
+        with self._practice_lock:
+            fresh = self.repository.get_run(run.session_id) or run
+            if (fresh.phase, fresh.step_index, fresh.step_started_at) != (run.phase, run.step_index,
+                                                                           run.step_started_at):
+                raise GuidedConflict("El paso cambió")
+            elapsed = self._seconds(fresh.step_started_at)
+            if fresh.next_capture_due is not None or elapsed >= self._limit(self._protocol(session), step):
+                raise GuidedConflict("Este paso ya terminó")
+            self._store_drawing(fresh, session, RecognitionOutcome.ANSWERED, ended_at=self.clock(),
+                                seconds=round(elapsed, 2), by=by)
+            return self.repository.save_run(replace(
+                fresh, next_capture_due=elapsed + self._step_pause(self._protocol(session))))
+
+    def participant_finish_drawing(self, token: str) -> None:
+        """La persona pulsó «Terminé» en su pantalla."""
+        self._finish_drawing(self._tick(self._by_token(token)), RecognitionAnswerer.PARTICIPANT)
+
+    def finish_drawing(self, user: User, session_id: str) -> GuidedRun:
+        """Quien conduce marca que la persona terminó de dibujar."""
+        run, _ = self._conducted(user, session_id)
+        run = self._finish_drawing(self._tick(run), RecognitionAnswerer.CONDUCTOR)
+        self.audit.record(user, AuditAction.UPDATE, RESOURCE, session_id)
+        return run
 
     def participant_answer(self, token: str, expression: str) -> None:
         """La persona tocó una opción en su pantalla."""
@@ -993,7 +1024,7 @@ class GuidedSessionService:
                 "chosen_expression": result.chosen_expression if result else None,
                 "outcome": result.outcome.value if result else None}
 
-    # --- Dibujo: solo la emoción señalada, nunca el dibujo -------------------------------
+    # --- Dibujo: solo si terminó y los tiempos, nunca el dibujo ---------------------------
 
     def _drawing_result(self, run: GuidedRun) -> DrawingResult | None:
         """El resultado del intento en curso, si ya terminó (respondido o vencido)."""
@@ -1010,23 +1041,24 @@ class GuidedSessionService:
             chosen_expression=chosen, seconds_to_answer=seconds, answered_by=by, attempt=run.step_attempt))
 
     def _participant_drawing(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
-        """Lo que ve la persona: la consigna, la pregunta, las emociones para
-        señalar y, al terminar, la que eligió. No se compara con el dibujo."""
+        """Lo que ve la persona: la consigna y, al terminar, «Terminaste el
+        dibujo.». No se pregunta qué emoción quiso dibujar: question es nulo y
+        options está vacío (se conservan para los aplicativos anteriores)."""
         result = self._drawing_result(run)
         chosen = result.chosen_expression if result else None
         instruction = DRAWING_IMAGE_INSTRUCTION if step.stimulus_id else DRAWING_INSTRUCTION
-        return {"instruction": instruction, "question": DRAWING_QUESTION,
-                "options": [{"key": item, "label": RECOGNITION_NAMES[item]} for item in DRAWING_OPTIONS],
+        answered = result is not None and result.outcome is RecognitionOutcome.ANSWERED
+        return {"instruction": instruction, "question": None, "options": [],
                 # Cambia con cada intento: la pantalla empieza un lienzo nuevo.
                 "round": f"{run.step_index}-{run.step_attempt}",
                 "finished": result is not None,
                 "chosen": chosen,
-                "message": DRAWING_ANSWERS[chosen] if chosen else None}
+                "message": (DRAWING_ANSWERS[chosen] if chosen else DRAWING_FINISHED) if answered else None}
 
     def _conductor_drawing(self, run: GuidedRun) -> dict[str, Any]:
-        """Lo que ve quien conduce: las emociones para registrar y la elegida."""
+        """Lo que ve quien conduce: si el dibujo terminó y cómo."""
         result = self._drawing_result(run)
-        return {"options": list(DRAWING_OPTIONS),
+        return {"options": [],
                 "chosen_expression": result.chosen_expression if result else None,
                 "outcome": result.outcome.value if result else None}
 
@@ -1691,7 +1723,7 @@ class GuidedSessionService:
                 "matched": item.matched, "seconds_to_answer": item.seconds_to_answer,
                 "answered_by": item.answered_by.value if item.answered_by else None,
             } for item in self.repository.list_recognition_results(session.id)]
-            # Solo la emoción que la persona señaló; el dibujo nunca llega al servidor.
+            # Solo si terminó y los tiempos; el dibujo nunca llega al servidor.
             summary["drawing_results"] = [{
                 "step_index": item.step_index, "outcome": item.outcome.value,
                 "chosen_expression": item.chosen_expression, "seconds_to_answer": item.seconds_to_answer,

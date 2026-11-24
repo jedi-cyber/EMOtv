@@ -59,7 +59,7 @@ PROTOCOLS = """## Protocolos
 # Bloque 11: lo que Emi explica a usuarios y docentes sobre las actividades sin cámara.
 EDUCATIONAL = """## Actividades educativas y apoyos
 - «¿Qué emoción es?», dibujos y juegos no usan la cámara; si falla, «Continuar sin cámara» sigue con ellos.
-- Dibujo: la persona dibuja con el dedo, pulsa «Terminé» y elige qué emoción quiso dibujar. El dibujo no se guarda ni se envía y EMOtv no lo interpreta.
+- Dibujo: la persona dibuja con el dedo y pulsa «Terminé», sin elegir emoción. El dibujo no se guarda ni se envía y EMOtv no lo interpreta.
 - Juegos de 2 a 6 rondas: emparejar (nombrar la emoción de una cara) y «Busca la misma emoción» (elegir la cara con la misma emoción que la de arriba). «Ayuda» quita una opción.
 - Estrellas: una por cara lograda en «Muestra la emoción»; en «Juego: imita la cara» las marca quien conduce, no EMOtv.
 - Apoyos: pictogramas, botones grandes, voz alta, sin límite de tiempo y pausas («Modo accesible» junta varios). Un paso se puede repetir.

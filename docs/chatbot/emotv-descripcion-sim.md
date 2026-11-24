@@ -93,12 +93,14 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
   que la necesitan.
 - **Dibujo** (tarjeta «Dibujo» en «Agregar un paso»): la persona dibuja con el dedo
-  (colores, grosor, borrador, «Deshacer» y «Limpiar»), pulsa «Terminé» y elige
-  qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y EMOtv no lo
-  interpreta**: solo se registra la emoción elegida, los tiempos y quién
-  respondió. Emi tampoco interpreta dibujos. El dibujo puede llevar una imagen:
-  la persona la mira y dibuja la emoción que siente al verla. EMOtv no compara el
-  dibujo ni la emoción elegida con la imagen.
+  (colores, grosor, borrador, «Deshacer» y «Limpiar») y pulsa «Terminé». No se
+  le pregunta qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y
+  EMOtv no lo interpreta**: solo se registra si terminó, los tiempos y quién lo
+  marcó (las sesiones anteriores conservan la emoción que se señalaba). Emi
+  tampoco interpreta dibujos. El dibujo puede llevar una imagen: la persona la
+  mira y dibuja la emoción que siente al verla. EMOtv no compara el dibujo con
+  la imagen. En «Juegos», «Dibuja una cara» pide elegir imágenes antes de
+  empezar o empezar sin imagen.
 - **Juegos**, de 2 a 6 rondas, sin puntaje:
   - «Juego: empareja la emoción»: la persona ve una cara y toca el nombre de su
     emoción. Quien arma el protocolo puede elegir la imagen de cada ronda entre

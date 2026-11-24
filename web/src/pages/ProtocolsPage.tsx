@@ -57,7 +57,7 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
   ] },
   { group: "Reconocer y dibujar", hint: "Sin cámara.", items: [
     { key: "recognition", title: "¿Qué emoción es?", text: "Ve una imagen y elige qué emoción muestra.", image: true },
-    { key: "drawing", title: "Dibujo", text: "Dibuja una cara y señala qué emoción quiso representar. El dibujo no se guarda." },
+    { key: "drawing", title: "Dibujo", text: "Dibuja una cara y pulsa «Terminé». No se pregunta qué emoción quiso dibujar y el dibujo no se guarda." },
   ] },
   { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
     { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },

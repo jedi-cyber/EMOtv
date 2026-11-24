@@ -197,6 +197,7 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `POST` | `/guided-sessions/{id}/start` | «Empezar»: desde `ready` empieza el primer paso (o la fase `live` sin protocolo). También saca de `calibration` una sesión que quedó ahí antes de quitar la calibración |
 | `POST` | `/guided-sessions/{id}/calibration` | Solo para una sesión que quedó en `calibration` antes de 2026-11-24; las nuevas no pasan por esa fase (`409`) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
+| `POST` | `/guided-sessions/{id}/drawing-done` | Quien conduce marca que la persona terminó de dibujar (`409` si el paso ya terminó o no es un dibujo) |
 | `POST` | `/guided-sessions/{id}/rating` | «Juego: imita la cara»: `stars` de 1 a 5, la valoración de quien conduce al terminar la imitación (`409` antes de que termine o si el paso no la lleva). El paso espera esta valoración; la pantalla de la persona nunca la recibe |
 | `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |
 | `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |
@@ -206,6 +207,7 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `GET` | `/participant-view/{token}/stimulus` | La imagen del estímulo que se muestra ahora (nunca la de una persona) |
 | `POST` | `/participant-view/{token}/frames` | Un cuadro JPEG (hasta 1 MB); se analiza en memoria y se descarta. Responde solo `{"received": true}` |
 | `POST` | `/participant-view/{token}/stop` | La persona pide parar: la sesión termina de inmediato |
+| `POST` | `/participant-view/{token}/drawing-done` | Paso de dibujo: la persona pulsó «Terminé». Sin cuerpo; el dibujo nunca se envía y no se pregunta qué emoción quiso dibujar. `409` si el paso ya terminó o no es un dibujo |
 
 Antes de cada captura se revisa rostro, centrado, tamaño, iluminación e
 inclinación de la cabeza; si falla, se reintenta 3 segundos y luego se guarda

@@ -220,12 +220,13 @@ def test_al_reconectarse_sigue_en_su_paso_y_no_duplica_respuestas(env, mobile): 
     wait(env, 4)                                                       # se cortó la red unos segundos
     after = view(env, token).json()
     assert after["activity"] == before["activity"] and after["remaining_seconds"] < before["remaining_seconds"]
-    assert answer(env, token, "happiness").json() == {"received": True}
-    # El aplicativo reintenta la misma respuesta al recuperar la red.
-    assert answer(env, token, "happiness").status_code == 409
+    done = f"/participant-view/{token}/drawing-done"
+    assert env.client.post(done).json() == {"received": True}
+    # El aplicativo reintenta «Terminé» al recuperar la red; uno anterior aún envía una emoción.
+    assert env.client.post(done).status_code == 409
     assert answer(env, token, "sadness").status_code == 409
     [item] = env.guided.repository.list_drawing_attempts(session_id)
-    assert item.chosen_expression == "happiness"
+    assert item.outcome.value == "answered" and item.chosen_expression is None
     wait(env, 2.1)
     assert view(env, token).json()["activity"]["number"] == 2
 

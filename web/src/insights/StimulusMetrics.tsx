@@ -9,6 +9,10 @@ export const practiceOutcomeNames: Record<PracticeOutcome, string> = {
 export const recognitionOutcomeNames: Record<RecognitionOutcome, string> = {
   answered: "Respondió", timed_out: "Terminó el tiempo sin respuesta", skipped: "Se saltó", stopped: "La sesión se detuvo",
 };
+// Cómo terminó cada dibujo: «Terminé» o no (no se pregunta qué emoción se quiso dibujar).
+export const drawingOutcomeNames: Record<RecognitionOutcome, string> = {
+  answered: "Terminó el dibujo", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
+};
 // Cómo terminó cada juego de emparejar; lo que ocurrió en él va en una frase aparte.
 export const gameOutcomeNames: Record<GameOutcome, string> = {
   completed: "Completo", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
@@ -99,16 +103,19 @@ export function RecognitionMetrics({ recognition }: { recognition: SessionRecogn
 export function DrawingMetrics({ drawing }: { drawing: SessionDrawing }) {
   const { totals } = drawing;
   const name = (key: string | null) => (key ? practiceTargetNames[key] ?? key : "—");
+  // La emoción señalada solo existe en sesiones anteriores, cuando se preguntaba.
+  const withEmotion = drawing.exercises.some((item) => item.chosen_expression);
   return <section className="form-stack" aria-label="Dibujos">
     <h3>Dibujos</h3>
     <Callout variant="info" role="note">{drawing.notice}</Callout>
     <p><strong>{totals.sentence}</strong></p>
     <div className="table-wrap"><table><thead><tr>
-      <th>Paso</th><th>Resultado</th><th>Emoción que señaló</th><th>Hasta responder</th>
+      <th>Paso</th><th>Resultado</th>{withEmotion && <th>Emoción que señaló</th>}<th>Hasta terminar</th>
     </tr></thead><tbody>{drawing.exercises.map((item) => <tr key={item.step_index}>
       <td>{item.step_index + 1}</td>
-      <td>{item.outcome ? recognitionOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
-      <td>{name(item.chosen_expression)}{item.answered_by === "conductor" ? <span className="muted"> (registró quien conduce)</span> : null}</td>
+      <td>{item.outcome ? drawingOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}
+        {item.answered_by === "conductor" ? <span className="muted"> (lo marcó quien conduce)</span> : null}</td>
+      {withEmotion && <td>{name(item.chosen_expression)}</td>}
       <td>{item.seconds_to_answer != null ? secondsText(item.seconds_to_answer) : "—"}</td>
     </tr>)}</tbody></table></div>
   </section>;

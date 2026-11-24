@@ -105,17 +105,18 @@ SITUATION_NOTE = "En una situación así, cada persona puede sentir algo distint
 # Distractoras: las básicas y la cara tranquila. Desprecio solo aparece cuando
 # es la respuesta correcta: es poco común y difícil de nombrar para un niño.
 RECOGNITION_DISTRACTORS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
-# Paso de dibujo: la persona dibuja en su pantalla y después señala qué emoción
-# quiso representar. El dibujo no sale del dispositivo y no se interpreta: solo
-# se registra la emoción que señaló y los tiempos.
+# Paso de dibujo: la persona dibuja en su pantalla y pulsa «Terminé». No se le
+# pregunta qué emoción quiso dibujar (desde 20261124_48). El dibujo no sale del
+# dispositivo y no se interpreta: solo se registra si terminó y los tiempos.
 DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción."
 # Con una imagen: la persona la mira y dibuja la emoción que siente. EMOtv no
 # relaciona el dibujo ni la emoción elegida con la imagen.
 DRAWING_IMAGE_INSTRUCTION = "Mira la imagen y dibuja una cara con la emoción que sientes."
-DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?"
+DRAWING_FINISHED = "Terminaste el dibujo."
 # Aviso fijo junto a todo resultado de dibujo.
-DRAWING_NOTICE = ("Describe la emoción que la persona señaló en cada dibujo. EMOtv no ve ni interpreta los "
+DRAWING_NOTICE = ("Describe si la persona terminó cada dibujo y en cuánto tiempo. EMOtv no ve ni interpreta los "
                   "dibujos: se quedan en la pantalla de la persona y se borran al terminar el paso.")
+# Solo para sesiones anteriores, en las que la persona señalaba una emoción.
 DRAWING_OPTIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
 # Juego de emparejar: la persona relaciona cada imagen con el nombre de su
 # emoción. Sin puntaje: si no la encuentra, se le muestra con su explicación y
@@ -138,7 +139,7 @@ GAME_TIME_UP = "Terminó el tiempo del juego."
 GAME_MISSES_BEFORE_ANSWER = 2
 GAME_NOTICE = ("Describe lo que ocurrió en el juego. Una sesión breve no permite sacar conclusiones sobre cómo "
                "reconoce emociones la persona.")
-# Describe lo que la persona eligió; no se compara con el dibujo.
+# Sesiones anteriores: describe lo que la persona eligió; no se compara con el dibujo.
 DRAWING_ANSWERS = {
     "happiness": "Dibujaste alegría.",
     "sadness": "Dibujaste tristeza.",
@@ -572,9 +573,10 @@ class GameResult:
 
 @dataclass(frozen=True, slots=True)
 class DrawingResult:
-    """Resultado de un paso de dibujo: la emoción que la persona señaló y en
-    cuánto tiempo. El dibujo nunca llega al servidor; no hay respuesta correcta
-    ni se compara la emoción elegida con el dibujo."""
+    """Resultado de un paso de dibujo: si la persona terminó y en cuánto
+    tiempo. El dibujo nunca llega al servidor. chosen_expression solo existe en
+    sesiones anteriores, cuando se preguntaba qué emoción quiso dibujar; nunca se
+    compara con el dibujo."""
 
     id: str
     session_id: str
@@ -598,9 +600,9 @@ class DrawingResult:
         if isinstance(self.step_index, bool) or not isinstance(self.step_index, int) or self.step_index < 0:
             raise ValueError("step_index debe ser un entero no negativo")
         answered = outcome is RecognitionOutcome.ANSWERED
-        if answered != (self.chosen_expression is not None) or answered != (self.seconds_to_answer is not None) \
-                or answered != (self.answered_by is not None):
-            raise ValueError("Solo un paso respondido registra la emoción, los segundos y quién respondió")
+        if answered != (self.seconds_to_answer is not None) or answered != (self.answered_by is not None) \
+                or (not answered and self.chosen_expression is not None):
+            raise ValueError("Solo un dibujo terminado registra los segundos y quién lo terminó")
         if self.chosen_expression is not None and self.chosen_expression not in DRAWING_OPTIONS:
             raise ValueError("La emoción elegida está entre las que se muestran")
         if self.answered_by is not None:

@@ -74,14 +74,18 @@ function drawingView(drawing: Partial<NonNullable<ParticipantViewState["drawing"
   return {
     phase: "stimuli", message: null, stimulus: null, remaining_seconds: 80, capture_frames: false, frame_interval_ms: 500,
     abstract_notice: null, uses_camera: false,
-    drawing: { instruction: "Dibuja una cara que muestre una emoción.", question: "¿Qué emoción quisiste dibujar?",
-      options, round: "0-1", finished: false, chosen: null, message: null, ...drawing },
+    drawing: { instruction: "Dibuja una cara que muestre una emoción.", question: null,
+      options: [], round: "0-1", finished: false, chosen: null, message: null, ...drawing },
   };
 }
 
 function participant(view: ParticipantViewState) {
   let current = view;
   vi.mocked(apiRequest).mockImplementation(async (path, init) => {
+    if (path === "/participant-view/tok/drawing-done") {
+      current = drawingView({ finished: true, message: "Terminaste el dibujo." });
+      return { received: true } as never;
+    }
     if (path === "/participant-view/tok/answer") {
       const chosen = JSON.parse(String(init?.body)).expression as string;
       current = drawingView({ finished: true, chosen, message: "Dibujaste alegría." });
@@ -123,22 +127,31 @@ describe("el dibujo en el editor de protocolos", () => {
 });
 
 describe("el dibujo en la pantalla de la persona", () => {
-  it("dibuja, elige la emoción y solo se envía esa emoción", async () => {
+  it("dibuja, pulsa «Terminé» y no se le pregunta qué emoción quiso dibujar", async () => {
     participant(drawingView());
     const canvas = await screen.findByRole("img", { name: /Lienzo/ });
     expect(screen.queryByRole("button", { name: "Dibujar otra vez" })).not.toBeInTheDocument();
     draw(canvas);
     await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
-    expect(screen.getByText("¿Qué emoción quisiste dibujar?")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Alegría/ }));
-    expect(await screen.findByText("Dibujaste alegría.")).toBeInTheDocument();
+    expect(await screen.findByText("Terminaste el dibujo.")).toBeInTheDocument();
+    expect(screen.queryByText("¿Qué emoción quisiste dibujar?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Alegría/ })).not.toBeInTheDocument();
+    // Solo el aviso, sin el dibujo ni una emoción.
     const sent = vi.mocked(apiRequest).mock.calls.filter(([, init]) => init?.method === "POST");
-    expect(sent).toEqual([["/participant-view/tok/answer", expect.objectContaining({ body: JSON.stringify({ expression: "happiness" }) })]]);
+    expect(sent).toEqual([["/participant-view/tok/drawing-done", { method: "POST" }]]);
     // Ni cuadros de la cámara ni el dibujo; nada en el almacenamiento del navegador.
     expect(vi.mocked(apiRequest).mock.calls.some(([path]) => String(path).endsWith("/frames"))).toBe(false);
     expect(sessionStorage.length + localStorage.length).toBe(0);
     // En la sesión, repetir lo decide quien conduce.
     expect(screen.queryByRole("button", { name: "Dibujar otra vez" })).not.toBeInTheDocument();
+  });
+
+  it("con un servidor anterior que aún envía opciones, se elige la emoción", async () => {
+    participant(drawingView({ question: "¿Qué emoción quisiste dibujar?", options }));
+    draw(await screen.findByRole("img", { name: /Lienzo/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
+    await userEvent.click(screen.getByRole("button", { name: /Alegría/ }));
+    expect(await screen.findByText("Dibujaste alegría.")).toBeInTheDocument();
   });
 
   it("si vence el tiempo, el lienzo se cierra y lo dice sin valorar", async () => {
@@ -165,39 +178,64 @@ const conductorState: GuidedState = {
     hold_seconds: null, option_count: null }],
   calibration: { state: "none", progress: 0, notice: null }, capture_status: [], pre_questionnaire_id: null,
   post_questionnaire_id: null, abstract_notice: null, captures: [], markers: [], verbal_responses: [],
-  drawing: { options: options.map((item) => item.key), chosen_expression: null, outcome: null },
+  drawing: { options: [], chosen_expression: null, outcome: null },
   waiting_for_conductor: false, attempt: 1, can_repeat: false, max_attempts: 3, uses_camera: false,
 };
 
 describe("el dibujo para quien conduce", () => {
-  it("registra la emoción que la persona señaló, sin ver el dibujo", async () => {
+  it("marca que la persona terminó de dibujar, sin ver el dibujo ni pedir una emoción", async () => {
     vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/guided-sessions/s1" ? conductorState : {}) as never);
     withUser(<GuidedConductorPage />, "/guided/s1");
     expect(await screen.findByText(/Paso 1 de 1 · dibujo/)).toBeInTheDocument();
     expect(screen.getByText(/El dibujo no llega aquí ni se guarda/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Miedo" }));
-    expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/recognition",
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ expression: "fear" }) }));
+    expect(screen.queryByRole("button", { name: "Miedo" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Terminó de dibujar" }));
+    expect(apiRequest).toHaveBeenCalledWith("/guided-sessions/s1/drawing-done", expect.objectContaining({ method: "POST" }));
     expect(screen.getByRole("button", { name: "Saltar este dibujo" })).toBeInTheDocument();
   });
 
-  it("al terminar, lista cada dibujo con la emoción señalada y sus repeticiones", async () => {
+  it("al terminar, lista cada dibujo y sus repeticiones", async () => {
     vi.mocked(apiRequest).mockImplementation(async (path) => (path === "/guided-sessions/s1" ? {
       ...conductorState, phase: "finished", step_index: null, drawing: null, attempt: null,
-      drawing_results: [{ step_index: 0, outcome: "answered", chosen_expression: "happiness", seconds_to_answer: 40, answered_by: "participant" }],
+      drawing_results: [{ step_index: 0, outcome: "answered", chosen_expression: null, seconds_to_answer: 40, answered_by: "participant" }],
       repeated_attempts: [{ step_index: 0, attempt: 2, step_kind: "drawing", target_expression: null, outcome: "timed_out",
         chosen_expression: null, seconds_to_answer: null, answered_by: null }],
     } : {}) as never);
     withUser(<GuidedConductorPage />, "/guided/s1");
     const section = (await screen.findByRole("heading", { name: "Dibujos" })).closest("section")!;
     const items = within(section).getAllByRole("listitem").map((item) => item.textContent);
-    expect(items[0]).toMatch(/^Paso 1 · Respondió: Alegría a los 40 s/);
-    expect(items[1]).toBe("2.º intento · Terminó el tiempo sin respuesta");
+    expect(items[0]).toMatch(/^Paso 1 · Terminó el dibujo a los 40 s/);
+    expect(items[1]).toBe("2.º intento · Terminó el tiempo");
   });
 });
 
 describe("el dibujo en el reporte", () => {
-  it("las métricas y la línea de tiempo describen solo la emoción señalada", async () => {
+  it("sin pregunta, el reporte dice si terminó cada dibujo y no muestra la columna de emoción", async () => {
+    const metrics: SessionMetrics = {
+      session_id: "s1", emotional: [], abstract: [], abstract_notice: null,
+      totals: { emotional_stimuli: 0, counted: 0, matched: 0, excluded_captures: 0, sentence: "" },
+      drawing: { notice: "Describe si la persona terminó cada dibujo y en cuánto tiempo.",
+        totals: { exercises: 2, answered: 1, timed_out: 1, skipped: 0, stopped: 0, not_reached: 0,
+          sentence: "Terminó 1 de 2 dibujos." },
+        exercises: [{ step_index: 0, max_seconds: 90, outcome: "answered", chosen_expression: null, seconds_to_answer: 30, answered_by: "participant" },
+          { step_index: 1, max_seconds: 90, outcome: "timed_out", chosen_expression: null, seconds_to_answer: null, answered_by: null }] },
+    };
+    render(<StimulusMetrics metrics={metrics} expressionLabel={(key) => key ?? "—"} />);
+    const table = within(screen.getByRole("region", { name: "Dibujos" }));
+    expect(table.getByText("Terminó el dibujo")).toBeInTheDocument();
+    expect(table.queryByText("Emoción que señaló")).not.toBeInTheDocument();
+
+    const timeline: Timeline = {
+      session_id: "s1", started_at: "2026-11-06T10:00:00Z", duration_seconds: 60,
+      lanes: { questionnaires: [], captures: [], said: [], markers: [], heart_rate: [],
+        stimuli: [{ step_index: 0, title: "", kind: "drawing", start: 0, end: 40, skipped: false,
+          outcome: "answered", chosen_expression: null, seconds_to_answer: 30 }] },
+    };
+    render(<SessionTimeline timeline={timeline} expressionLabel={(key) => key ?? "—"} />);
+    await waitFor(() => expect(screen.getAllByText(/Dibujo: terminó el dibujo a los 30 s/).length).toBeGreaterThan(0));
+  });
+
+  it("en sesiones anteriores, las métricas y la línea de tiempo conservan la emoción señalada", async () => {
     const metrics: SessionMetrics = {
       session_id: "s1", emotional: [], abstract: [], abstract_notice: null,
       totals: { emotional_stimuli: 0, counted: 0, matched: 0, excluded_captures: 0, sentence: "" },

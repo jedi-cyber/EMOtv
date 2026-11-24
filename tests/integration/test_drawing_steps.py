@@ -1,7 +1,8 @@
 """Pasos de dibujo en la sesión guiada (bloque 4, subtarea 4a): armado del
-protocolo, emoción señalada por la persona o por quien conduce, tiempo vencido,
-repetir, saltar, detener, métricas, línea de tiempo, eliminación y migración.
-El dibujo nunca llega al servidor: solo la emoción elegida y los tiempos.
+protocolo, «Terminé» de la persona o de quien conduce (sin preguntar qué emoción
+quiso dibujar, desde 20261124_48), tiempo vencido, repetir, saltar, detener,
+métricas, línea de tiempo, eliminación y migraciones. El dibujo nunca llega al
+servidor: solo si terminó y los tiempos.
 (SQLite en memoria, reloj falso y analizador falso; sin modelos ni imágenes.)"""
 from __future__ import annotations
 
@@ -14,10 +15,9 @@ import pytest
 from sqlalchemy import inspect
 
 from emotv.domain.guided_session import (
+    DRAWING_FINISHED,
     DRAWING_INSTRUCTION,
     DRAWING_NOTICE,
-    DRAWING_OPTIONS,
-    DRAWING_QUESTION,
     DrawingResult,
     RecognitionAnswerer,
     RecognitionOutcome,
@@ -38,7 +38,9 @@ from tests.integration.test_guided_sessions import (
 from tests.integration.test_practice_persistence import engine  # noqa: F401
 from tests.integration.test_privacy_accounts import env, headers  # noqa: F401
 
-MIGRATION = Path(__file__).resolve().parents[2] / "migrations" / "versions" / "20261106_40_drawing_steps.py"
+VERSIONS = Path(__file__).resolve().parents[2] / "migrations" / "versions"
+MIGRATION = VERSIONS / "20261106_40_drawing_steps.py"
+WITHOUT_QUESTION = VERSIONS / "20261124_48_drawing_without_question.py"
 
 
 def drawing(exposure=30):
@@ -55,6 +57,10 @@ def start(env, *steps):  # noqa: F811
 
 def answer(env, token, expression):  # noqa: F811
     return env.client.post(f"/participant-view/{token}/answer", json={"expression": expression})
+
+
+def done(env, token):  # noqa: F811
+    return env.client.post(f"/participant-view/{token}/drawing-done")
 
 
 def results(env, session_id):  # noqa: F811
@@ -101,12 +107,12 @@ def test_el_protocolo_guarda_el_paso_de_dibujo(env):  # noqa: F811
 # --- Sesión ---------------------------------------------------------------------------------
 
 
-def test_la_persona_senala_la_emocion_y_el_paso_avanza_sin_camara(env):  # noqa: F811
+def test_la_persona_termina_el_dibujo_sin_elegir_emocion_y_el_paso_avanza_sin_camara(env):  # noqa: F811
     session_id, token = start(env, drawing())
     shown = view(env, token).json()
     block = shown["drawing"]
-    assert block["instruction"] == DRAWING_INSTRUCTION and block["question"] == DRAWING_QUESTION
-    assert [option["key"] for option in block["options"]] == list(DRAWING_OPTIONS)
+    # No se pregunta qué emoción quiso dibujar.
+    assert block["instruction"] == DRAWING_INSTRUCTION and block["question"] is None and block["options"] == []
     assert block["finished"] is False and block["chosen"] is None and block["message"] is None
     # Sin imagen, sin cámara y sin los bloques de otros pasos.
     assert shown["stimulus"] is None and shown["capture_frames"] is False
@@ -116,42 +122,55 @@ def test_la_persona_senala_la_emocion_y_el_paso_avanza_sin_camara(env):  # noqa:
     assert env.frames_assessed == assessed
 
     wait(env, 12)
-    assert answer(env, token, "contempt").status_code == 422          # no se ofrece
-    assert answer(env, token, "happiness").json() == {"received": True}
-    assert answer(env, token, "sadness").status_code == 409           # ya respondió
+    assert done(env, token).json() == {"received": True}
+    assert done(env, token).status_code == 409                       # ya terminó
     block = view(env, token).json()["drawing"]
-    assert block["finished"] is True and block["chosen"] == "happiness"
-    assert block["message"] == "Dibujaste alegría."
+    assert block["finished"] is True and block["chosen"] is None and block["message"] == DRAWING_FINISHED
     [item] = results(env, session_id)
-    assert item.outcome is RecognitionOutcome.ANSWERED and item.chosen_expression == "happiness"
+    assert item.outcome is RecognitionOutcome.ANSWERED and item.chosen_expression is None
     assert item.seconds_to_answer == 12.0 and item.answered_by is RecognitionAnswerer.PARTICIPANT
     conductor = state(env, session_id)
-    assert conductor["drawing"]["chosen_expression"] == "happiness"
+    assert conductor["drawing"]["outcome"] == "answered" and conductor["drawing"]["chosen_expression"] is None
     assert conductor["drawing_results"] == [{"step_index": 0, "outcome": "answered",
-                                             "chosen_expression": "happiness", "seconds_to_answer": 12.0,
+                                             "chosen_expression": None, "seconds_to_answer": 12.0,
                                              "answered_by": "participant"}]
     assert conductor["captures"] == [] and conductor["recognition_results"] == []
     wait(env, 2.1)
     assert state(env, session_id)["phase"] == "finished"
 
 
-def test_quien_conduce_registra_la_emocion_que_la_persona_senalo(env):  # noqa: F811
+def test_un_aplicativo_anterior_que_envia_una_emocion_termina_el_dibujo_sin_guardarla(env):  # noqa: F811
+    session_id, token = start(env, drawing())
+    wait(env, 3)
+    assert answer(env, token, "happiness").json() == {"received": True}
+    [item] = results(env, session_id)
+    assert item.outcome is RecognitionOutcome.ANSWERED and item.chosen_expression is None
+
+
+def test_quien_conduce_marca_que_termino_de_dibujar(env):  # noqa: F811
     session_id, token = start(env, drawing())
     wait(env, 4)
-    assert post(env, session_id, "recognition", {"expression": "neutral"}).status_code == 200
+    assert post(env, session_id, "drawing-done", user=env.user_2).status_code in (403, 404)
+    assert post(env, session_id, "drawing-done").status_code == 200
     [item] = results(env, session_id)
-    assert item.answered_by is RecognitionAnswerer.CONDUCTOR and item.chosen_expression == "neutral"
-    assert view(env, token).json()["drawing"]["message"] == "Dibujaste una cara tranquila."
-    assert post(env, session_id, "recognition", {"expression": "neutral"}, user=env.user_2).status_code in (403, 404)
+    assert item.answered_by is RecognitionAnswerer.CONDUCTOR and item.chosen_expression is None
+    assert view(env, token).json()["drawing"]["message"] == DRAWING_FINISHED
+    assert post(env, session_id, "drawing-done").status_code == 409
 
 
-def test_al_vencer_el_tiempo_se_registra_sin_respuesta(env):  # noqa: F811
+def test_terminado_solo_existe_en_un_paso_de_dibujo(env):  # noqa: F811
     emotional, _ = stimuli(env)
+    session_id, token = start(env, step(emotional))
+    assert done(env, token).status_code == 409
+    assert post(env, session_id, "drawing-done").status_code == 409
+
+
+def test_al_vencer_el_tiempo_se_registra_sin_terminar(env):  # noqa: F811
     session_id, token = start(env, drawing(5), drawing(10))
     wait(env, 5.5)
     block = view(env, token).json()["drawing"]
     assert block["finished"] is True and block["chosen"] is None and block["message"] is None
-    assert answer(env, token, "happiness").status_code == 409
+    assert done(env, token).status_code == 409
     [item] = results(env, session_id)
     assert item.outcome is RecognitionOutcome.TIMED_OUT and item.chosen_expression is None
     wait(env, 2)
@@ -162,19 +181,17 @@ def test_repetir_un_dibujo_guarda_otro_intento_y_cambia_la_ronda(env):  # noqa: 
     session_id, token = start(env, drawing())
     first_round = view(env, token).json()["drawing"]["round"]
     wait(env, 3)
-    answer(env, token, "anger")
+    done(env, token)
     assert state(env, session_id)["can_repeat"] is True
     assert post(env, session_id, "repeat").status_code == 200
     block = view(env, token).json()["drawing"]
     assert block["round"] != first_round and block["finished"] is False
     wait(env, 2)
-    answer(env, token, "fear")
-    assert [(item.attempt, item.chosen_expression) for item in results(env, session_id)] == [(1, "anger"),
-                                                                                              (2, "fear")]
+    done(env, token)
+    assert [(item.attempt, item.seconds_to_answer) for item in results(env, session_id)] == [(1, 3.0), (2, 2.0)]
     summary = state(env, session_id)
-    assert [item["chosen_expression"] for item in summary["drawing_results"]] == ["anger"]
-    assert [(item["step_kind"], item["attempt"], item["chosen_expression"])
-            for item in summary["repeated_attempts"]] == [("drawing", 2, "fear")]
+    assert [item["outcome"] for item in summary["drawing_results"]] == ["answered"]
+    assert [(item["step_kind"], item["attempt"]) for item in summary["repeated_attempts"]] == [("drawing", 2)]
 
 
 def test_saltar_o_detener_un_dibujo_lo_registra(env):  # noqa: F811
@@ -190,11 +207,11 @@ def test_saltar_o_detener_un_dibujo_lo_registra(env):  # noqa: F811
 # --- Métricas, línea de tiempo y eliminación -------------------------------------------------
 
 
-def test_las_metricas_describen_la_emocion_senalada_sin_mezclarla(env):  # noqa: F811
+def test_las_metricas_describen_si_termino_sin_mezclarlo(env):  # noqa: F811
     emotional, _ = stimuli(env)
     session_id, token = start(env, drawing(), drawing(4), step(emotional))
     wait(env, 2)
-    answer(env, token, "surprise")
+    done(env, token)
     wait(env, 2.1)
     assert state(env, session_id)["step_index"] == 1
     wait(env, 6.5)                                                     # el segundo vence
@@ -202,20 +219,21 @@ def test_las_metricas_describen_la_emocion_senalada_sin_mezclarla(env):  # noqa:
     metrics = env.client.get(f"/sessions/{session_id}/metrics", headers=headers(env, env.user_1)).json()
     block = metrics["drawing"]
     assert block["notice"] == DRAWING_NOTICE
-    assert block["totals"]["sentence"] == "Señaló una emoción en 1 de 2 dibujos."
+    assert block["totals"]["sentence"] == "Terminó 1 de 2 dibujos."
     assert block["totals"]["timed_out"] == 1
-    assert [row["chosen_expression"] for row in block["exercises"]] == ["surprise", None]
+    assert [(row["outcome"], row["chosen_expression"]) for row in block["exercises"]] == [("answered", None),
+                                                                                          ("timed_out", None)]
     assert metrics["recognition"] is None and metrics["practice"] is None
     assert [row["step_index"] for row in metrics["emotional"]] == [2]
     timeline = env.client.get(f"/sessions/{session_id}/timeline", headers=headers(env, env.user_1)).json()
     lane = [item for item in timeline["lanes"]["stimuli"] if item["kind"] == "drawing"]
-    assert [(item["outcome"], item["chosen_expression"]) for item in lane] == [("answered", "surprise"),
+    assert [(item["outcome"], item["chosen_expression"]) for item in lane] == [("answered", None),
                                                                                 ("timed_out", None)]
 
 
 def test_eliminar_la_sesion_borra_los_dibujos_registrados(env):  # noqa: F811
     session_id, token = start(env, drawing())
-    answer(env, token, "happiness")
+    done(env, token)
     post(env, session_id, "stop", {"reason": "conductor"})
     response = env.client.post(f"/sessions/{session_id}/delete", headers=headers(env, env.docente_a))
     assert response.status_code == 200, response.text
@@ -249,3 +267,48 @@ def test_la_migracion_40_vuelve_atras_y_otra_vez_adelante(engine):  # noqa: F811
     assert "drawing_results" in inspect(engine).get_table_names()
     checks = {item["name"]: item["sqltext"] for item in inspect(engine).get_check_constraints("protocol_steps")}
     assert "'drawing'" in checks["ck_protocol_steps_kind"]
+
+
+def test_una_sesion_anterior_conserva_la_emocion_que_se_senalo(env):  # noqa: F811
+    """Antes de 20261124_48 se preguntaba qué emoción quiso dibujar: se sigue leyendo."""
+    session_id, token = start(env, drawing())
+    run = env.guided.repository.get_run(session_id)
+    env.guided.repository.save_drawing_result(DrawingResult(
+        id="anterior", session_id=session_id, step_index=0, outcome=RecognitionOutcome.ANSWERED,
+        started_at=run.step_started_at, ended_at=run.step_started_at, chosen_expression="happiness",
+        seconds_to_answer=0.0, answered_by=RecognitionAnswerer.PARTICIPANT))
+    metrics = env.client.get(f"/sessions/{session_id}/metrics", headers=headers(env, env.user_1)).json()
+    assert metrics["drawing"]["exercises"][0]["chosen_expression"] == "happiness"
+    assert metrics["educational"]["drawing"]["sentence"] == "Terminó 1 de 1 dibujo; señaló alegría (1)."
+
+
+def test_solo_un_dibujo_terminado_lleva_segundos_y_quien_lo_termino():
+    from datetime import UTC, datetime
+    now = datetime(2026, 11, 24, tzinfo=UTC)
+    base = {"id": "d", "session_id": "s", "step_index": 0, "started_at": now, "ended_at": now}
+    DrawingResult(**base, outcome="answered", seconds_to_answer=1.0, answered_by="participant")
+    with pytest.raises(ValueError):
+        DrawingResult(**base, outcome="answered")
+    with pytest.raises(ValueError):
+        DrawingResult(**base, outcome="timed_out", chosen_expression="happiness")
+
+
+def _without_question(engine, name: str) -> None:  # noqa: F811
+    spec = importlib.util.spec_from_file_location("migration_20261124_48", WITHOUT_QUESTION)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert (module.revision, module.down_revision) == ("20261124_48", "20261124_47")
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            getattr(module, name)()
+
+
+def test_la_migracion_48_vuelve_atras_y_otra_vez_adelante(engine):  # noqa: F811
+    def check():
+        return {item["name"]: item["sqltext"] for item in inspect(engine).get_check_constraints("drawing_results")}
+
+    assert "chosen_expression IS NULL" in check()["ck_drawing_results_answered"]
+    _without_question(engine, "downgrade")
+    assert "(chosen_expression IS NOT NULL)" in check()["ck_drawing_results_answered"]
+    _without_question(engine, "upgrade")
+    assert "OR chosen_expression IS NULL" in check()["ck_drawing_results_answered"]

@@ -683,15 +683,16 @@ class RecognitionResultRecord(Base):
 
 
 class DrawingResultRecord(Base):
-    """Resultado de un paso de dibujo: la emoción que la persona señaló y los
-    tiempos. Nunca el dibujo, que no llega al servidor."""
+    """Resultado de un paso de dibujo: si la persona terminó y los tiempos (la
+    emoción señalada, solo en sesiones anteriores a 20261124_48). Nunca el
+    dibujo, que no llega al servidor."""
 
     __tablename__ = "drawing_results"
     __table_args__ = (
         UniqueConstraint("session_id", "step_index", "attempt", name="uq_drawing_results_session_step_attempt"),
         CheckConstraint("outcome IN ('answered', 'timed_out', 'skipped', 'stopped')",
                         name="ck_drawing_results_outcome"),
-        CheckConstraint("(outcome = 'answered') = (chosen_expression IS NOT NULL) "
+        CheckConstraint("(outcome = 'answered' OR chosen_expression IS NULL) "
                         "AND (outcome = 'answered') = (seconds_to_answer IS NOT NULL) "
                         "AND (outcome = 'answered') = (answered_by IS NOT NULL)",
                         name="ck_drawing_results_answered"),
