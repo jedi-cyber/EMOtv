@@ -272,7 +272,7 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .conductor-rating { display: grid; gap: var(--space-xs); border: 1px solid var(--color-steel); border-radius: var(--radius-md); padding: var(--space-sm); }
 .conductor-rating-stars { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
 .drawing-model { display: block; max-width: min(100%, 320px); max-height: 30vh; margin: 0 auto var(--space-sm); object-fit: contain; border-radius: var(--radius-md); }
-.participant-camera--preview { position: fixed; top: var(--space-md); right: var(--space-md); z-index: 1; width: clamp(9rem, 22vw, 16rem); height: auto; aspect-ratio: 4 / 3; object-fit: cover; opacity: 1; transform: scaleX(-1); border-radius: var(--radius-lg); background: var(--color-ink); }
+.conductor-camera-frame video { display: block; width: min(100%, 24rem); aspect-ratio: 4 / 3; object-fit: cover; transform: scaleX(-1); border-radius: var(--radius-lg); background: var(--color-ink); }
 /* Práctica de expresiones: instrucción grande, figura que crece con el nivel
    (un solo color para todas las expresiones) y el botón de parar siempre a la vista. */
 .participant-practice { display: grid; justify-items: center; gap: var(--space-lg); width: min(100%, 36rem); }

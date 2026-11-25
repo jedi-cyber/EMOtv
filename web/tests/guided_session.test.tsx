@@ -100,18 +100,22 @@ describe("sesión sin cámara (solo reconocimientos)", () => {
   it("con cámara tampoco hay calibración: se empieza con «Empezar»", async () => {
     conductor({ ...baseState, phase: "ready", uses_camera: true });
     expect(await screen.findByRole("button", { name: "Empezar" })).toBeInTheDocument();
-    expect(screen.getByText(/muestra la vista previa/)).toBeInTheDocument();
+    expect(screen.getByText(/mira la vista previa aquí/)).toBeInTheDocument();
+    // La vista previa es de quien conduce y se enciende con un botón.
+    expect(screen.getByRole("button", { name: "Ver la cámara" })).toBeInTheDocument();
     expect(screen.queryByText(/calibración/i)).not.toBeInTheDocument();
   });
 
-  it("con cámara, la persona ve la vista previa mientras espera, sin enviar cuadros", async () => {
+  it("con cámara, la pantalla de la persona pide la cámara mientras espera, sin vista previa ni cuadros", async () => {
     const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     participant({ phase: "ready", message: "En un momento empezamos.", stimulus: null,
       remaining_seconds: null, capture_frames: false, frame_interval_ms: 500, abstract_notice: null, uses_camera: true });
-    expect(await screen.findByLabelText("Vista previa de la cámara")).toHaveClass("participant-camera--preview");
     await waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    // La persona no se ve a sí misma: el video queda oculto.
+    expect(document.querySelector("video")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByLabelText("Vista previa de la cámara")).not.toBeInTheDocument();
     expect(apiRequest).not.toHaveBeenCalledWith("/participant-view/tok/frames", expect.anything());
   });
 

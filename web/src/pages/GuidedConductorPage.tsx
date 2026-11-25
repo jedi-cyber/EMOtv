@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { drawingOutcomeNames, gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
+import { ConductorCameraPreview } from "../guided/ConductorCameraPreview";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
@@ -274,6 +275,8 @@ export function GuidedConductorPage() {
         onClick={() => { void act("/continue-without-camera"); }}>Continuar sin cámara</Button>
     </div>}
 
+    {state && active && state.uses_camera !== false && !state.camera_off && !onAndroid && <ConductorCameraPreview />}
+
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">
       {questionnaire
         ? <SessionQuestionnaire sessionId={sessionId} moment={state.phase === "pre_questionnaire" ? "pre" : "post"}
@@ -286,7 +289,7 @@ export function GuidedConductorPage() {
       <p>{state.camera_off ? "La sesión sigue sin cámara. " : state.uses_camera === false ? "Esta sesión no usa la cámara. " : ""}El tiempo del primer paso corre desde que pulses «Empezar».</p>
       <p className="muted">{state.uses_camera === false || state.camera_off
         ? "Si la persona usa su pantalla, ábrela antes de empezar."
-        : "Abre antes la pantalla de la persona: ahí pide permiso para la cámara y muestra la vista previa, para que la persona se acomode frente a ella."}</p>
+        : "Abre antes la pantalla de la persona: ahí pide permiso para la cámara. Para acomodar a la persona frente a ella, mira la vista previa aquí; la persona no se ve a sí misma."}</p>
       <Button variant="primary" disabled={busy} onClick={() => { void act("/start"); }}>Empezar</Button>
     </div>}
 
