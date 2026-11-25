@@ -723,6 +723,10 @@ trae `drawing` con estos campos:
   conduce) o porque venció el tiempo.
 - `chosen` y `message`: `chosen` es nulo desde 4.15; `message` es «Terminaste
   el dibujo.» al pulsar «Terminé» y nulo si venció el tiempo.
+- Si el paso trae una imagen para mirar (desde 4.14), el estado trae
+  `stimulus.exposure` y la imagen se pide con `GET
+  /participant-view/{token}/stimulus` cada vez que cambia, como en los juegos.
+  Es un estímulo, nunca la imagen de una persona, y vive solo en memoria.
 
 La persona dibuja con el dedo. Herramientas, iguales que en la web:
 

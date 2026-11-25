@@ -74,3 +74,6 @@ def test_estrellas_por_ronda_y_lo_logrado_al_final(env):  # noqa: F811
     assert [item["outcome"] for item in finished["practice_results"]] == ["achieved", "timed_out", "achieved"]
     metrics = env.client.get(f"/sessions/{session_id}/metrics", headers=headers(env, env.user_1)).json()
     assert metrics is not None
+    # La línea de tiempo dice qué ronda del juego fue cada ejercicio (contrato 4.13).
+    timeline = env.client.get(f"/sessions/{session_id}/timeline", headers=headers(env, env.user_1)).json()
+    assert [item["game_round"] for item in timeline["lanes"]["stimuli"] if item["kind"] == "practice"] == [1, 2, 3]

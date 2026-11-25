@@ -161,6 +161,7 @@ class SessionInsightsService:
             if kind == "practice":
                 result = practice.get(index)
                 item.update(target_expression=steps[index].target_expression, imitate=steps[index].imitate,
+                            game_round=steps[index].game_round,
                             outcome=result.outcome.value if result else None,
                             seconds_to_achieve=result.seconds_to_achieve if result else None)
             if kind == "recognition":
