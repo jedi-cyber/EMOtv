@@ -11,6 +11,7 @@ import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { drawingOutcomeNames, gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
 import { ConductorCameraPreview } from "../guided/ConductorCameraPreview";
+import { ConductorLiveReading } from "../guided/ConductorLiveReading";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
@@ -218,6 +219,9 @@ export function GuidedConductorPage() {
   // Con la pantalla en Android, el enlace web guardado ya no vale.
   const viewUrl = viewToken && !onAndroid ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
+  // Pasos en los que se analiza la cámara: ahí quien conduce ve lo que estima.
+  const readingStep = state?.phase === "live" || Boolean(state?.live_reading) || Boolean(state?.game?.face)
+    || (state?.phase === "stimuli" && step != null && ["stimulus", "practice", "analyzer"].includes(step.step_kind ?? "stimulus"));
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
   const isPractice = step?.step_kind === "practice";
@@ -295,6 +299,8 @@ export function GuidedConductorPage() {
         onClick={() => { void act("/continue-without-camera"); }}>Continuar sin cámara</Button>
     </div>}
 
+    {state && active && state.uses_camera !== false && !state.camera_off
+      && readingStep && <ConductorLiveReading reading={state.live_reading} />}
     {state && active && state.uses_camera !== false && !state.camera_off && !onAndroid && <ConductorCameraPreview />}
 
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">

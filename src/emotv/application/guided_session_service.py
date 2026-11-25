@@ -135,6 +135,10 @@ CAPTURES = "expression_capture"
 MARKER = "session_marker"
 VERBAL = "verbal_response"
 FRAME_INTERVAL_MS = 500
+# Lectura en vivo para quien conduce: entre capturas se analiza a lo sumo un cuadro
+# por este intervalo, y una lectura más vieja que READING_MAX_AGE ya no se muestra.
+READING_INTERVAL_SECONDS = 1.0
+READING_MAX_AGE_SECONDS = 3.0
 
 Assess = Callable[[Any], FrameAssessment]
 
@@ -187,6 +191,9 @@ class _Live:
     practice: PracticeTracker | None = None
     analyzing: bool = False   # un cuadro de práctica se está analizando
     camera_problem: str | None = None  # motivo que informó la pantalla de la persona
+    # La última estimación (segundo del reloj y resultado), solo para quien conduce.
+    # Se reemplaza con cada cuadro: no crece ni se guarda.
+    reading: tuple[float, FrameAssessment] | None = None
 
 
 def hash_token(token: str) -> str:
@@ -1440,7 +1447,44 @@ class GuidedSessionService:
         model_id = session.emotion_model_id or ""
         if model_id not in self._assessors:
             self._assessors[model_id] = self.assess_factory(model_id)
-        return self._assessors[model_id](frame)
+        assessment = self._assessors[model_id](frame)
+        self._live_of(session.id).reading = (self.clock().timestamp(), assessment)
+        return assessment
+
+    def _refresh_reading(self, session: EmotionalSession, frame) -> None:
+        """Entre capturas, analiza un cuadro por segundo solo para la lectura en
+        vivo de quien conduce. No guarda nada: la imagen se descarta."""
+        live = self._live_of(session.id)
+        now = self.clock().timestamp()
+        if live.reading is not None and now - live.reading[0] < READING_INTERVAL_SECONDS:
+            return
+        with self._practice_lock:
+            if live.analyzing:
+                return
+            live.analyzing = True
+        try:
+            self._assess(session, frame)
+        finally:
+            live.analyzing = False
+
+    def _live_reading(self, run: GuidedRun, session: EmotionalSession) -> dict[str, Any] | None:
+        """Lo que estima la cámara ahora, solo para quien conduce (nunca para la
+        pantalla de la persona). Es una estimación de la expresión visible."""
+        live = self._live.get(session.id)
+        if (live is None or live.reading is None or session.exam_id is not None
+                or run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE)
+                or not self._camera_active(run, session)):
+            return None
+        at, assessment = live.reading
+        age = self.clock().timestamp() - at
+        if age > READING_MAX_AGE_SECONDS:
+            return None
+        distribution = sorted((assessment.distribution or {}).items(), key=lambda item: item[1], reverse=True)
+        return {"face_detected": assessment.emotion is not None,
+                "emotion": assessment.emotion, "confidence": assessment.confidence,
+                "distribution": [{"emotion": key, "probability": round(value, 3)} for key, value in distribution],
+                "quality_issues": [item.value for item in assessment.issues],
+                "seconds_ago": round(max(0.0, age), 1)}
 
     # --- Quien conduce la sesión -------------------------------------------------------
 
@@ -1750,7 +1794,10 @@ class GuidedSessionService:
         if (user.id, session_id) not in self._viewed:
             self._viewed.add((user.id, session_id))
             self.audit.record(user, AuditAction.VIEW, RESOURCE, session_id)
-        return self._summary(run, session, include_results=True)
+        summary = self._summary(run, session, include_results=True)
+        # Solo quien conduce, en vivo: no se guarda ni llega a la pantalla de la persona.
+        summary["live_reading"] = self._live_reading(run, session)
+        return summary
 
     def results(self, user: User, session_id: str) -> dict[str, Any]:
         """Capturas, marcadores y respuestas: quien condujo y su docente; se audita."""
@@ -2111,10 +2158,11 @@ class GuidedSessionService:
                 return
             if step.is_recognition or step.is_drawing:
                 return  # un reconocimiento o un dibujo no analiza la cámara
-        if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE) or run.next_capture_due is None:
+        if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE):
             return
         elapsed = self._seconds(run.step_started_at)
-        if elapsed < run.next_capture_due:
+        if run.next_capture_due is None or elapsed < run.next_capture_due:
+            self._refresh_reading(session, frame)   # solo la lectura en vivo de quien conduce
             return
         protocol = self._protocol(session) if run.phase is GuidedPhase.STIMULI else None
         assessment = self._assess(session, frame)

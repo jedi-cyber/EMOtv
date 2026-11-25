@@ -458,6 +458,9 @@ export interface GuidedState {
   camera_off?: boolean;
   /** Motivo que informó la pantalla de la persona al no poder usar la cámara. */
   camera_problem?: "insecure" | "denied" | "busy" | "not_found" | "unknown" | null;
+  /** Solo para quien conduce: la última estimación de la cámara (en memoria, no se
+   * guarda). Nula si no llegó un cuadro en los últimos segundos o el paso no la usa. */
+  live_reading?: ConductorLiveReading | null;
   stop_reason: "participant" | "guardian" | "conductor" | null;
   step_index: number | null;
   step_count: number;
@@ -903,4 +906,16 @@ export interface ExamDetail extends ExamSummary {
 export interface ExamStationJoin {
   view_token: string;
   session_code: string;
+}
+
+/** Lo que estima la cámara ahora sobre la expresión visible de la persona. Solo
+ * la ve quien conduce; la pantalla de la persona nunca la recibe. */
+export interface ConductorLiveReading {
+  face_detected: boolean;
+  emotion: string | null;
+  confidence: number | null;
+  /** De mayor a menor. */
+  distribution: { emotion: string; probability: number }[];
+  quality_issues: string[];
+  seconds_ago: number;
 }

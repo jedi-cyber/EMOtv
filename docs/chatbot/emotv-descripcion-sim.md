@@ -59,7 +59,10 @@ Con protocolo, la sesión sigue sus pasos: cuestionario previo, «Lista para
 empezar» (sin calibración: quien conduce ve la vista previa de la cámara en su
 pantalla, solo en su computadora y sin guardarla; la persona no se ve a sí misma;
 luego pulsa «Empezar»), los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
-práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. La
+práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. En
+los pasos que usan la cámara, quien conduce ve «Lo que estima la cámara»: la
+expresión estimada y su confianza, en vivo; la persona no ve ese resultado y no
+se guarda. La
 persona evaluada ve los pasos en su propia pantalla («Abrir la pantalla de la
 persona», o en Android con «Vincular Android»), sin resultados, y puede pedir
 parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.

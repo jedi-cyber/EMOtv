@@ -100,6 +100,7 @@ frente a la cámara.
 | Google Chrome (última versión) | Permiso de cámara, análisis, sesión con protocolo y Emi funcionan. | | | |
 | Microsoft Edge (última versión) | Igual que en Chrome. | | | |
 | Mozilla Firefox (última versión) | Igual que en Chrome. Anotar diferencias. | | | |
+| Lo que estima la cámara | En un paso con cámara, la pantalla de quien conduce muestra la expresión estimada, la confianza y las cinco expresiones, y cambia en uno o dos segundos al cambiar la cara. La pantalla de la persona no muestra nada de eso. | | | |
 | Cámara integrada de la laptop | La vista previa funciona y el análisis llega a un resultado. Anotar marca, modelo y resolución. | | | |
 | Cámara USB externa | Igual que la integrada. | | | |
 | Cámara ocupada por otra aplicación | Al probar la cámara aparece «Otra aplicación está usando la cámara…» y el requisito queda «Bloqueado». | | | |
