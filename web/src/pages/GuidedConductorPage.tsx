@@ -303,9 +303,11 @@ export function GuidedConductorPage() {
         onClick={() => { void act("/continue-without-camera"); }}>Continuar sin cámara</Button>
     </div>}
 
-    {state && active && state.uses_camera !== false && !state.camera_off
+    {/* La lectura en vivo va junto a la vista previa, en la misma tarjeta. */}
+    {state && active && state.uses_camera !== false && !state.camera_off && !onAndroid && <ConductorCameraPreview
+      reading={readingStep ? <ConductorLiveReading embedded reading={state.live_reading} /> : undefined} />}
+    {state && active && state.uses_camera !== false && !state.camera_off && onAndroid
       && readingStep && <ConductorLiveReading reading={state.live_reading} />}
-    {state && active && state.uses_camera !== false && !state.camera_off && !onAndroid && <ConductorCameraPreview />}
 
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">
       {questionnaire

@@ -2091,6 +2091,9 @@ class GuidedSessionService:
         run = self._tick(self._by_token(token))
         if run.view_device == "android":
             raise GuidedConflict("La pantalla en Android no envía imágenes")
+        if frame is not None:
+            # Llegan cuadros: el aviso de que no pudo usar la cámara ya no vale.
+            self._live_of(run.session_id).camera_problem = None
         self._receive(run, frame)
 
     # --- Aplicativo móvil: quien conduce y la cámara están en el mismo dispositivo -----

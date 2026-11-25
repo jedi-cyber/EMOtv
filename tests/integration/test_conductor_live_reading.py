@@ -44,3 +44,14 @@ def test_quien_conduce_ve_lo_que_estima_la_camara_y_la_persona_no(env):  # noqa:
     wait(env, 4)
     assert state(env, session_id)["live_reading"] is None
 
+
+
+def test_el_aviso_de_camara_se_quita_cuando_llegan_cuadros(env):  # noqa: F811
+    emotional, _ = stimuli(env)
+    session_id, token = guided(env, protocol(env, [step(emotional, exposure=20, capture=10)]))
+    assert env.client.post(f"/participant-view/{token}/camera-problem", json={"reason": "denied"}).status_code < 300
+    assert state(env, session_id)["camera_problem"] == "denied"
+    begin_steps(env, session_id, token)
+    wait(env, 1)
+    frame(env, token)      # la cámara funcionó al reintentar
+    assert state(env, session_id)["camera_problem"] is None

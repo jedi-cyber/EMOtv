@@ -22,10 +22,15 @@ function Bar({ label, value, small = false }: { label: string; value: number; sm
  * de la sesión, a partir de los cuadros que envía la pantalla de la persona; esa
  * pantalla nunca la recibe. No se guarda: es la última estimación en memoria.
  */
-export function ConductorLiveReading({ reading }: { reading: Reading | null | undefined }) {
+export function ConductorLiveReading({ reading, embedded = false }: {
+  reading: Reading | null | undefined;
+  /** Dentro de la tarjeta de la vista previa, junto al video. */
+  embedded?: boolean;
+}) {
   const { label: expressionName } = useExpressionCatalog();
-  return <section className="card form-stack" aria-label="Lo que estima la cámara">
-    <h2>Lo que estima la cámara</h2>
+  return <section className={embedded ? "form-stack conductor-reading" : "card form-stack conductor-reading"}
+    aria-label="Lo que estima la cámara">
+    {embedded ? <h3>Lo que estima la cámara</h3> : <h2>Lo que estima la cámara</h2>}
     <p className="muted">Solo lo ves tú: la pantalla de la persona no muestra este resultado. No se guarda.</p>
     <div className="live-expression" aria-live="polite">
       {!reading

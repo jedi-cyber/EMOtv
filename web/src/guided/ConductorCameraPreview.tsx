@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { cameraErrorMessage, cameraUnavailableReason, stopStream } from "../analysis/camera";
 import { Button } from "../components/Button";
 
@@ -9,7 +10,10 @@ import { Button } from "../components/Button";
  * analiza (el análisis usa los cuadros que manda la pantalla de la persona).
  * Se enciende con un botón y se apaga al ocultarla o al salir de la página.
  */
-export function ConductorCameraPreview() {
+export function ConductorCameraPreview({ reading }: {
+  /** Lo que estima la cámara, junto al video (solo para quien conduce). */
+  reading?: ReactNode;
+} = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [on, setOn] = useState(false);
@@ -51,13 +55,18 @@ export function ConductorCameraPreview() {
   return <div className="card form-stack conductor-camera" aria-label="Vista previa de la cámara">
     <h2>Vista previa de la cámara</h2>
     <p className="muted">Solo la ves tú, en esta computadora: la persona no se ve a sí misma. La imagen no se envía ni se guarda. Úsala cuando la pantalla de la persona está abierta en esta misma computadora.</p>
-    <div className="conductor-camera-frame" hidden={!on}>
-      <video ref={videoRef} playsInline muted aria-label="Vista previa de la cámara para quien conduce" />
-    </div>
-    {error && <p role="alert">{error}</p>}
-    <div className="inline-actions">
-      <Button variant="secondary" onClick={() => setOn((value) => !value)}>
-        {on ? "Ocultar la vista previa" : "Ver la cámara"}</Button>
+    <div className={reading ? "conductor-camera-body has-reading" : "conductor-camera-body"}>
+      <div className="form-stack">
+        <div className="conductor-camera-frame" hidden={!on}>
+          <video ref={videoRef} playsInline muted aria-label="Vista previa de la cámara para quien conduce" />
+        </div>
+        {error && <p role="alert">{error}</p>}
+        <div className="inline-actions">
+          <Button variant="secondary" onClick={() => setOn((value) => !value)}>
+            {on ? "Ocultar la vista previa" : "Ver la cámara"}</Button>
+        </div>
+      </div>
+      {reading}
     </div>
   </div>;
 }
