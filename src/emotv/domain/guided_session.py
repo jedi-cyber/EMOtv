@@ -141,6 +141,10 @@ GAME_FINISHED = "Terminaste el juego."
 # «Reconoce y luego muéstrala»: la persona solo ve estos mensajes, nunca si la cámara
 # estimó la expresión. El de cierre es el mismo, la sostenga o no.
 GAME_SHOW_PROMPT = "Ahora pon tú esa cara: {answer}. Mira a la cámara."
+# «Responde con la cara»: la persona responde poniendo la cara; la cámara marca la opción.
+GAME_FACE_PROMPT = "Mira la imagen y pon la cara de esa emoción. Sostenla y la cámara marcará la opción."
+SIMILAR_FACE_PROMPT = ("Pon la cara de la emoción de la cara de arriba. Sostenla y la cámara marcará la cara "
+                       "que muestra la misma emoción.")
 GAME_SHOW_THANKS = "¡Gracias por intentarlo! Sigamos jugando."
 GAME_TIME_UP = "Terminó el tiempo del juego."
 # Tras este número de opciones distintas a la de la imagen, se muestra la respuesta.

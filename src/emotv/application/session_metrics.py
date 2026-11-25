@@ -351,6 +351,8 @@ def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -
                                       item.help_used) if item else None,
             # «Reconoce y luego muéstrala»: nulos si el juego no lo pidió.
             "show_expression": step.show_expression,
+            # «Responde con la cara»: la persona respondió poniendo la cara; la cámara marcó la opción.
+            "answer_by_face": step.answer_by_face,
             "faces_asked": item.faces_asked if item else None, "faces_shown": item.faces_shown if item else None,
             "face_sentence": face_sentence(item.faces_asked, item.faces_shown) if item else None,
         })

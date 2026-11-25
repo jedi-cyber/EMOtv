@@ -550,6 +550,8 @@ class ProtocolStepRecord(Base):
     conductor_rating: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     # «Reconoce y luego muéstrala» en un juego (migración 20261124_51).
     show_expression: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # «Responde con la cara» en un juego (migración 20261125_52).
+    answer_by_face: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

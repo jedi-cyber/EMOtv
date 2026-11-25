@@ -189,7 +189,7 @@ class PostgresProtocolRepository:
             game_type=step.game_type, rounds=step.rounds,
             game_stimulus_ids=list(step.game_stimulus_ids) if step.is_game else None,
             game_round=step.game_round, conductor_rating=step.conductor_rating,
-            show_expression=step.show_expression)
+            show_expression=step.show_expression, answer_by_face=step.answer_by_face)
             for position, step in enumerate(item.steps))
 
     @staticmethod
@@ -217,7 +217,8 @@ class PostgresProtocolRepository:
                                      game_stimulus_ids=tuple(step.game_stimulus_ids or ()),
                                      game_round=step.game_round,
                                      conductor_rating=bool(step.conductor_rating),
-                                     show_expression=bool(step.show_expression))
+                                     show_expression=bool(step.show_expression),
+                                     answer_by_face=bool(step.answer_by_face))
                          for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:

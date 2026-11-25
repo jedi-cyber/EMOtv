@@ -129,6 +129,9 @@ class GameView(BaseModel):
     # «Reconoce y luego muéstrala»: «Siguiente» primero pide poner la cara. Nunca
     # lleva el nivel ni si la cámara la estimó: eso solo lo ve quien conduce.
     asks_face: bool = False
+    # «Responde con la cara»: las opciones no se tocan, las marca la cámara. Nunca
+    # lleva la expresión estimada ni los niveles: eso solo lo ve quien conduce.
+    answers_by_face: bool = False
 
 
 class CameraGameView(BaseModel):

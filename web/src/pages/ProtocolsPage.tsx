@@ -636,11 +636,19 @@ export function ProtocolsPage() {
                         <option value="">La elige EMOtv</option>
                         {current && !matchable.some((item) => item.id === current) &&
                           <option value={current}>{known?.title ?? "Imagen no disponible"}</option>}
-                        {matchable.map((item) => <option key={item.id} value={item.id}
+                        {/* «Responde con la cara»: solo las cinco expresiones que estima EMOtv. */}
+                        {(step.answer_by_face ? matchable.filter((item) => isCameraTarget(item.expected_expression)) : matchable)
+                          .map((item) => <option key={item.id} value={item.id}
                           disabled={item.id !== current && ids.includes(item.id)}>{item.title} — {practiceTargetNames[item.expected_expression ?? ""] ?? ""}</option>)}
                       </select></label>;
                     })}</div>}
-                    <Checkbox checked={Boolean(step.show_expression)}
+                    <Checkbox checked={Boolean(step.answer_by_face)}
+                      onChange={(event) => updateStep(index, { answer_by_face: event.target.checked,
+                        ...(event.target.checked ? { show_expression: false } : {}) })}>
+                      Responder poniendo la cara (usa la cámara)
+                    </Checkbox>
+                    {step.answer_by_face && <span className="muted">«Responde con la cara»: en vez de tocar, la persona pone la cara de la emoción y la cámara marca la opción cuya emoción sostiene unos segundos. Solo usa imágenes de neutral, felicidad, sorpresa, tristeza y enojo. Los niveles los ves tú; la persona ve la opción marcada. Sin cámara, responde con botones.</span>}
+                    <Checkbox checked={Boolean(step.show_expression)} disabled={Boolean(step.answer_by_face)}
                       onChange={(event) => updateStep(index, { show_expression: event.target.checked })}>
                       Después de cada ronda, pedir que muestre la emoción (usa la cámara)
                     </Checkbox>

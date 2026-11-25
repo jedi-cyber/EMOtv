@@ -307,6 +307,9 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 /* La opción elegida sigue legible aunque los botones queden deshabilitados. */
 .recognition-option[aria-pressed="true"]:disabled { color: var(--color-on-primary); background: var(--color-primary); }
 .recognition-answer { color: var(--color-ink); }
+/* «Responde con la cara»: las opciones no se tocan, las marca la cámara. */
+.face-option { display: flex; align-items: center; justify-content: center; padding: var(--space-sm); border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-md); color: var(--color-ink); background: var(--color-canvas); font-weight: var(--weight-semibold); text-align: center; }
+.face-option.is-marked { color: var(--color-slate); background: var(--color-surface); border-style: dashed; }
 /* Modo accesible: botones y letra más grandes, pictogramas y nada que se mueva. */
 .recognition-pictogram { display: block; font-size: 2.5rem; line-height: 1; }
 .participant-view--accessible .recognition-options { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-md); }

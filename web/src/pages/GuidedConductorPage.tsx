@@ -103,6 +103,21 @@ function GameFaceCard({ face, target, busy, last, onNext }: {
   </>;
 }
 
+/**
+ * «Responde con la cara», solo para quien conduce: el nivel en vivo de cada opción
+ * mientras la persona pone la cara. La que sostiene unos segundos queda marcada.
+ */
+function FaceAnswerLevels({ levels, name }: { levels: { key: string; level: number }[]; name: (key: string) => string }) {
+  return <div className="form-stack" aria-label="Nivel de cada opción">
+    {levels.length === 0
+      ? <p className="muted">Esperando la cara de la persona: los primeros segundos de cada intento no cuentan.</p>
+      : levels.map((item) => <label key={item.key}>{name(item.key)}
+        <meter min={0} max={1} value={item.level}>{Math.round(item.level * 100)} %</meter>
+      </label>)}
+    <p className="muted">Es una estimación de la cámara, no una valoración.</p>
+  </div>;
+}
+
 function StepTimer({ seconds: remaining }: { seconds: number | null | undefined }) {
   return remaining == null
     ? <p className="readout-md">Sin límite de tiempo</p>
@@ -399,6 +414,8 @@ export function GuidedConductorPage() {
         ? "La persona ve una cara arriba y elige, entre otras caras, la que muestra la misma emoción. La pareja es otra imagen, no la misma repetida."
         : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. {state.game?.show_expression
         ? "Al terminar cada ronda, se le pide poner esa cara y la cámara la estima; la persona solo ve un mensaje amable."
+        : state.game?.answer_by_face
+        ? "La persona responde poniendo la cara de la emoción: la cámara marca la opción cuya emoción sostiene unos segundos. Sin cámara, responde con botones."
         : cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.game && (state.game.outcome
@@ -414,7 +431,10 @@ export function GuidedConductorPage() {
               onNext={() => { void act("/game", { action: "next" }); }} />
             : state.game.state === "playing" || state.game.state === "retry"
             ? <>
-              <p>{similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
+              {state.game.answers_by_face && <FaceAnswerLevels levels={state.game.face_levels ?? []} name={optionName} />}
+              <p>{state.game.answers_by_face
+                ? "Si la cámara no la marca, registra aquí lo que la persona señala o dice:"
+                : similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
               <div className="inline-actions">{state.game.options.filter((key) => !state.game?.tried.includes(key) && key !== state.game?.removed)
                 .map((key) => <Button key={key} disabled={busy}
                   onClick={() => { void act("/game", { action: "answer", expression: key }); }}>{optionName(key)}</Button>)}

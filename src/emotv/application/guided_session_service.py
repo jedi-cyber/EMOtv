@@ -86,7 +86,9 @@ from emotv.domain.guided_session import (
     DRAWING_IMAGE_INSTRUCTION,
     DRAWING_INSTRUCTION,
     GAME_FINISHED,
+    GAME_FACE_PROMPT,
     GAME_SHOW_PROMPT,
+    SIMILAR_FACE_PROMPT,
     GAME_SHOW_THANKS,
     GAME_FOUND,
     GAME_MISSES_BEFORE_ANSWER,
@@ -122,6 +124,7 @@ from emotv.domain.guided_session import (
     VerbalResponse,
 )
 from emotv.domain.protocol import (ACCESSIBLE_PAUSE_FACTOR, CAMERA_GAME_HOLD_SECONDS, CAMERA_PRACTICE_TARGETS,
+                                   FACE_ANSWER_GRACE_SECONDS, FACE_ANSWER_HOLD_SECONDS,
                                    GAME_SHOW_SECONDS, GAME_SIMILAR, NO_TIME_LIMIT_SECONDS,
                                    MAX_CONDUCTOR_STARS, WAIT_PAUSE_SECONDS, PauseMode, Protocol, ProtocolStep,
                                    StepKind, camera_game_position)
@@ -194,6 +197,10 @@ class _Live:
     # La última estimación (segundo del reloj y resultado), solo para quien conduce.
     # Se reemplaza con cada cuadro: no crece ni se guarda.
     reading: tuple[float, FrameAssessment] | None = None
+    # «Responde con la cara»: la ronda (y sus intentos), el segundo en que empezó y un
+    # seguidor por opción a la vista (a lo sumo las de la ronda). Se reinicia al
+    # cambiar la ronda o el intento: no crece ni se guarda.
+    face_answer: tuple[str, float, dict[str, PracticeTracker]] | None = None
 
 
 def hash_token(token: str) -> str:
@@ -1156,7 +1163,8 @@ class GuidedSessionService:
             faces_asked=progress.get("faces_asked", 0) if step.show_expression else None,
             faces_shown=progress.get("faces_shown", 0) if step.show_expression else None))
 
-    def _game_act(self, run: GuidedRun, action: str, expression: str | None, by: RecognitionAnswerer) -> GuidedRun:
+    def _game_act(self, run: GuidedRun, action: str, expression: str | None, by: RecognitionAnswerer,
+                  by_face: bool = False) -> GuidedRun:
         """Una acción del juego: elegir una emoción (answer), pedir ayuda (help) o
         pasar a la ronda siguiente (next). Tras la última ronda, el paso termina y
         sigue la pausa de siempre."""
@@ -1187,6 +1195,10 @@ class GuidedSessionService:
             if action == "answer":
                 if not playing:
                     raise GuidedConflict("Esta ronda ya terminó")
+                if (by is RecognitionAnswerer.PARTICIPANT and not by_face
+                        and self._answers_by_face(fresh, step, target)):
+                    # «Responde con la cara»: la marca la cámara; quien conduce sí puede registrarla.
+                    raise GuidedConflict("En este juego se responde poniendo la cara")
                 if expression not in emotion_of or expression in progress["tried"] or expression == progress["removed"]:
                     raise ValueError("Esa opción no se muestra ahora")
                 if by is RecognitionAnswerer.CONDUCTOR:
@@ -1234,6 +1246,75 @@ class GuidedSessionService:
             else:
                 raise ValueError("Acción del juego desconocida")
             return self.repository.save_run(replace(fresh, game_progress=progress))
+
+    def _answers_by_face(self, run: GuidedRun, step: ProtocolStep, target: str | None) -> bool:
+        """Si la ronda se responde con la cara: el juego lo pide, hay cámara y EMOtv
+        estima la emoción de la ronda. Si no, se responde con botones."""
+        return step.answer_by_face and target in CAMERA_PRACTICE_TARGETS and run.camera_off_at is None
+
+    def _game_face_frame(self, run: GuidedRun, session: EmotionalSession, step: ProtocolStep, frame) -> None:
+        """«Responde con la cara»: un cuadro mientras la persona responde. Cada opción
+        a la vista tiene su seguidor; la primera cuya emoción sostiene la marca, como
+        si la hubiera tocado. Los primeros segundos de cada intento no cuentan, para
+        que alcance a mirar. La imagen se descarta."""
+        progress, _, target, options = self._game_round(run, step)
+        if progress["state"] not in ("playing", "retry") or not options or not self._answers_by_face(run, step, target):
+            self._refresh_reading(session, frame)
+            return
+        live = self._live_of(run.session_id)
+        with self._practice_lock:
+            if live.analyzing:
+                return
+            live.analyzing = True
+        try:
+            assessment = self._assess(session, frame)   # también la lectura en vivo de quien conduce
+        finally:
+            live.analyzing = False
+        chosen = None
+        with self._practice_lock:
+            fresh = self.repository.get_run(run.session_id)
+            if fresh is None or (fresh.step_index, fresh.step_started_at) != (run.step_index, run.step_started_at):
+                return
+            current = self._game_progress(fresh)
+            if current["state"] not in ("playing", "retry") or current["round"] != progress["round"]:
+                return
+            key = (f"{current['key']}:{current['round']}:{','.join(current['tried'])}:{current['removed']}:"
+                   f"{current['state']}")
+            now = self.clock().timestamp()
+            if live.face_answer is None or live.face_answer[0] != key:
+                live.face_answer = (key, now, {})
+            _, since, trackers = live.face_answer
+            if now - since < FACE_ANSWER_GRACE_SECONDS:
+                return
+            distribution = assessment.distribution if assessment.ok and assessment.distribution else None
+            for option, emotion, _ in options:
+                if (option in current["tried"] or option == current["removed"]
+                        or emotion not in CAMERA_PRACTICE_TARGETS):
+                    continue
+                tracker = trackers.get(option)
+                if tracker is None:
+                    tracker = trackers[option] = PracticeTracker(
+                        run.step_index, now, FACE_ANSWER_HOLD_SECONDS, False,
+                        threshold=self.practice.threshold, release_threshold=self.practice.release_threshold,
+                        smoothing_seconds=self.practice.smoothing_seconds)
+                held = tracker.add(now, float(distribution.get(emotion, 0.0)) if distribution else None)
+                if held and chosen is None:
+                    chosen = option
+            if chosen is not None:
+                live.face_answer = None
+        if chosen is not None:
+            try:
+                self._game_act(fresh, "answer", chosen, RecognitionAnswerer.PARTICIPANT, by_face=True)
+            except (GuidedConflict, ValueError):
+                pass   # la ronda cambió mientras tanto (por ejemplo, la registró quien conduce)
+
+    def _face_levels(self, run: GuidedRun) -> list[dict[str, Any]]:
+        """Solo para quien conduce: el nivel (0 a 1) de cada opción mientras la persona
+        responde con la cara. Es una estimación, no una valoración."""
+        live = self._live.get(run.session_id)
+        if live is None or live.face_answer is None:
+            return []
+        return [{"key": key, "level": round(tracker.level, 2)} for key, tracker in live.face_answer[2].items()]
 
     def _asks_face(self, run: GuidedRun, step: ProtocolStep, target: str | None) -> bool:
         """Si esta ronda pide poner la cara: el juego lo pide, hay cámara y EMOtv
@@ -1343,6 +1424,9 @@ class GuidedSessionService:
             "show": GAME_SHOW_PROMPT.format(answer=name[:1].lower() + name[1:]),
             "showed": GAME_SHOW_THANKS,
         }
+        by_face = state in ("playing", "retry") and self._answers_by_face(run, step, target)
+        if by_face and state == "playing":
+            messages["playing"] = SIMILAR_FACE_PROMPT if similar else GAME_FACE_PROMPT
         revealed = state in ("matched", "shown", "show", "showed")
         explanation = self.explanation_of(target) if revealed and target and self.explanation_of else None
         correct = next((key for key, emotion, _ in options if emotion == target), None)
@@ -1359,7 +1443,9 @@ class GuidedSessionService:
                 "can_help": state in ("playing", "retry") and not progress["helped"],
                 "last_round": index + 1 == step.rounds,
                 # Al terminar la ronda, «Siguiente» primero pide poner la cara.
-                "asks_face": state in ("matched", "shown") and self._asks_face(run, step, target)}
+                "asks_face": state in ("matched", "shown") and self._asks_face(run, step, target),
+                # «Responde con la cara»: las opciones no se tocan; las marca la cámara.
+                "answers_by_face": by_face}
 
     def _conductor_game(self, run: GuidedRun, step: ProtocolStep) -> dict[str, Any]:
         """Lo que ve quien conduce: la ronda, la emoción de la imagen, las opciones
@@ -1378,6 +1464,10 @@ class GuidedSessionService:
                 "rounds_done": progress["done"], "matched": progress["matched"], "first_try": progress["first"],
                 "help_used": progress["help"], "outcome": result.outcome.value if result else None,
                 "show_expression": step.show_expression,
+                "answer_by_face": step.answer_by_face,
+                "answers_by_face": (progress["state"] in ("playing", "retry")
+                                    and self._answers_by_face(run, step, target)),
+                "face_levels": self._face_levels(run) if progress["state"] in ("playing", "retry") else [],
                 "faces_asked": progress.get("faces_asked", 0), "faces_shown": progress.get("faces_shown", 0),
                 "face": self._conductor_face(run, progress) if progress["state"] in ("show", "showed") else None}
 
@@ -2159,8 +2249,11 @@ class GuidedSessionService:
                 # Mientras se pide poner la cara («Reconoce y luego muéstrala») cuenta para
                 # el juego; si no, solo la lectura en vivo de quien conduce.
                 run = self._settle_game_show(run, step)
-                if (run.game_progress or {}).get("state") == "show":
+                state = (run.game_progress or {}).get("state", "playing")
+                if state == "show":
                     self._game_show_frame(run, session, step, frame)
+                elif step.answer_by_face and state in ("playing", "retry"):
+                    self._game_face_frame(run, session, step, frame)   # «Responde con la cara»
                 else:
                     self._refresh_reading(session, frame)
                 return

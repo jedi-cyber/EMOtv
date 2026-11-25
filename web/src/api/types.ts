@@ -126,6 +126,9 @@ export interface ProtocolStep {
   /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
    * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
   show_expression?: boolean;
+  /** Solo un juego: «Responde con la cara». La persona pone la cara de la emoción y la
+   * cámara marca la opción que coincide. Solo las cinco expresiones que estima EMOtv. */
+  answer_by_face?: boolean;
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -285,6 +288,9 @@ export interface GuidedStep {
   /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
    * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
   show_expression?: boolean;
+  /** Solo un juego: «Responde con la cara». La persona pone la cara de la emoción y la
+   * cámara marca la opción que coincide. Solo las cinco expresiones que estima EMOtv. */
+  answer_by_face?: boolean;
 }
 
 /** Ronda del juego con cámara: una estrella por ronda lograda (null si todavía
@@ -378,6 +384,11 @@ export interface GuidedGame {
   faces_asked?: number;
   faces_shown?: number;
   face?: GuidedGameFace | null;
+  answer_by_face?: boolean;
+  /** «Responde con la cara» en esta ronda: hay cámara y EMOtv estima la emoción. */
+  answers_by_face?: boolean;
+  /** Solo quien conduce: el nivel (0 a 1) de cada opción mientras la persona pone la cara. */
+  face_levels?: { key: string; level: number }[];
 }
 
 /** Solo contadores del juego: no es un puntaje. */
@@ -570,6 +581,8 @@ export interface ParticipantGame {
   last_round: boolean;
   /** «Siguiente» primero pide poner la cara. Nunca llega el nivel ni el resultado. */
   asks_face?: boolean;
+  /** «Responde con la cara»: las opciones no se tocan; las marca la cámara. */
+  answers_by_face?: boolean;
 }
 
 export interface ParticipantViewState {
@@ -739,7 +752,7 @@ export interface SessionGame {
     outcome: GameOutcome | null; rounds_done: number | null; matched: number | null; first_try: number | null;
     help_used: number | null; by_conductor: number | null; sentence: string | null;
     show_expression?: boolean; faces_asked?: number | null; faces_shown?: number | null;
-    face_sentence?: string | null }[];
+    face_sentence?: string | null; answer_by_face?: boolean }[];
   totals: { games: number; completed: number; timed_out: number; skipped: number; stopped: number;
     not_reached: number; rounds_total: number; rounds_done: number; matched: number; first_try: number;
     help_used: number; sentence: string | null;

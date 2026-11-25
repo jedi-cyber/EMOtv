@@ -35,6 +35,11 @@ function useOptionImages(keys: string[], round: string, load?: (key: string) => 
  * cara de esa emoción mientras la cámara la estima. Esta pantalla solo muestra la
  * invitación y después un mensaje amable, el mismo la haya sostenido o no: el
  * nivel y el resultado solo los ve quien conduce.
+ *
+ * «Responde con la cara»: la persona responde poniendo la cara de la emoción y la
+ * cámara marca la opción que coincide. Las opciones se muestran sin botón y la
+ * marcada queda como si la hubiera tocado; nunca se muestra el nivel ni la
+ * expresión estimada.
  */
 export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictograms = false, readAloud = false }: {
   game: ParticipantGame; imageUrl: string | null;
@@ -53,6 +58,7 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
   const playing = game.state === "playing" || game.state === "retry";
   const revealed = game.state === "matched" || game.state === "shown";
   const facing = game.state === "show" || game.state === "showed";
+  const byFace = Boolean(game.answers_by_face) && playing;
   const spokenText = (facing ? [game.message] : revealed || game.state === "retry" || game.state === "finished" || game.state === "ended"
     ? [game.message, game.explanation] : [game.question]).filter(Boolean).join(" ");
   useEffect(() => () => stopExerciseSpeech(), []);
@@ -69,12 +75,11 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
     {imageUrl && <img className="participant-illustration" src={imageUrl}
       alt={similar ? "Cara de arriba, la que hay que comparar" : "Cara de la ronda"} />}
     {!facing && <p className="participant-instruction">{game.question}</p>}
-    {!facing && <div className={similar ? "recognition-options similar-game-options" : "recognition-options"}>
+    {!facing && <div className={similar ? "recognition-options similar-game-options" : "recognition-options"}
+      aria-label={byFace ? "Opciones: las marca la cámara" : undefined}>
       {game.options.map((option) => {
         const isAnswer = revealed && game.answer === option.key;
-        return <Button key={option.key} className="recognition-option"
-          variant={isAnswer ? "primary" : "secondary"} aria-pressed={isAnswer}
-          disabled={!playing || !option.available || sending} onClick={() => { void send("answer", option.key); }}>
+        const content = <>
           {/* Al buscar la misma emoción no hay pictogramas: dirían la respuesta. */}
           {!similar && pictograms && emotionPictograms[option.key] && <span className="recognition-pictogram" aria-hidden="true">{emotionPictograms[option.key]}</span>}
           {similar && (optionImages[option.key]
@@ -83,6 +88,17 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
           {option.label}
           {/* Visible para no depender del color. */}
           {isAnswer && <span className="recognition-chosen" aria-hidden="true">✓ Es esta</span>}
+          {byFace && !option.available && <span className="recognition-chosen" aria-hidden="true">Marcada</span>}
+        </>;
+        // «Responde con la cara»: sin botón; la opción la marca la cámara.
+        if (byFace) {
+          return <div key={option.key} className={`recognition-option face-option${option.available ? "" : " is-marked"}`}
+            aria-label={option.available ? option.label : `${option.label}: marcada, no es esta`}>{content}</div>;
+        }
+        return <Button key={option.key} className="recognition-option"
+          variant={isAnswer ? "primary" : "secondary"} aria-pressed={isAnswer}
+          disabled={!playing || !option.available || sending} onClick={() => { void send("answer", option.key); }}>
+          {content}
         </Button>;
       })}
     </div>}

@@ -205,9 +205,11 @@ class ProtocolService:
             return self._similar_images(user, target, step)
         return self._matching_images(user, target, step)
 
-    def _game_fits(self, target: Protocol, item: Stimulus | None) -> bool:
+    def _game_fits(self, target: Protocol, item: Stimulus | None, step: ProtocolStep) -> bool:
+        # «Responde con la cara»: solo las cinco expresiones que estima EMOtv.
+        allowed = CAMERA_PRACTICE_TARGETS if step.answer_by_face else RECOGNITION_DISTRACTORS
         return (item is not None and item.kind is StimulusKind.EMOTIONAL
-                and item.expected_expression in RECOGNITION_DISTRACTORS
+                and item.expected_expression in allowed
                 and self._image_problem(target, item) is None)
 
     def _similar_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
@@ -252,7 +254,7 @@ class ProtocolService:
                 item = self.stimuli.get(user, stimulus_id)
             except StimulusNotFound:
                 item = None
-            stored.append(item if self._game_fits(target, item) else None)
+            stored.append(item if self._game_fits(target, item, step) else None)
         if len(stored) == step.rounds * size and all(stored):
             blocks = [stored[index:index + size] for index in range(0, len(stored), size)]
             if all(round_ok(block[0], block[1], list(block[2:])) for block in blocks):
@@ -261,7 +263,7 @@ class ProtocolService:
         chooser = random.Random()
         pool: defaultdict[str, list[Stimulus]] = defaultdict(list)
         for item in self.stimuli.list_for(user, target.for_children):
-            if self._game_fits(target, item):
+            if self._game_fits(target, item, step):
                 pool[item.expected_expression].append(item)
         for items in pool.values():
             chooser.shuffle(items)
@@ -302,10 +304,11 @@ class ProtocolService:
         if len(chosen) < step.rounds * size:
             audience = " «Para niños»" if target.for_children else ""
             done = len(chosen) // size
+            five = " (al responder con la cara, solo neutral, felicidad, sorpresa, tristeza y enojo)" if step.answer_by_face else ""
             raise ValueError(
                 f"«Busca la misma emoción» necesita, en cada una de sus {step.rounds} rondas, dos imágenes "
                 f"emocionales aprobadas{audience} de la misma emoción que se vean distintas (otra cara, otros "
-                f"colores) y {step.option_count - 1} de otras emociones; el banco alcanza para {done}. "
+                f"colores) y {step.option_count - 1} de otras emociones{five}; el banco alcanza para {done}. "
                 "Agrega imágenes al banco, baja las rondas o las opciones")
         return replace(step, game_stimulus_ids=tuple(chosen))
 
@@ -314,8 +317,10 @@ class ProtocolService:
         sirven y completa con otras del banco, primero de emociones que todavía no
         aparecen."""
         def fits(item: Stimulus | None) -> bool:
+            # «Responde con la cara»: solo las cinco expresiones que estima EMOtv.
+            allowed = CAMERA_PRACTICE_TARGETS if step.answer_by_face else RECOGNITION_DISTRACTORS
             return (item is not None and item.kind is StimulusKind.EMOTIONAL
-                    and item.expected_expression in RECOGNITION_DISTRACTORS
+                    and item.expected_expression in allowed
                     and self._image_problem(target, item) is None)
 
         kept: list[Stimulus] = []
@@ -341,7 +346,8 @@ class ProtocolService:
             counts[expression] += 1
         if len(kept) < step.rounds:
             audience = " «Para niños»" if target.for_children else ""
-            raise ValueError(f"El juego necesita {step.rounds} imágenes emocionales aprobadas{audience} y hay "
+            five = " de neutral, felicidad, sorpresa, tristeza o enojo" if step.answer_by_face else ""
+            raise ValueError(f"El juego necesita {step.rounds} imágenes emocionales aprobadas{audience}{five} y hay "
                              f"{len(kept)}: agrega imágenes al banco o baja las rondas")
         return replace(step, game_stimulus_ids=tuple(item.id for item in kept))
 

@@ -42,6 +42,11 @@ CAMERA_GAME_HOLD_SECONDS = 2
 # «Reconoce y luego muéstrala»: tras cada ronda del juego, unos segundos para que la
 # persona ponga la cara de la emoción de la ronda mientras la cámara estima la expresión.
 GAME_SHOW_SECONDS = 8
+# «Responde con la cara»: la persona responde la ronda poniendo la cara de la emoción.
+# La cámara marca la opción cuya emoción sostiene este tiempo; los primeros segundos
+# de cada intento no cuentan, para que alcance a mirar las opciones.
+FACE_ANSWER_HOLD_SECONDS = 2
+FACE_ANSWER_GRACE_SECONDS = 2
 CAMERA_GAME_ROUND_SECONDS = 20
 # Valoración de quien conduce en «Juego: imita la cara»: de 1 a 5 estrellas.
 MAX_CONDUCTOR_STARS = 5
@@ -196,6 +201,10 @@ class ProtocolStep:
     # pone la cara de la emoción de la ronda y la cámara estima si la sostiene.
     # Solo quien conduce ve el resultado; la persona ve un mensaje amable.
     show_expression: bool = False
+    # «Responde con la cara» (solo juegos): la persona responde poniendo la cara de la
+    # emoción y la cámara marca la opción que coincide. Solo usa las cinco expresiones
+    # que estima EMOtv; sin cámara, se responde con botones.
+    answer_by_face: bool = False
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
@@ -203,6 +212,12 @@ class ProtocolStep:
             raise TypeError("show_expression debe ser verdadero o falso")
         if self.show_expression and kind is not StepKind.GAME:
             raise ValueError("Solo un juego pide mostrar la emoción después de cada ronda")
+        if not isinstance(self.answer_by_face, bool):
+            raise TypeError("answer_by_face debe ser verdadero o falso")
+        if self.answer_by_face and kind is not StepKind.GAME:
+            raise ValueError("Solo un juego se responde con la cara")
+        if self.answer_by_face and self.show_expression:
+            raise ValueError("Un juego que se responde con la cara no pide además mostrarla después de cada ronda")
         object.__setattr__(self, "kind", kind)
         ids = tuple(self.game_stimulus_ids or ())
         if any(not isinstance(item, str) or not item.strip() for item in ids):
@@ -416,8 +431,9 @@ class ProtocolStep:
     @property
     def wants_camera(self) -> bool:
         """Si el paso usa la cámara cuando está disponible. Un juego que pide mostrar
-        la emoción la usa, pero sin cámara se juega igual (no se salta)."""
-        return self.uses_camera or (self.is_game and self.show_expression)
+        la emoción, o que se responde con la cara, la usa, pero sin cámara se juega
+        igual, con botones (no se salta)."""
+        return self.uses_camera or (self.is_game and (self.show_expression or self.answer_by_face))
 
 
 def camera_game_blocks(steps: tuple[ProtocolStep, ...]) -> list[range]:

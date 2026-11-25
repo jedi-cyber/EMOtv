@@ -90,6 +90,8 @@ class StepModel(BaseModel):
     conductor_rating: bool = False
     # Solo un juego: «Reconoce y luego muéstrala» (usa la cámara si está disponible).
     show_expression: bool = False
+    # Solo un juego: «Responde con la cara» (usa la cámara si está disponible).
+    answer_by_face: bool = False
 
 
 class SupportsModel(BaseModel):
@@ -206,7 +208,8 @@ def create_stimulus_router(
                              option_count=step.option_count, situation=step.situation, imitate=step.imitate,
                              game_type=step.game_type, rounds=step.rounds,
                              game_stimulus_ids=list(step.game_stimulus_ids), game_round=step.game_round,
-                             conductor_rating=step.conductor_rating, show_expression=step.show_expression)
+                             conductor_rating=step.conductor_rating, show_expression=step.show_expression,
+                             answer_by_face=step.answer_by_face)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
@@ -229,7 +232,8 @@ def create_stimulus_router(
                                        game_stimulus_ids=tuple(step.game_stimulus_ids),
                                        game_round=step.game_round,
                                        conductor_rating=step.conductor_rating,
-                                       show_expression=step.show_expression)
+                                       show_expression=step.show_expression,
+                                       answer_by_face=step.answer_by_face)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error
