@@ -12,7 +12,7 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, game_sentence,
+from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, face_sentence, game_sentence,
                                                practice_metrics, recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
 from emotv.domain.guided_session import ANALYZER_NAME, RECOGNITION_NAMES, GuidedPhase
@@ -179,7 +179,8 @@ class SessionInsightsService:
                 item.update(outcome=game.outcome.value if game else None,
                             rounds=steps[index].rounds, game_type=steps[index].game_type,
                             sentence=game_sentence(game.rounds_total, game.rounds_done, game.matched,
-                                                   game.first_try, game.help_used) if game else None)
+                                                   game.first_try, game.help_used) if game else None,
+                            face_sentence=face_sentence(game.faces_asked, game.faces_shown) if game else None)
             if repeats.get(index):
                 item["repeats"] = repeats[index]
             return item

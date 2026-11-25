@@ -128,6 +128,7 @@ export function GameMetrics({ game }: { game: SessionGame }) {
     <h3>Juegos</h3>
     <Callout variant="info" role="note">{game.notice}</Callout>
     {totals.sentence && <p><strong>{totals.sentence}</strong></p>}
+    {totals.face_sentence && <p>{totals.face_sentence}</p>}
     <div className="table-wrap"><table><thead><tr>
       <th>Paso</th><th>Juego</th><th>Rondas y opciones</th><th>Resultado</th><th>Lo que ocurrió</th>
     </tr></thead><tbody>{game.exercises.map((item) => <tr key={item.step_index}>
@@ -135,7 +136,8 @@ export function GameMetrics({ game }: { game: SessionGame }) {
       <td>{gameTypeNames[item.game_type] ?? gameTypeNames.matching}</td>
       <td>{item.rounds} rondas · {item.option_count} opciones</td>
       <td>{item.outcome ? gameOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
-      <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}</td>
+      <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}
+        {item.face_sentence && <span className="muted"> {item.face_sentence}</span>}</td>
     </tr>)}</tbody></table></div>
   </section>;
 }

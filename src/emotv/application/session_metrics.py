@@ -317,6 +317,18 @@ def game_sentence(rounds_total: int, rounds_done: int, matched: int, first_try: 
             f"{first_try} a la primera; {helped}.")
 
 
+def face_sentence(faces_asked: int | None, faces_shown: int | None) -> str | None:
+    """«Reconoce y luego muéstrala»: lo que estimó la cámara, sin valorar a la persona.
+    None si el juego no lo pidió."""
+    if faces_asked is None or faces_shown is None:
+        return None
+    if faces_asked == 0:
+        return "No se pidió poner la cara en ninguna ronda (sin cámara o con emociones que EMOtv no estima)."
+    rounds = "ronda" if faces_asked == 1 else "rondas"
+    return (f"Al pedirle poner la cara, la cámara estimó la expresión pedida en {faces_shown} de "
+            f"{faces_asked} {rounds}. Es una estimación, no una valoración.")
+
+
 def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -> dict[str, Any] | None:
     """Juegos de una sesión; None si el protocolo no tiene ninguno. Solo
     contadores de rondas: no es un puntaje ni una calificación."""
@@ -337,16 +349,24 @@ def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -
             "by_conductor": item.by_conductor if item else None,
             "sentence": game_sentence(item.rounds_total, item.rounds_done, item.matched, item.first_try,
                                       item.help_used) if item else None,
+            # «Reconoce y luego muéstrala»: nulos si el juego no lo pidió.
+            "show_expression": step.show_expression,
+            "faces_asked": item.faces_asked if item else None, "faces_shown": item.faces_shown if item else None,
+            "face_sentence": face_sentence(item.faces_asked, item.faces_shown) if item else None,
         })
     played = [by_step[index] for index in game_steps if index in by_step]
     totals = {name: sum(getattr(item, name) for item in played)
               for name in ("rounds_total", "rounds_done", "matched", "first_try", "help_used")}
+    faced = [item for item in played if item.faces_asked is not None]
+    faces = ({"faces_asked": sum(item.faces_asked for item in faced),
+              "faces_shown": sum(item.faces_shown for item in faced)} if faced else None)
     return {
         "exercises": exercises,
         "totals": {"games": len(exercises),
                    **{outcome.value: sum(1 for item in played if item.outcome is outcome) for outcome in GameOutcome},
                    "not_reached": len(exercises) - len(played), **totals,
-                   "sentence": game_sentence(**totals) if played else None},
+                   "sentence": game_sentence(**totals) if played else None,
+                   "faces": faces, "face_sentence": face_sentence(**faces) if faces else None},
         "notice": GAME_NOTICE,
     }
 

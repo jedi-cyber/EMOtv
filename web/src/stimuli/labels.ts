@@ -150,7 +150,7 @@ export function protocolStepLines(steps: ProtocolStep[], titleOf: (id: string) =
     } else if (step.kind === "analyzer") {
       lines.push(`Usar el analizador: tú pides las expresiones · hasta ${seconds(step.exposure_seconds)}`);
     } else if (step.kind === "game") {
-      lines.push(`${gameTypeNames[step.game_type ?? "matching"] ?? "Juego"}: ${step.rounds ?? DEFAULT_GAME.rounds} rondas`);
+      lines.push(`${gameTypeNames[step.game_type ?? "matching"] ?? "Juego"}: ${step.rounds ?? DEFAULT_GAME.rounds} rondas${step.show_expression ? ", luego muestra la emoción" : ""}`);
     } else {
       lines.push(`Imagen ${image(step.stimulus_id)} · ${seconds(step.exposure_seconds)}`);
     }

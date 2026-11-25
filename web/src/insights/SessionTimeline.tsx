@@ -75,7 +75,8 @@ function drawingText(item: Timeline["lanes"]["stimuli"][number]) {
 function gameText(item: Timeline["lanes"]["stimuli"][number]) {
   if (!item.outcome) return item.skipped ? "se saltó" : "en curso";
   const outcome = gameOutcomeNames[item.outcome as keyof typeof gameOutcomeNames].toLowerCase();
-  return `${outcome}. ${item.sentence ?? ""}${repeatsText(item)}`;
+  const face = item.face_sentence ? ` ${item.face_sentence}` : "";
+  return `${outcome}. ${item.sentence ?? ""}${face}${repeatsText(item)}`;
 }
 
 interface Event { time: number; text: string }

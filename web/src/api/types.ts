@@ -123,6 +123,9 @@ export interface ProtocolStep {
   game_round?: number | null;
   /** «Juego: imita la cara»: una imitación que quien conduce valora de 1 a 5 estrellas. */
   conductor_rating?: boolean;
+  /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
+   * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
+  show_expression?: boolean;
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -279,6 +282,9 @@ export interface GuidedStep {
   imitate?: boolean;
   game_round?: number | null;
   conductor_rating?: boolean;
+  /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
+   * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
+  show_expression?: boolean;
 }
 
 /** Ronda del juego con cámara: una estrella por ronda lograda (null si todavía
@@ -335,7 +341,18 @@ export interface GuidedDrawing {
 export type GameOutcome = "completed" | "timed_out" | "skipped" | "stopped";
 /** «matching»: imagen con el nombre de su emoción; «similar»: imagen modelo con otra de la misma emoción. */
 export type GameType = "matching" | "similar";
-export type GameState = "playing" | "retry" | "matched" | "shown" | "finished";
+/** «show»: pone la cara de la emoción de la ronda; «showed»: terminó de ponerla. */
+export type GameState = "playing" | "retry" | "matched" | "shown" | "show" | "showed" | "finished";
+
+/** La cara pedida en la ronda, solo para quien conduce. Es una estimación. */
+export interface GuidedGameFace {
+  showing: boolean;
+  /** 0 a 1: cuánto se acerca la expresión estimada a la pedida. */
+  level: number;
+  /** null mientras se pide; true si la cámara estimó que la sostuvo. */
+  achieved: boolean | null;
+  remaining_seconds: number | null;
+}
 
 /** Juego en curso para quien conduce: la ronda, la emoción de la imagen y los contadores. */
 export interface GuidedGame {
@@ -357,6 +374,10 @@ export interface GuidedGame {
   first_try: number;
   help_used: number;
   outcome: GameOutcome | null;
+  show_expression?: boolean;
+  faces_asked?: number;
+  faces_shown?: number;
+  face?: GuidedGameFace | null;
 }
 
 /** Solo contadores del juego: no es un puntaje. */
@@ -370,6 +391,10 @@ export interface GuidedGameResult {
   first_try: number;
   help_used: number;
   by_conductor: number;
+  /** «Reconoce y luego muéstrala»: nulos si el juego no lo pidió. */
+  faces_asked?: number | null;
+  faces_shown?: number | null;
+  face_sentence?: string | null;
 }
 
 /** Solo la emoción que la persona señaló; el dibujo nunca llega al servidor. */
@@ -540,6 +565,8 @@ export interface ParticipantGame {
   explanation?: string | null;
   can_help: boolean;
   last_round: boolean;
+  /** «Siguiente» primero pide poner la cara. Nunca llega el nivel ni el resultado. */
+  asks_face?: boolean;
 }
 
 export interface ParticipantViewState {
@@ -602,7 +629,7 @@ export interface SessionTimeline {
       game_type?: GameType | null;
       seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
       /** Solo en un juego (kind «game»): rondas y lo que ocurrió, en una frase. */
-      rounds?: number | null; sentence?: string | null;
+      rounds?: number | null; sentence?: string | null; face_sentence?: string | null;
       /** Repeticiones del paso (intento 2 en adelante); el resultado de arriba es el primero. */
       repeats?: { attempt: number; outcome: PracticeOutcome | RecognitionOutcome | GameOutcome;
         seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
@@ -707,10 +734,13 @@ export interface SessionGame {
   exercises: { step_index: number; game_type: GameType; rounds: number; option_count: number;
     /** null: la sesión no llegó a este paso. */
     outcome: GameOutcome | null; rounds_done: number | null; matched: number | null; first_try: number | null;
-    help_used: number | null; by_conductor: number | null; sentence: string | null }[];
+    help_used: number | null; by_conductor: number | null; sentence: string | null;
+    show_expression?: boolean; faces_asked?: number | null; faces_shown?: number | null;
+    face_sentence?: string | null }[];
   totals: { games: number; completed: number; timed_out: number; skipped: number; stopped: number;
     not_reached: number; rounds_total: number; rounds_done: number; matched: number; first_try: number;
-    help_used: number; sentence: string | null };
+    help_used: number; sentence: string | null;
+    faces?: { faces_asked: number; faces_shown: number } | null; face_sentence?: string | null };
   notice: string;
 }
 

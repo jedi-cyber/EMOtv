@@ -117,7 +117,8 @@ class GameView(BaseModel):
     # matching (nombres) o similar (imágenes: cada opción se pide por su clave).
     game_type: str = "matching"
     question: str
-    # playing, retry, matched, shown, finished o ended (venció el tiempo).
+    # playing, retry, matched, shown, show (pone la cara de la emoción), showed
+    # (terminó de ponerla), finished o ended (venció el tiempo).
     state: str
     options: list[GameOption]
     answer: str | None
@@ -125,6 +126,9 @@ class GameView(BaseModel):
     explanation: str | None = None
     can_help: bool
     last_round: bool
+    # «Reconoce y luego muéstrala»: «Siguiente» primero pide poner la cara. Nunca
+    # lleva el nivel ni si la cámara la estimó: eso solo lo ve quien conduce.
+    asks_face: bool = False
 
 
 class CameraGameView(BaseModel):

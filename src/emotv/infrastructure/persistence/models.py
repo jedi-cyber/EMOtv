@@ -506,6 +506,9 @@ PROTOCOL_STEP_PRACTICE = (
 PROTOCOL_STEP_GAME_ROUND = "game_round IS NULL OR game_round BETWEEN 1 AND 6"
 # Valoración de quien conduce, de 1 a 5 estrellas (migración 20261124_46).
 PRACTICE_CONDUCTOR_STARS = "conductor_stars IS NULL OR conductor_stars BETWEEN 1 AND 5"
+# Solo las propias columnas (migración 20261124_51).
+GAME_RESULT_FACES = ("(faces_asked IS NULL AND faces_shown IS NULL) OR "
+                     "(faces_shown >= 0 AND faces_shown <= faces_asked AND faces_asked <= rounds_done)")
 
 
 class ProtocolStepRecord(Base):
@@ -545,6 +548,8 @@ class ProtocolStepRecord(Base):
     game_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # «Juego: imita la cara»: quien conduce valora la imitación (migración 20261124_46).
     conductor_rating: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # «Reconoce y luego muéstrala» en un juego (migración 20261124_51).
+    show_expression: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -731,6 +736,8 @@ class GameResultRecord(Base):
         CheckConstraint("first_try >= 0 AND first_try <= matched AND matched <= rounds_done "
                         "AND rounds_done <= rounds_total AND help_used >= 0 AND by_conductor >= 0",
                         name="ck_game_results_counts"),
+        # Caras pedidas y mostradas en «Reconoce y luego muéstrala» (migración 20261124_51).
+        CheckConstraint(GAME_RESULT_FACES, name="ck_game_results_faces"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -745,6 +752,8 @@ class GameResultRecord(Base):
     first_try: Mapped[int] = mapped_column(Integer, nullable=False)
     help_used: Mapped[int] = mapped_column(Integer, nullable=False)
     by_conductor: Mapped[int] = mapped_column(Integer, nullable=False)
+    faces_asked: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    faces_shown: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

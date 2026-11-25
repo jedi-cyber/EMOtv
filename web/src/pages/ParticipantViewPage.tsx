@@ -186,7 +186,9 @@ export function ParticipantViewPage() {
   // conduce. La cámara se abre (oculta) al esperar el inicio, para pedir el permiso
   // antes del primer paso, y mientras se envían cuadros.
   const warming = !ended && !withoutCamera && view != null
-    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice) || view.activity?.kind === "analyzer");
+    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice) || view.activity?.kind === "analyzer"
+      // «Reconoce y luego muéstrala»: se abre al terminar la ronda, antes de pedir la cara.
+      || Boolean(view.game?.asks_face) || view.game?.state === "show");
   const cameraOn = capturing || warming;
   // Si la sesión siguió sin cámara, el aviso del problema ya no hace falta.
   useEffect(() => { if (withoutCamera) setCameraError(""); }, [withoutCamera]);

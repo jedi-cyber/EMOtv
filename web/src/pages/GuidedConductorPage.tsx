@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiRequest } from "../api/http";
-import type { AndroidCode, GameOutcome, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
+import type { AndroidCode, GameOutcome, GuidedGameFace, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
@@ -80,6 +80,26 @@ function ConductorRating({ rating, busy, onRate }: {
       ? "Marca de 1 a 5 estrellas para seguir con el paso siguiente."
       : `Marcaste ${rating.stars} de 5. Puedes cambiarla mientras sigue este paso.`}</p>
   </fieldset>;
+}
+
+/** «Reconoce y luego muéstrala», solo en esta pantalla: la emoción pedida, el nivel
+ * en vivo y lo que estimó la cámara. La persona ve solo un mensaje amable. */
+function GameFaceCard({ face, target, busy, last, onNext }: {
+  face: GuidedGameFace; target: string; busy: boolean; last: boolean; onNext: () => void;
+}) {
+  return <>
+    <p>Se le pide poner la cara: {target}.{face.showing && face.remaining_seconds != null
+      ? ` Quedan ${Math.ceil(face.remaining_seconds)} s.` : ""}</p>
+    <label>Nivel en vivo
+      <meter min={0} max={1} value={face.level}>{Math.round(face.level * 100)} %</meter>
+    </label>
+    <p role="status">{face.showing
+      ? "Es una estimación de la cámara, no una valoración."
+      : face.achieved
+      ? "La cámara estimó la expresión pedida. La persona ve «¡Gracias por intentarlo!»."
+      : "Terminó el tiempo para mostrarla. La persona ve «¡Gracias por intentarlo!»."}</p>
+    <Button disabled={busy} onClick={onNext}>{face.showing ? "Pasar sin esperar" : last ? "Terminar el juego" : "Siguiente ronda"}</Button>
+  </>;
 }
 
 function StepTimer({ seconds: remaining }: { seconds: number | null | undefined }) {
@@ -365,7 +385,9 @@ export function GuidedConductorPage() {
       <h2>{similarGame ? "Busca la misma emoción" : "Empareja la emoción"}{state.game ? ` · ronda ${state.game.round} de ${state.game.rounds}` : ""}</h2>
       <p className="muted">{similarGame
         ? "La persona ve una cara arriba y elige, entre otras caras, la que muestra la misma emoción. La pareja es otra imagen, no la misma repetida."
-        : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. No se analiza la cámara.</p>
+        : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. {state.game?.show_expression
+        ? "Al terminar cada ronda, se le pide poner esa cara y la cámara la estima; la persona solo ve un mensaje amable."
+        : "No se analiza la cámara."}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.game && (state.game.outcome
         ? <p role="status">{state.game.outcome === "completed" ? "Terminó el juego." : "Terminó el tiempo del juego."} {gameSentence({
@@ -374,7 +396,11 @@ export function GuidedConductorPage() {
           ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El paso avanza en un momento."}</p>
         : <>
           <p>{similarGame ? "Emoción de la cara de arriba" : "Emoción de la imagen"}: {targetName(state.game.target_expression)}.{state.game.tried.length > 0 ? ` Ya eligió: ${state.game.tried.map(optionName).join(", ")}.` : ""}{state.game.helped ? " Pidió ayuda." : ""}</p>
-          {state.game.state === "playing" || state.game.state === "retry"
+          {state.game.face
+            ? <GameFaceCard face={state.game.face} target={targetName(state.game.target_expression)} busy={busy}
+              last={state.game.round === state.game.rounds}
+              onNext={() => { void act("/game", { action: "next" }); }} />
+            : state.game.state === "playing" || state.game.state === "retry"
             ? <>
               <p>{similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
               <div className="inline-actions">{state.game.options.filter((key) => !state.game?.tried.includes(key) && key !== state.game?.removed)
@@ -496,7 +522,8 @@ export function GuidedConductorPage() {
       <p className="muted">Describe lo que ocurrió; no es un puntaje.</p>
       <ul className="card-list">{gameResults.map((item) => <li key={item.step_index} className="row-card">
         <span>Paso {item.step_index + 1} · {gameTypeNames[item.game_type] ?? gameTypeNames.matching} · {gameOutcomeNames[item.outcome]}. {gameSentence(item)}
-          {item.by_conductor > 0 ? ` · ${item.by_conductor} registrada${item.by_conductor === 1 ? "" : "s"} por quien conduce` : ""}</span>
+          {item.by_conductor > 0 ? ` · ${item.by_conductor} registrada${item.by_conductor === 1 ? "" : "s"} por quien conduce` : ""}
+          {item.face_sentence ? ` ${item.face_sentence}` : ""}</span>
         {repeatsOf(item.step_index, "game").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "game")}</ul>}
       </li>)}</ul>
     </section>}

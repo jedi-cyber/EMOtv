@@ -6,7 +6,7 @@ proyecto Android** (`docs/mobile-api.md`). Si cambia aquí, se vuelve a copiar.
 
 | | |
 | --- | --- |
-| Revisión del contrato | 4.16 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, la 4.15 quita la pregunta del dibujo, la 4.16 agrega el paso «Usar el analizador», y la 4.4 solo aclara la documentación |
+| Revisión del contrato | 4.17 (2026-11-24). Ver [historial](#historial). **Incompatible con la revisión 3**; la 4.1, la 4.2, la 4.3, la 4.5, la 4.6, la 4.7 y la 4.8 solo agregan campos opcionales a la 4, la 4.9 agrega la [pantalla de la persona](#pantalla-de-la-persona), la 4.10 a la 4.12 documentan su paso de dibujo y sus dos juegos, la 4.13 agrega el juego con cámara, la 4.14 la valoración de quien conduce y la imagen del dibujo, la 4.15 quita la pregunta del dibujo, la 4.16 agrega el paso «Usar el analizador», la 4.17 agrega «Reconoce y luego muéstrala» a los juegos, y la 4.4 solo aclara la documentación |
 | Versión de la API | La que devuelve `GET /mobile/status` en `api_version` (hoy `1.0.0rc1`) |
 | Prefijo | Todas las rutas empiezan con `/mobile`, salvo las de la [pantalla de la persona](#pantalla-de-la-persona) (`/participant-view/{token}`), que son las mismas de la web |
 | Formato | JSON en UTF-8 |
@@ -667,13 +667,16 @@ trae `game` y `stimulus.exposure`. Las reglas son las de la web:
 - `number` y `total`: «Ronda 2 de 3». No hay puntaje.
 - `game_type`: `matching` o `similar`; con otro valor el aplicativo no juega.
 - `question`: el texto para mostrar.
-- `state`: `playing`, `retry`, `matched`, `shown`, `finished` o `ended`. La
-  lista es abierta: un valor desconocido no se juega.
+- `state`: `playing`, `retry`, `matched`, `shown`, `finished` o `ended`; desde
+  4.17 también `show` y `showed` («Reconoce y luego muéstrala»). La lista es
+  abierta: un valor desconocido no se juega.
 - `options[]`: cada una con `key`, `label` y `available`. `available` es
   falso si ya la eligió o la quitó la ayuda.
 - `answer` y `explanation`: solo cuando la ronda terminó.
 - `message`: la frase de lo que pasó.
 - `can_help` y `last_round`.
+- `asks_face` (desde 4.17; puede faltar: tratarlo como `false`): al terminar
+  la ronda, «Siguiente» primero pide poner la cara de esa emoción.
 - `supports.pictograms`: pictogramas junto a cada emoción, si el protocolo los
   pide.
 
@@ -1080,6 +1083,7 @@ la API (`8000`) no se publica fuera de Docker.
 
 | Revisión | Fecha | Cambios |
 | --- | --- | --- |
+| 4.17 | 2026-11-24 | Compatible con la 4.16: solo campos y valores nuevos. «Reconoce y luego muéstrala»: un paso `game` puede traer `show_expression` (boolean). Si es verdadero, tras cada ronda la persona pone la cara de esa emoción unos segundos mientras la cámara la estima; asco, miedo y desprecio no se piden, y sin cámara no se pide. Un protocolo así usa la cámara, por lo que no se empareja con Android (`can_pair_android` falso). En `GET /participant-view/{token}`, `game.state` puede ser `show` (la invitación en `message`) o `showed` (siempre «¡Gracias por intentarlo! Sigamos jugando.», la haya sostenido o no) y `game.asks_face` dice si «Siguiente» la pedirá; nunca llega el nivel ni el resultado. Para quien conduce y su docente, `faces_asked`, `faces_shown` y `face_sentence` en `metrics.game.exercises[]`, `faces` y `face_sentence` en `metrics.game.totals` y `face_sentence` en los juegos de `lanes.stimuli`; son nulos si el juego no lo pidió. Es una estimación, no una valoración. No hay rutas nuevas |
 | 4.16 | 2026-11-24 | Compatible con la 4.15. Nuevo tipo de paso `analyzer` («Usar el analizador»): sin imagen ni expresión pedida; quien conduce pide de palabra las expresiones y EMOtv registra la expresión estimada cada pocos segundos hasta que pulse «Siguiente paso» o venza su tiempo máximo (hasta 600 s). En `GET /participant-view/{token}`, `activity.kind` es `analyzer`, `stimulus` es nulo, `capture_frames` es verdadero y `message` dice «Mira a la cámara y haz la expresión que te pidan.»; nunca trae la expresión estimada. En la línea de tiempo, el paso llega con `kind` `analyzer` y `title` «Expresiones con la cámara», y sus capturas en `lanes.captures` como las de cualquier paso. No hay rutas nuevas para el aplicativo |
 | 4.15 | 2026-11-24 | Compatible con la 4.14. El paso de dibujo ya no pregunta qué emoción se quiso dibujar: en `GET /participant-view/{token}`, `drawing.question` llega nulo y `drawing.options` vacío; al pulsar «Terminé» el aplicativo envía `POST /participant-view/{token}/drawing-done`, sin cuerpo. Un aplicativo anterior que aún envía `POST …/answer` con una emoción termina el dibujo, pero la emoción no se guarda. En los resultados, un dibujo terminado llega con `outcome` `answered` y `chosen_expression` nulo (las sesiones anteriores conservan la emoción señalada); las frases cambian a «Terminó N de M dibujos.» y «Se terminó N de M dibujos.» |
 | 4.14 | 2026-11-24 | Compatible con la 4.13: solo campos nuevos y opcionales. «Juego: imita la cara»: `conductor_rating` y `conductor_stars` en `metrics.practice.exercises[]` y `metrics.practice.conductor_ratings` (cuántas veces quien conduce marcó cada número de estrellas). Un paso `drawing` puede traer `stimulus_id` (una imagen que la persona mira antes de dibujar). No hay rutas nuevas |

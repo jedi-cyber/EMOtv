@@ -89,8 +89,8 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   elige entre opciones; después se lee el nombre de la emoción del dibujo, sin
   valorar la respuesta. El resultado se describe («Eligió la emoción de la imagen
   en X de Y»), nunca como puntaje.
-- **Sin cámara**: «¿Qué emoción es?», los dibujos y los juegos no usan la
-  cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
+- **Sin cámara**: «¿Qué emoción es?», los dibujos y los juegos (salvo con
+  «Reconoce y luego muéstrala») no usan la cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
   quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
   que la necesitan.
 - **Usar el analizador** (tarjeta en «Expresión con la cámara»): un paso sin
@@ -121,6 +121,11 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   Si elige otra, se la invita a mirar otra vez; tras dos intentos, se muestra
   la respuesta con una explicación sencilla. «Ayuda» quita una opción una vez
   por ronda.
+
+  Opción «Reconoce y luego muéstrala»: tras cada ronda, la persona pone la
+  cara de esa emoción unos segundos y la cámara la estima. La persona solo ve
+  un mensaje amable; el nivel y el resultado los ve quien conduce, como una
+  estimación, no una valoración.
 - **Juego con cámara «Muestra la emoción»** (tarjeta en «Expresión con la
   cámara»), de 2 a 6 rondas: en cada ronda se pide una de las cinco expresiones
   que estima EMOtv y una barra crece al acercarse. Si la sostiene unos segundos,

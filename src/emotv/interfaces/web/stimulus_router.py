@@ -88,6 +88,8 @@ class StepModel(BaseModel):
     # Solo una práctica: su ronda (1, 2, 3…) en un juego con cámara.
     game_round: int | None = None
     conductor_rating: bool = False
+    # Solo un juego: «Reconoce y luego muéstrala» (usa la cámara si está disponible).
+    show_expression: bool = False
 
 
 class SupportsModel(BaseModel):
@@ -204,7 +206,7 @@ def create_stimulus_router(
                              option_count=step.option_count, situation=step.situation, imitate=step.imitate,
                              game_type=step.game_type, rounds=step.rounds,
                              game_stimulus_ids=list(step.game_stimulus_ids), game_round=step.game_round,
-                             conductor_rating=step.conductor_rating)
+                             conductor_rating=step.conductor_rating, show_expression=step.show_expression)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
@@ -226,7 +228,8 @@ def create_stimulus_router(
                                                else step.rounds),
                                        game_stimulus_ids=tuple(step.game_stimulus_ids),
                                        game_round=step.game_round,
-                                       conductor_rating=step.conductor_rating)
+                                       conductor_rating=step.conductor_rating,
+                                       show_expression=step.show_expression)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error

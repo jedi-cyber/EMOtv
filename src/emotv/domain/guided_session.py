@@ -138,6 +138,10 @@ SIMILAR_RETRY_HELPED = "Mira otra vez la cara de arriba."
 SIMILAR_FOUND = "Lo encontraste: las dos caras muestran la misma emoción, {answer}."
 SIMILAR_SHOWN = "Esta cara muestra la misma emoción: {answer}."
 GAME_FINISHED = "Terminaste el juego."
+# «Reconoce y luego muéstrala»: la persona solo ve estos mensajes, nunca si la cámara
+# estimó la expresión. El de cierre es el mismo, la sostenga o no.
+GAME_SHOW_PROMPT = "Ahora pon tú esa cara: {answer}. Mira a la cámara."
+GAME_SHOW_THANKS = "¡Gracias por intentarlo! Sigamos jugando."
 GAME_TIME_UP = "Terminó el tiempo del juego."
 # Tras este número de opciones distintas a la de la imagen, se muestra la respuesta.
 GAME_MISSES_BEFORE_ANSWER = 2
@@ -535,7 +539,12 @@ class GameResult:
     intento. rounds_done son las rondas terminadas (encontrada o mostrada);
     matched, las que la persona emparejó; first_try, las emparejadas sin elegir
     antes otra opción; help_used, las rondas en que pidió ayuda; by_conductor,
-    las respuestas que registró quien conduce. No es un puntaje."""
+    las respuestas que registró quien conduce. No es un puntaje.
+
+    Con «Reconoce y luego muéstrala», faces_asked son las rondas en que se pidió
+    poner la cara (con cámara y una emoción que EMOtv estima) y faces_shown, en
+    cuántas la cámara estimó que la sostuvo. Nulos si el juego no lo pide. Solo
+    los ve quien conduce."""
 
     id: str
     session_id: str
@@ -551,8 +560,19 @@ class GameResult:
     help_used: int = 0
     by_conductor: int = 0
     attempt: int = 1
+    faces_asked: int | None = None
+    faces_shown: int | None = None
 
     def __post_init__(self) -> None:
+        if (self.faces_asked is None) != (self.faces_shown is None):
+            raise ValueError("Las caras pedidas y las mostradas van juntas")
+        if self.faces_asked is not None:
+            for name in ("faces_asked", "faces_shown"):
+                value = getattr(self, name)
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    raise ValueError(f"{name} debe ser un entero no negativo")
+            if not self.faces_shown <= self.faces_asked <= self.rounds_done:
+                raise ValueError("Los contadores de las caras mostradas no cuadran")
         for name in ("id", "session_id", "game_type"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():

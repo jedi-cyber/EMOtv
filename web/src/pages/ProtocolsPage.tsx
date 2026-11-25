@@ -55,7 +55,7 @@ type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "analyzer
 type Dragging = { from: "step"; index: number } | { from: "catalog"; key: StepChoice };
 type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
 const stepCatalog: { group: string; hint: string; items: { key: StepChoice; title: string; text: string; image?: boolean }[] }[] = [
-  { group: "Juegos", hint: "Sin cámara: se juegan con botones.", items: [
+  { group: "Juegos", hint: "Se juegan con botones. Puedes pedir que, tras cada ronda, muestre la emoción a la cámara.", items: [
     { key: "matching", title: "Juego: empareja la emoción", text: "Relaciona cada imagen con el nombre de su emoción." },
     { key: "similar", title: "Juego: busca la misma emoción", text: "Ve una cara y elige otra que muestre la misma emoción." },
   ] },
@@ -640,6 +640,11 @@ export function ProtocolsPage() {
                           disabled={item.id !== current && ids.includes(item.id)}>{item.title} — {practiceTargetNames[item.expected_expression ?? ""] ?? ""}</option>)}
                       </select></label>;
                     })}</div>}
+                    <Checkbox checked={Boolean(step.show_expression)}
+                      onChange={(event) => updateStep(index, { show_expression: event.target.checked })}>
+                      Después de cada ronda, pedir que muestre la emoción (usa la cámara)
+                    </Checkbox>
+                    {step.show_expression && <span className="muted">«Reconoce y luego muéstrala»: tras cada ronda, la persona pone esa cara unos segundos mientras la cámara la estima. Ella solo ve un mensaje amable; el nivel y el resultado los ves tú. Asco, miedo y desprecio no se piden, y sin cámara el juego sigue igual.</span>}
                   </div>
                   <div className="inline-actions">
                     <label>Rondas<select value={rounds} onChange={(event) => {
