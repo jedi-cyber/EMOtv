@@ -2028,11 +2028,11 @@ class GuidedSessionService:
             "message": ANALYZER_MESSAGE if analyzer else messages.get(run.phase),
             "stimulus": stimulus,
             "remaining_seconds": remaining,
-            # Un reconocimiento o un dibujo no analiza la cámara: la pantalla no envía cuadros.
+            # Con cámara, la pantalla envía cuadros en todos los pasos. En un
+            # reconocimiento, un dibujo o la parte con botones de un juego solo sirven
+            # para la lectura en vivo de quien conduce: no se guarda ninguna captura.
             "capture_frames": self._camera_active(run, session) and (
-                calibrating or (run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE)
-                                and recognition is None and drawing is None
-                                and (game is None or game["state"] == "show"))),
+                calibrating or run.phase in (GuidedPhase.STIMULI, GuidedPhase.LIVE)),
             "frame_interval_ms": FRAME_INTERVAL_MS,
             "abstract_notice": abstract,
             "practice": practice,
@@ -2153,11 +2153,18 @@ class GuidedSessionService:
                 self._practice_frame(run, session, step, frame)
                 return
             if step.is_game:
-                # Solo mientras se pide poner la cara («Reconoce y luego muéstrala»).
-                self._game_show_frame(self._settle_game_show(run, step), session, step, frame)
+                # Mientras se pide poner la cara («Reconoce y luego muéstrala») cuenta para
+                # el juego; si no, solo la lectura en vivo de quien conduce.
+                run = self._settle_game_show(run, step)
+                if (run.game_progress or {}).get("state") == "show":
+                    self._game_show_frame(run, session, step, frame)
+                else:
+                    self._refresh_reading(session, frame)
                 return
             if step.is_recognition or step.is_drawing:
-                return  # un reconocimiento o un dibujo no analiza la cámara
+                # Sin capturas: solo la lectura en vivo de quien conduce; nada se guarda.
+                self._refresh_reading(session, frame)
+                return
         if run.phase not in (GuidedPhase.STIMULI, GuidedPhase.LIVE):
             return
         elapsed = self._seconds(run.step_started_at)

@@ -188,8 +188,12 @@ def test_un_protocolo_mixto_calibra_antes_del_primer_paso(env):  # noqa: F811
     calibrate(env, session_id, token)                                  # con cámara también se empieza con «Empezar»
     current = state(env, session_id)
     assert current["phase"] == "stimuli" and current["step_index"] == 0
-    # El reconocimiento sigue sin analizar la cámara dentro de una sesión con cámara.
-    assert view(env, token).json()["capture_frames"] is False
+    # En una sesión con cámara, el reconocimiento envía cuadros solo para la lectura
+    # en vivo de quien conduce: no guarda capturas.
+    assert view(env, token).json()["capture_frames"] is True
+    frame(env, token)
+    assert state(env, session_id)["live_reading"] is not None
+    assert state(env, session_id)["captures"] == []
 
 
 def test_un_protocolo_con_camara_sigue_necesitando_el_modelo_facial(env):  # noqa: F811

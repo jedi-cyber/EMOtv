@@ -69,8 +69,9 @@ def test_reconoce_y_luego_muestrala_solo_quien_conduce_ve_el_resultado(env):  # 
     bank(env)
     session_id, token = start(env, show_game())
 
-    # Ronda 1: la encuentra; mientras juega, la cámara no se analiza.
-    assert view(env, token).json()["capture_frames"] is False
+    # Ronda 1: la encuentra; mientras juega, los cuadros solo sirven para la lectura
+    # en vivo de quien conduce (no cuentan para el juego).
+    assert view(env, token).json()["capture_frames"] is True
     target = solve_round(env, session_id, token)
     shown = view(env, token).json()["game"]
     assert shown["state"] == "matched" and shown["asks_face"] is True

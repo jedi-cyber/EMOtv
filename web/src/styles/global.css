@@ -338,6 +338,17 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .drawing-canvas[data-locked] { cursor: default; }
 .drawing-activity--full .drawing-canvas { height: 78dvh; }
 .drawing-finish { flex-direction: column; align-items: center; }
+.drawing-main { display: grid; justify-items: center; gap: var(--space-md); width: 100%; min-width: 0; }
+.drawing-side { display: grid; justify-items: center; align-content: start; gap: var(--space-sm); width: 100%; }
+/* Con imagen y pantalla ancha: lienzo a la izquierda, imagen a la derecha, sin huecos. */
+@media (min-width: 56rem) {
+  .drawing-activity--with-image { grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem); grid-template-areas: "header header" "main side";
+    align-items: start; width: min(100%, 80rem); }
+  .drawing-activity--with-image > .drawing-header { grid-area: header; }
+  .drawing-activity--with-image > .drawing-main { grid-area: main; }
+  .drawing-activity--with-image > .drawing-side { grid-area: side; position: sticky; top: var(--space-md); }
+  .drawing-activity--with-image .drawing-model { max-width: 100%; max-height: 60dvh; margin: 0; }
+}
 .drawing-done { display: grid; justify-items: center; gap: var(--space-sm); }
 /* En un teléfono: consigna más corta de alto, lienzo casi del ancho y herramientas compactas. */
 @media (max-width: 40rem) {

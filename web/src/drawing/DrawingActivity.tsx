@@ -232,7 +232,12 @@ export function DrawingActivity({ onDrawingChange, session, model, next, askEmot
   }
 
   const locked = phase !== "drawing";
-  return <div className={`drawing-activity${full ? " drawing-activity--full" : ""}`}>
+  const side = session?.imageUrl
+    ? <img className="drawing-model" src={session.imageUrl} alt="Imagen para mirar antes de dibujar" />
+    : !session ? model : null;
+  // Con una imagen para mirar: en pantallas anchas, el lienzo a la izquierda y la
+  // imagen a la derecha; en un teléfono, la imagen arriba del lienzo.
+  return <div className={`drawing-activity${side ? " drawing-activity--with-image" : ""}${full ? " drawing-activity--full" : ""}`}>
     <div className="drawing-header">
       <p className="participant-instruction">{heading}</p>
       {speechAvailable() && <Button variant="secondary" size="sm" onClick={() => {
@@ -240,9 +245,9 @@ export function DrawingActivity({ onDrawingChange, session, model, next, askEmot
       }}>Escuchar</Button>}
     </div>
 
-    {session?.imageUrl && <img className="drawing-model" src={session.imageUrl} alt="Imagen para mirar antes de dibujar" />}
-    {!session && model}
+    {side && <div className="drawing-side">{side}</div>}
 
+    <div className="drawing-main">
     {/* Primero el lienzo; debajo, las herramientas al alcance del pulgar. */}
     <div className="drawing-surface">
       <canvas ref={canvasRef} className="drawing-canvas" role="img"
@@ -306,6 +311,7 @@ export function DrawingActivity({ onDrawingChange, session, model, next, askEmot
         <Button variant={next ? "secondary" : "primary"} onClick={again}>Dibujar otra vez</Button>
       </div>}
     </div>}
+    </div>
 
     <ConfirmDialog open={confirmClear} title="Limpiar el lienzo" message="Se borrará todo el dibujo. ¿Quieres limpiarlo?"
       confirmLabel="Limpiar" onCancel={() => { setConfirmClear(false); }}

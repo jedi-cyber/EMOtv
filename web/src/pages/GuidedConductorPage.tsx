@@ -220,8 +220,12 @@ export function GuidedConductorPage() {
   const viewUrl = viewToken && !onAndroid ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
   // Pasos en los que se analiza la cámara: ahí quien conduce ve lo que estima.
-  const readingStep = state?.phase === "live" || Boolean(state?.live_reading) || Boolean(state?.game?.face)
-    || (state?.phase === "stimuli" && step != null && ["stimulus", "practice", "analyzer"].includes(step.step_kind ?? "stimulus"));
+  // Con cámara, todos los pasos la analizan para la lectura en vivo de quien conduce.
+  const readingStep = state?.phase === "live" || state?.phase === "stimuli";
+  const withCamera = state?.uses_camera !== false && !state?.camera_off;
+  const cameraNote = withCamera
+    ? "La cámara solo estima en vivo para ti; en este paso no se guarda ninguna captura."
+    : "No se analiza la cámara.";
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
   const isPractice = step?.step_kind === "practice";
@@ -350,7 +354,7 @@ export function GuidedConductorPage() {
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>{state.recognition?.situation ? "¿Qué emoción muestra la cara?" : "¿Qué emoción es?"} · {step.title}</h2>
       {state.recognition?.situation && <p>Situación: {state.recognition.situation}</p>}
-      <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. No se analiza la cámara en este paso.</p>
+      <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. {cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.recognition && (state.recognition.outcome
         ? <p role="status">{state.recognition.chosen_expression
@@ -370,7 +374,7 @@ export function GuidedConductorPage() {
     {step && state && isDrawing && <div className="card form-stack">
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · dibujo{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>Dibujo: una cara con una emoción</h2>
-      <p className="muted">La persona dibuja en su pantalla y pulsa «Terminé». No se le pregunta qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda; no se analiza la cámara.</p>
+      <p className="muted">La persona dibuja en su pantalla y pulsa «Terminé». No se le pregunta qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda. {cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.drawing && (state.drawing.outcome
         ? <p role="status">{state.drawing.chosen_expression
@@ -393,7 +397,7 @@ export function GuidedConductorPage() {
         ? "La persona ve una cara arriba y elige, entre otras caras, la que muestra la misma emoción. La pareja es otra imagen, no la misma repetida."
         : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. {state.game?.show_expression
         ? "Al terminar cada ronda, se le pide poner esa cara y la cámara la estima; la persona solo ve un mensaje amable."
-        : "No se analiza la cámara."}</p>
+        : cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.game && (state.game.outcome
         ? <p role="status">{state.game.outcome === "completed" ? "Terminó el juego." : "Terminó el tiempo del juego."} {gameSentence({
