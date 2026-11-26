@@ -1140,7 +1140,10 @@ class GuidedSessionService:
             chooser.shuffle(found)
             return tuple((str(slot + 1), expression, stimulus_id)
                          for slot, (expression, stimulus_id) in enumerate(found))
-        pool = [item for item in RECOGNITION_DISTRACTORS if item != target]
+        # Al responder con la cara, las distractoras también son de las cinco que estima
+        # EMOtv: una opción de asco o miedo no se podría marcar con la cara.
+        distractors = CAMERA_PRACTICE_TARGETS if step.answer_by_face else RECOGNITION_DISTRACTORS
+        pool = [item for item in distractors if item != target]
         options = [target, *chooser.sample(pool, step.option_count - 1)]
         chooser.shuffle(options)
         return tuple((item, item, None) for item in options)

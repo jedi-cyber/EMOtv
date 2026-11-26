@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import inspect
 
 from emotv.domain.guided_session import GAME_FACE_PROMPT, SIMILAR_FACE_PROMPT, FrameAssessment
-from emotv.domain.protocol import FACE_ANSWER_GRACE_SECONDS, ProtocolStep, StepKind
+from emotv.domain.protocol import CAMERA_PRACTICE_TARGETS, FACE_ANSWER_GRACE_SECONDS, ProtocolStep, StepKind
 from tests.integration import test_similar_game as similar_game
 from tests.integration.test_guided_sessions import post, state, view, wait
 from tests.integration.test_matching_game import act, bank, game, results, save, start
@@ -32,8 +32,7 @@ def face_game(**fields):
 
 def face(expression):
     """Lo que estima el analizador falso: la persona sostiene esa cara."""
-    rest = "surprise" if expression == "neutral" else "neutral"
-    return FrameAssessment((), expression, 0.95, {expression: 0.95, rest: 0.05})
+    return FrameAssessment((), expression, 0.95, {expression: 0.95, "contempt": 0.05})
 
 
 def hold(env, token, expression, seconds=FACE_ANSWER_GRACE_SECONDS + 4):  # noqa: F811
@@ -115,6 +114,17 @@ def test_los_primeros_segundos_no_cuentan(env):  # noqa: F811
     assert state(env, session_id)["game"]["face_levels"] == []
     hold(env, token, target)
     assert view(env, token).json()["game"]["state"] == "matched"
+
+
+def test_las_distractoras_tambien_son_de_las_cinco_expresiones(env):  # noqa: F811
+    # Una opción de asco, miedo o desprecio no se podría marcar con la cara.
+    bank(env)
+    session_id, token = start(env, {**face_game(), **game(rounds=3, options=4), "answer_by_face": True})
+    for _ in range(3):
+        options = state(env, session_id)["game"]["options"]
+        assert len(options) == 4 and set(options) <= set(CAMERA_PRACTICE_TARGETS)
+        hold(env, token, state(env, session_id)["game"]["target_expression"])
+        assert act(env, token, "next").status_code == 200
 
 
 def test_quien_conduce_ve_el_nivel_de_cada_opcion(env):  # noqa: F811
