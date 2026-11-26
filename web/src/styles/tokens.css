@@ -139,6 +139,7 @@
   --z-sidebar-backdrop: 25;
   --z-sidebar-panel: 30;
   --z-modal: 40;
+  --z-toast: 50;
 
   /* Movimiento: breve y funcional */
   --duration-fast: 150ms;

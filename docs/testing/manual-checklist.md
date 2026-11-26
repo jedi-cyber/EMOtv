@@ -70,7 +70,8 @@ del banco inicial. Úsala en el Analizador.
 | --- | --- | --- | --- | --- |
 | Confirmación | Sin confirmar la autorización firmada no se puede empezar. | | | |
 | Pantalla de la persona | «Crear el enlace de la pantalla de la persona» y «Abrir la pantalla de la persona» la abren en otra ventana o dispositivo. No muestra resultados, etiquetas, probabilidades ni calidad. | | | |
-| Calibración | Con la cara tranquila, la calibración termina y empieza el primer paso. | | | |
+| Lista para empezar | Sin calibración: la pantalla de la persona pide la cámara sin mostrarse a sí misma; quien conduce pulsa «Ver la cámara» en su pantalla para ver la vista previa (solo en esa computadora) y, al pulsar «Empezar», empieza el primer paso. | | | |
+| Juegos | En el menú, «Juegos» abre el dibujo y la versión de prueba de los dos juegos, sin crear una sesión ni usar la cámara. | | | |
 | «¿Qué emoción es?» en modo accesible | Se ven el dibujo, dos opciones con pictograma y botones grandes. Tras elegir se lee el nombre de la emoción del dibujo, sin valorar la respuesta. | | | |
 | Ejercicio de práctica | Se lee la instrucción («Muestra alegría»). La señal crece al acercarse y aparece «¡Lo lograste!» al sostenerla. Si se vence el tiempo, no hay mensaje de fracaso. | | | |
 | «Haz la misma cara» | Se ven el dibujo y «Haz la misma cara». Quien conduce ve «Imitar el modelo» y la expresión pedida. | | | |
@@ -99,6 +100,7 @@ frente a la cámara.
 | Google Chrome (última versión) | Permiso de cámara, análisis, sesión con protocolo y Emi funcionan. | | | |
 | Microsoft Edge (última versión) | Igual que en Chrome. | | | |
 | Mozilla Firefox (última versión) | Igual que en Chrome. Anotar diferencias. | | | |
+| Lo que estima la cámara | En un paso con cámara, la pantalla de quien conduce muestra la expresión estimada, la confianza y las cinco expresiones, y cambia en uno o dos segundos al cambiar la cara. La pantalla de la persona no muestra nada de eso. | | | |
 | Cámara integrada de la laptop | La vista previa funciona y el análisis llega a un resultado. Anotar marca, modelo y resolución. | | | |
 | Cámara USB externa | Igual que la integrada. | | | |
 | Cámara ocupada por otra aplicación | Al probar la cámara aparece «Otra aplicación está usando la cámara…» y el requisito queda «Bloqueado». | | | |

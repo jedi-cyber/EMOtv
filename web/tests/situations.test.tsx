@@ -40,8 +40,9 @@ describe("situaciones en el paso «¿Qué emoción es?»", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Situaciones");
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "sad");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar como «¿Qué emoción es?»" }));
+    await userEvent.click(screen.getByRole("button", { name: "¿Qué emoción es?" }));
+    await userEvent.selectOptions(screen.getByLabelText(/^Imagen para/), "sad");
+    await userEvent.click(screen.getByRole("button", { name: "Agregar paso" }));
     const field = screen.getByLabelText("Situación (opcional)");
     expect(field).toHaveAttribute("maxLength", "200");
     await userEvent.type(field, STORY);

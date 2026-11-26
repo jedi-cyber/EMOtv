@@ -72,7 +72,7 @@ def test_un_voluntario_en_modo_demo_agrega_el_protocolo_una_sola_vez(env, valida
     protocol = env.protocols.repository.get(again["protocol_id"])
     assert protocol.for_children is False
     assert [step.target_expression for step in protocol.steps] == list(VALIDATION_TARGETS)
-    assert "contempt" not in VALIDATION_TARGETS and len(VALIDATION_TARGETS) == 7
+    assert VALIDATION_TARGETS == ("neutral", "happiness", "surprise", "sadness", "anger")
     assert all(step.is_practice and step.stimulus_id is None for step in protocol.steps)
     listed = env.client.get("/protocols", headers=headers(env, env.user_1)).json()
     assert [item["name"] for item in listed] == [VALIDATION_PROTOCOL_NAME]

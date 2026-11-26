@@ -11,6 +11,8 @@ export const paths = {
   analysis: "/analysis",
   analysisWithProtocol: (id: string) => `/analysis?protocol=${encodeURIComponent(id)}`,
   analysisForActivity: (id: string) => `/analysis?activity=${encodeURIComponent(id)}`,
+  /** Juego con cámara ya elegido en el Analizador. */
+  analysisWithCameraGame: (kind: string) => `/analysis?game=${encodeURIComponent(kind)}`,
   deletionCertificate: (id: string) => `/sessions/deletions/${encodeURIComponent(id)}`,
   deletionCertificatePattern: "/sessions/deletions/:certificateId",
   stimuli: "/stimuli",
@@ -34,6 +36,10 @@ export const paths = {
   guidedSessionPattern: "/guided/:sessionId",
   participantView: (token: string) => `/participant-view/${encodeURIComponent(token)}`,
   participantViewPattern: "/participant-view/:token",
+  // Juegos de prueba: sin sesión, sin cámara y sin registro.
+  games: "/games",
+  game: (kind: string) => `/games/${encodeURIComponent(kind)}`,
+  gamePattern: "/games/:kind",
   // Actividad de dibujo: a pantalla completa, sin sesión ni registro.
   drawing: "/drawing",
   // Examen simulado congelado (docs/escenario-examen.md): sin rutas ni menú.

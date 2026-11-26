@@ -4,15 +4,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 
 MAX_EXPOSURE_SECONDS = 120
+# «Usar el analizador»: quien conduce lo termina; este es solo su tiempo máximo.
+MAX_ANALYZER_SECONDS = 600
+DEFAULT_ANALYZER_SECONDS = 180
 MAX_STEPS = 30
 MAX_HOLD_SECONDS = 10
 # Expresiones que se pueden pedir en una práctica: todo el catálogo. Quien arma
 # el protocolo decide; la validación con adultos muestra cuáles se registran mejor
 # (docs/expression-practice.md, §14.1).
 PRACTICE_TARGETS = EXPRESSION_KEYS
+# Lo que se puede pedir al armar o aplicar un protocolo: solo lo que EMOtv estima.
+# PRACTICE_TARGETS se conserva para leer protocolos y resultados antiguos.
+CAMERA_PRACTICE_TARGETS = ESTIMATED_EXPRESSIONS
+CAMERA_PRACTICE_PROBLEM = ("Los ejercicios con cámara piden una de las cinco expresiones que estima EMOtv: "
+                           "cara tranquila, alegría, sorpresa, tristeza o enojo")
 # Opciones de un paso de reconocimiento: la correcta y las distractoras.
 MIN_RECOGNITION_OPTIONS = 2
 MAX_RECOGNITION_OPTIONS = 4
@@ -27,6 +35,21 @@ MIN_GAME_ROUNDS = 2
 MAX_GAME_ROUNDS = 6
 DEFAULT_GAME_ROUNDS = 3
 DEFAULT_GAME_OPTIONS = 2
+# Juego con cámara («Muestra la emoción»): rondas seguidas de práctica, cada una
+# pide una de las cinco expresiones que estima EMOtv. Sin puntos: cada ronda se
+# logra o no, y al final se dice cuántas se lograron.
+CAMERA_GAME_HOLD_SECONDS = 2
+# «Reconoce y luego muéstrala»: tras cada ronda del juego, unos segundos para que la
+# persona ponga la cara de la emoción de la ronda mientras la cámara estima la expresión.
+GAME_SHOW_SECONDS = 8
+# «Responde con la cara»: la persona responde la ronda poniendo la cara de la emoción.
+# La cámara marca la opción cuya emoción sostiene este tiempo; los primeros segundos
+# de cada intento no cuentan, para que alcance a mirar las opciones.
+FACE_ANSWER_HOLD_SECONDS = 2
+FACE_ANSWER_GRACE_SECONDS = 2
+CAMERA_GAME_ROUND_SECONDS = 20
+# Valoración de quien conduce en «Juego: imita la cara»: de 1 a 5 estrellas.
+MAX_CONDUCTOR_STARS = 5
 # Historia corta de una situación («A Lucía se le cayó su helado»).
 MAX_SITUATION_CHARS = 200
 # Modo accesible: la pausa tras cada ejercicio o reconocimiento dura esto veces más.
@@ -95,14 +118,17 @@ class StepKind(str, Enum):
     Reconocimiento: se muestra una imagen emocional y la persona elige qué
     emoción es entre unas pocas opciones. Juego: varias rondas en las que la
     persona relaciona una imagen con el nombre de su emoción. Dibujo: la persona dibuja una cara
-    en su pantalla y señala qué emoción quiso representar; el dibujo no sale
-    del dispositivo ni se interpreta."""
+    en su pantalla y pulsa «Terminé», sin señalar una emoción; el dibujo no sale
+    del dispositivo ni se interpreta. Analizador: la cámara estima la expresión
+    sin imagen ni expresión pedida; quien conduce pide de palabra lo que quiera
+    y pasa al siguiente paso cuando termina."""
 
     STIMULUS = "stimulus"
     PRACTICE = "practice"
     RECOGNITION = "recognition"
     DRAWING = "drawing"
     GAME = "game"
+    ANALYZER = "analyzer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,8 +157,10 @@ class ProtocolStep:
     historia corta que acompaña a la ilustración: con ella la pregunta es
     «¿Qué emoción muestra la cara?». La respuesta sigue siendo la expresión de la imagen.
 
-    En un dibujo no hay estímulo, expresión pedida ni opciones que configurar:
-    exposure_seconds es el tiempo máximo. Solo se registra la emoción que la
+    En un dibujo no hay expresión pedida ni opciones que configurar:
+    exposure_seconds es el tiempo máximo. Puede llevar una imagen (stimulus_id)
+    que la persona mira antes de dibujar la emoción que siente al verla; EMOtv
+    no relaciona el dibujo ni la emoción elegida con la imagen. Solo se registra la emoción que la
     persona señaló y los tiempos, nunca el dibujo. No analiza la cámara.
 
     En un juego (game_type «matching»), rounds es cuántas imágenes se emparejan y
@@ -162,9 +190,34 @@ class ProtocolStep:
     game_type: str | None = None
     rounds: int | None = None
     game_stimulus_ids: tuple[str, ...] = ()
+    # Ronda (1, 2, 3…) de un juego con cámara: una práctica sin imagen dentro de
+    # un bloque de rondas seguidas (lo valida Protocol).
+    game_round: int | None = None
+    # «Juego: imita la cara»: una imitación («Haz la misma cara») que, al
+    # terminar, quien conduce valora de 1 a 5 estrellas. La persona no la ve y
+    # EMOtv no la calcula ni la combina con la expresión estimada.
+    conductor_rating: bool = False
+    # «Reconoce y luego muéstrala» (solo juegos): al terminar cada ronda, la persona
+    # pone la cara de la emoción de la ronda y la cámara estima si la sostiene.
+    # Solo quien conduce ve el resultado; la persona ve un mensaje amable.
+    show_expression: bool = False
+    # «Responde con la cara» (solo juegos): la persona responde poniendo la cara de la
+    # emoción y la cámara marca la opción que coincide. Solo usa las cinco expresiones
+    # que estima EMOtv; sin cámara, se responde con botones.
+    answer_by_face: bool = False
 
     def __post_init__(self) -> None:
         kind = StepKind(self.kind)
+        if not isinstance(self.show_expression, bool):
+            raise TypeError("show_expression debe ser verdadero o falso")
+        if self.show_expression and kind is not StepKind.GAME:
+            raise ValueError("Solo un juego pide mostrar la emoción después de cada ronda")
+        if not isinstance(self.answer_by_face, bool):
+            raise TypeError("answer_by_face debe ser verdadero o falso")
+        if self.answer_by_face and kind is not StepKind.GAME:
+            raise ValueError("Solo un juego se responde con la cara")
+        if self.answer_by_face and self.show_expression:
+            raise ValueError("Un juego que se responde con la cara no pide además mostrarla después de cada ronda")
         object.__setattr__(self, "kind", kind)
         ids = tuple(self.game_stimulus_ids or ())
         if any(not isinstance(item, str) or not item.strip() for item in ids):
@@ -178,6 +231,17 @@ class ProtocolStep:
             raise ValueError("Solo un ejercicio de práctica imita un modelo")
         if self.imitate and not (isinstance(self.stimulus_id, str) and self.stimulus_id.strip()):
             raise ValueError("«Haz la misma cara» necesita la imagen del modelo")
+        if not isinstance(self.conductor_rating, bool):
+            raise TypeError("conductor_rating debe ser verdadero o falso")
+        if self.conductor_rating and not self.imitate:
+            raise ValueError("Solo «Juego: imita la cara» lleva la valoración de quien conduce")
+        if self.game_round is not None:
+            if isinstance(self.game_round, bool) or not isinstance(self.game_round, int):
+                raise TypeError("game_round debe ser un entero")
+            if not 1 <= self.game_round <= MAX_GAME_ROUNDS:
+                raise ValueError(f"Un juego con cámara tiene como máximo {MAX_GAME_ROUNDS} rondas")
+            if kind is not StepKind.PRACTICE or self.imitate or self.stimulus_id:
+                raise ValueError("Una ronda del juego con cámara es una práctica sin imagen")
         if self.situation is not None:
             if not isinstance(self.situation, str):
                 raise TypeError("situation debe ser un texto")
@@ -197,7 +261,10 @@ class ProtocolStep:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise TypeError(f"{name} debe ser un entero de segundos")
-        if not 1 <= self.exposure_seconds <= MAX_EXPOSURE_SECONDS:
+        if kind is StepKind.ANALYZER:
+            if not 1 <= self.exposure_seconds <= MAX_ANALYZER_SECONDS:
+                raise ValueError(f"«Usar el analizador» dura entre 1 y {MAX_ANALYZER_SECONDS} segundos")
+        elif not 1 <= self.exposure_seconds <= MAX_EXPOSURE_SECONDS:
             raise ValueError(f"La exposición dura entre 1 y {MAX_EXPOSURE_SECONDS} segundos")
         if not 0 <= self.capture_after_seconds <= self.exposure_seconds:
             raise ValueError("La captura automática ocurre durante la exposición")
@@ -227,10 +294,14 @@ class ProtocolStep:
             if len(ids) > self.rounds * self.images_per_round:
                 raise ValueError("El juego tiene más imágenes que rondas")
             return
-        if kind is StepKind.DRAWING:
+        if kind is StepKind.ANALYZER:
             if (stimulus_id is not None or self.target_expression is not None or self.hold_seconds is not None
                     or self.option_count is not None):
-                raise ValueError("Un dibujo no tiene imagen, expresión pedida, tiempo de sostén ni opciones")
+                raise ValueError("«Usar el analizador» no tiene imagen, expresión pedida, tiempo de sostén ni opciones")
+            return
+        if kind is StepKind.DRAWING:
+            if self.target_expression is not None or self.hold_seconds is not None or self.option_count is not None:
+                raise ValueError("Un dibujo no tiene expresión pedida, tiempo de sostén ni opciones")
             return
         if kind is StepKind.RECOGNITION:
             if self.target_expression is not None and self.target_expression not in EXPRESSION_KEYS:
@@ -256,9 +327,18 @@ class ProtocolStep:
 
     @classmethod
     def practice(cls, target_expression: str, hold_seconds: int, max_seconds: int,
-                 illustration_id: str | None = None, imitate: bool = False) -> ProtocolStep:
+                 illustration_id: str | None = None, imitate: bool = False,
+                 conductor_rating: bool = False) -> ProtocolStep:
         return cls(illustration_id, max_seconds, 0, kind=StepKind.PRACTICE,
-                   target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate)
+                   target_expression=target_expression, hold_seconds=hold_seconds, imitate=imitate,
+                   conductor_rating=conductor_rating)
+
+    @classmethod
+    def camera_game_round(cls, target_expression: str, game_round: int,
+                          hold_seconds: int = CAMERA_GAME_HOLD_SECONDS,
+                          max_seconds: int = CAMERA_GAME_ROUND_SECONDS) -> ProtocolStep:
+        return cls(None, max_seconds, 0, kind=StepKind.PRACTICE, target_expression=target_expression,
+                   hold_seconds=hold_seconds, game_round=game_round)
 
     @classmethod
     def recognition(cls, stimulus_id: str, max_seconds: int, option_count: int = DEFAULT_RECOGNITION_OPTIONS,
@@ -267,8 +347,12 @@ class ProtocolStep:
                    option_count=option_count, situation=situation)
 
     @classmethod
-    def drawing(cls, max_seconds: int) -> ProtocolStep:
-        return cls(None, max_seconds, 0, kind=StepKind.DRAWING)
+    def drawing(cls, max_seconds: int, stimulus_id: str | None = None) -> ProtocolStep:
+        return cls(stimulus_id, max_seconds, 0, kind=StepKind.DRAWING)
+
+    @classmethod
+    def analyzer(cls, max_seconds: int = DEFAULT_ANALYZER_SECONDS) -> ProtocolStep:
+        return cls(None, max_seconds, 0, kind=StepKind.ANALYZER)
 
     @classmethod
     def matching_game(cls, rounds: int = DEFAULT_GAME_ROUNDS, option_count: int = DEFAULT_GAME_OPTIONS,
@@ -296,8 +380,16 @@ class ProtocolStep:
         return self.game_stimulus_ids[round_index * size:(round_index + 1) * size]
 
     @property
+    def is_camera_game(self) -> bool:
+        return self.game_round is not None
+
+    @property
     def is_drawing(self) -> bool:
         return self.kind is StepKind.DRAWING
+
+    @property
+    def is_analyzer(self) -> bool:
+        return self.kind is StepKind.ANALYZER
 
     @property
     def is_game(self) -> bool:
@@ -305,8 +397,11 @@ class ProtocolStep:
 
     @property
     def seconds_limit(self) -> int:
-        """Tiempo máximo del paso: en un juego, el de cada ronda por las rondas."""
-        return self.exposure_seconds * self.rounds if self.is_game and self.rounds else self.exposure_seconds
+        """Tiempo máximo del paso: en un juego, el de cada ronda por las rondas
+        (más el tiempo para mostrar la emoción, si se pide)."""
+        if self.is_game and self.rounds:
+            return (self.exposure_seconds + (GAME_SHOW_SECONDS if self.show_expression else 0)) * self.rounds
+        return self.exposure_seconds
 
     @property
     def image_ids(self) -> tuple[str, ...]:
@@ -329,8 +424,47 @@ class ProtocolStep:
 
     @property
     def uses_camera(self) -> bool:
-        """Una imagen con captura o un ejercicio de práctica; un reconocimiento, un dibujo o un juego no."""
-        return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE)
+        """Una imagen con captura, un ejercicio de práctica o «Usar el analizador»;
+        un reconocimiento, un dibujo o un juego no."""
+        return self.kind in (StepKind.STIMULUS, StepKind.PRACTICE, StepKind.ANALYZER)
+
+    @property
+    def wants_camera(self) -> bool:
+        """Si el paso usa la cámara cuando está disponible. Un juego que pide mostrar
+        la emoción, o que se responde con la cara, la usa, pero sin cámara se juega
+        igual, con botones (no se salta)."""
+        return self.uses_camera or (self.is_game and (self.show_expression or self.answer_by_face))
+
+
+def camera_game_blocks(steps: tuple[ProtocolStep, ...]) -> list[range]:
+    """Los juegos con cámara del protocolo: los índices de cada bloque de rondas."""
+    blocks: list[range] = []
+    start: int | None = None
+    for index, step in enumerate((*steps, None)):
+        round_number = step.game_round if step is not None else None
+        if start is not None and round_number != index - start + 1:
+            blocks.append(range(start, index))
+            start = None
+        if start is None and round_number == 1:
+            start = index
+    return blocks
+
+
+def camera_game_position(steps: tuple[ProtocolStep, ...], index: int) -> tuple[range, int] | None:
+    """El bloque del juego con cámara al que pertenece el paso y su ronda (desde 0)."""
+    for block in camera_game_blocks(steps):
+        if index in block:
+            return block, index - block.start
+    return None
+
+
+def _check_camera_games(steps: tuple[ProtocolStep, ...]) -> None:
+    covered = {index for block in camera_game_blocks(steps) for index in block}
+    rounds = {index for index, step in enumerate(steps) if step.is_camera_game}
+    if rounds != covered:
+        raise ValueError("Las rondas del juego con cámara van seguidas: 1, 2, 3…")
+    if any(len(block) < MIN_GAME_ROUNDS for block in camera_game_blocks(steps)):
+        raise ValueError(f"Un juego con cámara tiene al menos {MIN_GAME_ROUNDS} rondas")
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,6 +506,9 @@ class Protocol:
     accessible: bool = False
     shared_with_group: bool = False
     supports: ProtocolSupports | None = None
+    # Eliminado por quien lo armó: ya no se lista ni se aplica. Las sesiones que
+    # lo usaron lo conservan para su línea de tiempo y su reporte.
+    deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id", "name"):
@@ -403,9 +540,10 @@ class Protocol:
                 raise ValueError("Un examen simulado no tiene modo accesible ni apoyos, ni se comparte como plantilla")
         elif not 1 <= len(steps) <= MAX_STEPS:
             raise ValueError(f"Un protocolo tiene entre 1 y {MAX_STEPS} estímulos")
+        _check_camera_games(steps)
         if (self.approved_at is None) != (self.approved_by_user_id is None):
             raise ValueError("La aprobación requiere fecha y quien aprueba")
-        for name in ("created_at", "approved_at", "superseded_at"):
+        for name in ("created_at", "approved_at", "superseded_at", "deleted_at"):
             value = getattr(self, name)
             if value is not None and (value.tzinfo is None or value.utcoffset() is None):
                 raise ValueError(f"{name} debe incluir zona horaria")
@@ -423,4 +561,4 @@ class Protocol:
         """Si la sesión necesita la cámara: un examen, o algún paso con imagen y
         captura o un ejercicio de práctica. Un protocolo solo de reconocimiento se
         aplica sin cámara, sin calibración y sin enviar cuadros."""
-        return self.kind is ProtocolKind.EXAM or any(step.uses_camera for step in self.steps)
+        return self.kind is ProtocolKind.EXAM or any(step.wants_camera for step in self.steps)

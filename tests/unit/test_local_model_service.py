@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from emotv.application.local_model_service import (
+    EMOTIEFFLIB_B2_MODEL_ID,
     FERPLUS_MODEL_ID,
     HSEMOTION_MODEL_ID,
     LocalModelService,
@@ -17,7 +18,7 @@ NOW = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
 
 def service(states, settings=None):
     repository = InMemoryLocalModelSettingsRepository(settings)
-    return LocalModelService(repository, lambda model_id: dict(model_id=model_id, state=states[model_id], reasons=[]),
+    return LocalModelService(repository, lambda model_id: dict(model_id=model_id, state=states.get(model_id, "BLOCKED"), reasons=[]),
                              clock=lambda: NOW), repository
 
 
@@ -41,10 +42,26 @@ def test_set_default_requires_an_evaluated_admission():
 
 
 def test_fallback_is_recorded_only_when_the_backup_is_admitted():
-    models, repository = service({HSEMOTION_MODEL_ID: "BLOCKED", FERPLUS_MODEL_ID: "BLOCKED"})
+    models, repository = service({HSEMOTION_MODEL_ID: "BLOCKED", EMOTIEFFLIB_B2_MODEL_ID: "BLOCKED",
+                                  FERPLUS_MODEL_ID: "BLOCKED"})
     choice = models.resolve()
-    assert (choice.model_id, choice.admitted, choice.fallback) == (FERPLUS_MODEL_ID, False, True)
+    # Sin ningún respaldo admitido se devuelve el primero, sin registrar el uso.
+    assert (choice.model_id, choice.admitted, choice.fallback) == (EMOTIEFFLIB_B2_MODEL_ID, False, True)
     assert repository.get() is None
+
+
+def test_fallback_skips_backups_without_admission_in_order():
+    models, repository = service({HSEMOTION_MODEL_ID: "BLOCKED", EMOTIEFFLIB_B2_MODEL_ID: "BLOCKED",
+                                  FERPLUS_MODEL_ID: "SUPPORTED"})
+    choice = models.resolve()
+    assert (choice.model_id, choice.admitted, choice.fallback) == (FERPLUS_MODEL_ID, True, True)
+    assert repository.get().fallback_model_id == FERPLUS_MODEL_ID
+
+
+def test_emotiefflib_b2_is_the_first_backup_of_hsemotion():
+    models, _ = service({HSEMOTION_MODEL_ID: "BLOCKED", EMOTIEFFLIB_B2_MODEL_ID: "SUPPORTED",
+                         FERPLUS_MODEL_ID: "SUPPORTED"})
+    assert models.resolve().model_id == EMOTIEFFLIB_B2_MODEL_ID
 
 
 def test_requested_model_is_returned_without_touching_the_settings():

@@ -148,6 +148,9 @@ class Questionnaire:
     shared_with_group: bool = False
     copied_from_id: str | None = None
     superseded_at: datetime | None = None
+    # Eliminado por quien lo armó: ya no se lista ni se aplica. Las respuestas
+    # de las sesiones que lo usaron se conservan.
+    deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "family_id", "owner_user_id"):
@@ -164,7 +167,7 @@ class Questionnaire:
         if len({item.id for item in questions}) != len(questions):
             raise ValueError("Cada pregunta tiene un identificador propio")
         object.__setattr__(self, "questions", questions)
-        for name in ("created_at", "superseded_at"):
+        for name in ("created_at", "superseded_at", "deleted_at"):
             value = getattr(self, name)
             if value is not None and (value.tzinfo is None or value.utcoffset() is None):
                 raise ValueError(f"{name} debe incluir zona horaria")

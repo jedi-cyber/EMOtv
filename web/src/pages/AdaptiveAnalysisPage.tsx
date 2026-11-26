@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, SESSION_EXPIRED_ANALYSIS_MESSAGE, SESSION_EXPIRED_CLOSE_CODE, apiRequest, apiWebSocketUrl, notifySessionExpired } from "../api/http";
-import type { Activity, ActivityStep, EmotionalSession, LocalModelOption, Protocol, SessionType, Student } from "../api/types";
+import type { Activity, ActivityStep, EmotionalSession, GameType, LocalModelOption, Protocol, SessionType, Student } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { useActiveSession } from "../analysis/ActiveSessionContext";
@@ -61,6 +61,13 @@ const cameraProblemShort: Record<CameraProblem, string> = {
   unknown: "No se pudo abrir.",
 };
 
+/** Juegos con cámara: se responden poniendo la cara y la cámara marca la opción. */
+const cameraGames: { value: GameType; label: string; hint: string }[] = [
+  { value: "matching", label: "Empareja la emoción", hint: "Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca el nombre que coincide." },
+  { value: "similar", label: "Busca la misma emoción", hint: "Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca, entre otras caras, la que muestra la misma emoción." },
+];
+const GAME_PREFIX = "game:";
+
 /** ¿Con quién es la sesión? Solo se pregunta sin protocolo: con protocolo, decide su público. */
 const audiences: { value: SessionType; label: string; hint: string }[] = [
   { value: "propia", label: "Conmigo", hint: "Analizo mi propia expresión." },
@@ -93,11 +100,18 @@ export function AdaptiveAnalysisPage() {
   const navigate = useNavigate();
   // Toda sesión empieza aquí: con un protocolo (una receta guardada) o sin él.
   const protocolsQuery = useApiQuery<Protocol[]>("/protocols");
-  const protocols = (protocolsQuery.data ?? []).filter((item) => item.owned_by_me);
-  // «Usar en el Analizador» desde Protocolos llega con ?protocol=<id>.
+  // Los protocolos de los juegos con cámara se eligen por su juego, no por su nombre.
+  const protocols = (protocolsQuery.data ?? []).filter((item) => item.owned_by_me && !item.camera_game);
+  // «Usar en el Analizador» desde Protocolos llega con ?protocol=<id>; desde Juegos, con ?game=<juego>.
   const [searchParams] = useSearchParams();
-  const [protocolId, setProtocolId] = useState(() => searchParams.get("protocol") ?? "");
+  const [protocolId, setProtocolId] = useState(() => {
+    const game = cameraGames.find((item) => item.value === searchParams.get("game"));
+    return game ? `${GAME_PREFIX}${game.value}` : searchParams.get("protocol") ?? "";
+  });
   const protocol = protocols.find((item) => item.id === protocolId) ?? null;
+  // Juego con cámara: sin protocolo guardado; al empezar, EMOtv arma el de la cuenta
+  // para ese juego y ese público, y la sesión sigue como con cualquier protocolo.
+  const cameraGame = cameraGames.find((item) => `${GAME_PREFIX}${item.value}` === protocolId) ?? null;
   // Sin protocolo se elige con quién es la sesión; con protocolo, el público es el suyo.
   const [audience, setAudience] = useState<SessionType | null>(null);
   const sessionAudience: SessionType | null = protocol ? (protocol.for_children ? "infantil" : "adulto") : audience;
@@ -215,7 +229,8 @@ export function AdaptiveAnalysisPage() {
   ];
   // Con protocolo, la cámara la pide la pantalla de la persona solo en los pasos que
   // la necesitan (y la sesión puede seguir sin ella): aquí no es un requisito.
-  const pendingRequirements = requirements.filter((item) => item.state !== "ready" && !(protocol && item.key === "camera"));
+  const withSteps = Boolean(protocol || cameraGame);
+  const pendingRequirements = requirements.filter((item) => item.state !== "ready" && !(withSteps && item.key === "camera"));
   const protocolUsesCamera = protocol?.uses_camera !== false;
 
   function pauseFrames() {
@@ -336,9 +351,10 @@ export function AdaptiveAnalysisPage() {
     setError(""); setConfirmOpen(true);
   }
 
-  function sessionBody(childNoticeVersion?: string) {
+  function sessionBody(childNoticeVersion?: string, protocolId = protocol?.id) {
     return JSON.stringify({
-      ...(protocol ? { protocol_id: protocol.id } : { session_type: sessionAudience }),
+      ...(protocolId ? { protocol_id: protocolId, ...(protocol ? {} : { session_type: sessionAudience }) }
+        : { session_type: sessionAudience }),
       authorization_confirmed: true,
       ...(childNoticeVersion ? { child_notice_version: childNoticeVersion } : {}),
     });
@@ -352,9 +368,14 @@ export function AdaptiveAnalysisPage() {
     try {
       await requireConsent();
       if (lifecycle !== lifecycleRef.current) return;
-      if (protocol) {
-        // Con protocolo, la sesión sigue sus pasos en la pantalla de quien conduce.
-        created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", token, body: sessionBody(childNoticeVersion) });
+      if (protocol || cameraGame) {
+        // Con protocolo, la sesión sigue sus pasos en la pantalla de quien conduce. Un
+        // juego con cámara usa el protocolo de la cuenta para ese juego y ese público.
+        const protocolForSession = protocol ?? await apiRequest<Protocol>(
+          `/camera-games/${encodeURIComponent(cameraGame!.value)}/protocol`,
+          { method: "POST", token, body: JSON.stringify({ for_children: sessionAudience === "infantil" }) });
+        if (lifecycle !== lifecycleRef.current) return;
+        created = await apiRequest<EmotionalSession>("/sessions", { method: "POST", token, body: sessionBody(childNoticeVersion, protocolForSession.id) });
         const guided = await apiRequest<{ view_token: string }>(`/guided-sessions/${encodeURIComponent(created.id)}`, { method: "POST", token });
         storeViewToken(created.id, guided.view_token);
         completedRef.current = true;
@@ -588,7 +609,6 @@ export function AdaptiveAnalysisPage() {
   return <section>
     {session && phase !== "completed" && <AnalysisNavigationGuard onLeave={cancelForDeparture} />}
     <PageHeader title="Analizador" description={`Aquí empieza toda sesión: elige un protocolo o analiza sin protocolo. Sin protocolo se lee la expresión facial en vivo${ACTIVITIES_ENABLED ? " y después puedes revisar una actividad sugerida" : " y después ves el resultado"}.`} />
-    <p className="muted">¿Solo dibujar? <ButtonLink variant="ghost" size="sm" to={paths.drawing}>Actividad de dibujo</ButtonLink> La persona dibuja una expresión y señala qué emoción quiso mostrar. No crea una sesión, no usa la cámara y no guarda el dibujo.</p>
     {user?.role === "psychologist" && <Callout variant="info" role="note">
       Tus sesiones son de demostración: sirven para enseñar a tu grupo a usar EMOtv y no cuentan en las estadísticas. Las sesiones de tus usuarios las conducen ellos.
     </Callout>}
@@ -617,7 +637,7 @@ export function AdaptiveAnalysisPage() {
           <AnalysisGuide />
           <h2>Requisitos</h2>
           <ul className="requirement-list" aria-label="Requisitos para empezar">
-            {requirements.filter((item) => !(protocol && item.key === "camera")).map((item) => <li key={item.key} className="requirement">
+            {requirements.filter((item) => !(withSteps && item.key === "camera")).map((item) => <li key={item.key} className="requirement">
               <div className="requirement-text">
                 <strong>{item.label}</strong>
                 <span>{item.detail}</span>
@@ -641,12 +661,21 @@ export function AdaptiveAnalysisPage() {
           <select id="adaptive-protocol" value={protocolId} aria-describedby="adaptive-protocol-help"
             onChange={(event) => setProtocolId(event.target.value)}>
             <option value="">Sin protocolo (solo analizar)</option>
-            {protocols.map((item) => <option key={item.id} value={item.id}>
-              {item.name} · {item.for_children ? "para niños" : "para adultos"}
-            </option>)}
+            {protocols.length > 0 && <optgroup label="Tus protocolos">
+              {protocols.map((item) => <option key={item.id} value={item.id}>
+                {item.name} · {item.for_children ? "para niños" : "para adultos"}
+              </option>)}
+            </optgroup>}
+            <optgroup label="Juegos con cámara">
+              {cameraGames.map((item) => <option key={item.value} value={`${GAME_PREFIX}${item.value}`}>
+                {item.label} · responde con la cara
+              </option>)}
+            </optgroup>
           </select>
-          <p id="adaptive-protocol-help" className="muted">{protocol
-            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", protocolUsesCamera && "calibración", ...protocolStepParts(protocol.steps), protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}. ${protocolUsesCamera
+          <p id="adaptive-protocol-help" className="muted">{cameraGame
+            ? `${cameraGame.hint} Tres rondas con imágenes aprobadas de neutral, felicidad, sorpresa, tristeza o enojo. La cámara se pide en la pantalla de la persona; sin cámara, responde con botones.`
+            : protocol
+            ? `Sigue sus pasos: ${[protocol.pre_questionnaire_id && "cuestionario previo", ...protocolStepParts(protocol.steps), protocol.post_questionnaire_id && "cuestionario posterior"].filter(Boolean).join(", ")}. ${protocolUsesCamera
               ? "La cámara se pide en la pantalla de la persona solo en los pasos que la necesitan; si no está disponible, siguen los pasos sin cámara."
               : "No usa la cámara."}`
             : protocols.length > 0 ? "Un protocolo aplica cuestionarios e imágenes guardados. Sin protocolo, solo se analiza la expresión."
@@ -663,11 +692,11 @@ export function AdaptiveAnalysisPage() {
           <Checkbox checked={includeLandmarks} onChange={(event) => { setIncludeLandmarks(event.target.checked); drawPoseOverlay(overlayRef.current, lastLandmarksRef.current, event.target.checked); }}>Mostrar puntos y líneas durante la actividad</Checkbox>
           <Checkbox checked={voiceEnabled} disabled={!speechAvailable()} onChange={(event) => setVoiceEnabled(event.target.checked)}>Leer instrucciones en voz alta</Checkbox>
           <Button variant="primary" disabled={starting || modelBlocked || pendingRequirements.length > 0 || !sessionAudience}
-            aria-describedby="start-help" onClick={requestStart}>{starting ? "Preparando…" : protocol ? "Empezar la sesión" : "Empezar el análisis"}</Button>
+            aria-describedby="start-help" onClick={requestStart}>{starting ? "Preparando…" : withSteps ? "Empezar la sesión" : "Empezar el análisis"}</Button>
           <p id="start-help" className="muted" aria-live="polite">{pendingRequirements.length > 0
             ? `Para empezar falta: ${pendingRequirements.map((item) => item.label.toLowerCase()).join(", ")}.`
             : !sessionAudience ? "Elige con quién es la sesión."
-              : protocol ? "Todo listo." : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
+              : withSteps ? "Todo listo." : "Todo listo. La cámara se usará solo mientras dure la sesión."}</p>
         </>}
         {phase !== "ready" && <>
           <p className="step-caption">{!ACTIVITIES_ENABLED ? (phase === "live" ? "Paso 1 de 2 · Expresión en vivo" : "Paso 2 de 2 · Resultado")

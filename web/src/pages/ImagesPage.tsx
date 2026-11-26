@@ -4,9 +4,11 @@ import { apiRequest } from "../api/http";
 import type { ImageAudience, ImageUploadResult, UserImage } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
+import { ActionsMenu } from "../components/ActionsMenu";
 import { Button } from "../components/Button";
 import { Callout } from "../components/Callout";
 import { Checkbox } from "../components/Checkbox";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { NoticeList } from "../components/NoticeList";
 import { PageHeader } from "../components/PageHeader";
@@ -14,6 +16,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { StimulusImage } from "../components/StimulusImage";
 import { audienceNames } from "../stimuli/labels";
+import { toast } from "../components/Toaster";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_BATCH = 20;
@@ -47,8 +50,10 @@ export function ImagesPage() {
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [rejected, setRejected] = useState<{ title: string; message: string }[]>([]);
+  // Imagen que se mira en grande y la que se va a eliminar.
+  const [preview, setPreview] = useState<UserImage | null>(null);
+  const [removing, setRemoving] = useState<UserImage | null>(null);
   const ready = files.length > 0 && files.every((item) => item.title.trim() && item.origin.trim() && item.audience && item.rights);
 
   useEffect(() => () => files.forEach((item) => URL.revokeObjectURL(item.preview)), [files]);
@@ -78,7 +83,7 @@ export function ImagesPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready) return;
-    setBusy(true); setError(""); setMessage(""); setRejected([]);
+    setBusy(true); setError(""); setRejected([]);
     const body = new FormData();
     for (const item of files) {
       body.append("files", item.file);
@@ -91,7 +96,7 @@ export function ImagesPage() {
       const result = await apiRequest<ImageUploadResult>("/own-stimuli", { method: "POST", body, token });
       const accepted = result.results.filter((item) => item.accepted).length;
       setRejected(result.results.filter((item) => !item.accepted).map((item) => ({ title: item.title, message: item.message ?? "" })));
-      setMessage(accepted > 0
+      toast.success(accepted > 0
         ? `${accepted === 1 ? "Se subió 1 imagen" : `Se subieron ${accepted} imágenes`}. Quedan «En revisión» hasta que tu docente las revise.`
         : "");
       close();
@@ -100,17 +105,28 @@ export function ImagesPage() {
     finally { setBusy(false); }
   }
 
+  async function deleteImage() {
+    const item = removing;
+    if (!item) return;
+    setBusy(true); setError("");
+    try {
+      await apiRequest(`/own-stimuli/${encodeURIComponent(item.id)}`, { method: "DELETE", token });
+      toast.success(`Se eliminó «${item.title}».`);
+      await query.reload();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo eliminar la imagen."); }
+    finally { setBusy(false); setRemoving(null); }
+  }
+
   return <section>
     <PageHeader title="Imágenes"
       description="Tus imágenes para usar en tus protocolos. Tu docente revisa cada una antes de que puedas elegirla."
-      actions={<Button variant="primary" onClick={() => { setMessage(""); setRejected([]); setAdding(true); }}>Subir imágenes</Button>} />
+      actions={<Button variant="primary" onClick={() => { setRejected([]); setAdding(true); }}>Subir imágenes</Button>} />
     <Callout variant="info" role="note">
       No subas fotos de personas: el sistema revisa cada imagen y rechaza las que parecen mostrar a alguien. Esa revisión
       automática puede equivocarse, por eso tu docente también las revisa. Una imagen «En revisión» no se puede elegir en
       ningún protocolo.
     </Callout>
     <NoticeList />
-    {message && <Callout variant="success">{message}</Callout>}
     {rejected.map((item, index) => <Callout key={`${item.title}-${index}`} variant="error">«{item.title}»: {item.message}</Callout>)}
     {error && !adding && <Callout variant="error">{error}</Callout>}
 
@@ -170,6 +186,18 @@ export function ImagesPage() {
           Si tu docente no la revisa antes del {formatDate(item.expires_at)}, se eliminará.
         </span>}
       </div>
+      <ActionsMenu name={item.title} items={[
+        { label: "Vista previa", onSelect: () => setPreview(item) },
+        { label: "Eliminar", danger: true, disabled: busy, onSelect: () => setRemoving(item) },
+      ]} />
     </li>)}</ul>}
+
+    <Modal open={preview !== null} title={preview?.title ?? "Vista previa"} onClose={() => setPreview(null)}>
+      {preview && <StimulusImage id={preview.id} alt={preview.title} className="stimulus-preview"
+        path={`/own-stimuli/${encodeURIComponent(preview.id)}/file`} />}
+    </Modal>
+    <ConfirmDialog open={removing !== null} title="Eliminar imagen" confirmLabel="Eliminar" confirming={busy}
+      message={removing ? `Se eliminará «${removing.title}» y su archivo. Un protocolo que la usa te pedirá elegir otra imagen; las sesiones ya hechas conservan su registro.` : ""}
+      onConfirm={() => { void deleteImage(); }} onCancel={() => setRemoving(null)} />
   </section>;
 }

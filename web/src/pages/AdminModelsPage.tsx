@@ -8,6 +8,7 @@ import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip, type StatusTone } from "../components/StatusChip";
 import { emotionModelName } from "../sessions/labels";
+import { toast } from "../components/Toaster";
 
 type ModelState = "SUPPORTED" | "WARNING" | "BLOCKED";
 
@@ -48,13 +49,12 @@ export function AdminModelsPage() {
   const query = useApiQuery<LocalModelSettings>("/admin/models");
   const settings = query.data;
   const [saving, setSaving] = useState("");
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
 
   /** El CSV se arma en el servidor al pedirlo y no se guarda allí; solo se descarga. */
   async function downloadValidation() {
-    setDownloading(true); setMessage(""); setError("");
+    setDownloading(true); setError("");
     try {
       const blob = await apiBlob("/practice-validation/export.csv", token);
       const url = URL.createObjectURL(blob);
@@ -69,12 +69,12 @@ export function AdminModelsPage() {
   }
 
   async function makeDefault(model: LocalModelStatus) {
-    setSaving(model.model_id); setMessage(""); setError("");
+    setSaving(model.model_id); setError("");
     try {
       await apiRequest<LocalModelSettings>("/admin/models/default", {
         method: "PUT", token, body: JSON.stringify({ model_id: model.model_id }),
       });
-      setMessage(`${emotionModelName(model.model_id)} es ahora el modelo predeterminado. Rige desde la próxima sesión, sin reiniciar el servidor.`);
+      toast.success(`${emotionModelName(model.model_id)} es ahora el modelo predeterminado. Rige desde la próxima sesión, sin reiniciar el servidor.`);
       await query.reload();
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : "No se pudo cambiar el modelo predeterminado");
@@ -84,7 +84,6 @@ export function AdminModelsPage() {
   return <section>
     <PageHeader title="Modelos"
       description="Modelos locales de estimación de la expresión facial. El predeterminado se usa cuando quien conduce la sesión no elige otro." />
-    {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
     <PageState {...query} onRetry={query.reload} />
     {settings && <>

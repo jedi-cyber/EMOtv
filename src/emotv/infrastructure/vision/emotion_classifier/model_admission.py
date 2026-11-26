@@ -1,6 +1,5 @@
 """Verifica los pesos, el rendimiento esperado y los recursos del servidor antes de cargar."""
 import hashlib
-import importlib.util
 from importlib.metadata import version
 import json
 import math
@@ -12,7 +11,7 @@ import psutil
 
 from emotv.application.model_admission import AdmissionLimits, evaluate_resources
 from emotv.application.emotion_model_catalog import EmotionModelCatalog
-from emotv.config import BASE_DIR, EMOTION_MODEL_PATH, HARDLYHUMANS_MODEL_DIR, HSEMOTION_MODEL_PATH
+from emotv.config import BASE_DIR, EMOTIEFFLIB_B2_MODEL_PATH, EMOTION_MODEL_PATH, HSEMOTION_MODEL_PATH
 
 
 def concurrent_frame_p95(report: dict) -> dict[str, float] | None:
@@ -34,13 +33,15 @@ def concurrent_frame_p95(report: dict) -> dict[str, float] | None:
     return values or None
 
 
-# Rendimiento supuesto de los dos modelos en vivo cuando este equipo no tiene una
-# medición propia. Es más alto que lo medido (p95 de 15 a 45 ms y unos 160 MiB),
-# así un equipo nuevo funciona sin que nadie repita mediciones; la carga real de
+# Rendimiento supuesto de los modelos en vivo cuando este equipo no tiene una
+# medición propia. Es más alto que lo medido (p95 de 15 a 45 ms y unos 160 MiB
+# para FER+ y HSEmotion; EfficientNet-B2 hace unas tres veces más cálculo), así
+# un equipo nuevo funciona sin que nadie repita mediciones; la carga real de
 # CPU y RAM se sigue revisando en cada evaluación.
 REFERENCE_FIGURES = {
     "ferplus_onnx": dict(p95_ms=100.0, ram_peak_mib=300.0),
     "hsemotion_enet_b0_8_best_afew": dict(p95_ms=100.0, ram_peak_mib=300.0),
+    "emotiefflib_enet_b2_8": dict(p95_ms=200.0, ram_peak_mib=400.0),
 }
 
 
@@ -61,7 +62,7 @@ class ServerModelAdmission:
         self.paths = {
             "ferplus_onnx": (Path(EMOTION_MODEL_PATH), Path(env.get("FERPLUS_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/ferplus-baseline.json")))),
             "hsemotion_enet_b0_8_best_afew": (HSEMOTION_MODEL_PATH, Path(env.get("HSEMOTION_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/hsemotion-baseline.json")))),
-            "hardlyhumans_vit": (HARDLYHUMANS_MODEL_DIR / "model.safetensors", Path(env.get("HARDLYHUMANS_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/hardlyhumans-check-01.json")))),
+            "emotiefflib_enet_b2_8": (EMOTIEFFLIB_B2_MODEL_PATH, Path(env.get("EMOTIEFFLIB_B2_BENCHMARK_PATH", str(BASE_DIR / "reports/benchmarks/emotiefflib-b2-baseline.json")))),
         }
         self._hashes = {}
 
@@ -84,17 +85,12 @@ class ServerModelAdmission:
             weights, report_path = self.paths[model_id]
             if not weights.is_file():
                 raise AdmissionUnavailable("Pesos no instalados en el servidor")
-            if model_id == "hardlyhumans_vit":
-                if any(importlib.util.find_spec(name) is None for name in ("torch", "transformers", "safetensors")):
-                    raise ValueError("Dependencias del modelo no instaladas")
-                if any(not (weights.parent / name).is_file() for name in ("config.json", "preprocessor_config.json")):
-                    raise ValueError("Instalación del modelo incompleta")
             try:
                 p95, peak, concurrent = self._measured(model_id, weights, report_path, checks)
                 checks["benchmark_current"] = True
             except (AdmissionUnavailable, OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError):
                 # Los modelos en vivo no dependen de una medición: sin una válida
-                # usan su rendimiento de referencia. El experimental sí la exige.
+                # usan su rendimiento de referencia.
                 if model_id not in REFERENCE_FIGURES:
                     raise
                 p95, peak, concurrent = REFERENCE_FIGURES[model_id]["p95_ms"], REFERENCE_FIGURES[model_id]["ram_peak_mib"], None
@@ -129,11 +125,8 @@ class ServerModelAdmission:
         expected = dict(os=platform.system(), architecture=platform.machine(), cpu=platform.processor(), logical_cpus=psutil.cpu_count(), python=platform.python_version())
         if any(environment.get(k) != v for k, v in expected.items()):
             raise AdmissionUnavailable("Benchmark de un entorno diferente; mide en este servidor")
-        packages = ("torch", "transformers") if model_id == "hardlyhumans_vit" else ("onnxruntime",)
-        if any(str(environment.get(package, "")).split("+")[0] != version(package).split("+")[0] for package in packages):
+        if str(environment.get("onnxruntime", "")).split("+")[0] != version("onnxruntime").split("+")[0]:
             raise AdmissionUnavailable("Runtime diferente al benchmark; repite la medición")
-        if model_id == "hardlyhumans_vit" and environment.get("device") != "cpu":
-            raise AdmissionUnavailable("Benchmark no medido con el adaptador CPU")
         runs = report["results"]
         if len(runs) < 3 or any(type(r["samples"]) is not int or r["samples"] < 100 or not math.isfinite(float(r["elapsed_seconds"])) or r["elapsed_seconds"] < 3 or r["target_reached"] is not True for r in runs):
             raise AdmissionUnavailable("Benchmark insuficiente: requiere 3 corridas, 100 muestras y 3 segundos cada una")

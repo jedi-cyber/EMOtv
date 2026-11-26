@@ -10,6 +10,7 @@ import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { expectedExpressionNames, gameTypeNames, practiceTargetNames } from "../stimuli/labels";
 import type { PracticeRow } from "../api/types";
+import { toast } from "../components/Toaster";
 
 function averageText(value: number | null) {
   return value == null ? "—" : `${value.toLocaleString("es-PE", { maximumFractionDigits: 1 })} s`;
@@ -75,7 +76,6 @@ export function StatisticsPage() {
   const [draft, setDraft] = useState<Filters>(initial);
   const [applied, setApplied] = useState<Filters>(initial);
   const [questionnaireId, setQuestionnaireId] = useState("");
-  const [copied, setCopied] = useState("");
   const result = useApiQuery<SessionStatistics>(query(applied, questionnaireId));
   const data = result.data && "sessions" in result.data ? result.data : null;
 
@@ -85,7 +85,7 @@ export function StatisticsPage() {
 
   function apply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCopied("");
+   
     setApplied(draft);
   }
 
@@ -118,10 +118,11 @@ export function StatisticsPage() {
     }
     if (stats.drawing) {
       rows.push([], ["Dibujos", stats.drawing.totals.sentence], [stats.drawing.notice],
-        ["Emoción señalada", "Dibujos"],
-        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]),
-        ["Sin emoción señalada (terminó el tiempo)", stats.drawing.totals.timed_out],
+        ["Terminados", stats.drawing.totals.answered], ["Terminó el tiempo", stats.drawing.totals.timed_out],
         ["Omitidos", stats.drawing.totals.skipped], ["Interrumpidos", stats.drawing.totals.stopped]);
+      // La emoción señalada solo existe en sesiones anteriores, cuando se preguntaba.
+      if (stats.drawing.by_expression.length > 0) rows.push(["Emoción señalada (sesiones anteriores)", "Dibujos"],
+        ...stats.drawing.by_expression.map((row) => [practiceTargetNames[row.expression] ?? row.expression, row.count]));
     }
     if (stats.games) {
       rows.push([], ["Juegos", stats.games.totals.sentence], [stats.games.notice],
@@ -147,9 +148,9 @@ export function StatisticsPage() {
     if (!data) return;
     try {
       await navigator.clipboard.writeText(tableText(data));
-      setCopied("Tabla copiada. Pégala en Excel u otra hoja de cálculo.");
+      toast.success("Tabla copiada. Pégala en Excel u otra hoja de cálculo.");
     } catch {
-      setCopied("No se pudo copiar. Selecciona la tabla y cópiala a mano.");
+      toast.error("No se pudo copiar. Selecciona la tabla y cópiala a mano.");
     }
   }
 
@@ -160,7 +161,6 @@ export function StatisticsPage() {
     <Callout variant="info" role="note">
       Estas estadísticas cuentan sesiones, no personas, y son estimaciones. No permiten sacar conclusiones sobre ninguna persona.
     </Callout>
-    {copied && <Callout variant="success">{copied}</Callout>}
 
     {isDocente && <p className="muted">Sesiones de tu grupo. Tus sesiones de demostración no cuentan.</p>}
 
@@ -272,11 +272,11 @@ export function StatisticsPage() {
         <h2 className="stat-heading">Dibujos</h2>
         <Callout variant="info" role="note">{data.drawing.notice}</Callout>
         <p>{data.drawing.totals.sentence} En {data.drawing.sessions} {data.drawing.sessions === 1 ? "sesión" : "sesiones"}.</p>
-        <p className="muted">Solo se cuenta la emoción que se señaló al terminar cada dibujo; no hay respuesta correcta.
+        <p className="muted">Solo se cuenta si cada dibujo se terminó; EMOtv no ve los dibujos y no hay respuesta correcta.
           {data.drawing.totals.timed_out + data.drawing.totals.skipped + data.drawing.totals.stopped > 0
             ? ` Terminó el tiempo en ${data.drawing.totals.timed_out}, se omitieron ${data.drawing.totals.skipped} y se interrumpieron ${data.drawing.totals.stopped}.` : ""}</p>
         {data.drawing.by_expression.length > 0 && <div className="table-wrap"><table className="data-table">
-          <thead><tr><th>Emoción señalada</th><th>Dibujos</th></tr></thead>
+          <thead><tr><th>Emoción señalada (sesiones anteriores)</th><th>Dibujos</th></tr></thead>
           <tbody>{data.drawing.by_expression.map((row) => <tr key={row.expression}>
             <td>{practiceTargetNames[row.expression] ?? row.expression}</td><td>{row.count}</td>
           </tr>)}</tbody>
@@ -314,7 +314,7 @@ export function StatisticsPage() {
       <h2 className="stat-heading">Cuestionarios</h2>
       {data.questionnaires.length === 0 ? <p className="muted">Ninguna de estas sesiones tiene cuestionarios respondidos.</p> : <>
         <div className="filter-bar">
-          <label>Cuestionario y versión<select value={questionnaireId} onChange={(event) => { setCopied(""); setQuestionnaireId(event.target.value); }}>
+          <label>Cuestionario y versión<select value={questionnaireId} onChange={(event) => { setQuestionnaireId(event.target.value); }}>
             <option value="">Elige un cuestionario</option>
             {data.questionnaires.map((item) => <option key={item.id} value={item.id}>
               {item.title} · versión {item.version} · {item.responses} {item.responses === 1 ? "respuesta" : "respuestas"}

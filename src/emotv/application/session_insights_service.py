@@ -12,10 +12,10 @@ from typing import Any
 
 from emotv.application.audit_service import AuditService
 from emotv.application.authorization_service import AuthorizationService
-from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, game_sentence,
+from emotv.application.session_metrics import (drawing_metrics, educational_summary, game_metrics, face_sentence, game_sentence,
                                                practice_metrics, recognition_metrics, stimulus_metrics)
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.guided_session import RECOGNITION_NAMES, GuidedPhase
+from emotv.domain.guided_session import ANALYZER_NAME, RECOGNITION_NAMES, GuidedPhase
 from emotv.domain.protocol import Protocol
 from emotv.domain.session import EmotionalSession
 from emotv.domain.stimulus import Stimulus
@@ -121,8 +121,9 @@ class SessionInsightsService:
             # Un ejercicio de práctica se nombra por su expresión pedida, no por su ilustración.
             kind = ("practice" if step.is_practice else "recognition" if step.is_recognition
                     else "drawing" if step.is_drawing else "game" if step.is_game
+                    else "analyzer" if step.is_analyzer
                     else stimulus.kind.value if stimulus else "")
-            titles[index] = (stimulus.title if stimulus else "", kind)
+            titles[index] = (ANALYZER_NAME if step.is_analyzer else stimulus.title if stimulus else "", kind)
         run = self.guided.get_run(session.id)
         practice = {item.step_index: item for item in self.guided.list_practice_results(session.id)} if run else {}
         recognition = ({item.step_index: item for item in self.guided.list_recognition_results(session.id)}
@@ -160,6 +161,7 @@ class SessionInsightsService:
             if kind == "practice":
                 result = practice.get(index)
                 item.update(target_expression=steps[index].target_expression, imitate=steps[index].imitate,
+                            game_round=steps[index].game_round,
                             outcome=result.outcome.value if result else None,
                             seconds_to_achieve=result.seconds_to_achieve if result else None)
             if kind == "recognition":
@@ -178,7 +180,8 @@ class SessionInsightsService:
                 item.update(outcome=game.outcome.value if game else None,
                             rounds=steps[index].rounds, game_type=steps[index].game_type,
                             sentence=game_sentence(game.rounds_total, game.rounds_done, game.matched,
-                                                   game.first_try, game.help_used) if game else None)
+                                                   game.first_try, game.help_used) if game else None,
+                            face_sentence=face_sentence(game.faces_asked, game.faces_shown) if game else None)
             if repeats.get(index):
                 item["repeats"] = repeats[index]
             return item

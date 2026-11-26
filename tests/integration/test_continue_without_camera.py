@@ -63,17 +63,19 @@ def test_el_protocolo_informa_si_usa_la_camara(env):  # noqa: F811
 def test_si_se_niega_la_camara_quien_conduce_lo_ve_y_sigue_con_los_reconocimientos(env):  # noqa: F811
     sad = sad_stimulus(env)
     session_id, token = guided(env, mixed(env, sad))
-    assert state(env, session_id)["phase"] == "calibration"
-    assert post(env, session_id, "calibration").status_code == 200
-    assert view(env, token).json()["capture_frames"] is True
+    assert state(env, session_id)["phase"] == "ready"
+    # Mientras espera «Empezar», la pantalla muestra la vista previa sin enviar cuadros.
+    assert view(env, token).json()["capture_frames"] is False
     # La pantalla de la persona no pudo abrir la cámara: solo informa el motivo.
     assert camera_problem(env, token, "denied").json() == {"received": True}
     current = state(env, session_id)
     assert current["camera_problem"] == "denied" and current["camera_off"] is False
-    assert current["phase"] == "calibration"
+    assert current["phase"] == "ready"
 
+    # Seguir sin cámara antes de empezar: la sesión sigue esperando «Empezar».
     moved = post(env, session_id, "continue-without-camera")
-    assert moved.status_code == 200 and moved.json() == {"phase": "stimuli"}
+    assert moved.status_code == 200 and moved.json() == {"phase": "ready"}
+    assert post(env, session_id, "start").status_code == 200
     current = state(env, session_id)
     # La primera práctica se saltó sin empezar; sigue el reconocimiento.
     assert current["step_index"] == 1 and current["camera_off"] is True
@@ -83,8 +85,6 @@ def test_si_se_niega_la_camara_quien_conduce_lo_ve_y_sigue_con_los_reconocimient
     assessed = env.frames_assessed
     frame(env, token)
     assert env.frames_assessed == assessed
-    assert post(env, session_id, "calibration").status_code == 409
-
     wait(env, 1)
     assert answer(env, token, "sadness").status_code == 200
     wait(env, 2.1)
@@ -140,8 +140,8 @@ def test_seguir_sin_camara_solo_donde_corresponde(env):  # noqa: F811
     session_id, _ = guided(env, mixed(env, sad))
     assert post(env, session_id, "continue-without-camera", user=env.user_2).status_code in (403, 404)
     assert post(env, session_id, "continue-without-camera").status_code == 200
-    # Repetirlo no cambia nada.
-    assert post(env, session_id, "continue-without-camera").json() == {"phase": "stimuli"}
+    # Repetirlo no cambia nada: sigue esperando «Empezar».
+    assert post(env, session_id, "continue-without-camera").json() == {"phase": "ready"}
     post(env, session_id, "stop", {"reason": "conductor"})
     assert post(env, session_id, "continue-without-camera").status_code == 409
 

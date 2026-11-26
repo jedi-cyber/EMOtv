@@ -206,6 +206,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
     # La tabla recreada por esta migración recibe también la de los intentos (20261106_39).
     from tests.integration.test_step_attempts import bring_to_current
     bring_to_current(engine, "practice_results")
+    # Y la valoración de quien conduce (20261124_46).
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE practice_results ADD COLUMN conductor_stars INTEGER"))
     assert {"kind", "target_expression", "hold_seconds"} <= _step_columns(engine)
     found = PostgresProtocolRepository(factory).get("p1")
     # Los pasos existentes quedan como estímulos, igual que antes.
@@ -216,8 +219,9 @@ def test_migracion_downgrade_y_upgrade(engine, factory):
     guided.save_practice_result(result())
     assert guided.list_practice_results("ses1") == (result(),)
     for values in ({"stimulus_id": None, "kind": "stimulus"},
-                   # Las restricciones anteriores siguen vigentes.
-                   {"stimulus_id": "s1", "kind": "stimulus", "exposure_seconds": 200}):
+                   # Las restricciones anteriores siguen vigentes (ck_protocol_steps_exposure
+                   # llega hasta 600 s; el tope de 120 de una imagen lo pone 20261124_50).
+                   {"stimulus_id": "s1", "kind": "stimulus", "exposure_seconds": 700}):
         with pytest.raises(IntegrityError):
             with factory.begin() as db:
                 db.add(ProtocolStepRecord(**{"id": "x2", "protocol_id": "p1", "position": 9, "exposure_seconds": 10,

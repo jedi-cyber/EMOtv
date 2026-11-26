@@ -20,8 +20,8 @@ from emotv.application.stimulus_service import StimulusDraft, StimulusNotFound, 
 from emotv.config import PracticeSettings
 from emotv.domain import Protocol, ProtocolStep, Stimulus, User
 from emotv.domain.protocol import (DEFAULT_GAME_OPTIONS, DEFAULT_GAME_ROUNDS, DEFAULT_RECOGNITION_OPTIONS, MAX_GAME_ROUNDS,
-                                   ProtocolSupports, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
-                                   MAX_RECOGNITION_OPTIONS, PRACTICE_TARGETS)
+                                   ProtocolSupports, MAX_ANALYZER_SECONDS, MAX_EXPOSURE_SECONDS, MAX_SITUATION_CHARS, MAX_STEPS,
+                                   MAX_RECOGNITION_OPTIONS, CAMERA_PRACTICE_TARGETS)
 from emotv.domain.role import Role
 from emotv.infrastructure.vision.stimulus_image import MAX_BYTES
 from emotv.interfaces.web.auth_router import create_current_user_dependency
@@ -56,11 +56,13 @@ class StepModel(BaseModel):
     # «stimulus»: se muestra una imagen. «practice»: se pide una expresión y se
     # sostiene; la imagen es una ilustración opcional. «recognition»: se muestra
     # una imagen emocional y la persona elige qué emoción es. «drawing»: la
-    # persona dibuja una cara y señala qué emoción quiso representar. «game»: juego
-    # de emparejar imágenes con el nombre de su emoción.
-    kind: Literal["stimulus", "practice", "recognition", "drawing", "game"] = "stimulus"
+    # persona dibuja una cara y pulsa «Terminé». «game»: juego
+    # de emparejar imágenes con el nombre de su emoción. «analyzer»: la cámara
+    # estima la expresión sin imagen; quien conduce pide de palabra las expresiones.
+    kind: Literal["stimulus", "practice", "recognition", "drawing", "game", "analyzer"] = "stimulus"
     stimulus_id: str | None = Field(default=None, min_length=1, max_length=36)
-    exposure_seconds: int = Field(ge=1, le=MAX_EXPOSURE_SECONDS)
+    # Hasta 120 s; solo «analyzer» llega a 600 (lo valida el dominio).
+    exposure_seconds: int = Field(ge=1, le=MAX_ANALYZER_SECONDS)
     capture_after_seconds: int = Field(default=0, ge=0, le=MAX_EXPOSURE_SECONDS)
     record_verbal_response: bool = False
     # Solo imágenes abstractas: se muestran antes de la calibración, sin capturas.
@@ -83,6 +85,13 @@ class StepModel(BaseModel):
     rounds: int | None = None
     game_stimulus_ids: list[str] = Field(default_factory=list,
                                          max_length=MAX_GAME_ROUNDS * (MAX_RECOGNITION_OPTIONS + 1))
+    # Solo una práctica: su ronda (1, 2, 3…) en un juego con cámara.
+    game_round: int | None = None
+    conductor_rating: bool = False
+    # Solo un juego: «Reconoce y luego muéstrala» (usa la cámara si está disponible).
+    show_expression: bool = False
+    # Solo un juego: «Responde con la cara» (usa la cámara si está disponible).
+    answer_by_face: bool = False
 
 
 class SupportsModel(BaseModel):
@@ -121,6 +130,11 @@ class ProtocolShareRequest(BaseModel):
     shared: bool
 
 
+class CameraGameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    for_children: bool
+
+
 class ProtocolResponse(BaseModel):
     id: str
     family_id: str
@@ -142,6 +156,8 @@ class ProtocolResponse(BaseModel):
     # Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara.
     uses_camera: bool = True
     supports: SupportsModel = Field(default_factory=SupportsModel)
+    # Juego con cámara que arma el Analizador («matching» o «similar»); null en los demás.
+    camera_game: str | None = None
 
 
 def create_stimulus_router(
@@ -198,12 +214,15 @@ def create_stimulus_router(
                              target_expression=step.target_expression, hold_seconds=step.hold_seconds,
                              option_count=step.option_count, situation=step.situation, imitate=step.imitate,
                              game_type=step.game_type, rounds=step.rounds,
-                             game_stimulus_ids=list(step.game_stimulus_ids))
+                             game_stimulus_ids=list(step.game_stimulus_ids), game_round=step.game_round,
+                             conductor_rating=step.conductor_rating, show_expression=step.show_expression,
+                             answer_by_face=step.answer_by_face)
                    for step in item.steps],
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
             needs_image=service.needs_image(item), uses_camera=item.uses_camera,
-            supports=SupportsModel.of(item.supports))
+            supports=SupportsModel.of(item.supports),
+            camera_game=item.steps[0].game_type if service.is_camera_game(item) else None)
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
@@ -218,7 +237,11 @@ def create_stimulus_router(
                                        game_type=step.game_type or ("matching" if step.kind == "game" else None),
                                        rounds=(DEFAULT_GAME_ROUNDS if step.kind == "game" and step.rounds is None
                                                else step.rounds),
-                                       game_stimulus_ids=tuple(step.game_stimulus_ids))
+                                       game_stimulus_ids=tuple(step.game_stimulus_ids),
+                                       game_round=step.game_round,
+                                       conductor_rating=step.conductor_rating,
+                                       show_expression=step.show_expression,
+                                       answer_by_face=step.answer_by_face)
                           for step in request.steps)
         except (TypeError, ValueError) as error:
             raise HTTPException(422, str(error)) from error
@@ -278,6 +301,12 @@ def create_stimulus_router(
     def approve_stimulus(stimulus_id: str, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().approve(user, stimulus_id)), user)
 
+    @router.delete("/stimuli/{stimulus_id}", status_code=204)
+    def delete_stimulus(stimulus_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien gestiona el estímulo lo elimina: se borra el archivo."""
+        guarded(lambda: stimulus_service().delete(user, stimulus_id))
+        return Response(status_code=204)
+
     @router.put("/stimuli/{stimulus_id}/active", response_model=StimulusResponse)
     def set_stimulus_active(stimulus_id: str, request: StimulusActive, user: User = Depends(current_user)):
         return stimulus_response(guarded(lambda: stimulus_service().set_active(user, stimulus_id, request.active)),
@@ -298,6 +327,14 @@ def create_stimulus_router(
         """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (banco inicial)."""
         return protocol_response(guarded(lambda: protocol_service().create_starter(user)), user)
 
+    @router.post("/camera-games/{game_type}/protocol", response_model=ProtocolResponse)
+    def camera_game_protocol(game_type: str, request: CameraGameRequest, user: User = Depends(current_user)):
+        """Juego con cámara del Analizador: el protocolo de la cuenta para ese juego y
+        ese público, armado la primera vez. La sesión se crea después, con su
+        autorización, como con cualquier protocolo."""
+        return protocol_response(guarded(lambda: protocol_service().ensure_camera_game(
+            user, game_type, request.for_children)), user)
+
     @router.get("/protocols/practice-defaults")
     def practice_defaults(user: User = Depends(current_user)) -> dict[str, Any]:
         """Lo que el editor propone para un ejercicio nuevo y las expresiones que se
@@ -305,7 +342,7 @@ def create_stimulus_router(
         if not user.is_active or user.role not in (Role.STUDENT, Role.PSYCHOLOGIST):
             raise HTTPException(403, "Los protocolos los arman usuarios y docentes")
         return {"hold_seconds": practice.hold_seconds, "max_seconds": practice.max_seconds,
-                "targets": list(PRACTICE_TARGETS)}
+                "targets": list(CAMERA_PRACTICE_TARGETS)}
 
     @router.get("/protocols/{protocol_id}", response_model=ProtocolResponse)
     def get_protocol(protocol_id: str, user: User = Depends(current_user)):
@@ -323,5 +360,11 @@ def create_stimulus_router(
     def edit_protocol(protocol_id: str, request: ProtocolRequest, user: User = Depends(current_user)):
         """Si la versión ya se usó en una sesión, responde con la versión nueva."""
         return protocol_response(guarded(lambda: protocol_service().edit(user, protocol_id, draft(request))), user)
+
+    @router.delete("/protocols/{protocol_id}", status_code=204)
+    def delete_protocol(protocol_id: str, user: User = Depends(current_user)) -> Response:
+        """Quien lo armó lo elimina; las sesiones que lo usaron lo conservan."""
+        guarded(lambda: protocol_service().delete(user, protocol_id))
+        return Response(status_code=204)
 
     return router

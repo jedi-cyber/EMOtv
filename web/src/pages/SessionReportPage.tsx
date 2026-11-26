@@ -11,6 +11,7 @@ import type { StatusTone } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { ReportBody, sectionNames } from "../reports/ReportBody";
 import { paths } from "../routes/paths";
+import { toast } from "../components/Toaster";
 
 const statusChips: Record<ReportStatus, [StatusTone, string]> = {
   draft: ["neutral", "Borrador"],
@@ -36,7 +37,6 @@ export function SessionReportPage() {
   const [comments, setComments] = useState<Partial<Record<ReportSection, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   function show(next: SessionReport) { setReport(next); setNarrative(next.narrative); setMissing(false); }
 
@@ -50,10 +50,10 @@ export function SessionReportPage() {
   }, [sessionId, token]);
 
   async function act(path: string, method = "POST", body?: unknown, success = "") {
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       show(await apiRequest<SessionReport>(path, { method, token, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
-      if (success) setMessage(success);
+      if (success) toast.success(success);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
     finally { setBusy(false); }
   }
@@ -78,7 +78,6 @@ export function SessionReportPage() {
     <ButtonLink variant="ghost" className="back-link" to={paths.session(sessionId)}>← Detalle de la sesión</ButtonLink>
     <PageHeader title="Reporte de la sesión" description="Lo redacta quien condujo la sesión y lo revisa su docente. Describe lo registrado; no es una evaluación." />
     {error && <Callout variant="error">{error}</Callout>}
-    {message && <Callout variant="success">{message}</Callout>}
     {missing && <div className="card form-stack">
       <p>Esta sesión todavía no tiene reporte.</p>
       <Button variant="primary" disabled={busy} onClick={() => { void act(`/sessions/${encodeURIComponent(sessionId)}/report`); }}>Redactar el reporte</Button>

@@ -25,7 +25,7 @@ from emotv.application.session_metrics import (
     recognition_totals,
 )
 from emotv.domain.audit import AuditAction, AuditResult
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 from emotv.domain.guided_session import (
     DRAWING_NOTICE,
     GAME_NOTICE,
@@ -184,11 +184,13 @@ class SessionStatisticsService:
                 captures[item.emotion] += 1
                 in_sessions[item.emotion].add(session.id)
         counted = sum(captures.values())
+        # Las cinco que estima EMOtv; las otras tres solo si aparecen en sesiones antiguas.
+        keys = [key for key in EXPRESSION_KEYS if key in ESTIMATED_EXPRESSIONS or captures[key]]
         return {
             "counted_captures": counted,
             "excluded_captures": excluded,
             "rows": [{"expression": key, "captures": captures[key], "percent": _percent(captures[key], counted),
-                      "sessions": len(in_sessions[key])} for key in EXPRESSION_KEYS],
+                      "sessions": len(in_sessions[key])} for key in keys],
         }
 
     def _coincidence(self, sessions: list[EmotionalSession]) -> dict[str, int]:
@@ -228,8 +230,8 @@ class SessionStatisticsService:
                 "by_protocol": by_protocol, "by_target": practice_by_target(everything), "notice": PRACTICE_NOTICE}
 
     def _drawing(self, sessions: list[EmotionalSession]) -> dict[str, Any] | None:
-        """Dibujos de las sesiones elegidas: cuántos terminaron con una emoción
-        señalada y qué emociones se señalaron. El dibujo no se guarda ni se
+        """Dibujos de las sesiones elegidas: cuántos se terminaron y, en sesiones
+        anteriores, qué emociones se señalaron. El dibujo no se guarda ni se
         interpreta. None si ninguna sesión tuvo dibujos."""
         per_session: list[list[DrawingResult]] = [
             list(self.insights.guided.list_drawing_results(session.id)) if session.protocol_id else []
@@ -246,7 +248,7 @@ class SessionStatisticsService:
                 "totals": {"exercises": len(everything), "answered": answered,
                            "timed_out": count[RecognitionOutcome.TIMED_OUT],
                            "skipped": count[RecognitionOutcome.SKIPPED], "stopped": count[RecognitionOutcome.STOPPED],
-                           "sentence": f"Se señaló una emoción en {answered} de {len(everything)} "
+                           "sentence": f"Se {'terminó' if answered == 1 else 'terminaron'} {answered} de {len(everything)} "
                                        f"{'dibujo' if len(everything) == 1 else 'dibujos'}."},
                 "by_expression": [{"expression": key, "count": value} for key, value in chosen.most_common()],
                 "notice": DRAWING_NOTICE}

@@ -174,6 +174,7 @@ class PostgresProtocolRepository:
         row.approved_at = item.approved_at
         row.approved_by_user_id = item.approved_by_user_id
         row.superseded_at = item.superseded_at
+        row.deleted_at = item.deleted_at
         row.kind = item.kind.value
         db.add(row)
         db.flush()  # la versión existe antes que sus pasos
@@ -186,7 +187,9 @@ class PostgresProtocolRepository:
             target_expression=step.target_expression, hold_seconds=step.hold_seconds,
             option_count=step.option_count, situation=step.situation, imitate=step.imitate,
             game_type=step.game_type, rounds=step.rounds,
-            game_stimulus_ids=list(step.game_stimulus_ids) if step.is_game else None)
+            game_stimulus_ids=list(step.game_stimulus_ids) if step.is_game else None,
+            game_round=step.game_round, conductor_rating=step.conductor_rating,
+            show_expression=step.show_expression, answer_by_face=step.answer_by_face)
             for position, step in enumerate(item.steps))
 
     @staticmethod
@@ -199,7 +202,7 @@ class PostgresProtocolRepository:
             created_at=_aware(row.created_at), pre_questionnaire_id=row.pre_questionnaire_id,
             post_questionnaire_id=row.post_questionnaire_id,
             approved_at=_aware(row.approved_at), approved_by_user_id=row.approved_by_user_id,
-            superseded_at=_aware(row.superseded_at), kind=row.kind or "practice",
+            superseded_at=_aware(row.superseded_at), deleted_at=_aware(row.deleted_at), kind=row.kind or "practice",
             accessible=bool(row.accessible), shared_with_group=bool(row.shared_with_group),
             supports=ProtocolSupports(
                 pictograms=bool(row.support_pictograms), large_controls=bool(row.support_large_controls),
@@ -211,7 +214,11 @@ class PostgresProtocolRepository:
                                      hold_seconds=step.hold_seconds, option_count=step.option_count,
                                      situation=step.situation, imitate=bool(step.imitate),
                                      game_type=step.game_type, rounds=step.rounds,
-                                     game_stimulus_ids=tuple(step.game_stimulus_ids or ()))
+                                     game_stimulus_ids=tuple(step.game_stimulus_ids or ()),
+                                     game_round=step.game_round,
+                                     conductor_rating=bool(step.conductor_rating),
+                                     show_expression=bool(step.show_expression),
+                                     answer_by_face=bool(step.answer_by_face))
                          for step in steps))
 
     def add(self, protocol: Protocol) -> Protocol:
@@ -249,7 +256,8 @@ class PostgresProtocolRepository:
             return ()
         with self._factory() as db:
             rows = db.scalars(select(ProtocolRecord).where(ProtocolRecord.owner_user_id.in_(owners),
-                                                           ProtocolRecord.superseded_at.is_(None))
+                                                           ProtocolRecord.superseded_at.is_(None),
+                                                           ProtocolRecord.deleted_at.is_(None))
                               .order_by(ProtocolRecord.created_at, ProtocolRecord.id)).all()
             return tuple(self._domain(db, row) for row in rows)
 
@@ -262,7 +270,8 @@ class PostgresProtocolRepository:
         with self._factory() as db:
             using = select(ProtocolStepRecord.protocol_id).where(ProtocolStepRecord.stimulus_id == stimulus_id)
             rows = db.scalars(select(ProtocolRecord).where(ProtocolRecord.id.in_(using),
-                                                           ProtocolRecord.superseded_at.is_(None))
+                                                           ProtocolRecord.superseded_at.is_(None),
+                                                           ProtocolRecord.deleted_at.is_(None))
                               .order_by(ProtocolRecord.created_at, ProtocolRecord.id)).all()
             return tuple(self._domain(db, row) for row in rows)
 

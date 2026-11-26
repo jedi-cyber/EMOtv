@@ -11,8 +11,8 @@ from scripts.emotion import run_emotion_models_benchmark as script
 
 @pytest.mark.parametrize("model_id,shape", [
     ("ferplus_onnx", (64, 64)),
-    ("hardlyhumans_vit", (224, 224, 3)),
     ("hsemotion_enet_b0_8_best_afew", (224, 224, 3)),
+    ("emotiefflib_enet_b2_8", (260, 260, 3)),
 ])
 def test_native_inputs_are_deterministic(model_id, shape):
     faces, description = script.benchmark_faces(model_id)
@@ -25,9 +25,9 @@ def test_native_inputs_are_deterministic(model_id, shape):
 
 def test_unintegrated_model_is_rejected():
     with pytest.raises(ValueError, match="no integrado"):
-        script.benchmark_faces("enet_b2_8")
+        script.benchmark_faces("hardlyhumans_vit")
     with pytest.raises(SystemExit):
-        script.main(["--model", "enet_b2_8"])
+        script.main(["--model", "hardlyhumans_vit"])
 
 
 class FakeDetector:
@@ -54,9 +54,7 @@ def _classifier(model_id, seen=None):
         predict=predict,
         face_preprocessor_options=dict(padding_ratio=0.0, target_size=None, grayscale=False, normalize=False),
         session=SimpleNamespace(get_session_options=lambda: options,
-                                get_providers=lambda: ["CPUExecutionProvider"]),
-        _torch=SimpleNamespace(__version__="test", get_num_threads=lambda: 4,
-                               get_num_interop_threads=lambda: 2))
+                                get_providers=lambda: ["CPUExecutionProvider"]))
 
 
 def test_synthetic_frame_is_a_640x480_jpeg_in_memory():
@@ -96,7 +94,7 @@ def test_frame_step_rejects_invalid_classifier_output():
         step()
 
 
-@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hsemotion_enet_b0_8_best_afew", "hardlyhumans_vit"])
+@pytest.mark.parametrize("model_id", ["ferplus_onnx", "hsemotion_enet_b0_8_best_afew", "emotiefflib_enet_b2_8"])
 def test_report_uses_selected_model_and_backend(tmp_path, monkeypatch, model_id):
     weights = tmp_path / "weights"
     weights.write_bytes(b"weights")
@@ -113,7 +111,6 @@ def test_report_uses_selected_model_and_backend(tmp_path, monkeypatch, model_id)
 
     monkeypatch.setattr(script, "create_emotion_classifier", factory)
     monkeypatch.setattr(script, "create_face_detector", detector)
-    monkeypatch.setitem(sys.modules, "transformers", SimpleNamespace(__version__="test"))
     # Ninguna imagen se escribe en disco durante la medición.
     monkeypatch.setattr(cv2, "imwrite", lambda *args, **kwargs: pytest.fail("no debe guardar imágenes"))
 
@@ -131,7 +128,7 @@ def test_report_uses_selected_model_and_backend(tmp_path, monkeypatch, model_id)
     assert len(detectors) == 7 and all(item.frames for item in detectors)
     assert report["model"]["id"] == model_id
     assert report["model"]["size_bytes"] == 7
-    assert report["environment"]["backend"] == ("pytorch" if model_id == "hardlyhumans_vit" else "onnxruntime")
+    assert report["environment"]["backend"] == "onnxruntime"
     assert set(report["concurrent_frame"]) == {"1", "2", "4"}
     assert report["concurrent_frame"]["4"]["sessions"] == 4 and report["concurrent_frame"]["4"]["samples"] == 12
     assert report["protocol"]["onnx_threads_per_session"] == 2
@@ -148,6 +145,6 @@ def test_invalid_thread_limit_is_rejected():
 
 
 def test_missing_weights_fail_before_loading(tmp_path, monkeypatch):
-    monkeypatch.setitem(script.MODEL_WEIGHTS, "hardlyhumans_vit", tmp_path / "missing")
+    monkeypatch.setitem(script.MODEL_WEIGHTS, "emotiefflib_enet_b2_8", tmp_path / "missing")
     with pytest.raises(SystemExit):
-        script.main(["--model", "hardlyhumans_vit"])
+        script.main(["--model", "emotiefflib_enet_b2_8"])

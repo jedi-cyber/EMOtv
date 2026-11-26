@@ -17,6 +17,8 @@ interface ModalProps {
   describedBy?: string;
   /** false: no se cierra con Escape, con el fondo ni con un botón (una aceptación obligatoria). */
   dismissible?: boolean;
+  /** Más ancho, para editores con dos columnas (el de protocolos). */
+  wide?: boolean;
 }
 
 /**
@@ -25,7 +27,7 @@ interface ModalProps {
  * Un formulario dentro del modal enlaza su botón del pie con el atributo `form`.
  */
 export function Modal({ open, title, onClose, children, footer, busy = false, role = "dialog", describedBy,
-  dismissible = true }: ModalProps) {
+  dismissible = true, wide = false }: ModalProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const latest = useRef({ busy, onClose });
@@ -71,7 +73,7 @@ export function Modal({ open, title, onClose, children, footer, busy = false, ro
 
   if (!open) return null;
   return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={() => { if (!busy && dismissible) onClose(); }}>
-    <section ref={dialogRef} className="modal" role={role} aria-modal="true" aria-labelledby={titleId}
+    <section ref={dialogRef} className={wide ? "modal modal--wide" : "modal"} role={role} aria-modal="true" aria-labelledby={titleId}
       aria-describedby={describedBy} onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header">
         <h2 ref={titleRef} id={titleId} tabIndex={-1}>{title}</h2>

@@ -78,8 +78,7 @@ def test_un_protocolo_solo_de_reconocimiento_espera_empezar_sin_calibrar_ni_pedi
     # El tiempo del primer paso no corre mientras espera.
     wait(env, 60)
     assert state(env, session_id)["phase"] == "ready"
-    # No hay calibración que iniciar ni paso que saltar, y los cuadros se descartan sin analizarlos.
-    assert post(env, session_id, "calibration").status_code == 409
+    # No hay paso que saltar, y los cuadros se descartan sin analizarlos.
     assert post(env, session_id, "skip").status_code == 409
     assessed = env.frames_assessed
     assert frame(env, token).json() == {"received": True}
@@ -163,10 +162,10 @@ def test_detener_mientras_espera_empezar(env):  # noqa: F811
     assert post(env, session_id, "start").status_code == 409
 
 
-def test_un_protocolo_con_practica_facial_sigue_calibrando(env):  # noqa: F811
+def test_un_protocolo_con_practica_facial_empieza_sin_calibrar(env):  # noqa: F811
     session_id, token = guided(env, practice_protocol(env, ProtocolStep.practice("happiness", 2, 20)))
     current = state(env, session_id)
-    assert current["phase"] == "calibration" and current["uses_camera"] is True
+    assert current["phase"] == "ready" and current["uses_camera"] is True
     assert "uses_camera" not in view(env, token).json()      # con cámara, la vista no cambia
     assert env.sessions.get_session(session_id).emotion_model_id == "hsemotion_enet_b0_8_best_afew"
     env.frame_result = NEUTRAL
@@ -175,7 +174,7 @@ def test_un_protocolo_con_practica_facial_sigue_calibrando(env):  # noqa: F811
     assert view(env, token).json()["capture_frames"] is True
     send(env, token, HAPPY, count=6)
     [result] = env.guided.repository.list_practice_results(session_id)
-    assert result.outcome is PracticeOutcome.ACHIEVED and result.relative_to_calibration is True
+    assert result.outcome is PracticeOutcome.ACHIEVED and result.relative_to_calibration is False
     wait(env, 3)
     assert state(env, session_id)["phase"] == "finished"
 
@@ -184,14 +183,17 @@ def test_un_protocolo_mixto_calibra_antes_del_primer_paso(env):  # noqa: F811
     sad = sad_stimulus(env)
     emotional, _ = stimuli(env)
     session_id, token = guided(env, protocol(env, [recognition(sad), step(emotional)]))
-    assert state(env, session_id)["phase"] == "calibration"
+    assert state(env, session_id)["phase"] == "ready"
     assert state(env, session_id)["uses_camera"] is True
-    assert post(env, session_id, "start").status_code == 409          # con cámara se empieza calibrando
-    calibrate(env, session_id, token)
+    calibrate(env, session_id, token)                                  # con cámara también se empieza con «Empezar»
     current = state(env, session_id)
     assert current["phase"] == "stimuli" and current["step_index"] == 0
-    # El reconocimiento sigue sin analizar la cámara dentro de una sesión con cámara.
-    assert view(env, token).json()["capture_frames"] is False
+    # En una sesión con cámara, el reconocimiento envía cuadros solo para la lectura
+    # en vivo de quien conduce: no guarda capturas.
+    assert view(env, token).json()["capture_frames"] is True
+    frame(env, token)
+    assert state(env, session_id)["live_reading"] is not None
+    assert state(env, session_id)["captures"] == []
 
 
 def test_un_protocolo_con_camara_sigue_necesitando_el_modelo_facial(env):  # noqa: F811

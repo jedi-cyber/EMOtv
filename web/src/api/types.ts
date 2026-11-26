@@ -91,12 +91,12 @@ export interface Stimulus {
   can_manage: boolean;
 }
 
-export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "game";
+export type StepKind = "stimulus" | "practice" | "recognition" | "drawing" | "game" | "analyzer";
 
 export interface ProtocolStep {
   /** «practice»: se pide una expresión y se sostiene; la imagen es una ilustración opcional.
    * «recognition»: se muestra una imagen emocional y la persona elige qué emoción es.
-   * «drawing»: la persona dibuja una cara y señala qué emoción quiso representar.
+   * «drawing»: la persona dibuja una cara y pulsa «Terminé» (no se pregunta qué emoción quiso dibujar).
    * «game»: juego de emparejar cada imagen con el nombre de su emoción. */
   kind?: StepKind;
   stimulus_id: string | null;
@@ -119,6 +119,16 @@ export interface ProtocolStep {
   game_type?: GameType | null;
   rounds?: number | null;
   game_stimulus_ids?: string[];
+  /** Solo una práctica sin imagen: su ronda (1, 2, 3…) en el juego con cámara «Muestra la emoción». */
+  game_round?: number | null;
+  /** «Juego: imita la cara»: una imitación que quien conduce valora de 1 a 5 estrellas. */
+  conductor_rating?: boolean;
+  /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
+   * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
+  show_expression?: boolean;
+  /** Solo un juego: «Responde con la cara». La persona pone la cara de la emoción y la
+   * cámara marca la opción que coincide. Solo las cinco expresiones que estima EMOtv. */
+  answer_by_face?: boolean;
 }
 
 /** Pausa tras cada reconocimiento o ejercicio: normal, el doble o hasta «Seguir». */
@@ -155,6 +165,8 @@ export interface Protocol {
   needs_image: boolean;
   /** Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara. Si falta, se asume verdadero. */
   uses_camera?: boolean;
+  /** Juego con cámara que arma el Analizador; null en los demás protocolos. */
+  camera_game?: GameType | null;
 }
 
 /** Imagen propia de un usuario: pendiente («En revisión») hasta que su docente la revisa. */
@@ -273,6 +285,23 @@ export interface GuidedStep {
   hold_seconds?: number | null;
   option_count?: number | null;
   imitate?: boolean;
+  game_round?: number | null;
+  conductor_rating?: boolean;
+  /** Solo un juego: «Reconoce y luego muéstrala». Tras cada ronda la persona pone la
+   * cara de esa emoción y la cámara la estima; solo quien conduce ve el resultado. */
+  show_expression?: boolean;
+  /** Solo un juego: «Responde con la cara». La persona pone la cara de la emoción y la
+   * cámara marca la opción que coincide. Solo las cinco expresiones que estima EMOtv. */
+  answer_by_face?: boolean;
+}
+
+/** Ronda del juego con cámara: una estrella por ronda lograda (null si todavía
+ * no termina) y, al terminar la última, cuántas se lograron. Sin puntos. */
+export interface CameraGameRound {
+  round: number;
+  rounds: number;
+  stars: (boolean | null)[];
+  summary: string | null;
 }
 
 /** Ejercicio en curso para quien conduce: la expresión pedida y el nivel en vivo. */
@@ -282,6 +311,9 @@ export interface GuidedPractice {
   imitate?: boolean;
   level: number | null;
   achieved: boolean;
+  camera_game?: CameraGameRound;
+  /** «Juego: imita la cara»: las estrellas de quien conduce y si ya puede valorar. La persona no las ve. */
+  rating?: { stars: number | null; can_rate: boolean };
 }
 
 export interface GuidedPracticeResult {
@@ -292,6 +324,7 @@ export interface GuidedPracticeResult {
   peak_level: number;
   relative_to_calibration: boolean;
   feedback_visible: boolean;
+  conductor_stars?: number | null;
 }
 
 export type RecognitionOutcome = "answered" | "timed_out" | "skipped" | "stopped";
@@ -305,7 +338,8 @@ export interface GuidedRecognition {
   outcome: RecognitionOutcome | null;
 }
 
-/** Dibujo en curso para quien conduce: las emociones para registrar y la elegida. */
+/** Dibujo en curso para quien conduce: si terminó (options llega vacío; la emoción
+ * elegida solo existe en sesiones anteriores). */
 export interface GuidedDrawing {
   options: string[];
   chosen_expression: string | null;
@@ -315,7 +349,18 @@ export interface GuidedDrawing {
 export type GameOutcome = "completed" | "timed_out" | "skipped" | "stopped";
 /** «matching»: imagen con el nombre de su emoción; «similar»: imagen modelo con otra de la misma emoción. */
 export type GameType = "matching" | "similar";
-export type GameState = "playing" | "retry" | "matched" | "shown" | "finished";
+/** «show»: pone la cara de la emoción de la ronda; «showed»: terminó de ponerla. */
+export type GameState = "playing" | "retry" | "matched" | "shown" | "show" | "showed" | "finished";
+
+/** La cara pedida en la ronda, solo para quien conduce. Es una estimación. */
+export interface GuidedGameFace {
+  showing: boolean;
+  /** 0 a 1: cuánto se acerca la expresión estimada a la pedida. */
+  level: number;
+  /** null mientras se pide; true si la cámara estimó que la sostuvo. */
+  achieved: boolean | null;
+  remaining_seconds: number | null;
+}
 
 /** Juego en curso para quien conduce: la ronda, la emoción de la imagen y los contadores. */
 export interface GuidedGame {
@@ -337,6 +382,15 @@ export interface GuidedGame {
   first_try: number;
   help_used: number;
   outcome: GameOutcome | null;
+  show_expression?: boolean;
+  faces_asked?: number;
+  faces_shown?: number;
+  face?: GuidedGameFace | null;
+  answer_by_face?: boolean;
+  /** «Responde con la cara» en esta ronda: hay cámara y EMOtv estima la emoción. */
+  answers_by_face?: boolean;
+  /** Solo quien conduce: el nivel (0 a 1) de cada opción mientras la persona pone la cara. */
+  face_levels?: { key: string; level: number }[];
 }
 
 /** Solo contadores del juego: no es un puntaje. */
@@ -350,6 +404,10 @@ export interface GuidedGameResult {
   first_try: number;
   help_used: number;
   by_conductor: number;
+  /** «Reconoce y luego muéstrala»: nulos si el juego no lo pidió. */
+  faces_asked?: number | null;
+  faces_shown?: number | null;
+  face_sentence?: string | null;
 }
 
 /** Solo la emoción que la persona señaló; el dibujo nunca llega al servidor. */
@@ -413,6 +471,9 @@ export interface GuidedState {
   camera_off?: boolean;
   /** Motivo que informó la pantalla de la persona al no poder usar la cámara. */
   camera_problem?: "insecure" | "denied" | "busy" | "not_found" | "unknown" | null;
+  /** Solo para quien conduce: la última estimación de la cámara (en memoria, no se
+   * guarda). Nula si no llegó un cuadro en los últimos segundos o el paso no la usa. */
+  live_reading?: ConductorLiveReading | null;
   stop_reason: "participant" | "guardian" | "conductor" | null;
   step_index: number | null;
   step_count: number;
@@ -470,6 +531,8 @@ export interface ParticipantPractice {
   achieved: boolean;
   message: string | null;
   frame_interval_ms: number;
+  /** Solo en el juego con cámara «Muestra la emoción». */
+  camera_game?: CameraGameRound;
 }
 
 /** Reconocimiento en la pantalla de la persona: la pregunta, las opciones y, al
@@ -486,11 +549,11 @@ export interface ParticipantRecognition {
   note?: string | null;
 }
 
-/** Dibujo en la pantalla de la persona: el dibujo se queda en el dispositivo;
- * solo se envía la emoción que eligió. */
+/** Dibujo en la pantalla de la persona: el dibujo se queda en el dispositivo; solo
+ * se avisa «Terminé». question es nulo y options vacío: no se pregunta qué emoción quiso dibujar. */
 export interface ParticipantDrawing {
   instruction: string;
-  question: string;
+  question: string | null;
   options: { key: string; label: string }[];
   /** Cambia con cada intento: se empieza un lienzo nuevo. */
   round: string;
@@ -518,6 +581,10 @@ export interface ParticipantGame {
   explanation?: string | null;
   can_help: boolean;
   last_round: boolean;
+  /** «Siguiente» primero pide poner la cara. Nunca llega el nivel ni el resultado. */
+  asks_face?: boolean;
+  /** «Responde con la cara»: las opciones no se tocan; las marca la cámara. */
+  answers_by_face?: boolean;
 }
 
 export interface ParticipantViewState {
@@ -543,7 +610,7 @@ export interface ParticipantViewState {
 }
 
 export interface ParticipantActivity {
-  kind: "waiting" | "questionnaire" | "stimulus" | "practice" | "recognition" | "drawing" | "game" | "live" | "finished";
+  kind: "waiting" | "questionnaire" | "stimulus" | "practice" | "recognition" | "drawing" | "game" | "analyzer" | "live" | "finished";
   name: string;
   number: number | null;
   total: number | null;
@@ -580,7 +647,7 @@ export interface SessionTimeline {
       game_type?: GameType | null;
       seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
       /** Solo en un juego (kind «game»): rondas y lo que ocurrió, en una frase. */
-      rounds?: number | null; sentence?: string | null;
+      rounds?: number | null; sentence?: string | null; face_sentence?: string | null;
       /** Repeticiones del paso (intento 2 en adelante); el resultado de arriba es el primero. */
       repeats?: { attempt: number; outcome: PracticeOutcome | RecognitionOutcome | GameOutcome;
         seconds_to_achieve?: number | null; chosen_expression?: string | null; seconds_to_answer?: number | null;
@@ -685,19 +752,22 @@ export interface SessionGame {
   exercises: { step_index: number; game_type: GameType; rounds: number; option_count: number;
     /** null: la sesión no llegó a este paso. */
     outcome: GameOutcome | null; rounds_done: number | null; matched: number | null; first_try: number | null;
-    help_used: number | null; by_conductor: number | null; sentence: string | null }[];
+    help_used: number | null; by_conductor: number | null; sentence: string | null;
+    show_expression?: boolean; faces_asked?: number | null; faces_shown?: number | null;
+    face_sentence?: string | null; answer_by_face?: boolean }[];
   totals: { games: number; completed: number; timed_out: number; skipped: number; stopped: number;
     not_reached: number; rounds_total: number; rounds_done: number; matched: number; first_try: number;
-    help_used: number; sentence: string | null };
+    help_used: number; sentence: string | null;
+    faces?: { faces_asked: number; faces_shown: number } | null; face_sentence?: string | null };
   notice: string;
 }
 
 export interface SessionMetrics {
   session_id: string;
   emotional: { step_index: number; title: string; category: string; skipped: boolean; expected_expression: string;
-    captures: MetricCapture[]; counted: boolean; matches_expected: boolean | null; excluded_captures: number }[];
+    captures: MetricCapture[]; comparable?: boolean; counted: boolean; matches_expected: boolean | null; excluded_captures: number }[];
   abstract: { step_index: number; title: string; category: string; skipped: boolean; captures: MetricCapture[]; said: string | null }[];
-  totals: { emotional_stimuli: number; counted: number; matched: number; excluded_captures: number; sentence: string };
+  totals: { emotional_stimuli: number; not_comparable?: number; counted: number; matched: number; excluded_captures: number; sentence: string };
   abstract_notice: string | null;
   /** Ejercicios de práctica, aparte de la coincidencia de estímulos; null si no hubo. */
   practice?: SessionPractice | null;
@@ -851,4 +921,16 @@ export interface ExamDetail extends ExamSummary {
 export interface ExamStationJoin {
   view_token: string;
   session_code: string;
+}
+
+/** Lo que estima la cámara ahora sobre la expresión visible de la persona. Solo
+ * la ve quien conduce; la pantalla de la persona nunca la recibe. */
+export interface ConductorLiveReading {
+  face_detected: boolean;
+  emotion: string | null;
+  confidence: number | null;
+  /** De mayor a menor. */
+  distribution: { emotion: string; probability: number }[];
+  quality_issues: string[];
+  seconds_ago: number;
 }

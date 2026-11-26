@@ -9,6 +9,10 @@ export const practiceOutcomeNames: Record<PracticeOutcome, string> = {
 export const recognitionOutcomeNames: Record<RecognitionOutcome, string> = {
   answered: "Respondió", timed_out: "Terminó el tiempo sin respuesta", skipped: "Se saltó", stopped: "La sesión se detuvo",
 };
+// Cómo terminó cada dibujo: «Terminé» o no (no se pregunta qué emoción se quiso dibujar).
+export const drawingOutcomeNames: Record<RecognitionOutcome, string> = {
+  answered: "Terminó el dibujo", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
+};
 // Cómo terminó cada juego de emparejar; lo que ocurrió en él va en una frase aparte.
 export const gameOutcomeNames: Record<GameOutcome, string> = {
   completed: "Completo", timed_out: "Terminó el tiempo", skipped: "Se saltó", stopped: "La sesión se detuvo",
@@ -99,16 +103,19 @@ export function RecognitionMetrics({ recognition }: { recognition: SessionRecogn
 export function DrawingMetrics({ drawing }: { drawing: SessionDrawing }) {
   const { totals } = drawing;
   const name = (key: string | null) => (key ? practiceTargetNames[key] ?? key : "—");
+  // La emoción señalada solo existe en sesiones anteriores, cuando se preguntaba.
+  const withEmotion = drawing.exercises.some((item) => item.chosen_expression);
   return <section className="form-stack" aria-label="Dibujos">
     <h3>Dibujos</h3>
     <Callout variant="info" role="note">{drawing.notice}</Callout>
     <p><strong>{totals.sentence}</strong></p>
     <div className="table-wrap"><table><thead><tr>
-      <th>Paso</th><th>Resultado</th><th>Emoción que señaló</th><th>Hasta responder</th>
+      <th>Paso</th><th>Resultado</th>{withEmotion && <th>Emoción que señaló</th>}<th>Hasta terminar</th>
     </tr></thead><tbody>{drawing.exercises.map((item) => <tr key={item.step_index}>
       <td>{item.step_index + 1}</td>
-      <td>{item.outcome ? recognitionOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
-      <td>{name(item.chosen_expression)}{item.answered_by === "conductor" ? <span className="muted"> (registró quien conduce)</span> : null}</td>
+      <td>{item.outcome ? drawingOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}
+        {item.answered_by === "conductor" ? <span className="muted"> (lo marcó quien conduce)</span> : null}</td>
+      {withEmotion && <td>{name(item.chosen_expression)}</td>}
       <td>{item.seconds_to_answer != null ? secondsText(item.seconds_to_answer) : "—"}</td>
     </tr>)}</tbody></table></div>
   </section>;
@@ -121,6 +128,7 @@ export function GameMetrics({ game }: { game: SessionGame }) {
     <h3>Juegos</h3>
     <Callout variant="info" role="note">{game.notice}</Callout>
     {totals.sentence && <p><strong>{totals.sentence}</strong></p>}
+    {totals.face_sentence && <p>{totals.face_sentence}</p>}
     <div className="table-wrap"><table><thead><tr>
       <th>Paso</th><th>Juego</th><th>Rondas y opciones</th><th>Resultado</th><th>Lo que ocurrió</th>
     </tr></thead><tbody>{game.exercises.map((item) => <tr key={item.step_index}>
@@ -128,7 +136,8 @@ export function GameMetrics({ game }: { game: SessionGame }) {
       <td>{gameTypeNames[item.game_type] ?? gameTypeNames.matching}</td>
       <td>{item.rounds} rondas · {item.option_count} opciones</td>
       <td>{item.outcome ? gameOutcomeNames[item.outcome] : <span className="muted">Sin aplicar</span>}</td>
-      <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}</td>
+      <td>{item.sentence ?? "—"}{item.by_conductor ? <span className="muted"> ({item.by_conductor} registrada{item.by_conductor === 1 ? "" : "s"} por quien conduce)</span> : null}
+        {item.face_sentence && <span className="muted"> {item.face_sentence}</span>}</td>
     </tr>)}</tbody></table></div>
   </section>;
 }
@@ -166,6 +175,9 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
       {metrics.totals.excluded_captures > 0 && <p className="muted">
         {metrics.totals.excluded_captures} {metrics.totals.excluded_captures === 1 ? "captura marcada por calidad se muestra" : "capturas marcadas por calidad se muestran"}, pero no cuenta en los totales.
       </p>}
+      {(metrics.totals.not_comparable ?? 0) > 0 && <p className="muted">
+        Las imágenes de asco, miedo o desprecio no se comparan: EMOtv solo estima neutral, felicidad, sorpresa, tristeza y enojo.
+      </p>}
       <div className="table-wrap"><table><thead><tr>
         <th>Estímulo</th><th>Expresión esperada</th><th>Expresión estimada</th><th>Probabilidad</th><th>Desde la aparición</th><th>Calidad</th><th>Coincide</th>
       </tr></thead><tbody>{metrics.emotional.flatMap((item) => item.captures.length === 0
@@ -178,7 +190,8 @@ export function StimulusMetrics({ metrics, expressionLabel }: { metrics: Session
           <td>{percent(capture.probability)}</td>
           <td>{capture.seconds_since_stimulus} s</td>
           <td>{quality(capture)}</td>
-          <td>{capture.matches_expected == null ? "—" : capture.matches_expected ? "Sí" : "No"}{!capture.counted && <span className="muted"> (no cuenta)</span>}</td>
+          <td>{item.comparable === false ? <span className="muted">No se compara</span>
+            : <>{capture.matches_expected == null ? "—" : capture.matches_expected ? "Sí" : "No"}{!capture.counted && <span className="muted"> (no cuenta)</span>}</>}</td>
         </tr>))}</tbody></table></div>
     </>}
     {metrics.abstract.length > 0 && <>

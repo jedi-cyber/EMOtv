@@ -12,6 +12,7 @@ import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import type { ExpressionInfo } from "../expressions/ExpressionCatalog";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
+import { toast } from "../components/Toaster";
 
 const TEXT_MIN = 20;
 const TEXT_MAX = 1200;
@@ -46,14 +47,13 @@ export function AdminExpressionsPage() {
   const [selectedKey, setSelectedKey] = useState("");
   const [form, setForm] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const selected = items.find((item) => item.expression_key === selectedKey) ?? null;
 
   function close() { setForm(null); setSelectedKey(""); setError(""); }
 
   function edit(info: ExpressionInfo) {
-    setSelectedKey(info.expression_key); setForm(toForm(info)); setMessage(""); setError("");
+    setSelectedKey(info.expression_key); setForm(toForm(info)); setError("");
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -65,7 +65,7 @@ export function AdminExpressionsPage() {
     if (invalid) { setError(`«${invalid.label}» debe tener entre ${TEXT_MIN} y ${TEXT_MAX} caracteres.`); return; }
     const child = form.child_explanation.trim().length;
     if (child > 0 && (child < CHILD_MIN || child > CHILD_MAX)) { setError(`«Explicación sencilla» debe tener entre ${CHILD_MIN} y ${CHILD_MAX} caracteres.`); return; }
-    setSaving(true); setError(""); setMessage("");
+    setSaving(true); setError("");
     try {
       const { reviewed, ...texts } = form;
       // Una explicación vacía no se envía: el servidor conserva la actual.
@@ -74,7 +74,7 @@ export function AdminExpressionsPage() {
       const updated = await apiRequest<ExpressionInfo>(`/expressions/${encodeURIComponent(selected.expression_key)}`, {
         method: "PUT", token, body: JSON.stringify({ ...body, review_status: reviewed ? "reviewed" : "draft" }),
       });
-      setMessage(updated.review_status === "reviewed" ? "Texto guardado y marcado como revisado." : "Texto guardado como borrador.");
+      toast.success(updated.review_status === "reviewed" ? "Texto guardado y marcado como revisado." : "Texto guardado como borrador.");
       setForm(toForm(updated));
       await Promise.all([query.reload(), catalog.reload()]);
     } catch (reason) {
@@ -85,7 +85,6 @@ export function AdminExpressionsPage() {
   return <section>
     <PageHeader title="Catálogo de expresiones"
       description="Textos fijos que ve el usuario tras registrar una expresión. Los revisan profesionales de Psicología; nunca los genera el chatbot." />
-    {message && !form && <Callout variant="success">{message}</Callout>}
     {error && !form && <Callout variant="error">{error}</Callout>}
     <PageState {...query} empty={!query.loading && !query.error && items.length === 0} emptyMessage="El catálogo de expresiones está vacío. Revisa que el servidor haya cargado los textos iniciales." onRetry={query.reload} />
     {items.length > 0 && <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Estado</th><th>Revisado</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
@@ -100,7 +99,6 @@ export function AdminExpressionsPage() {
       footer={<><Button variant="secondary" type="button" disabled={saving} onClick={close}>Cerrar</Button>
         <Button variant="primary" type="submit" form="expression-editor" disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button></>}>
     <form id="expression-editor" className="form-stack" onSubmit={save} aria-label={`Editar ${selected.label_es}`}>
-      {message && <Callout variant="success">{message}</Callout>}
       {error && <Callout variant="error">{error}</Callout>}
       <label>Etiqueta en español<input value={form.label_es} maxLength={LABEL_MAX} required
         onChange={(event) => setForm({ ...form, label_es: event.target.value })} /></label>

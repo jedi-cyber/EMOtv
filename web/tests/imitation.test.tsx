@@ -33,9 +33,10 @@ describe("Haz la misma cara", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Imitar caras");
-    expect(screen.getByRole("button", { name: "Agregar como «Haz la misma cara»" })).toBeDisabled();
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "happy");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar como «Haz la misma cara»" }));
+    await userEvent.click(screen.getByRole("button", { name: "Haz la misma cara" }));
+    expect(screen.getByRole("button", { name: "Agregar paso" })).toBeDisabled();
+    await userEvent.selectOptions(screen.getByLabelText(/^Imagen para/), "happy");
+    await userEvent.click(screen.getByRole("button", { name: "Agregar paso" }));
     expect(screen.getByText("1. Haz la misma cara: Cara alegre")).toBeInTheDocument();
     expect(screen.getByText(/Expresión pedida: Alegría \(la expresión esperada de la imagen\)/)).toBeInTheDocument();
     // No se elige la expresión: la pone la imagen.

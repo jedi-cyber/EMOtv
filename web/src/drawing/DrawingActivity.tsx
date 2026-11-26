@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { speakText, speechAvailable, stopExerciseSpeech } from "../analysis/exerciseSpeech";
 import { Button } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -10,27 +10,36 @@ import {
 } from "./strokes";
 
 export const DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción.";
+/** Con una imagen para mirar (igual que DRAWING_IMAGE_INSTRUCTION del servidor). */
+export const DRAWING_IMAGE_INSTRUCTION = "Mira la imagen y dibuja una cara con la emoción que sientes.";
 export const DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?";
 /** Las emociones para señalar lo que se quiso dibujar; el dibujo no se clasifica. */
 export const DRAWING_EMOTIONS = ["happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral"];
 
 type Phase = "drawing" | "choosing" | "done";
 
-/** En un paso de un protocolo: lo que dice el servidor y cómo enviar la emoción elegida. */
+/** En un paso de un protocolo: lo que dice el servidor y cómo avisar que terminó. */
 export interface DrawingSessionStep {
   instruction: string;
-  question: string;
+  /** Nulo (y options vacío): no se pregunta qué emoción quiso dibujar. */
+  question: string | null;
   options: { key: string; label: string }[];
   /** El paso terminó: respondido (por la persona o por quien conduce) o sin tiempo. */
   finished: boolean;
   chosen: string | null;
   message: string | null;
-  /** Envía solo la emoción elegida; el dibujo no sale de la pantalla. */
+  /** Envía solo la emoción elegida (servidores anteriores); el dibujo no sale de la pantalla. */
   onChoose(key: string): Promise<void>;
+  /** «Terminé»: avisa que terminó, sin el dibujo ni una emoción. */
+  onFinish?(): Promise<void>;
   readAloud?: boolean;
+  /** Imagen que la persona mira antes de dibujar la emoción que siente; no se compara con el dibujo. */
+  imageUrl?: string | null;
 }
 
 export const DRAWING_TIME_UP = "Terminó el tiempo para dibujar.";
+/** Actividad suelta sin pregunta: solo se dibuja. */
+export const DRAWING_FINISHED = "Terminaste el dibujo.";
 
 /**
  * Actividad de dibujo táctil: la persona dibuja una expresión y después señala
@@ -38,11 +47,17 @@ export const DRAWING_TIME_UP = "Terminó el tiempo para dibujar.";
  * pantalla: se borra al limpiar, al dibujar otra vez y al salir o recargar. No
  * se envía al servidor ni se guarda en el navegador, y EMOtv no lo interpreta.
  */
-export function DrawingActivity({ onDrawingChange, session }: {
+export function DrawingActivity({ onDrawingChange, session, model, next, askEmotion = true }: {
   /** Avisa si hay un dibujo en pantalla (para confirmar antes de salir). */
   onDrawingChange?(hasDrawing: boolean): void;
   /** Como paso de un protocolo; sin él, la actividad suelta (se puede dibujar otra vez). */
   session?: DrawingSessionStep;
+  /** Actividad suelta: imagen que la persona mira antes de dibujar; no se compara con el dibujo. */
+  model?: ReactNode;
+  /** Actividad suelta con varias imágenes: pasar a la siguiente al terminar. */
+  next?: { label: string; onSelect(): void };
+  /** Actividad suelta: false para solo dibujar, sin preguntar qué emoción se quiso dibujar. */
+  askEmotion?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -70,13 +85,31 @@ export function DrawingActivity({ onDrawingChange, session }: {
     setPhase("done");
     setChosen(session?.chosen ?? null);
   }, [sessionDone, session?.chosen]);
-  const instruction = session?.instruction ?? DRAWING_INSTRUCTION;
-  const question = session?.question ?? DRAWING_QUESTION;
+  const instruction = session?.instruction ?? (model ? DRAWING_IMAGE_INSTRUCTION : DRAWING_INSTRUCTION);
+  const question = session ? session.question ?? DRAWING_QUESTION : DRAWING_QUESTION;
   const options = session?.options ?? DRAWING_EMOTIONS.map((key) => ({ key, label: practiceTargetNames[key] }));
   const readAloud = Boolean(session?.readAloud);
+  // En una sesión pregunta solo si el servidor envía opciones (los anteriores lo hacían).
+  const asks = session ? session.options.length > 0 : askEmotion;
+  const heading = phase === "drawing" || !asks ? instruction : question;
   useEffect(() => {
-    if (readAloud && phase !== "done") speakText(phase === "drawing" ? instruction : question);
-  }, [readAloud, phase, instruction, question]);
+    if (readAloud && phase !== "done") speakText(heading);
+  }, [readAloud, phase, heading]);
+
+  async function finish() {
+    if (asks) { setPhase("choosing"); return; }
+    if (!session?.onFinish) { setPhase("done"); return; }
+    setSending(true);
+    setSendError("");
+    try {
+      await session.onFinish();
+      setPhase("done");
+    } catch {
+      setSendError("No se pudo avisar que terminaste. Intenta de nuevo o avisa a quien conduce la sesión.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function choose(key: string) {
     if (!session) { setChosen(key); setPhase("done"); return; }
@@ -199,14 +232,22 @@ export function DrawingActivity({ onDrawingChange, session }: {
   }
 
   const locked = phase !== "drawing";
-  return <div className={`drawing-activity${full ? " drawing-activity--full" : ""}`}>
+  const side = session?.imageUrl
+    ? <img className="drawing-model" src={session.imageUrl} alt="Imagen para mirar antes de dibujar" />
+    : !session ? model : null;
+  // Con una imagen para mirar: en pantallas anchas, el lienzo a la izquierda y la
+  // imagen a la derecha; en un teléfono, la imagen arriba del lienzo.
+  return <div className={`drawing-activity${side ? " drawing-activity--with-image" : ""}${full ? " drawing-activity--full" : ""}`}>
     <div className="drawing-header">
-      <p className="participant-instruction">{phase === "drawing" ? instruction : question}</p>
+      <p className="participant-instruction">{heading}</p>
       {speechAvailable() && <Button variant="secondary" size="sm" onClick={() => {
-        speakText(phase === "drawing" ? instruction : question);
+        speakText(heading);
       }}>Escuchar</Button>}
     </div>
 
+    {side && <div className="drawing-side">{side}</div>}
+
+    <div className="drawing-main">
     {/* Primero el lienzo; debajo, las herramientas al alcance del pulgar. */}
     <div className="drawing-surface">
       <canvas ref={canvasRef} className="drawing-canvas" role="img"
@@ -240,10 +281,11 @@ export function DrawingActivity({ onDrawingChange, session }: {
     </div>}
 
     {phase === "drawing" && <div className="inline-actions drawing-finish">
-      <Button variant="primary" disabled={!hasDrawing} onClick={() => { setPhase("choosing"); }}>Terminé</Button>
-      <p className="muted">{session
+      <Button variant="primary" disabled={!hasDrawing || sending} onClick={() => { void finish(); }}>Terminé</Button>
+      <p className="muted">{session && asks
         ? "El dibujo se queda en esta pantalla: no se envía ni se guarda. Solo se registra la emoción que elijas."
         : "El dibujo se queda en esta pantalla: no se envía ni se guarda."}</p>
+      {phase === "drawing" && sendError && <p role="alert">{sendError}</p>}
     </div>}
 
     {phase === "choosing" && <>
@@ -262,10 +304,14 @@ export function DrawingActivity({ onDrawingChange, session }: {
       {/* Describe lo que eligió la persona; no se compara con el dibujo. */}
       <p className="participant-achieved recognition-answer" role="status">
         {session ? (session.message ?? (session.finished && !session.chosen ? DRAWING_TIME_UP : ""))
-          : chosen ? `Dibujaste ${practiceTargetNames[chosen].toLowerCase()}.` : ""}</p>
+          : chosen ? `Dibujaste ${practiceTargetNames[chosen].toLowerCase()}.` : asks ? "" : DRAWING_FINISHED}</p>
       {/* En una sesión, repetir el paso lo decide quien conduce. */}
-      {!session && <Button variant="primary" onClick={again}>Dibujar otra vez</Button>}
+      {!session && <div className="inline-actions">
+        {next && <Button variant="primary" onClick={next.onSelect}>{next.label}</Button>}
+        <Button variant={next ? "secondary" : "primary"} onClick={again}>Dibujar otra vez</Button>
+      </div>}
     </div>}
+    </div>
 
     <ConfirmDialog open={confirmClear} title="Limpiar el lienzo" message="Se borrará todo el dibujo. ¿Quieres limpiarlo?"
       confirmLabel="Limpiar" onCancel={() => { setConfirmClear(false); }}

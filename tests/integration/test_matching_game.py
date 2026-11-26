@@ -91,7 +91,9 @@ def test_un_juego_valida_rondas_opciones_e_imagenes():
 def test_el_resultado_solo_guarda_contadores():
     assert set(GameResult.__dataclass_fields__) == {
         "id", "session_id", "step_index", "game_type", "outcome", "started_at", "ended_at", "rounds_total",
-        "rounds_done", "matched", "first_try", "help_used", "by_conductor", "attempt"}
+        "rounds_done", "matched", "first_try", "help_used", "by_conductor", "attempt",
+        # «Reconoce y luego muéstrala»: también solo contadores (20261124_51).
+        "faces_asked", "faces_shown"}
 
 
 def test_el_servidor_elige_una_imagen_por_ronda_de_emociones_distintas(env):  # noqa: F811

@@ -39,7 +39,8 @@ Toda sesión empieza en el **Analizador**:
    navegador pide permiso para usar la cámara. La imagen de la cámara se obtiene en el navegador; el servidor nunca
    abre una cámara.
 5. Cada imagen se envía al servidor de EMOtv, que detecta el rostro (YuNet),
-   estima la expresión con un modelo local (HSEmotion; FER+ como respaldo) y
+   estima la expresión con un modelo local (HSEmotion; EmotiEffLib B2 como
+   alternativa y FER+ como respaldo) y
    descarta la imagen. Puede hacerse antes una calibración neutral: «Mantén el
    rostro relajado y mira a la cámara».
 6. La expresión se registra cuando la lectura es estable (por defecto, la misma
@@ -54,9 +55,14 @@ Toda sesión empieza en el **Analizador**:
    psicológico de la persona. El botón «Preguntar a Emi sobre esta expresión»
    abre a Emi con una pregunta general y editable, sin datos de la sesión.
 
-Con protocolo, la sesión sigue sus pasos: cuestionario previo, calibración
-neutral, los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
-práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. La
+Con protocolo, la sesión sigue sus pasos: cuestionario previo, «Lista para
+empezar» (sin calibración: quien conduce ve la vista previa de la cámara en su
+pantalla, solo en su computadora y sin guardarla; la persona no se ve a sí misma;
+luego pulsa «Empezar»), los pasos en orden («¿Qué emoción es?», imágenes, ejercicios de
+práctica, «Haz la misma cara», dibujos y juegos) y cuestionario posterior. En
+los pasos que usan la cámara, quien conduce ve «Lo que estima la cámara»: la
+expresión estimada y su confianza, en vivo; la persona no ve ese resultado y no
+se guarda. La
 persona evaluada ve los pasos en su propia pantalla («Abrir la pantalla de la
 persona», o en Android con «Vincular Android»), sin resultados, y puede pedir
 parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
@@ -73,6 +79,11 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   admite imágenes leves y aprobadas. Uno ya usado no se edita: se crea una
   versión nueva. El «Modo accesible» usa dos opciones con pictograma, botones
   grandes y más tiempo por paso.
+- **Juegos**: en el menú, «Juegos» reúne la actividad de dibujo («Dibuja una
+  cara») y una versión de prueba de «Empareja la emoción» y «Busca la misma
+  emoción», con caras dibujadas y tres rondas. Nada de esto crea una sesión,
+  usa la cámara ni guarda datos; sirve para conocer los juegos antes de
+  ponerlos en un protocolo.
 - **Plantillas y banco inicial**: «Usar la plantilla inicial» copia el
   protocolo «Emociones básicas 4 a 6 años» (para niños y en modo accesible). El
   banco inicial trae dibujos de expresiones listos para usar. Un Docente puede
@@ -81,24 +92,69 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   elige entre opciones; después se lee el nombre de la emoción del dibujo, sin
   valorar la respuesta. El resultado se describe («Eligió la emoción de la imagen
   en X de Y»), nunca como puntaje.
-- **Sin cámara**: «¿Qué emoción es?», los dibujos y los juegos no usan la
-  cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
+- **Sin cámara**: «¿Qué emoción es?», los dibujos y los juegos (salvo con
+  «Reconoce y luego muéstrala» o «Responde con la cara») no usan la cámara. Un protocolo solo con esos pasos no la pide. Si la cámara falla,
   quien conduce pulsa «Continuar sin cámara»: siguen esos pasos y se saltan los
   que la necesitan.
-- **Dibujo** («Agregar dibujo»): la persona dibuja con el dedo
-  (colores, grosor, borrador, «Deshacer» y «Limpiar»), pulsa «Terminé» y elige
-  qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y EMOtv no lo
-  interpreta**: solo se registra la emoción elegida, los tiempos y quién
-  respondió. Emi tampoco interpreta dibujos.
+- **Usar el analizador** (tarjeta en «Expresión con la cámara»): un paso sin
+  imagen ni expresión fijada. Quien conduce pide de palabra las expresiones que
+  quiera, ve la expresión que estima la cámara (la persona no la ve) y pulsa
+  «Siguiente paso» al terminar. EMOtv registra la estimación cada pocos
+  segundos, sin calificarla.
+- **Editor de protocolos**: los pasos se ordenan arrastrándolos por su asa o con
+  las flechas, y una tarjeta de «Agregar un paso» se puede arrastrar al lugar
+  donde se quiere.
+- **Dibujo** (tarjeta «Dibujo» en «Agregar un paso»): la persona dibuja con el dedo
+  (colores, grosor, borrador, «Deshacer» y «Limpiar») y pulsa «Terminé». No se
+  le pregunta qué emoción quiso dibujar. **El dibujo no se guarda ni se envía, y
+  EMOtv no lo interpreta**: solo se registra si terminó, los tiempos y quién lo
+  marcó (las sesiones anteriores conservan la emoción que se señalaba). Emi
+  tampoco interpreta dibujos. El dibujo puede llevar una imagen: la persona la
+  mira y dibuja la emoción que siente al verla. EMOtv no compara el dibujo con
+  la imagen. En «Juegos», «Dibuja una cara» pide elegir imágenes antes de
+  empezar o empezar sin imagen.
 - **Juegos**, de 2 a 6 rondas, sin puntaje:
-  - «Agregar juego de emparejar»: la persona ve una cara y toca el nombre de su
-    emoción;
-  - «Agregar juego: busca la misma emoción»: ve una cara arriba y elige otra
+  - «Juego: empareja la emoción»: la persona ve una cara y toca el nombre de su
+    emoción. Quien arma el protocolo puede elegir la imagen de cada ronda entre
+    las aprobadas (también las que subió y aprobó su docente); las demás las
+    completa EMOtv;
+  - «Juego: busca la misma emoción»: ve una cara arriba y elige otra
     cara («Cara 1», «Cara 2»…) que muestre la misma emoción.
 
   Si elige otra, se la invita a mirar otra vez; tras dos intentos, se muestra
   la respuesta con una explicación sencilla. «Ayuda» quita una opción una vez
   por ronda.
+
+  Opción «Reconoce y luego muéstrala»: tras cada ronda, la persona pone la
+  cara de esa emoción unos segundos y la cámara la estima. La persona solo ve
+  un mensaje amable; el nivel y el resultado los ve quien conduce, como una
+  estimación, no una valoración.
+
+  Opción «Responde con la cara»: en vez de tocar, la persona pone la cara de la
+  emoción y la cámara marca la opción cuya emoción sostiene unos segundos, como
+  si la hubiera tocado. Solo usa neutral, felicidad, sorpresa, tristeza y enojo.
+  La persona ve la opción marcada; el nivel de cada opción lo ve quien conduce.
+  Sin cámara, se responde con botones. Es una estimación de la cámara: no dice
+  cómo se siente la persona. En el editor de protocolos, las tarjetas «Juego con
+  cámara: empareja la emoción» y «Juego con cámara: busca la misma emoción» (en
+  «Expresión con la cámara») lo agregan con esta opción ya marcada. Sin armar un
+  protocolo, el Analizador ofrece «Juegos con cámara»: se elige el juego y con
+  quién es la sesión, y EMOtv prepara las rondas con imágenes aprobadas. En la
+  página «Juegos», «Jugar con la cámara» abre el Analizador con ese juego. Siempre
+  es una sesión, con su autorización y su código.
+- **Juego con cámara «Muestra la emoción»** (tarjeta en «Expresión con la
+  cámara»), de 2 a 6 rondas: en cada ronda se pide una de las cinco expresiones
+  que estima EMOtv y una barra crece al acercarse. Si la sostiene unos segundos,
+  aparece una estrella; al final se ve «Lograste X de Y caras». **Sin puntos**:
+  solo describe lo ocurrido, no valora a la persona y no muestra la expresión
+  detectada. Las imágenes de la cámara no se guardan.
+- **«Juego: imita la cara»** (tarjeta en «Expresión con la cámara»): la persona
+  ve una imagen y hace la misma cara; la cámara estima la expresión como en
+  «Haz la misma cara». Al terminar, **quien conduce** marca de 1 a 5 estrellas
+  y el paso espera esa valoración. Es la valoración de quien conduce, no de
+  EMOtv: el sistema no la calcula, no la suma ni la promedia, no la combina con
+  la expresión estimada, y la persona no la ve. El reporte dice cuántas veces se
+  marcó cada número de estrellas.
 - **Repetir un paso**: quien conduce puede pulsar «Repetir este paso», «Repetir
   este ejercicio», «Repetir este dibujo» o «Repetir el juego».
 - **Apoyos del protocolo**: «Modo accesible» junta pictogramas, botones
@@ -134,7 +190,9 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   lograste!» al sostenerla. No ve etiquetas, probabilidades ni calidad. Quien
   conduce puede saltar un ejercicio o apagar la señal. El resultado se describe
   («Logró la expresión pedida en 3 de 5 ejercicios») y nunca valora a la
-  persona. Es actividad guiada, no terapia ni evaluación diagnóstica. Una
+  persona. Es actividad guiada, no terapia ni evaluación diagnóstica. Ya no se
+  agrega como paso suelto («Usar el analizador» lo reemplaza); los protocolos
+  que lo tienen lo conservan, y sigue dentro del juego con cámara. Una
   variante, «Haz la misma cara», muestra un dibujo como modelo y pide la misma
   expresión que muestra el dibujo; quien conduce ve «Imitar el modelo».
 - **Funciones que no están disponibles**: las actividades de posturas, el
@@ -153,7 +211,11 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
 
 ## 4. Expresiones que estima EMOtv
 
-Ocho expresiones, con sus nombres en la interfaz:
+Con la cámara, EMOtv estima cinco expresiones: Neutral, Felicidad, Sorpresa,
+Tristeza y Enojo. Los modelos distinguen también desagrado, miedo y desprecio,
+pero se confunden mucho, así que EMOtv no los estima. Siguen apareciendo en los
+pasos sin cámara («¿Qué emoción es?», dibujos y juegos) y en sesiones antiguas.
+Nombres de las ocho en la interfaz:
 
 | Clave interna | Nombre en EMOtv |
 | --- | --- |
@@ -166,8 +228,10 @@ Ocho expresiones, con sus nombres en la interfaz:
 | `fear` | Miedo |
 | `contempt` | Desprecio |
 
-En los ejercicios de práctica se pueden pedir todas menos desprecio, con estos
-nombres: Alegría, Sorpresa, Tristeza, Enojo, Miedo, Asco y Cara tranquila.
+En los ejercicios de práctica y en «Haz la misma cara» solo se piden las cinco
+que estima EMOtv, con estos nombres: Alegría, Sorpresa, Tristeza, Enojo y Cara
+tranquila. Una imagen de miedo, desagrado o desprecio no se compara con la
+expresión estimada.
 
 ## 5. Cuentas y papeles
 

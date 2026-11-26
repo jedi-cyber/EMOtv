@@ -63,11 +63,13 @@ formato firmado en papel.
 | `GET` | `/stimuli/{id}`, `/stimuli/{id}/file` | Quien puede verlo; `/file` es la única ruta que sirve una imagen, siempre un estímulo reescrito sin metadatos |
 | `POST` | `/stimuli/{id}/approve` | Quien lo gestiona |
 | `PUT` | `/stimuli/{id}/active` | Quien lo gestiona: retirar o volver a ofrecer |
+| `DELETE` | `/stimuli/{id}` | Quien lo gestiona: `204`, borra el archivo. Un protocolo que lo usa queda con `needs_image`; si una sesión lo nombra, queda solo un registro sin imagen |
 | `GET`, `POST` | `/protocols` | Usuarios y docentes; el docente ve también los de su grupo. `for_children` es obligatorio («¿Para adultos o para niños?») |
 | `GET`, `PUT` | `/protocols/{id}` | `PUT` solo quien lo armó. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
 | `POST` | `/protocols/starter` | Usuarios y docentes, `201`: copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (para niños, modo accesible, un «¿Qué emoción es?» por emoción con dos opciones y 30 s). Sin el banco inicial responde `422` |
 | `PUT` | `/protocols/{id}/share` | Docente autor: `{shared}` comparte la versión vigente con su grupo como plantilla (`shared_with_group`) o deja de compartirla |
 | `POST` | `/protocols/{id}/copy` | `201`: copia propia de un protocolo propio («Duplicar») o de una plantilla del docente de la cuenta («Copiar y modificar»). La copia no se comparte; un cuestionario que la cuenta no puede usar no se copia |
+| `DELETE` | `/protocols/{id}` | Solo quien lo armó, sobre la versión vigente: `204`. Deja de listarse, de aplicarse y de compartirse (`404` desde entonces); las sesiones que lo usaron lo conservan para su línea de tiempo y su reporte |
 
 Un protocolo es una receta guardada: qué aplicar en una sesión. Se guarda sin
 ejecutarlo y no necesita la aprobación del docente. Uno para niños solo admite
@@ -94,6 +96,7 @@ consulta se llama como una imagen.
 | `POST` | `/own-stimuli` | Usuario con docente asignado. `multipart/form-data` con listas paralelas `files`, `titles`, `origins` («¿De dónde es esta imagen?»), `audiences` (`children` o `adults`) y `rights_confirmed` (debe ser `true`). Hasta 20 por lote y `IMAGE_UPLOAD_LIMIT_PER_USER` en total. Cada imagen se reescribe sin metadatos y pasa por la detección de personas en memoria: `results[i].accepted=false` con el mensaje de rechazo si la confianza llega a `IMAGE_PERSON_REJECT_CONFIDENCE` (no se guarda); si no, queda `pending`, con `possible_person` desde `IMAGE_PERSON_REVIEW_CONFIDENCE`. `503` si los modelos de detección no están instalados. Docentes y administración reciben `403` |
 | `GET` | `/own-stimuli` | El usuario: sus imágenes, con `status` (`pending` o `approved`) y, si está pendiente, `expires_at` |
 | `GET` | `/own-stimuli/{id}/file` | Quien la subió y su docente. `?preview=true`: vista ampliada del docente (se audita) |
+| `DELETE` | `/own-stimuli/{id}` | Quien la subió: `204`, borra el archivo. Un protocolo que la usa queda con `needs_image` |
 | `GET` | `/own-stimuli/review` | Docente: pendientes de su grupo agrupadas por lote (`uploaded_by` con el correo, `uploaded_at`) y las aprobadas |
 | `GET` | `/own-stimuli/review/count` | Docente: `{pending}` para el contador del menú |
 | `POST` | `/own-stimuli/review` | Docente del usuario: `{image_ids, decision: "children" \| "adults" \| "delete", reason?}`. Aprueba o reclasifica, o elimina (archivo y registro; si una sesión o un protocolo la nombran, queda solo un registro sin imagen). El motivo llega al usuario como aviso |
@@ -119,6 +122,7 @@ respuestas. Ninguna respuesta de la API incluye sumas ni resultados.
 | `GET`, `PUT` | `/questionnaires/{id}` | `PUT` solo su autor. Si la versión se usó en una sesión, responde con una versión nueva (otro `id`, mismo `family_id`) |
 | `POST` | `/questionnaires/{id}/copy` | Copia propia y editable (de un cuestionario propio o de una plantilla del docente) |
 | `PUT` | `/questionnaires/{id}/share` | Docente: comparte un cuestionario suyo con su grupo como plantilla |
+| `DELETE` | `/questionnaires/{id}` | Solo su autor, sobre la versión vigente: `204`. `422` con el nombre del protocolo si un protocolo vigente lo aplica. Las respuestas de las sesiones se conservan |
 | `GET`, `POST` | `/sessions/{id}/questionnaires/{pre\|post}` | Solo quien conduce la sesión: el cuestionario que espera y el registro de las respuestas (`answers`, `entry_mode`: `participant` o `conductor`). `422` si falta una obligatoria; `409` si ya se respondió |
 | `GET` | `/sessions/{id}/questionnaire-responses` | Quien condujo la sesión y su docente (`can_access_session`); nunca los administradores. Cada consulta queda en la auditoría |
 
@@ -174,10 +178,12 @@ auditoría registra solo la cantidad.
 ## Sesión con protocolo
 
 Orden: cuestionario previo, imágenes abstractas marcadas "antes del analizador"
-(sin capturas), calibración neutral, estímulos del protocolo con capturas y, si
-el protocolo lo indica, cuestionario posterior. Sin protocolo, después de la
-calibración la fase es `live`: una lectura cada 3 segundos hasta que quien
-conduce termina. La confirmación ya se dio al crear la sesión: aquí no se pide
+(sin capturas), espera de «Empezar» (fase `ready`), estímulos del protocolo con
+capturas y, si el protocolo lo indica, cuestionario posterior. Desde 2026-11-24
+no hay calibración neutral en estas sesiones: en `ready` la pantalla de la
+persona muestra la vista previa de la cámara (sin enviar cuadros) y el tiempo
+del primer paso corre desde `POST /start`. Sin protocolo, después de «Empezar»
+la fase es `live`: una lectura cada 3 segundos hasta que quien conduce termina. La confirmación ya se dio al crear la sesión: aquí no se pide
 otra. El servidor lleva el tiempo de cada exposición, así quien conduce y la
 persona evaluada pueden usar dispositivos distintos. Las rutas internas
 conservan el nombre `participant-view` (pantalla de la persona).
@@ -188,8 +194,12 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `POST` | `/guided-sessions/{id}/view-link` | Reemplaza el enlace (el anterior deja de valer) |
 | `GET` | `/guided-sessions/{id}` | Quien conduce: código, público, fase, paso, tiempo restante, estado de la captura, capturas, marcadores y lo que la persona dijo ver |
 | `POST` | `/guided-sessions/{id}/advance` | Continúa tras el cuestionario previo o posterior (`409` si falta responderlo) |
-| `POST` | `/guided-sessions/{id}/calibration` | Inicia la calibración neutral (solo después del cuestionario previo) |
+| `POST` | `/guided-sessions/{id}/start` | «Empezar»: desde `ready` empieza el primer paso (o la fase `live` sin protocolo). También saca de `calibration` una sesión que quedó ahí antes de quitar la calibración |
+| `POST` | `/guided-sessions/{id}/calibration` | Solo para una sesión que quedó en `calibration` antes de 2026-11-24; las nuevas no pasan por esa fase (`409`) |
 | `POST` | `/guided-sessions/{id}/skip` | Salta el estímulo en curso |
+| `POST` | `/guided-sessions/{id}/analyzer-done` | «Siguiente paso» en «Usar el analizador» (paso `analyzer`): quien conduce terminó de pedir expresiones; el paso queda hecho, no saltado (`409` si el paso en curso no es ese) |
+| `POST` | `/guided-sessions/{id}/drawing-done` | Quien conduce marca que la persona terminó de dibujar (`409` si el paso ya terminó o no es un dibujo) |
+| `POST` | `/guided-sessions/{id}/rating` | «Juego: imita la cara»: `stars` de 1 a 5, la valoración de quien conduce al terminar la imitación (`409` antes de que termine o si el paso no la lleva). El paso espera esta valoración; la pantalla de la persona nunca la recibe |
 | `POST` | `/guided-sessions/{id}/stop` | `reason`: `participant` (la persona), `guardian` o `conductor`; termina de inmediato y cancela la sesión |
 | `POST` | `/guided-sessions/{id}/markers` | `kind`: `distracted`, `laughed`, `asked_to_stop` (termina la sesión), `cried` o `note` (con `note`, cifrada) |
 | `POST` | `/guided-sessions/{id}/verbal-responses` | `step_index` y `text`: lo que la persona dice ver en una abstracta que lo pide, cifrado |
@@ -198,6 +208,7 @@ conservan el nombre `participant-view` (pantalla de la persona).
 | `GET` | `/participant-view/{token}/stimulus` | La imagen del estímulo que se muestra ahora (nunca la de una persona) |
 | `POST` | `/participant-view/{token}/frames` | Un cuadro JPEG (hasta 1 MB); se analiza en memoria y se descarta. Responde solo `{"received": true}` |
 | `POST` | `/participant-view/{token}/stop` | La persona pide parar: la sesión termina de inmediato |
+| `POST` | `/participant-view/{token}/drawing-done` | Paso de dibujo: la persona pulsó «Terminé». Sin cuerpo; el dibujo nunca se envía y no se pregunta qué emoción quiso dibujar. `409` si el paso ya terminó o no es un dibujo |
 
 Antes de cada captura se revisa rostro, centrado, tamaño, iluminación e
 inclinación de la cabeza; si falla, se reintenta 3 segundos y luego se guarda

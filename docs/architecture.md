@@ -122,9 +122,9 @@ OpenCV, MediaPipe, SQLAlchemy ni FastAPI.
 
 - `vision.face_detection.YuNetFaceDetector` (`face_detection_yunet_2026may.onnx`).
 - `vision.emotion_classifier`: FER+ ONNX, HSEmotion ONNX (lectura en vivo
-  predeterminada si su admisión es válida), HardlyHumans ViT
-  (experimental, extra `emotion-vit`), fábrica, `EmotionFrameAnalyzer` y
-  `ServerModelAdmission`.
+  predeterminada si su admisión es válida), EmotiEffLib B2 ONNX (alternativa
+  más precisa y más pesada), fábrica, `EmotionFrameAnalyzer` y
+  `ServerModelAdmission`. Licencias en [licencias de los modelos](licencias-modelos.md).
 - `vision.pose_detection.PoseDetector` (MediaPipe en modo `VIDEO`) y
   `vision.movement_analysis` (`PostureValidator`, ángulos).
 - `persistence`: adaptadores PostgreSQL y en memoria, modelos ORM y conexión.
@@ -188,8 +188,7 @@ servidor. Nada de esto cambia el modelo ni el umbral de registro.
   comparten las sesiones (las sesiones ONNX admiten llamadas concurrentes); cada
   análisis usa `ONNX_THREADS_PER_SESSION` hilos de onnxruntime (1 por defecto) y
   `MAX_CONCURRENT_ANALYSES` limita cuántos corren a la vez, así varias sesiones
-  no compiten por todos los núcleos. HardlyHumans (PyTorch) y YuNet (OpenCV) no
-  usan este límite.
+  no compiten por todos los núcleos. YuNet (OpenCV) no usa este límite.
 - **Inactividad.** Si no llegan cuadros durante `LIVE_IDLE_TIMEOUT_SECONDS`
   (60) mientras se esperan, el servidor cierra con el código 4408 y libera la
   sesión y su cupo. Mientras el estudiante revisa su resultado no se esperan

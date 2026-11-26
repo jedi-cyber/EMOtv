@@ -19,7 +19,7 @@ const activityOutcomeNames: Record<string, string> = {
 const emotionModelNames: Record<string, string> = {
   ferplus_onnx: "FER+",
   hsemotion_enet_b0_8_best_afew: "HSEmotion",
-  hardlyhumans_vit: "HardlyHumans (experimental)",
+  emotiefflib_enet_b2_8: "EmotiEffLib B2",
 };
 
 const sessionTypeNames: Record<SessionType, string> = {

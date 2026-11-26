@@ -6,6 +6,15 @@ import { DrawingActivity, DRAWING_EMOTIONS } from "../src/drawing/DrawingActivit
 import { MAX_POINTS, drawStroke, redraw, relativePoint, type Stroke } from "../src/drawing/strokes";
 import { DrawingPage } from "../src/pages/DrawingPage";
 
+const images = vi.hoisted(() => ({ value: [] as unknown[] }));
+vi.mock("../src/api/useApiQuery", () => ({
+  useApiQuery: () => ({ data: images.value, loading: false, error: "", reload: vi.fn() }),
+}));
+// Sin descargar imágenes: cada una se muestra por su texto alternativo.
+vi.mock("../src/components/StimulusImage", () => ({
+  StimulusImage: ({ alt, id }: { alt: string; id: string }) => <span data-testid={`imagen-${id}`}>{alt}</span>,
+}));
+
 // Bloque 4: dibujo táctil. El dibujo vive solo en la memoria de la pantalla.
 
 class FakePointerEvent extends MouseEvent {
@@ -204,19 +213,64 @@ describe("actividad de dibujo", () => {
 });
 
 describe("salida accidental", () => {
-  function page() {
+  function page(start = true) {
     const router = createMemoryRouter([
       { path: "/drawing", element: <DrawingPage /> },
-      { path: "/analysis", element: <p>Analizador</p> },
+      { path: "/games", element: <p>Juegos</p> },
     ], { initialEntries: ["/drawing"] });
     render(<RouterProvider router={router} />);
+    if (start) fireEvent.click(screen.getByRole("button", { name: "Empezar sin imagen" }));
     return router;
   }
+
+  const stimulus = (id: string, title: string, changes: Record<string, unknown> = {}) => ({
+    id, title, kind: "emotional", category: "Caras", expected_expression: "happiness", intensity: "mild", min_age: 3,
+    origin: "Dibujo", license: "Libre", scope: "group", audience: "children", created_at: "2026-11-01T10:00:00Z",
+    approved: true, active: true, can_manage: false, ...changes,
+  });
+
+  it("antes de empezar se eligen imágenes en orden y se dibuja a partir de cada una", async () => {
+    images.value = [stimulus("a", "Niño feliz"), stimulus("b", "Niña triste"), stimulus("c", "Retirada", { active: false })];
+    page(false);
+    // Solo imágenes aprobadas y vigentes; sin elegir, solo se empieza sin imagen.
+    expect(screen.queryByRole("button", { name: /Retirada/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Empezar con imágenes" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: /Niña triste/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Niño feliz/ }));
+    expect(screen.getByRole("button", { name: /Niña triste/ })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Empezar con 2 imágenes" }));
+
+    // La primera es la que se tocó primero.
+    expect(screen.getByText("Imagen 1 de 2")).toBeInTheDocument();
+    expect(screen.getByTestId("imagen-b")).toBeInTheDocument();
+    expect(screen.getByText("Mira la imagen y dibuja una cara con la emoción que sientes.")).toBeInTheDocument();
+    stroke(canvas(), [[10, 10], [60, 60]]);
+    await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
+    // Solo se dibuja: no se pregunta qué emoción se quiso dibujar.
+    expect(screen.queryByText("¿Qué emoción quisiste dibujar?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Tristeza/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Terminaste el dibujo.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente imagen" }));
+
+    expect(screen.getByText("Imagen 2 de 2")).toBeInTheDocument();
+    expect(screen.getByTestId("imagen-a")).toBeInTheDocument();
+    stroke(canvas(), [[10, 10], [60, 60]]);
+    await userEvent.click(screen.getByRole("button", { name: "Terminé" }));
+    await userEvent.click(screen.getByRole("button", { name: "Terminar" }));
+    expect(screen.getByRole("heading", { name: "Dibuja una cara" })).toBeInTheDocument();
+  });
+
+  it("sin imagen se dibuja como siempre, sin imagen para mirar", () => {
+    images.value = [stimulus("a", "Niño feliz")];
+    page();
+    expect(screen.getByText("Dibuja una cara que muestre una emoción.")).toBeInTheDocument();
+    expect(screen.queryByTestId("imagen-a")).not.toBeInTheDocument();
+  });
 
   it("sin dibujo, salir no pregunta", async () => {
     const router = page();
     await userEvent.click(screen.getByRole("button", { name: "Salir" }));
-    expect(router.state.location.pathname).toBe("/analysis");
+    expect(router.state.location.pathname).toBe("/games");
   });
 
   it("con un dibujo, salir pide confirmación y avisa que se borra; cerrar la pestaña también avisa", async () => {
@@ -233,6 +287,6 @@ describe("salida accidental", () => {
     expect(router.state.location.pathname).toBe("/drawing");
     await userEvent.click(screen.getByRole("button", { name: "Salir" }));
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Salir y borrar" }));
-    expect(await screen.findByText("Analizador")).toBeInTheDocument();
+    expect(await screen.findByText("Juegos")).toBeInTheDocument();
   });
 });

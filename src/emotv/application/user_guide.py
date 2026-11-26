@@ -18,8 +18,8 @@ from emotv.domain.role import Role
 USER, DOCENTE, ADMIN, SUPERADMIN = Role.STUDENT, Role.PSYCHOLOGIST, Role.ADMIN, Role.SUPERADMIN
 # Emi responde a usuarios y docentes.
 EMI_ROLES = (USER, DOCENTE)
-# Temas que el conocimiento de Emi ya cubre en otra sección.
-EMI_SKIPPED = frozenset({"statistics"})
+# Temas que el conocimiento de Emi ya cubre en otra sección (los juegos, en «Actividades educativas»).
+EMI_SKIPPED = frozenset({"statistics", "games"})
 ROLE_NAMES = {USER: "Usuario", DOCENTE: "Docente"}
 
 
@@ -45,23 +45,25 @@ GUIDE: tuple[GuideTopic, ...] = (
            "En «Cuestionarios», «Usar la plantilla inicial» o «Nuevo cuestionario».",
            "En «Protocolos», «Usar la plantilla inicial» agrega «Emociones básicas 4 a 6 años», para niños. «Copiar y "
            "modificar» copia una plantilla de tu docente.",
-           "«Nuevo protocolo» pregunta si es para adultos o para niños. «Modo accesible» pone pictogramas, botones "
-           "grandes y pausas más largas.",
-           "Los pasos pueden ser una imagen, «¿Qué emoción es?», un ejercicio de práctica, «Haz la misma cara» (la "
-           "imagen es el modelo), «Agregar dibujo», «Agregar juego de emparejar» o «Agregar juego: busca la misma "
-           "emoción».",
+           "«Nuevo protocolo» pregunta si es para adultos o para niños; «Modo accesible» adapta la pantalla.",
+           "En «Agregar un paso»: «Juego: empareja la emoción», «Juego: busca la misma emoción», «Juego con cámara: "
+           "muestra la emoción», «Juego: imita la cara», «¿Qué emoción es?», «Dibujo», práctica, «Haz la misma cara» o una imagen.",
            note="Con niños solo se ofrecen imágenes «Para niños» aprobadas. EMOtv no calcula puntajes."),
     _topic("own-images", "Subir imágenes propias", (USER,),
            "En «Imágenes», «Subir imágenes». Nunca fotografías de personas evaluadas.",
            "EMOtv busca personas en cada imagen y luego la revisa tu docente: se usa solo si la aprueba."),
+    _topic("games", "Probar los juegos", (USER, DOCENTE),
+           "En «Juegos», «Dibuja una cara» o «Jugar la prueba» de un juego, con caras dibujadas y tres rondas.",
+           note="No crea una sesión, no usa la cámara ni guarda datos."),
     _topic("conduct", "Conducir una sesión", (USER, DOCENTE),
            "En el «Analizador» elige un protocolo, o ninguno y con quién es la sesión: Conmigo, Un adulto o Un niño o "
            "niña.",
-           "Confirma la autorización y anota el código de la sesión (por ejemplo, S-4F7K2Q) en el formato firmado.",
+           "Confirma la autorización y anota el código de la sesión en el formato firmado.",
            "Con protocolo, «Crear el enlace de la pantalla de la persona» y «Abrir la pantalla de la persona» (o "
            "«Copiar enlace» para otro dispositivo). Esa pantalla no muestra resultados.",
-           "Calibra con la cara tranquila; los pasos avanzan solos. Puedes saltar un paso, apagar la señal de la "
-           "práctica y marcar «Se distrajo», «Se rió», «Lloró» o «Pidió parar».",
+           "Pulsa «Empezar»; los pasos avanzan solos. Puedes saltar un paso, apagar la señal de la práctica y "
+           "marcar «Se distrajo», "
+           "«Se rió», «Lloró» o «Pidió parar».",
            "Si la persona o su tutor lo piden, detén la sesión: «La persona pidió parar» o «El tutor pidió parar».",
            note="La cámara se abre en el navegador; cada imagen se analiza en memoria y se descarta."),
     _topic("after", "Después de la sesión", (USER,),
@@ -69,8 +71,8 @@ GUIDE: tuple[GuideTopic, ...] = (
            "«Redactar el reporte» y «Enviar a revisión». Si vuelve con observaciones, corrígelo y reenvíalo.",
            "«Pedir que se elimine» borra la sesión cuando tu docente lo ejecuta."),
     _topic("supervise", "Supervisar al grupo", (DOCENTE,),
-           "No estás en cada sesión: «Por revisar» reúne los reportes enviados y los pedidos de eliminación, del más "
-           "antiguo al más nuevo.",
+           "No estás en cada sesión: «Por revisar» reúne los reportes enviados y los pedidos de "
+           "eliminación.",
            "En un reporte, «Comentar» cada sección y luego «Aprobar» o «Devolver con observaciones».",
            "En un pedido de eliminación, abre la sesión y «Eliminar la sesión».",
            "En «Imágenes por revisar» apruebas o eliminas las que subió tu grupo.",

@@ -85,12 +85,13 @@ class RecognitionView(BaseModel):
 
 
 class DrawingView(BaseModel):
-    """Un paso de dibujo: la consigna, la pregunta y las emociones para señalar.
-    El dibujo se queda en la pantalla de la persona; aquí solo vuelve la emoción
-    que eligió, sin compararla con el dibujo."""
+    """Un paso de dibujo: la consigna y si terminó. El dibujo se queda en la
+    pantalla de la persona. Desde 20261124_48 no se pregunta qué emoción quiso
+    dibujar: question es nulo y options está vacío (campos para los aplicativos
+    anteriores); chosen solo existe en sesiones anteriores."""
 
     instruction: str
-    question: str
+    question: str | None = None
     options: list[RecognitionOption]
     # Cambia con cada intento: la pantalla empieza un lienzo nuevo.
     round: str
@@ -116,7 +117,8 @@ class GameView(BaseModel):
     # matching (nombres) o similar (imágenes: cada opción se pide por su clave).
     game_type: str = "matching"
     question: str
-    # playing, retry, matched, shown, finished o ended (venció el tiempo).
+    # playing, retry, matched, shown, show (pone la cara de la emoción), showed
+    # (terminó de ponerla), finished o ended (venció el tiempo).
     state: str
     options: list[GameOption]
     answer: str | None
@@ -124,6 +126,22 @@ class GameView(BaseModel):
     explanation: str | None = None
     can_help: bool
     last_round: bool
+    # «Reconoce y luego muéstrala»: «Siguiente» primero pide poner la cara. Nunca
+    # lleva el nivel ni si la cámara la estimó: eso solo lo ve quien conduce.
+    asks_face: bool = False
+    # «Responde con la cara»: las opciones no se tocan, las marca la cámara. Nunca
+    # lleva la expresión estimada ni los niveles: eso solo lo ve quien conduce.
+    answers_by_face: bool = False
+
+
+class CameraGameView(BaseModel):
+    """Una ronda del juego con cámara: en qué ronda va, una estrella por cada ronda
+    lograda (None si todavía no termina) y, al final, cuántas logró. Sin puntos."""
+
+    round: int
+    rounds: int
+    stars: list[bool | None]
+    summary: str | None = None
 
 
 class PracticeView(BaseModel):
@@ -135,6 +153,14 @@ class PracticeView(BaseModel):
     achieved: bool
     message: str | None
     frame_interval_ms: int
+    # Solo en una ronda del juego con cámara («Muestra la emoción»).
+    camera_game: CameraGameView | None = None
+
+
+class RatingRequest(BaseModel):
+    """«Juego: imita la cara»: las estrellas que marca quien conduce. La persona no las ve."""
+
+    stars: int = Field(ge=1, le=5)
 
 
 class ParticipantView(BaseModel):
@@ -268,11 +294,29 @@ def create_guided_router(
         run = guarded(lambda: service().set_practice_feedback(user, session_id, request.visible))
         return {"practice_feedback": run.practice_feedback}
 
+    @router.post("/guided-sessions/{session_id}/rating")
+    def rating(session_id: str, request: RatingRequest, user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce valora de 1 a 5 estrellas la imitación que acaba de terminar."""
+        run = guarded(lambda: service().rate(user, session_id, request.stars))
+        return {"phase": run.phase.value}
+
     @router.post("/guided-sessions/{session_id}/recognition")
     def recognition(session_id: str, request: RecognitionAnswerRequest,
                     user: User = Depends(current_user)) -> dict[str, str]:
         """Quien conduce registra la opción que la persona señaló o dijo."""
         run = guarded(lambda: service().record_recognition(user, session_id, request.expression))
+        return {"phase": run.phase.value}
+
+    @router.post("/guided-sessions/{session_id}/drawing-done")
+    def drawing_done(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """Quien conduce marca que la persona terminó de dibujar."""
+        run = guarded(lambda: service().finish_drawing(user, session_id))
+        return {"phase": run.phase.value}
+
+    @router.post("/guided-sessions/{session_id}/analyzer-done")
+    def analyzer_done(session_id: str, user: User = Depends(current_user)) -> dict[str, str]:
+        """«Siguiente paso» en «Usar el analizador»: quien conduce terminó de pedir expresiones."""
+        run = guarded(lambda: service().finish_analyzer(user, session_id))
         return {"phase": run.phase.value}
 
     @router.post("/guided-sessions/{session_id}/game")
@@ -305,7 +349,11 @@ def create_guided_router(
         hidden |= {"supports"} if view.supports is None else set()
         # Una estación de examen no recibe la actividad: no sabe qué se mide.
         hidden |= {"activity"} if view.activity is None else set()
-        return view.model_dump(exclude=hidden)
+        shown = view.model_dump(exclude=hidden)
+        # La ronda del juego con cámara solo aparece en el juego: los demás ejercicios quedan como antes.
+        if shown.get("practice") is not None and shown["practice"].get("camera_game") is None:
+            shown["practice"].pop("camera_game", None)
+        return shown
 
     @router.get("/participant-view/{token}/stimulus", response_class=Response)
     def participant_stimulus(token: str) -> Response:
@@ -359,6 +407,12 @@ def create_guided_router(
         """La persona tocó una opción. Solo se confirma la recepción: si acertó
         no se devuelve (la pantalla muestra el nombre de la emoción en su estado)."""
         guarded(lambda: service().participant_answer(token, request.expression))
+        return {"received": True}
+
+    @router.post("/participant-view/{token}/drawing-done")
+    def participant_drawing_done(token: str) -> dict[str, bool]:
+        """La persona pulsó «Terminé». El dibujo no se envía: solo el aviso."""
+        guarded(lambda: service().participant_finish_drawing(token))
         return {"received": True}
 
     @router.post("/participant-view/{token}/game")

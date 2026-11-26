@@ -51,8 +51,9 @@ describe("apoyos en el editor", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Con apoyos");
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "sad");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar como «¿Qué emoción es?»" }));
+    await userEvent.click(screen.getByRole("button", { name: "¿Qué emoción es?" }));
+    await userEvent.selectOptions(screen.getByLabelText(/^Imagen para/), "sad");
+    await userEvent.click(screen.getByRole("button", { name: "Agregar paso" }));
   }
   async function saved() {
     vi.mocked(apiRequest).mockResolvedValue({ id: "p1", version: 1 } as never);

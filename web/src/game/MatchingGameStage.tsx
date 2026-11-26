@@ -30,6 +30,16 @@ function useOptionImages(keys: string[], round: string, load?: (key: string) => 
  * persona elige otra, se le invita a mirar otra vez; tras dos, se le muestra
  * cuál es con su explicación. «Ayuda» quita una opción y lee la pregunta. Sin
  * puntaje ni comparación: solo «Ronda 2 de 3».
+ *
+ * «Reconoce y luego muéstrala»: al terminar la ronda, «Siguiente» pide poner la
+ * cara de esa emoción mientras la cámara la estima. Esta pantalla solo muestra la
+ * invitación y después un mensaje amable, el mismo la haya sostenido o no: el
+ * nivel y el resultado solo los ve quien conduce.
+ *
+ * «Responde con la cara»: la persona responde poniendo la cara de la emoción y la
+ * cámara marca la opción que coincide. Las opciones se muestran sin botón y la
+ * marcada queda como si la hubiera tocado; nunca se muestra el nivel ni la
+ * expresión estimada.
  */
 export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictograms = false, readAloud = false }: {
   game: ParticipantGame; imageUrl: string | null;
@@ -47,7 +57,9 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
     similar ? loadOption : undefined);
   const playing = game.state === "playing" || game.state === "retry";
   const revealed = game.state === "matched" || game.state === "shown";
-  const spokenText = (revealed || game.state === "retry" || game.state === "finished" || game.state === "ended"
+  const facing = game.state === "show" || game.state === "showed";
+  const byFace = Boolean(game.answers_by_face) && playing;
+  const spokenText = (facing ? [game.message] : revealed || game.state === "retry" || game.state === "finished" || game.state === "ended"
     ? [game.message, game.explanation] : [game.question]).filter(Boolean).join(" ");
   useEffect(() => () => stopExerciseSpeech(), []);
   // Se lee al empezar la ronda y otra vez al cambiar lo que pasó en ella.
@@ -58,17 +70,20 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
     try { await onAction(action, expression); } catch { /* el estado siguiente lo dice */ } finally { setSending(false); }
   }
 
-  return <div className="participant-practice matching-game">
+  // En pantallas anchas, al emparejar, la cara a la izquierda y la pregunta con las
+  // opciones a la derecha. Al buscar la misma emoción la modelo queda arriba (así lo
+  // dice la consigna) y las caras ocupan el ancho en una fila.
+  return <div className={`participant-practice matching-game${imageUrl && !similar ? " has-image" : ""}`}>
     <p className="matching-game-round">Ronda {game.number} de {game.total}</p>
-    {imageUrl && <img className="participant-illustration" src={imageUrl}
+    {imageUrl && <img className="participant-illustration matching-game-figure" src={imageUrl}
       alt={similar ? "Cara de arriba, la que hay que comparar" : "Cara de la ronda"} />}
-    <p className="participant-instruction">{game.question}</p>
-    <div className={similar ? "recognition-options similar-game-options" : "recognition-options"}>
+    <div className="matching-game-body">
+    {!facing && <p className="participant-instruction">{game.question}</p>}
+    {!facing && <div className={similar ? "recognition-options similar-game-options" : "recognition-options"}
+      aria-label={byFace ? "Opciones: las marca la cámara" : undefined}>
       {game.options.map((option) => {
         const isAnswer = revealed && game.answer === option.key;
-        return <Button key={option.key} className="recognition-option"
-          variant={isAnswer ? "primary" : "secondary"} aria-pressed={isAnswer}
-          disabled={!playing || !option.available || sending} onClick={() => { void send("answer", option.key); }}>
+        const content = <>
           {/* Al buscar la misma emoción no hay pictogramas: dirían la respuesta. */}
           {!similar && pictograms && emotionPictograms[option.key] && <span className="recognition-pictogram" aria-hidden="true">{emotionPictograms[option.key]}</span>}
           {similar && (optionImages[option.key]
@@ -77,21 +92,36 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
           {option.label}
           {/* Visible para no depender del color. */}
           {isAnswer && <span className="recognition-chosen" aria-hidden="true">✓ Es esta</span>}
+          {byFace && !option.available && <span className="recognition-chosen" aria-hidden="true">Marcada</span>}
+        </>;
+        // «Responde con la cara»: sin botón; la opción la marca la cámara.
+        if (byFace) {
+          return <div key={option.key} className={`recognition-option face-option${option.available ? "" : " is-marked"}`}
+            aria-label={option.available ? option.label : `${option.label}: marcada, no es esta`}>{content}</div>;
+        }
+        return <Button key={option.key} className="recognition-option"
+          variant={isAnswer ? "primary" : "secondary"} aria-pressed={isAnswer}
+          disabled={!playing || !option.available || sending} onClick={() => { void send("answer", option.key); }}>
+          {content}
         </Button>;
       })}
-    </div>
+    </div>}
     <div className="recognition-feedback" role="status" aria-live="polite">
-      <p className="participant-achieved recognition-answer">{game.message ?? ""}</p>
-      {game.explanation && <p className="recognition-explanation">{game.explanation}</p>}
+      <p className={facing ? "participant-instruction" : "participant-achieved recognition-answer"}>{game.message ?? ""}</p>
+      {!facing && game.explanation && <p className="recognition-explanation">{game.explanation}</p>}
     </div>
     <div className="inline-actions matching-game-actions">
-      {revealed && <Button variant="primary" disabled={sending} onClick={() => { void send("next"); }}>
-        {game.last_round ? "Terminar el juego" : "Siguiente"}</Button>}
+      {(revealed || game.state === "showed") && <Button variant="primary" disabled={sending}
+        onClick={() => { void send("next"); }}>
+        {game.last_round && !game.asks_face ? "Terminar el juego" : "Siguiente"}</Button>}
+      {game.state === "show" && <Button variant="secondary" disabled={sending} onClick={() => { void send("next"); }}>
+        Seguir</Button>}
       {game.can_help && <Button variant="secondary" disabled={sending} onClick={() => {
         if (speechAvailable()) speakText(game.question);
         void send("help");
       }}>Ayuda</Button>}
       {speechAvailable() && <Button variant="secondary" onClick={() => { speakText(spokenText); }}>Escuchar</Button>}
+    </div>
     </div>
   </div>;
 }

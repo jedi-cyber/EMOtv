@@ -16,7 +16,7 @@ export const expectedExpressionNames: Record<string, string> = {
   contempt: "Desprecio",
 };
 
-// Expresiones que se pueden pedir en un ejercicio de práctica: todo el catálogo.
+// Nombre de cada emoción en las actividades (práctica, reconocimiento, dibujo y juegos).
 export const practiceTargetNames: Record<string, string> = {
   happiness: "Alegría",
   surprise: "Sorpresa",
@@ -27,6 +27,11 @@ export const practiceTargetNames: Record<string, string> = {
   neutral: "Cara tranquila",
   contempt: "Desprecio",
 };
+// Las cinco expresiones que estima EMOtv con la cámara: las únicas que piden la
+// práctica y «Haz la misma cara» (igual que CAMERA_PRACTICE_TARGETS del servidor).
+export const cameraTargets = ["happiness", "surprise", "sadness", "anger", "neutral"];
+export const CAMERA_TARGET_PROBLEM = "Los ejercicios con cámara piden una de las cinco expresiones que estima EMOtv: cara tranquila, alegría, sorpresa, tristeza o enojo";
+export const isCameraTarget = (key: string | null | undefined) => key != null && cameraTargets.includes(key);
 // Lo que propone el editor si el servidor no responde (PRACTICE_HOLD_SECONDS y PRACTICE_MAX_SECONDS).
 export const DEFAULT_PRACTICE = { hold_seconds: 2, max_seconds: 20 };
 export const MAX_HOLD_SECONDS = 10;
@@ -41,8 +46,13 @@ export const ACCESSIBLE_RECOGNITION = { option_count: 2, max_seconds: 30 };
 export const ACCESSIBLE_TIME_FACTOR = 2;
 // Dibujo: tiempo para dibujar que propone el editor (el máximo en el modo accesible).
 export const DRAWING_SECONDS = 90;
+/** «Usar el analizador»: quien conduce lo termina; esto es solo su tiempo máximo. */
+export const ANALYZER_SECONDS = 180;
+export const MAX_ANALYZER_SECONDS = 600;
 /** Juego de emparejar: pocas opciones al empezar; quien arma el protocolo sube la dificultad. */
 export const DEFAULT_GAME = { rounds: 3, option_count: 2, exposure_seconds: 30 };
+/** Juego con cámara (se responde con la cara): cada ronda da tiempo para unos intentos. */
+export const FACE_GAME_SECONDS = 45;
 export const MIN_GAME_ROUNDS = 2;
 export const MAX_GAME_ROUNDS = 6;
 
@@ -79,6 +89,7 @@ export function recognizable(item: Stimulus | undefined): boolean {
 export function practiceProblem(step: { exposure_seconds: number; hold_seconds?: number | null; target_expression?: string | null }): string | null {
   const hold = step.hold_seconds ?? 0;
   if (!step.target_expression || !(step.target_expression in practiceTargetNames)) return "Una práctica indica la expresión que se pide";
+  if (!isCameraTarget(step.target_expression)) return CAMERA_TARGET_PROBLEM;
   if (!Number.isInteger(hold) || hold < 1 || hold > MAX_HOLD_SECONDS) return `La expresión se sostiene entre 1 y ${MAX_HOLD_SECONDS} segundos`;
   if (!Number.isInteger(step.exposure_seconds) || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)
     return `La exposición dura entre 1 y ${MAX_STEP_SECONDS} segundos`;
@@ -92,13 +103,15 @@ export function protocolStepParts(steps: Pick<ProtocolStep, "kind">[]): string[]
   const recognitions = steps.filter((step) => step.kind === "recognition").length;
   const drawings = steps.filter((step) => step.kind === "drawing").length;
   const games = steps.filter((step) => step.kind === "game").length;
-  const images = steps.length - practices - recognitions - drawings - games;
+  const analyzers = steps.filter((step) => step.kind === "analyzer").length;
+  const images = steps.length - practices - recognitions - drawings - games - analyzers;
   const parts = [];
-  if (images > 0 || practices + recognitions + drawings + games === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
+  if (images > 0 || practices + recognitions + drawings + games + analyzers === 0) parts.push(`${images} ${images === 1 ? "imagen" : "imágenes"}`);
   if (practices > 0) parts.push(`${practices} ${practices === 1 ? "ejercicio de práctica" : "ejercicios de práctica"}`);
   if (recognitions > 0) parts.push(`${recognitions} ${recognitions === 1 ? "reconocimiento" : "reconocimientos"}`);
   if (drawings > 0) parts.push(`${drawings} ${drawings === 1 ? "dibujo" : "dibujos"}`);
   if (games > 0) parts.push(`${games} ${games === 1 ? "juego" : "juegos"}`);
+  if (analyzers > 0) parts.push(`${analyzers} ${analyzers === 1 ? "paso con el analizador" : "pasos con el analizador"}`);
   return parts;
 }
 
@@ -107,4 +120,42 @@ export function stimulusSummary(item: Stimulus): string {
   const parts = [stimulusKindNames[item.kind], item.category, intensityNames[item.intensity], `desde ${item.min_age} años`];
   if (item.expected_expression) parts.splice(2, 0, `espera ${expectedExpressionNames[item.expected_expression] ?? item.expected_expression}`);
   return parts.join(" · ");
+}
+
+function seconds(value: number) { return `${value} s`; }
+
+/** Una línea por paso para la vista previa de un protocolo: qué se aplica, sin
+ * resultados. Las rondas seguidas del juego con cámara se cuentan como un solo juego. */
+export function protocolStepLines(steps: ProtocolStep[], titleOf: (id: string) => string | undefined): string[] {
+  const lines: string[] = [];
+  const image = (id: string | null | undefined) => {
+    const title = id ? titleOf(id) : undefined;
+    return title ? `«${title}»` : "una imagen";
+  };
+  const target = (key: string | null | undefined) => (key ? practiceTargetNames[key] ?? key : "").toLowerCase();
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    if (step.kind === "practice" && step.game_round != null) {
+      let rounds = 1;
+      while (steps[index + 1]?.kind === "practice" && (steps[index + 1].game_round ?? 0) > 1) { rounds += 1; index += 1; }
+      lines.push(`Juego con cámara «Muestra la emoción»: ${rounds} rondas`);
+    } else if (step.kind === "practice" && step.conductor_rating) {
+      lines.push(`Juego: imita la cara con ${image(step.stimulus_id)} · quien conduce valora de 1 a 5 estrellas`);
+    } else if (step.kind === "practice" && step.imitate) {
+      lines.push(`Haz la misma cara que ${image(step.stimulus_id)} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "practice") {
+      lines.push(`Práctica: muestra ${target(step.target_expression)} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "recognition") {
+      lines.push(`¿Qué emoción es? con ${image(step.stimulus_id)}${step.situation ? " y una historia" : ""} · ${step.option_count ?? DEFAULT_RECOGNITION.option_count} opciones`);
+    } else if (step.kind === "drawing") {
+      lines.push(`Dibujo${step.stimulus_id ? ` mirando ${image(step.stimulus_id)}` : ""} · ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "analyzer") {
+      lines.push(`Usar el analizador: tú pides las expresiones · hasta ${seconds(step.exposure_seconds)}`);
+    } else if (step.kind === "game") {
+      lines.push(`${gameTypeNames[step.game_type ?? "matching"] ?? "Juego"}: ${step.rounds ?? DEFAULT_GAME.rounds} rondas${step.show_expression ? ", luego muestra la emoción" : ""}`);
+    } else {
+      lines.push(`Imagen ${image(step.stimulus_id)} · ${seconds(step.exposure_seconds)}`);
+    }
+  }
+  return lines;
 }

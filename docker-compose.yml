@@ -45,7 +45,8 @@ services:
   models:
     <<: *api-image
     command: ["python", "scripts/download_models.py", "--ensure-benchmark", "/app/models/weights/benchmarks/ferplus.json",
-              "--ensure-hsemotion-benchmark", "/app/models/weights/benchmarks/hsemotion.json"]
+              "--ensure-hsemotion-benchmark", "/app/models/weights/benchmarks/hsemotion.json",
+              "--ensure-emotiefflib-b2-benchmark", "/app/models/weights/benchmarks/emotiefflib-b2.json"]
     restart: "no"
     volumes:
       - emotv_models:/app/models/weights
@@ -97,6 +98,7 @@ services:
       SSL_CERT_FILE: ${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
       FERPLUS_BENCHMARK_PATH: /app/models/weights/benchmarks/ferplus.json
       HSEMOTION_BENCHMARK_PATH: /app/models/weights/benchmarks/hsemotion.json
+      EMOTIEFFLIB_B2_BENCHMARK_PATH: /app/models/weights/benchmarks/emotiefflib-b2.json
       LOGIN_MAX_FAILURES_PER_ACCOUNT: ${LOGIN_MAX_FAILURES_PER_ACCOUNT:-5}
       LOGIN_MAX_FAILURES_PER_IP: ${LOGIN_MAX_FAILURES_PER_IP:-20}
       LOGIN_ATTEMPT_WINDOW_MINUTES: ${LOGIN_ATTEMPT_WINDOW_MINUTES:-15}

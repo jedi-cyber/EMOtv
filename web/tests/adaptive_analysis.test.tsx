@@ -144,7 +144,8 @@ describe("analizador emoción → recomendación → postura", () => {
     expect(screen.getByText(/Sigue sus pasos/).textContent).not.toMatch(/calibración/);
     await waitFor(() => expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled());
     await userEvent.selectOptions(screen.getByLabelText("Protocolo"), "p2");
-    expect(screen.getByText(/Sigue sus pasos/).textContent).toMatch(/calibración/);
+    // Sin calibración: tampoco con cámara.
+    expect(screen.getByText(/Sigue sus pasos/).textContent).not.toMatch(/calibración/);
     expect(screen.getByText(/si no está disponible, siguen los pasos sin cámara/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Empezar la sesión" })).toBeEnabled();
     expect(getUserMedia).not.toHaveBeenCalled();

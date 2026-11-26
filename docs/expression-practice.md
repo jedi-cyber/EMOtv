@@ -299,9 +299,12 @@ Propuesta:
 No se agrega ninguna fase. Un ejercicio de práctica es un paso dentro de
 `STIMULI`: `_tick` y `_receive` ramifican por `step.kind`.
 
-- `PRE_QUESTIONNAIRE`, `POST_QUESTIONNAIRE`, `CALIBRATION`: sin cambios. La
-  calibración ya ocurre antes de `STIMULI`, así que la práctica siempre la tiene,
-  salvo tras un reinicio del servidor (§3, paso 4).
+- `PRE_QUESTIONNAIRE`, `POST_QUESTIONNAIRE`: sin cambios. **Actualización
+  2026-11-24:** las sesiones guiadas ya no pasan por `CALIBRATION`; esperan en
+  `READY` (con la vista previa de la cámara en la pantalla de la persona) hasta
+  «Empezar». Sin base neutral, el nivel de la práctica usa siempre la
+  probabilidad directa de la expresión pedida (`relative_to_calibration =
+  False`), el mismo cálculo que ya se usaba al pedir neutral o tras un reinicio.
 - `BEFORE_ANALYZER`: no admite pasos de práctica (lo valida el dominio).
 - `STIMULI` con pasos de imagen: mismo código y mismas capturas; los pasos de
   imagen y de práctica pueden alternarse en un protocolo.
@@ -431,6 +434,16 @@ niños ni dice nada sobre el estado emocional de nadie.
 | `a4db041` | Protocolo «Validación con adultos» y exportación CSV agregada (§10); el borrado de voluntarios incluye `practice_results` |
 | (imitar) | «Haz la misma cara»: `ProtocolStep.imitate`, migración `20261104_35_imitation_steps`, botón «Agregar como «Haz la misma cara»» en el editor, «Imitar el modelo» para quien conduce, `imitate` en métricas y línea de tiempo (contrato móvil 4.3) |
 
+| (juego con cámara) | «Muestra la emoción»: `ProtocolStep.game_round`, migración `20261124_45_camera_game`, tarjeta «Juego con cámara: muestra la emoción» en el editor (un bloque de 2 a 6 rondas seguidas que se mueve y se quita entero), estrellas por ronda y «Lograste X de Y caras» en la pantalla de la persona, `game_round` en métricas y línea de tiempo (contrato móvil 4.13) |
+
+**Juego con cámara.** Cada ronda es un ejercicio de práctica sin imagen con su
+número (`game_round` 1, 2, 3…), así que usa el mismo seguimiento, los mismos
+resultados y las mismas métricas. El dominio exige rondas seguidas y al menos
+dos por juego. La pantalla de la persona recibe `practice.camera_game`
+(`round`, `rounds`, `stars` con `true`, `false` o `null` para la ronda en curso,
+y `summary` solo al terminar la última ronda). No hay puntos ni puntaje: las
+estrellas cuentan rondas logradas.
+
 **Flujo.** Quien conduce arma en **Protocolos** un protocolo con uno o más
 ejercicios (expresión pedida, segundos para sostenerla y tiempo máximo), lo
 elige en el **Analizador** y confirma la autorización. Tras la calibración
@@ -534,6 +547,27 @@ Se incorporan antes de S2. Donde contradicen las secciones anteriores,
 prevalecen estas; lo que el código todavía no cumple está al final (§14.5).
 
 ### 14.1. Expresiones por protocolo
+
+> **Actualización del 23 de noviembre de 2026.** EMOtv estima solo cinco
+> expresiones con la cámara: neutral, felicidad, sorpresa, tristeza y enojo
+> (`ESTIMATED_EXPRESSIONS` en `domain/expression_info.py`). Los modelos siguen
+> entregando ocho clases, pero cada clasificador descarta asco, miedo y desprecio
+> y reparte la probabilidad entre las cinco restantes (un softmax sobre esas
+> clases), porque esas tres se confundían mucho entre sí y con las demás.
+> Consecuencias:
+>
+> - la práctica y «Haz la misma cara» solo piden esas cinco
+>   (`CAMERA_PRACTICE_TARGETS`); el editor solo las ofrece y el servidor
+>   rechaza las otras;
+> - un protocolo armado antes que pida miedo, asco o desprecio no se aplica
+>   hasta editarlo; `PRACTICE_TARGETS` conserva las ocho para leer protocolos
+>   y resultados antiguos;
+> - una imagen emocional de miedo, asco o desprecio se muestra con sus
+>   capturas, pero no entra en la coincidencia con la expresión esperada;
+> - la validación con adultos tiene un ejercicio por cada una de las cinco;
+> - reconocimiento, dibujo y juegos no usan la cámara y conservan las ocho.
+>
+> Lo que sigue en esta sección se conserva como registro de la decisión anterior.
 
 - Quien arma el protocolo (el practicante) elige qué expresiones incluye en los
   pasos de práctica. Cualquier expresión de `EXPRESSION_KEYS` es elegible,

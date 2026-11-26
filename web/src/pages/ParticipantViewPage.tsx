@@ -28,7 +28,9 @@ export function PracticeStage({ practice, imageUrl, readAloud = false }: {
     if (readAloud) speakText(practice.instruction);
     return () => { if (readAloud) stopExerciseSpeech(); };
   }, [readAloud, practice.instruction]);
+  const game = practice.camera_game;
   return <div className="participant-practice">
+    {game && <CameraGameStars game={game} />}
     <p className="participant-instruction">{practice.instruction}</p>
     {imageUrl && <img className="participant-illustration" src={imageUrl} alt="Imagen de apoyo" />}
     {level != null && <div className="practice-signal" role="meter" aria-label="Señal del ejercicio"
@@ -36,7 +38,26 @@ export function PracticeStage({ practice, imageUrl, readAloud = false }: {
       style={{ "--practice-level": level } as CSSProperties}>
       <span className="practice-signal-fill" />
     </div>}
-    <p className="participant-achieved" role="status" aria-live="polite">{practice.achieved ? practice.message : ""}</p>
+    <p className="participant-achieved" role="status" aria-live="polite">
+      {[practice.achieved ? practice.message : null, game?.summary].filter(Boolean).join(" ")}</p>
+  </div>;
+}
+
+/**
+ * Juego con cámara: «Ronda 2 de 5» y una estrella por ronda. Llena si se logró,
+ * vacía si terminó sin lograrse y tenue si todavía no se juega. No hay puntos
+ * ni comparación; al final, «Lograste 3 de 5 caras».
+ */
+function CameraGameStars({ game }: { game: NonNullable<ParticipantPractice["camera_game"]> }) {
+  const achieved = game.stars.filter((item) => item === true).length;
+  return <div className="camera-game">
+    <p className="matching-game-round">Ronda {game.round} de {game.rounds}</p>
+    <p className="camera-game-stars" role="img"
+      aria-label={`${achieved} ${achieved === 1 ? "cara lograda" : "caras logradas"} de ${game.rounds}`}>
+      {game.stars.map((item, index) => <span key={index} aria-hidden="true"
+        className={`camera-game-star${item === true ? " is-achieved" : item === false ? " is-missed" : ""}`}>
+        {item === true ? "★" : "☆"}</span>)}
+    </p>
   </div>;
 }
 
@@ -161,6 +182,14 @@ export function ParticipantViewPage() {
 
   const capturing = Boolean(view?.capture_frames) && !ended;
   const withoutCamera = view?.uses_camera === false;
+  // La persona no se ve a sí misma: la vista previa está en la pantalla de quien
+  // conduce. La cámara se abre (oculta) al esperar el inicio, para pedir el permiso
+  // antes del primer paso, y mientras se envían cuadros.
+  const warming = !ended && !withoutCamera && view != null
+    && (view.phase === "ready" || view.phase === "live" || Boolean(view.practice) || view.activity?.kind === "analyzer"
+      // «Reconoce y luego muéstrala»: se abre al terminar la ronda, antes de pedir la cara.
+      || Boolean(view.game?.asks_face) || view.game?.state === "show");
+  const cameraOn = capturing || warming;
   // Si la sesión siguió sin cámara, el aviso del problema ya no hace falta.
   useEffect(() => { if (withoutCamera) setCameraError(""); }, [withoutCamera]);
 
@@ -171,7 +200,7 @@ export function ParticipantViewPage() {
   }
 
   useEffect(() => {
-    if (!capturing) { releaseCamera(); return; }
+    if (!cameraOn) { releaseCamera(); return; }
     let timer: number | undefined;
     let stopped = false;
     async function start() {
@@ -183,7 +212,8 @@ export function ParticipantViewPage() {
           if (videoRef.current) { videoRef.current.srcObject = streamRef.current; await videoRef.current.play().catch(() => undefined); }
         }
         setCameraError("");
-        timer = window.setInterval(sendFrame, interval);
+        // La vista previa sola no envía cuadros.
+        if (capturing) timer = window.setInterval(sendFrame, interval);
       } catch (reason) {
         if (stopped) return;
         releaseCamera();
@@ -208,7 +238,7 @@ export function ParticipantViewPage() {
     }
     void start();
     return () => { stopped = true; if (timer) window.clearInterval(timer); };
-  }, [capturing, base, interval, oneAtATime]);
+  }, [cameraOn, capturing, base, interval, oneAtATime]);
 
   // Al salir, cerrar o recargar la pestaña la cámara se apaga.
   useEffect(() => {
@@ -218,6 +248,11 @@ export function ParticipantViewPage() {
 
   async function answer(key: string) {
     await apiRequest(`${base}/answer`, { method: "POST", body: JSON.stringify({ expression: key }) });
+    setView(await apiRequest<ParticipantViewState>(base));
+  }
+
+  async function finishDrawing() {
+    await apiRequest(`${base}/drawing-done`, { method: "POST" });
     setView(await apiRequest<ParticipantViewState>(base));
   }
 
@@ -238,7 +273,7 @@ export function ParticipantViewPage() {
   const supports = view?.supports ?? (view?.accessible ? { pictograms: true, large_controls: true, read_aloud: false } : null);
   return <main className={`participant-view${supports?.large_controls ? " participant-view--accessible" : ""}`}>
     {/* Sin cámara (solo reconocimientos) no se monta el video. */}
-    {view?.uses_camera !== false && <video ref={videoRef} className="participant-camera" playsInline muted aria-hidden="true" />}
+    {view?.uses_camera !== false && <video ref={videoRef} playsInline muted className="participant-camera" aria-hidden="true" />}
     <canvas ref={canvasRef} hidden />
     <div className="participant-view-stage">
       {finished
@@ -254,7 +289,7 @@ export function ParticipantViewPage() {
           ? <DrawingActivity key={drawing.round} onDrawingChange={setHasDrawing} session={{
             instruction: drawing.instruction, question: drawing.question, options: drawing.options,
             finished: drawing.finished, chosen: drawing.chosen, message: drawing.message,
-            onChoose: answer, readAloud: Boolean(supports?.read_aloud) }} />
+            onChoose: answer, onFinish: finishDrawing, readAloud: Boolean(supports?.read_aloud), imageUrl }} />
           : game
           ? <MatchingGameStage game={game} imageUrl={imageUrl} onAction={playGame} loadOption={loadGameOption}
             pictograms={Boolean(supports?.pictograms)} readAloud={Boolean(supports?.read_aloud)} />

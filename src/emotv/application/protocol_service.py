@@ -47,7 +47,8 @@ from emotv.application.questionnaire_service import QuestionnaireNotFound, Quest
 from emotv.application.stimulus_service import INITIAL_BANK_CATEGORY, StimulusNotFound, StimulusService
 from emotv.domain.audit import AuditAction
 from emotv.domain.guided_session import RECOGNITION_DISTRACTORS
-from emotv.domain.protocol import GAME_SIMILAR, Protocol, ProtocolKind, ProtocolStep, ProtocolSupports
+from emotv.domain.protocol import (CAMERA_PRACTICE_PROBLEM, CAMERA_PRACTICE_TARGETS, GAME_SIMILAR, Protocol,
+                                   ProtocolKind, ProtocolStep, ProtocolSupports)
 from emotv.domain.role import Role
 from emotv.domain.stimulus import Stimulus, StimulusKind, StimulusScope
 from emotv.domain.user import User
@@ -92,6 +93,17 @@ STARTER_DESCRIPTION = ("Reconocer seis emociones básicas en dibujos sencillos. 
 STARTER_EXPRESSIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust")
 STARTER_SECONDS = 30
 STARTER_OPTIONS = 2
+
+# Juegos con cámara del Analizador: se responden poniendo la cara. Cada ronda da
+# tiempo para unos intentos (los primeros segundos y el sostener no cuentan).
+CAMERA_GAME_NAMES = {"matching": "Juego con cámara: empareja la emoción",
+                     GAME_SIMILAR: "Juego con cámara: busca la misma emoción"}
+CAMERA_GAME_DESCRIPTIONS = {
+    "matching": "Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca el nombre que coincide.",
+    GAME_SIMILAR: ("Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca, entre otras caras, "
+                   "la que muestra la misma emoción."),
+}
+CAMERA_GAME_ROUND_SECONDS = 45
 
 
 class ProtocolService:
@@ -156,9 +168,22 @@ class ProtocolService:
 
     def get(self, user: User, protocol_id: str) -> Protocol:
         protocol = self.repository.get(protocol_id)
-        if protocol is None or not self.can_view(user, protocol):
+        if protocol is None or protocol.deleted_at is not None or not self.can_view(user, protocol):
             raise ProtocolNotFound(protocol_id)
         return protocol
+
+    def delete(self, user: User, protocol_id: str) -> None:
+        """Quien armó el protocolo lo elimina: deja de listarse, de aplicarse y de
+        ofrecerse como plantilla. Las sesiones que ya lo usaron lo conservan
+        para su línea de tiempo y su reporte, y las copias de otros no cambian."""
+        self._require_conductor(user)
+        protocol = self.get(user, protocol_id)
+        if protocol.owner_user_id != user.id:
+            raise PermissionError("Solo quien armó el protocolo puede eliminarlo")
+        if not protocol.current:
+            raise PermissionError("Elimina la versión vigente del protocolo")
+        self.repository.replace(replace(protocol, deleted_at=self.clock(), shared_with_group=False))
+        self.audit.record(user, AuditAction.DELETE, RESOURCE, protocol.id)
 
     def is_used(self, protocol: Protocol) -> bool:
         return self.repository.is_used(protocol.id)
@@ -191,9 +216,11 @@ class ProtocolService:
             return self._similar_images(user, target, step)
         return self._matching_images(user, target, step)
 
-    def _game_fits(self, target: Protocol, item: Stimulus | None) -> bool:
+    def _game_fits(self, target: Protocol, item: Stimulus | None, step: ProtocolStep) -> bool:
+        # «Responde con la cara»: solo las cinco expresiones que estima EMOtv.
+        allowed = CAMERA_PRACTICE_TARGETS if step.answer_by_face else RECOGNITION_DISTRACTORS
         return (item is not None and item.kind is StimulusKind.EMOTIONAL
-                and item.expected_expression in RECOGNITION_DISTRACTORS
+                and item.expected_expression in allowed
                 and self._image_problem(target, item) is None)
 
     def _similar_images(self, user: User, target: Protocol, step: ProtocolStep) -> ProtocolStep:
@@ -238,7 +265,7 @@ class ProtocolService:
                 item = self.stimuli.get(user, stimulus_id)
             except StimulusNotFound:
                 item = None
-            stored.append(item if self._game_fits(target, item) else None)
+            stored.append(item if self._game_fits(target, item, step) else None)
         if len(stored) == step.rounds * size and all(stored):
             blocks = [stored[index:index + size] for index in range(0, len(stored), size)]
             if all(round_ok(block[0], block[1], list(block[2:])) for block in blocks):
@@ -247,7 +274,7 @@ class ProtocolService:
         chooser = random.Random()
         pool: defaultdict[str, list[Stimulus]] = defaultdict(list)
         for item in self.stimuli.list_for(user, target.for_children):
-            if self._game_fits(target, item):
+            if self._game_fits(target, item, step):
                 pool[item.expected_expression].append(item)
         for items in pool.values():
             chooser.shuffle(items)
@@ -288,10 +315,11 @@ class ProtocolService:
         if len(chosen) < step.rounds * size:
             audience = " «Para niños»" if target.for_children else ""
             done = len(chosen) // size
+            five = " (al responder con la cara, solo neutral, felicidad, sorpresa, tristeza y enojo)" if step.answer_by_face else ""
             raise ValueError(
                 f"«Busca la misma emoción» necesita, en cada una de sus {step.rounds} rondas, dos imágenes "
                 f"emocionales aprobadas{audience} de la misma emoción que se vean distintas (otra cara, otros "
-                f"colores) y {step.option_count - 1} de otras emociones; el banco alcanza para {done}. "
+                f"colores) y {step.option_count - 1} de otras emociones{five}; el banco alcanza para {done}. "
                 "Agrega imágenes al banco, baja las rondas o las opciones")
         return replace(step, game_stimulus_ids=tuple(chosen))
 
@@ -300,8 +328,10 @@ class ProtocolService:
         sirven y completa con otras del banco, primero de emociones que todavía no
         aparecen."""
         def fits(item: Stimulus | None) -> bool:
+            # «Responde con la cara»: solo las cinco expresiones que estima EMOtv.
+            allowed = CAMERA_PRACTICE_TARGETS if step.answer_by_face else RECOGNITION_DISTRACTORS
             return (item is not None and item.kind is StimulusKind.EMOTIONAL
-                    and item.expected_expression in RECOGNITION_DISTRACTORS
+                    and item.expected_expression in allowed
                     and self._image_problem(target, item) is None)
 
         kept: list[Stimulus] = []
@@ -327,7 +357,8 @@ class ProtocolService:
             counts[expression] += 1
         if len(kept) < step.rounds:
             audience = " «Para niños»" if target.for_children else ""
-            raise ValueError(f"El juego necesita {step.rounds} imágenes emocionales aprobadas{audience} y hay "
+            five = " de neutral, felicidad, sorpresa, tristeza o enojo" if step.answer_by_face else ""
+            raise ValueError(f"El juego necesita {step.rounds} imágenes emocionales aprobadas{audience}{five} y hay "
                              f"{len(kept)}: agrega imágenes al banco o baja las rondas")
         return replace(step, game_stimulus_ids=tuple(item.id for item in kept))
 
@@ -380,6 +411,9 @@ class ProtocolService:
                                      f"«{stimulus.title}» no la tiene")
                 step = replace(step, target_expression=stimulus.expected_expression)
             steps.append(step)
+        for step in steps:
+            if step.is_practice and step.target_expression not in CAMERA_PRACTICE_TARGETS:
+                raise ValueError(CAMERA_PRACTICE_PROBLEM)
         return replace(draft, steps=tuple(steps))
 
     @staticmethod
@@ -484,6 +518,35 @@ class ProtocolService:
         return self.create(user, ProtocolDraft(name=STARTER_NAME, description=STARTER_DESCRIPTION,
                                                for_children=True, steps=steps, accessible=True))
 
+    @staticmethod
+    def is_camera_game(protocol: Protocol, game_type: str | None = None) -> bool:
+        """El protocolo de un juego con cámara del Analizador: un solo juego que se
+        responde con la cara, con el nombre que le pone EMOtv."""
+        if len(protocol.steps) != 1:
+            return False
+        step = protocol.steps[0]
+        return (step.is_game and step.answer_by_face and step.game_type in CAMERA_GAME_NAMES
+                and (game_type is None or step.game_type == game_type)
+                and protocol.name == CAMERA_GAME_NAMES[step.game_type])
+
+    def ensure_camera_game(self, user: User, game_type: str, for_children: bool) -> Protocol:
+        """Juego con cámara elegido en el Analizador sin protocolo: devuelve el de la
+        cuenta para ese juego y ese público, o lo arma con imágenes aprobadas de las
+        cinco expresiones que estima EMOtv. Después la sesión sigue como con
+        cualquier protocolo, con su autorización y su código."""
+        self._require_conductor(user)
+        if game_type not in CAMERA_GAME_NAMES:
+            raise ValueError("Ese juego no se juega con la cámara")
+        for item in self.repository.list_current((user.id,)):
+            if (item.owner_user_id == user.id and item.deleted_at is None and item.for_children == for_children
+                    and self.is_camera_game(item, game_type)):
+                return item
+        step = (ProtocolStep.matching_game if game_type == "matching" else ProtocolStep.similar_game)(
+            round_seconds=CAMERA_GAME_ROUND_SECONDS)
+        return self.create(user, ProtocolDraft(
+            name=CAMERA_GAME_NAMES[game_type], description=CAMERA_GAME_DESCRIPTIONS[game_type],
+            for_children=for_children, steps=(replace(step, answer_by_face=True),)))
+
     # --- Uso en una sesión ---------------------------------------------------
 
     def require_usable(self, user: User, protocol_id: str) -> Protocol:
@@ -497,6 +560,10 @@ class ProtocolService:
         if is_validation_protocol(protocol) and not self.validation_usable(protocol):
             raise ProtocolUnavailable("El protocolo de validación solo se aplica en modo demo, con una cuenta "
                                       "de voluntario")
+        if any(step.is_practice and step.target_expression not in CAMERA_PRACTICE_TARGETS
+               for step in protocol.steps):
+            # Protocolo armado antes de limitar la estimación a cinco expresiones.
+            raise ProtocolUnavailable(f"Edita el protocolo antes de aplicarlo. {CAMERA_PRACTICE_PROBLEM}.")
         for stimulus_id in (item for step in protocol.steps for item in step.image_ids):
             try:
                 stimulus = self.stimuli.get(user, stimulus_id)

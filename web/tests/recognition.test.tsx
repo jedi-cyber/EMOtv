@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,11 +47,12 @@ describe("«¿Qué emoción es?» en el editor de protocolos", () => {
 
   it("agrega una imagen emocional con su respuesta, 3 opciones y tiempo para responder", async () => {
     await openEditor();
-    const add = screen.getByRole("button", { name: "Agregar como «¿Qué emoción es?»" });
+    await userEvent.click(screen.getByRole("button", { name: "¿Qué emoción es?" }));
+    const add = screen.getByRole("button", { name: "Agregar paso" });
     expect(add).toBeDisabled();
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "own");
-    expect(add).toBeDisabled();                            // sin expresión esperada no hay respuesta
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "sad");
+    // Sin expresión esperada no hay respuesta: esa imagen no se ofrece.
+    expect(within(screen.getByLabelText(/^Imagen para/)).queryByRole("option", { name: /Mi foto de un paisaje/ })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText(/^Imagen para/), "sad");
     await userEvent.click(add);
     expect(screen.getByText(/Respuesta: Tristeza/)).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Opciones"), "4");

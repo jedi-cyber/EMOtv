@@ -54,10 +54,8 @@ class EmotionAnalyzer(Protocol):
 EmotionAnalyzerFactory = Callable[[str], EmotionAnalyzer]
 AdaptiveProcessorFactory = Callable[[Activity, EmotionAnalyzer, StabilizedEmotion], BrowserActivityService]
 MAX_FRAME_BYTES = 2_500_000
-EMOTION_MODEL_IDS = (FERPLUS_MODEL_ID, HSEMOTION_MODEL_ID, "hardlyhumans_vit")
-# Quien conduce la sesión puede probar cualquier modelo local admitido; el
-# experimental queda solo para administración.
-NON_ADMIN_MODEL_IDS = LOCAL_MODEL_IDS
+# Quien conduce la sesión puede probar cualquier modelo local admitido.
+EMOTION_MODEL_IDS = LOCAL_MODEL_IDS
 # Estados en los que la sesión sigue abierta en el WebSocket.
 OPEN_STATES = (SessionState.IN_PROGRESS, SessionState.RECOGNIZED)
 
@@ -222,9 +220,6 @@ def create_analysis_router(
             requested_model = credentials.get("emotion_model_id") or None
             if requested_model is not None and requested_model not in EMOTION_MODEL_IDS:
                 await _error(websocket, "Modelo facial no permitido", 4400)
-                return
-            if user.role is not Role.SUPERADMIN and requested_model not in (None, *NON_ADMIN_MODEL_IDS):
-                await _error(websocket, "Solo administración puede elegir el modelo experimental", 4403)
                 return
             if not adaptive and model_processor_factory is None:
                 # Sin fábrica por modelo, el procesador usa su clasificador fijo (FER+).

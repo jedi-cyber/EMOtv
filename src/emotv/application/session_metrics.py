@@ -33,7 +33,7 @@ from emotv.domain.guided_session import (
     RecognitionResult,
     VerbalResponse,
 )
-from emotv.domain.expression_info import EXPRESSION_KEYS
+from emotv.domain.expression_info import ESTIMATED_EXPRESSIONS, EXPRESSION_KEYS
 from emotv.domain.protocol import PRACTICE_TARGETS, ProtocolStep
 from emotv.domain.stimulus import Stimulus, StimulusKind
 
@@ -92,10 +92,12 @@ def stimulus_metrics(
                              "said": said.get(index), "shown_before_analyzer": step.shown_before_analyzer})
             continue
         expected = stimulus.expected_expression
-        rows = [_capture(item, expected) for item in items]
-        counted = next((row for row in rows if row["counted"]), None)
+        # Una imagen de asco, miedo o desprecio no se compara: EMOtv no estima esas expresiones.
+        comparable = expected in ESTIMATED_EXPRESSIONS
+        rows = [_capture(item, expected if comparable else None) for item in items]
+        counted = next((row for row in rows if row["counted"]), None) if comparable else None
         emotional.append({**base, "expected_expression": expected, "captures": rows,
-                          "counted": counted is not None,
+                          "comparable": comparable, "counted": counted is not None,
                           "matches_expected": counted["matches_expected"] if counted else None,
                           "excluded_captures": sum(1 for row in rows if not row["counted"])})
     counted = [item for item in emotional if item["counted"]]
@@ -105,6 +107,7 @@ def stimulus_metrics(
         "abstract": abstract,
         "totals": {
             "emotional_stimuli": len(emotional),
+            "not_comparable": sum(1 for item in emotional if not item["comparable"]),
             "counted": len(counted),
             "matched": matched,
             "excluded_captures": sum(item["excluded_captures"] for item in emotional),
@@ -202,6 +205,11 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
         exercises.append({
             "step_index": index, "target_expression": step.target_expression, "hold_seconds": step.hold_seconds,
             "max_seconds": step.exposure_seconds, "imitate": step.imitate,
+            # Ronda de un juego con cámara («Muestra la emoción»), o None.
+            "game_round": step.game_round,
+            # «Juego: imita la cara»: quien conduce lo valora; sus estrellas, o None.
+            "conductor_rating": step.conductor_rating,
+            "conductor_stars": item.conductor_stars if item else None,
             # None: la sesión no llegó a este ejercicio.
             "outcome": item.outcome.value if item else None,
             "seconds_to_achieve": item.seconds_to_achieve if item else None,
@@ -210,13 +218,39 @@ def practice_metrics(steps: Sequence[ProtocolStep], results: Iterable[PracticeRe
             "feedback_visible": item.feedback_visible if item else None,
         })
     found = [by_step[index] for index, _ in practice_steps if index in by_step]
-    return {
+    block = {
         "exercises": exercises,
         "totals": {**practice_totals(found), "exercises": len(exercises),
                    "not_reached": sum(1 for item in exercises if item["outcome"] is None)},
         "by_target": practice_by_target(found),
         "notice": PRACTICE_NOTICE,
     }
+    rated = [item for item in exercises if item["conductor_rating"]]
+    if rated:
+        block["conductor_ratings"] = conductor_ratings(rated)
+    return block
+
+
+CONDUCTOR_RATING_NOTICE = ("Son las estrellas que marcó quien condujo la sesión, no un cálculo de EMOtv. No se "
+                           "suman ni se promedian, y la persona no las vio.")
+
+
+def _stars(count: int) -> str:
+    return _plural(count, "estrella", "estrellas")
+
+
+def conductor_ratings(exercises: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """«Juego: imita la cara»: cuántas imitaciones valoró quien conduce y cuántas
+    veces marcó cada número de estrellas. Solo cuenta; no suma ni promedia."""
+    stars = [item["conductor_stars"] for item in exercises if item["conductor_stars"] is not None]
+    by_stars = [{"stars": value, "count": stars.count(value)} for value in range(5, 0, -1) if value in stars]
+    if stars:
+        detail = ", ".join(f"{_stars(row['stars'])} en {row['count']}" for row in by_stars)
+        sentence = f"Quien conduce valoró {len(stars)} de {len(exercises)}: {detail}."
+    else:
+        sentence = "Quien conduce no valoró ninguna imitación."
+    return {"items": len(exercises), "rated": len(stars), "by_stars": by_stars, "sentence": sentence,
+            "notice": CONDUCTOR_RATING_NOTICE}
 
 
 # --- Reconocimiento de emociones ------------------------------------------------------------
@@ -283,6 +317,18 @@ def game_sentence(rounds_total: int, rounds_done: int, matched: int, first_try: 
             f"{first_try} a la primera; {helped}.")
 
 
+def face_sentence(faces_asked: int | None, faces_shown: int | None) -> str | None:
+    """«Reconoce y luego muéstrala»: lo que estimó la cámara, sin valorar a la persona.
+    None si el juego no lo pidió."""
+    if faces_asked is None or faces_shown is None:
+        return None
+    if faces_asked == 0:
+        return "No se pidió poner la cara en ninguna ronda (sin cámara o con emociones que EMOtv no estima)."
+    rounds = "ronda" if faces_asked == 1 else "rondas"
+    return (f"Al pedirle poner la cara, la cámara estimó la expresión pedida en {faces_shown} de "
+            f"{faces_asked} {rounds}. Es una estimación, no una valoración.")
+
+
 def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -> dict[str, Any] | None:
     """Juegos de una sesión; None si el protocolo no tiene ninguno. Solo
     contadores de rondas: no es un puntaje ni una calificación."""
@@ -303,23 +349,33 @@ def game_metrics(steps: Sequence[ProtocolStep], results: Iterable[GameResult]) -
             "by_conductor": item.by_conductor if item else None,
             "sentence": game_sentence(item.rounds_total, item.rounds_done, item.matched, item.first_try,
                                       item.help_used) if item else None,
+            # «Reconoce y luego muéstrala»: nulos si el juego no lo pidió.
+            "show_expression": step.show_expression,
+            # «Responde con la cara»: la persona respondió poniendo la cara; la cámara marcó la opción.
+            "answer_by_face": step.answer_by_face,
+            "faces_asked": item.faces_asked if item else None, "faces_shown": item.faces_shown if item else None,
+            "face_sentence": face_sentence(item.faces_asked, item.faces_shown) if item else None,
         })
     played = [by_step[index] for index in game_steps if index in by_step]
     totals = {name: sum(getattr(item, name) for item in played)
               for name in ("rounds_total", "rounds_done", "matched", "first_try", "help_used")}
+    faced = [item for item in played if item.faces_asked is not None]
+    faces = ({"faces_asked": sum(item.faces_asked for item in faced),
+              "faces_shown": sum(item.faces_shown for item in faced)} if faced else None)
     return {
         "exercises": exercises,
         "totals": {"games": len(exercises),
                    **{outcome.value: sum(1 for item in played if item.outcome is outcome) for outcome in GameOutcome},
                    "not_reached": len(exercises) - len(played), **totals,
-                   "sentence": game_sentence(**totals) if played else None},
+                   "sentence": game_sentence(**totals) if played else None,
+                   "faces": faces, "face_sentence": face_sentence(**faces) if faces else None},
         "notice": GAME_NOTICE,
     }
 
 
 def drawing_metrics(steps: Sequence[ProtocolStep], results: Iterable[DrawingResult]) -> dict[str, Any] | None:
-    """Dibujos de una sesión; None si el protocolo no tiene ninguno. Solo la
-    emoción que la persona señaló, sin compararla con nada."""
+    """Dibujos de una sesión; None si el protocolo no tiene ninguno. Solo si
+    terminó y los tiempos (y, en sesiones anteriores, la emoción que señaló)."""
     drawing_steps = [index for index, step in enumerate(steps) if step.is_drawing]
     if not drawing_steps:
         return None
@@ -344,7 +400,7 @@ def drawing_metrics(steps: Sequence[ProtocolStep], results: Iterable[DrawingResu
                    "timed_out": count[RecognitionOutcome.TIMED_OUT], "skipped": count[RecognitionOutcome.SKIPPED],
                    "stopped": count[RecognitionOutcome.STOPPED],
                    "not_reached": sum(1 for item in exercises if item["outcome"] is None),
-                   "sentence": f"Señaló una emoción en {answered} de {len(exercises)} "
+                   "sentence": f"Terminó {answered} de {len(exercises)} "
                                f"{'dibujo' if len(exercises) == 1 else 'dibujos'}."},
         "notice": DRAWING_NOTICE,
     }
@@ -401,6 +457,10 @@ def _plural(count: int, one: str, many: str) -> str:
 
 def _activity(kind: str, exercise: dict[str, Any]) -> str:
     if kind == "practice":
+        if exercise.get("game_round"):
+            return f"Juego con cámara, ronda {exercise['game_round']}"
+        if exercise.get("conductor_rating"):
+            return "Juego: imita la cara"
         return "Haz la misma cara" if exercise.get("imitate") else "Práctica facial"
     if kind == "game":
         return GAME_NAMES.get(exercise.get("game_type") or "", "Juego")
@@ -451,8 +511,9 @@ def educational_summary(metrics: dict[str, Any], game_attempts: dict[int, int] |
         indicated = [{"expression": key, "count": count} for key, count in chosen.items()]
         listed = ", ".join(f"{names.get(item['expression'], item['expression']).lower()} ({item['count']})"
                            for item in indicated)
-        sentence = (f"Completó {totals['answered']} de {_plural(totals['exercises'], 'dibujo', 'dibujos')} "
-                    f"señalando una emoción" + (f": {listed}." if listed else "."))
+        # Las emociones señaladas solo existen en sesiones anteriores.
+        sentence = (f"Terminó {totals['answered']} de {_plural(totals['exercises'], 'dibujo', 'dibujos')}"
+                    + (f"; señaló {listed}." if listed else "."))
         result["drawing"] = {"exercises": totals["exercises"], "completed": totals["answered"],
                              "timed_out": totals["timed_out"], "indicated": indicated, "sentence": sentence}
 

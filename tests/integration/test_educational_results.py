@@ -65,7 +65,7 @@ def full_session(env):  # noqa: F811
     wait(env, 2.1)
     view(env, token)
     assert step_index(env, session_id) == 2
-    assert answer(env, token, "happiness").json() == {"received": True}
+    assert env.client.post(f"/participant-view/{token}/drawing-done").json() == {"received": True}
     wait(env, 2.1)
     view(env, token)
     assert step_index(env, session_id) == 3
@@ -107,8 +107,8 @@ def test_la_sesion_distingue_cada_actividad_y_las_que_no_terminaron(env):  # noq
         "exercises": 1, "applied": 1, "matched": 1}
     drawing = block["drawing"]
     assert (drawing["exercises"], drawing["completed"]) == (3, 1)
-    assert drawing["indicated"] == [{"expression": "happiness", "count": 1}]
-    assert drawing["sentence"] == "Completó 1 de 3 dibujos señalando una emoción: alegría (1)."
+    assert drawing["indicated"] == []
+    assert drawing["sentence"] == "Terminó 1 de 3 dibujos."
     games = block["games"]
     assert (games["games"], games["played"], games["attempts"]) == (2, 2, 3)
     assert (games["rounds_total"], games["rounds_done"], games["matched"]) == (4, 2, 2)
@@ -181,8 +181,8 @@ def test_las_estadisticas_cuentan_dibujos_y_juegos_por_sesion(env):  # noqa: F81
     drawing, games = mine["drawing"], mine["games"]
     assert drawing["sessions"] == 1 and drawing["totals"]["exercises"] == 2
     assert drawing["totals"]["answered"] == 1 and drawing["totals"]["skipped"] == 1
-    assert drawing["by_expression"] == [{"expression": "happiness", "count": 1}]
-    assert drawing["totals"]["sentence"] == "Se señaló una emoción en 1 de 2 dibujos."
+    assert drawing["by_expression"] == []
+    assert drawing["totals"]["sentence"] == "Se terminó 1 de 2 dibujos."
     assert games["sessions"] == 1 and games["totals"]["games"] == 2 and games["totals"]["attempts"] == 3
     assert [row["game_type"] for row in games["by_type"]] == ["matching"]
     assert games["totals"]["completed"] == 1 and games["totals"]["stopped"] == 1

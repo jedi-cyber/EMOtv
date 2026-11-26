@@ -392,6 +392,8 @@ class ProtocolRecord(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Eliminado por quien lo armó (migración 20261124_47); las sesiones lo conservan.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Práctica (estímulos y cuestionarios) o examen simulado (sin pasos).
     kind: Mapped[str] = mapped_column(String(16), nullable=False, default="practice",
                                       server_default="practice")
@@ -444,6 +446,8 @@ class QuestionnaireRecord(Base):
     copied_from_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Eliminado por quien lo armó (migración 20261124_47); las sesiones lo conservan.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class QuestionnaireResponseRecord(Base):
@@ -471,8 +475,12 @@ class QuestionnaireResponseRecord(Base):
 # El dibujo, sin imagen ni opciones que configurar (migración 20261106_40).
 # El juego de emparejar, con sus rondas y sus imágenes (migración 20261106_41);
 # «Busca la misma emoción» (game_type 'similar', migración 20261107_42).
-PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game')"
-PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game') OR stimulus_id IS NOT NULL"
+# «Usar el analizador» (kind 'analyzer', migración 20261124_49): sin imagen ni expresión
+# pedida, y el único paso que puede durar más de 120 s (hasta 600).
+PROTOCOL_STEP_KIND = "kind IN ('stimulus', 'practice', 'recognition', 'drawing', 'game', 'analyzer')"
+PROTOCOL_STEP_STIMULUS = "kind IN ('practice', 'drawing', 'game', 'analyzer') OR stimulus_id IS NOT NULL"
+# Solo la propia columna; el tope de 120 s de los demás pasos va en ck_protocol_steps_practice.
+PROTOCOL_STEP_EXPOSURE = "exposure_seconds BETWEEN 1 AND 600"
 # Un reconocimiento es el único paso que lleva una situación (migración 20261102_32).
 PROTOCOL_STEP_PRACTICE = (
     "((kind = 'stimulus' AND target_expression IS NULL AND hold_seconds IS NULL AND option_count IS NULL) OR "
@@ -481,27 +489,39 @@ PROTOCOL_STEP_PRACTICE = (
     "AND option_count IS NULL) OR "
     "(kind = 'recognition' AND target_expression IS NOT NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0) OR "
-    "(kind = 'drawing' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "(kind = 'drawing' AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count IS NULL AND capture_after_seconds = 0) OR "
     "(kind = 'game' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
     "AND option_count BETWEEN 2 AND 4 AND capture_after_seconds = 0 AND game_type IN ('matching', 'similar') "
-    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL)) "
+    "AND rounds BETWEEN 2 AND 6 AND game_stimulus_ids IS NOT NULL) OR "
+    "(kind = 'analyzer' AND stimulus_id IS NULL AND target_expression IS NULL AND hold_seconds IS NULL "
+    "AND option_count IS NULL AND capture_after_seconds = 0)) "
+    "AND (kind = 'analyzer' OR exposure_seconds <= 120) "
     "AND (situation IS NULL OR kind = 'recognition') "
     # Imitar un modelo: solo una práctica con su imagen (migración 20261104_35).
     "AND (imitate = false OR (kind = 'practice' AND stimulus_id IS NOT NULL)) "
     "AND (kind = 'game' OR (game_type IS NULL AND rounds IS NULL AND game_stimulus_ids IS NULL))")
+# Ronda de un juego con cámara: una práctica sin imagen (migración 20261124_45).
+# Solo la propia columna (migración 20261124_45); el resto lo valida el dominio.
+PROTOCOL_STEP_GAME_ROUND = "game_round IS NULL OR game_round BETWEEN 1 AND 6"
+# Valoración de quien conduce, de 1 a 5 estrellas (migración 20261124_46).
+PRACTICE_CONDUCTOR_STARS = "conductor_stars IS NULL OR conductor_stars BETWEEN 1 AND 5"
+# Solo las propias columnas (migración 20261124_51).
+GAME_RESULT_FACES = ("(faces_asked IS NULL AND faces_shown IS NULL) OR "
+                     "(faces_shown >= 0 AND faces_shown <= faces_asked AND faces_asked <= rounds_done)")
 
 
 class ProtocolStepRecord(Base):
     __tablename__ = "protocol_steps"
     __table_args__ = (
         UniqueConstraint("protocol_id", "position", name="uq_protocol_steps_position"),
-        CheckConstraint("exposure_seconds BETWEEN 1 AND 120", name="ck_protocol_steps_exposure"),
+        CheckConstraint(PROTOCOL_STEP_EXPOSURE, name="ck_protocol_steps_exposure"),
         CheckConstraint("capture_after_seconds >= 0 AND capture_after_seconds <= exposure_seconds",
                         name="ck_protocol_steps_capture"),
         CheckConstraint(PROTOCOL_STEP_KIND, name="ck_protocol_steps_kind"),
         CheckConstraint(PROTOCOL_STEP_STIMULUS, name="ck_protocol_steps_stimulus"),
         CheckConstraint(PROTOCOL_STEP_PRACTICE, name="ck_protocol_steps_practice"),
+        CheckConstraint(PROTOCOL_STEP_GAME_ROUND, name="ck_protocol_steps_game_round"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     protocol_id: Mapped[str] = mapped_column(
@@ -524,6 +544,14 @@ class ProtocolStepRecord(Base):
     game_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     rounds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     game_stimulus_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Ronda de un juego con cámara («Muestra la emoción»).
+    game_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # «Juego: imita la cara»: quien conduce valora la imitación (migración 20261124_46).
+    conductor_rating: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # «Reconoce y luego muéstrala» en un juego (migración 20261124_51).
+    show_expression: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # «Responde con la cara» en un juego (migración 20261125_52).
+    answer_by_face: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     exposure_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     capture_after_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     record_verbal_response: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -669,15 +697,16 @@ class RecognitionResultRecord(Base):
 
 
 class DrawingResultRecord(Base):
-    """Resultado de un paso de dibujo: la emoción que la persona señaló y los
-    tiempos. Nunca el dibujo, que no llega al servidor."""
+    """Resultado de un paso de dibujo: si la persona terminó y los tiempos (la
+    emoción señalada, solo en sesiones anteriores a 20261124_48). Nunca el
+    dibujo, que no llega al servidor."""
 
     __tablename__ = "drawing_results"
     __table_args__ = (
         UniqueConstraint("session_id", "step_index", "attempt", name="uq_drawing_results_session_step_attempt"),
         CheckConstraint("outcome IN ('answered', 'timed_out', 'skipped', 'stopped')",
                         name="ck_drawing_results_outcome"),
-        CheckConstraint("(outcome = 'answered') = (chosen_expression IS NOT NULL) "
+        CheckConstraint("(outcome = 'answered' OR chosen_expression IS NULL) "
                         "AND (outcome = 'answered') = (seconds_to_answer IS NOT NULL) "
                         "AND (outcome = 'answered') = (answered_by IS NOT NULL)",
                         name="ck_drawing_results_answered"),
@@ -709,6 +738,8 @@ class GameResultRecord(Base):
         CheckConstraint("first_try >= 0 AND first_try <= matched AND matched <= rounds_done "
                         "AND rounds_done <= rounds_total AND help_used >= 0 AND by_conductor >= 0",
                         name="ck_game_results_counts"),
+        # Caras pedidas y mostradas en «Reconoce y luego muéstrala» (migración 20261124_51).
+        CheckConstraint(GAME_RESULT_FACES, name="ck_game_results_faces"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -723,6 +754,8 @@ class GameResultRecord(Base):
     first_try: Mapped[int] = mapped_column(Integer, nullable=False)
     help_used: Mapped[int] = mapped_column(Integer, nullable=False)
     by_conductor: Mapped[int] = mapped_column(Integer, nullable=False)
+    faces_asked: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    faces_shown: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -739,6 +772,7 @@ class PracticeResultRecord(Base):
         CheckConstraint("(outcome = 'achieved') = (seconds_to_achieve IS NOT NULL)",
                         name="ck_practice_results_achieved"),
         CheckConstraint("peak_level >= 0 AND peak_level <= 1", name="ck_practice_results_peak"),
+        CheckConstraint(PRACTICE_CONDUCTOR_STARS, name="ck_practice_results_conductor_stars"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -758,6 +792,8 @@ class PracticeResultRecord(Base):
     emotion_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # «Juego: imita la cara»: la valoración de quien conduce (migración 20261124_46).
+    conductor_stars: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class SessionReportRecord(Base):
@@ -874,7 +910,7 @@ class LocalModelSettingsRecord(Base):
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_local_model_settings_single_row"),
         CheckConstraint(
-            "default_model_id IN ('hsemotion_enet_b0_8_best_afew', 'ferplus_onnx')",
+            "default_model_id IN ('hsemotion_enet_b0_8_best_afew', 'emotiefflib_enet_b2_8', 'ferplus_onnx')",
             name="ck_local_model_settings_default_model",
         ),
         CheckConstraint(

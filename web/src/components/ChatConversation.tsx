@@ -4,6 +4,7 @@ import { useAuth } from "../auth/useAuth";
 import { Callout } from "../components/Callout";
 import type { AssistantDraft } from "./AssistantContext";
 import { Button } from "./Button";
+import { toast } from "./Toaster";
 
 interface Message { role: "user" | "assistant"; text: string }
 interface StoredConversation { conversation_id: string | null; messages?: { role: "user" | "assistant"; content: string }[] }
@@ -28,7 +29,6 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -63,7 +63,7 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
     const text = question.trim();
     if (!text || sending) return;
     setMessages((current) => [...current, { role: "user", text }]);
-    setQuestion(""); setSending(true); setError(null); setNotice(null);
+    setQuestion(""); setSending(true); setError(null);
     try {
       const body = conversationId ? { conversation_id: conversationId, question: text } : { question: text };
       const result = await apiRequest<ChatAnswer>("/chat", { method: "POST", token, body: JSON.stringify(body) });
@@ -85,7 +85,7 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
       if (conversationId) await apiRequest(`/chat/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE", token });
       setConversationId(null);
       setMessages([]);
-      setNotice("Conversación borrada.");
+      toast.success("Conversación borrada.");
       inputRef.current?.focus();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -94,7 +94,7 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
 
   async function newConversation() {
     if (sending || starting) return;
-    setStarting(true); setError(null); setNotice(null);
+    setStarting(true); setError(null);
     try {
       const created = await apiRequest<StoredConversation>("/chat/conversations", { method: "POST", token });
       setConversationId(created.conversation_id ?? null);
@@ -109,14 +109,13 @@ export function ChatConversation({ open, draft = null }: { open: boolean; draft?
       <div className="chat-toolbar">
         <Button variant="secondary" size="sm" type="button" disabled={sending || starting} onClick={() => { void newConversation(); }}>Nueva conversación</Button>
         {!confirmingDelete && <Button variant="ghost" size="sm" type="button" disabled={sending || starting || (!conversationId && messages.length === 0)}
-          onClick={() => { setConfirmingDelete(true); setNotice(null); }}>Borrar conversación</Button>}
+          onClick={() => { setConfirmingDelete(true); }}>Borrar conversación</Button>}
       </div>
       {confirmingDelete && <div className="chat-toolbar" role="group" aria-label="Confirmar borrado">
         <span>¿Borrar esta conversación? No se puede recuperar.</span>
         <Button variant="danger" size="sm" type="button" disabled={starting} onClick={() => { void deleteConversation(); }}>Sí, borrar</Button>
         <Button variant="ghost" size="sm" type="button" disabled={starting} onClick={() => setConfirmingDelete(false)}>Cancelar</Button>
       </div>}
-      {notice && <p role="status" className="muted">{notice}</p>}
       <div ref={messagesRef} className="chat-messages" role="log" aria-label="Conversación con Emi" aria-live="polite">
         {/* Encabeza el historial y se desplaza con él, para dejar espacio a la conversación. */}
         <p className="chat-disclaimer" role="note">Emi ofrece orientación educativa sobre Psicología y EMOtv; no diagnostica a nadie ni reemplaza a tu docente, la atención psicológica o los servicios de emergencia.</p>

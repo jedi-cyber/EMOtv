@@ -41,7 +41,7 @@ describe("rutas y navegación por rol", () => {
   it("mantiene los módulos en una configuración por rol", () => {
     // Orden del recorrido (DESIGN.md): toda sesión empieza en el Analizador; Cuestionarios y
     // Protocolos van en el grupo «Mi material»; Consentimiento y la Guía de uso van abajo y separados.
-    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/questionnaires", "/protocols", "/images", "/consent", "/guide"]);
+    expect(navigationByRole.student.map((item) => item.to)).toEqual(["/dashboard", "/analysis", "/sessions", "/statistics", "/games", "/questionnaires", "/protocols", "/images", "/consent", "/guide"]);
     // Actividades corporales congeladas: fuera del menú de todos los roles.
     expect(Object.values(navigationByRole).flat().some((item) => item.to.includes("activities"))).toBe(false);
     expect(navigationByRole.student.filter((item) => item.group).map((item) => item.to)).toEqual(["/questionnaires", "/protocols", "/images"]);

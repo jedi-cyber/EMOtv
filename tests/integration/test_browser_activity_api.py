@@ -473,14 +473,15 @@ def test_interrupted_sequence_keeps_the_step_reached(flow):
     assert final.exercise_repetitions == activity["repetitions"]
 
 
-def test_student_cannot_choose_non_default_model(flow):
+def test_student_cannot_choose_a_model_outside_the_catalog(flow):
     client, auth, user, _, student, sessions, _, processors, _ = flow
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
     with client.websocket_connect("/ws/activity") as socket:
+        # HardlyHumans se quitó del proyecto: ya no es un modelo permitido.
         socket.send_json({**credentials(auth, user, session.id), "emotion_model_id": "hardlyhumans_vit"})
         error = socket.receive_json()
         assert error["type"] == "error"
-        assert error["code"] == 4403
+        assert error["code"] == 4400
     assert not processors
     assert sessions.get_session(session.id).emotion_model_id is None
 
@@ -513,7 +514,7 @@ def test_admission_blocks_socket_and_exposes_authenticated_status(flow):
     student_headers = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
     # Quien conduce la sesión ve solo los modelos locales y su estado.
     assert [item["model_id"] for item in client.get("/analysis/models", headers=student_headers).json()] == [
-        "hsemotion_enet_b0_8_best_afew", "ferplus_onnx"]
+        "hsemotion_enet_b0_8_best_afew", "emotiefflib_enet_b2_8", "ferplus_onnx"]
     admin_headers = {"Authorization": f"Bearer {auth.create_access_token(_admin(auth, users))}"}
     assert client.get("/analysis/models", headers=admin_headers).json()[0]["state"] == "BLOCKED"
     session = sessions.start_session(student_id=student.id, activity_id="arms_up_5s")
@@ -583,7 +584,7 @@ def test_live_reading_defaults_to_hsemotion_when_admitted(flow):
         HSEMOTION, EmotionModelCatalog().get(HSEMOTION).version)
 
 
-@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED"}], indirect=True)
+@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED", "emotiefflib_enet_b2_8": "BLOCKED"}], indirect=True)
 def test_live_reading_falls_back_to_ferplus_when_hsemotion_is_not_admitted(flow):
     client, auth, user, _, _, sessions, _, _, _ = flow
     session_id = _student_session(client, auth, user)
@@ -594,14 +595,16 @@ def test_live_reading_falls_back_to_ferplus_when_hsemotion_is_not_admitted(flow)
     assert sessions.get_session(session_id).emotion_model_id == "ferplus_onnx"
 
 
-@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED", "ferplus_onnx": "BLOCKED"}], indirect=True)
+@pytest.mark.parametrize("flow", [{HSEMOTION: "BLOCKED", "emotiefflib_enet_b2_8": "BLOCKED", "ferplus_onnx": "BLOCKED"}],
+                         indirect=True)
 def test_live_reading_is_blocked_when_neither_model_is_admitted(flow):
     client, auth, user, _, _, sessions, _, _, _ = flow
     session_id = _student_session(client, auth, user)
     with client.websocket_connect("/ws/activity") as socket:
         socket.send_json({"type": "authenticate", "token": auth.create_access_token(user), "session_id": session_id})
         error = socket.receive_json()
-        assert error["type"] == "error" and error["admission"]["model_id"] == "ferplus_onnx"
+        # Sin respaldo admitido se informa el primero que se probó.
+        assert error["type"] == "error" and error["admission"]["model_id"] == "emotiefflib_enet_b2_8"
     assert sessions.get_session(session_id).emotion_model_id is None
 
 

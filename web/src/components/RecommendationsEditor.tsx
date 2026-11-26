@@ -5,6 +5,7 @@ import { useAuth } from "../auth/useAuth";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
 import { Callout } from "./Callout";
 import { Button } from "./Button";
+import { toast } from "./Toaster";
 
 export interface ExpressionRecommendation {
   expression_key: string;
@@ -32,7 +33,6 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
   const [draft, setDraft] = useState<string[]>([]);
   const [toAdd, setToAdd] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const byId = new Map(activities.map((activity) => [activity.id, activity]));
   const eligible = activities.filter((activity) => stepCount(activity) >= MIN_RECOMMENDED_STEPS && !draft.includes(activity.id));
@@ -42,7 +42,7 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
   }
 
   function startEdit(item: ExpressionRecommendation) {
-    setEditingKey(item.expression_key); setDraft(item.activity_ids); setToAdd(""); setMessage(""); setError("");
+    setEditingKey(item.expression_key); setDraft(item.activity_ids); setToAdd(""); setError("");
   }
 
   function move(index: number, offset: number) {
@@ -54,12 +54,12 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
 
   async function save() {
     if (!editingKey) return;
-    setSaving(true); setError(""); setMessage("");
+    setSaving(true); setError("");
     try {
       await apiRequest<ExpressionRecommendation>(`/recommendations/${encodeURIComponent(editingKey)}`, {
         method: "PUT", token, body: JSON.stringify({ activity_ids: draft }),
       });
-      setMessage(`Recomendaciones de ${label(editingKey)} guardadas.`);
+      toast.success(`Recomendaciones de ${label(editingKey)} guardadas.`);
       setEditingKey(null);
       await onSaved();
     } catch (reason) {
@@ -71,7 +71,6 @@ export function RecommendationsEditor({ recommendations, activities, onSaved }: 
     <h2 id="recommendations-title">Actividades recomendadas por expresión</h2>
     <p className="muted">El orden es la prioridad. Solo se pueden recomendar actividades con al menos {MIN_RECOMMENDED_STEPS} posturas.
       Si una expresión queda sin actividades, el usuario elige de la lista completa. Estas asociaciones no son una recomendación clínica y deben revisarlas profesionales de Psicología.</p>
-    {message && <Callout variant="success">{message}</Callout>}
     {error && <Callout variant="error">{error}</Callout>}
     <div className="table-wrap"><table><thead><tr><th>Expresión</th><th>Actividades (en orden)</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>
       {recommendations.map((item) => <tr key={item.expression_key}>

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from emotv.domain.questionnaire import Question, Questionnaire, QuestionnaireResponse
 from emotv.infrastructure.persistence.models import (
+    ProtocolRecord,
     QuestionnaireRecord,
     QuestionnaireResponseRecord,
     SessionRecord,
@@ -40,6 +41,7 @@ class PostgresQuestionnaireRepository:
         row.copied_from_id = item.copied_from_id
         row.created_at = item.created_at
         row.superseded_at = item.superseded_at
+        row.deleted_at = item.deleted_at
 
     @staticmethod
     def _domain(row: QuestionnaireRecord) -> Questionnaire:
@@ -48,7 +50,7 @@ class PostgresQuestionnaireRepository:
             title=row.title, instructions=row.instructions, created_at=_aware(row.created_at),
             questions=tuple(Question.from_dict(item) for item in row.questions),
             shared_with_group=row.shared_with_group, copied_from_id=row.copied_from_id,
-            superseded_at=_aware(row.superseded_at))
+            superseded_at=_aware(row.superseded_at), deleted_at=_aware(row.deleted_at))
 
     def add(self, questionnaire: Questionnaire) -> Questionnaire:
         with self._factory.begin() as db:
@@ -86,7 +88,8 @@ class PostgresQuestionnaireRepository:
     def current_of_family(self, family_id: str) -> Questionnaire | None:
         with self._factory() as db:
             row = db.scalars(select(QuestionnaireRecord).where(QuestionnaireRecord.family_id == family_id,
-                                                               QuestionnaireRecord.superseded_at.is_(None))).first()
+                                                               QuestionnaireRecord.superseded_at.is_(None),
+                                                               QuestionnaireRecord.deleted_at.is_(None))).first()
             return None if row is None else self._domain(row)
 
     def list_current(self, owner_ids: Iterable[str], shared_owner_ids: Iterable[str] = ()) -> tuple[Questionnaire, ...]:
@@ -101,9 +104,21 @@ class PostgresQuestionnaireRepository:
             return ()
         with self._factory() as db:
             rows = db.scalars(select(QuestionnaireRecord).where(or_(*conditions),
-                                                                QuestionnaireRecord.superseded_at.is_(None))
+                                                                QuestionnaireRecord.superseded_at.is_(None),
+                                                                QuestionnaireRecord.deleted_at.is_(None))
                               .order_by(QuestionnaireRecord.created_at, QuestionnaireRecord.id)).all()
             return tuple(self._domain(row) for row in rows)
+
+    def protocols_using(self, family_id: str) -> tuple[str, ...]:
+        """Nombres de los protocolos vigentes (sin eliminar) que aplican alguna
+        versión de este cuestionario, antes o después de los pasos."""
+        with self._factory() as db:
+            versions = select(QuestionnaireRecord.id).where(QuestionnaireRecord.family_id == family_id)
+            return tuple(db.scalars(select(ProtocolRecord.name).where(
+                or_(ProtocolRecord.pre_questionnaire_id.in_(versions),
+                    ProtocolRecord.post_questionnaire_id.in_(versions)),
+                ProtocolRecord.superseded_at.is_(None), ProtocolRecord.deleted_at.is_(None))
+                .order_by(ProtocolRecord.name)).all())
 
     def is_used(self, questionnaire_id: str) -> bool:
         with self._factory() as db:

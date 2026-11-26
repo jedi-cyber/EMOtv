@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { apiRequest } from "../api/http";
-import type { AndroidCode, GameOutcome, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
+import type { AndroidCode, GameOutcome, GuidedGameFace, GuidedPhase, GuidedPracticeResult, GuidedRepeatedAttempt, GuidedState, MarkerKind, Questionnaire } from "../api/types";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
@@ -9,7 +9,9 @@ import { Checkbox } from "../components/Checkbox";
 import { PageHeader } from "../components/PageHeader";
 import { StatusChip } from "../components/StatusChip";
 import { useExpressionCatalog } from "../expressions/ExpressionCatalog";
-import { gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
+import { drawingOutcomeNames, gameOutcomeNames, recognitionOutcomeNames } from "../insights/StimulusMetrics";
+import { ConductorCameraPreview } from "../guided/ConductorCameraPreview";
+import { ConductorLiveReading } from "../guided/ConductorLiveReading";
 import { readViewToken, storeViewToken } from "../guided/viewToken";
 import { SessionQuestionnaire } from "../questionnaires/SessionQuestionnaire";
 import { paths } from "../routes/paths";
@@ -58,6 +60,64 @@ const seconds = (value: number) => value.toLocaleString("es-PE", { maximumFracti
 const time = (value: string) => new Date(value).toLocaleTimeString("es-PE", { timeStyle: "medium" });
 
 /** Cuenta regresiva del paso; sin límite de tiempo (nulo), lo dice. */
+/**
+ * «Juego: imita la cara»: quien conduce marca de 1 a 5 estrellas al terminar la
+ * imitación. Es su valoración: EMOtv no la calcula ni la combina con la
+ * expresión estimada, y la persona no la ve. El paso espera hasta que se marque.
+ */
+function ConductorRating({ rating, busy, onRate }: {
+  rating: { stars: number | null; can_rate: boolean }; busy: boolean; onRate(stars: number): void;
+}) {
+  return <fieldset className="conductor-rating">
+    <legend>Tu valoración de la imitación (la persona no la ve)</legend>
+    <div className="conductor-rating-stars">{[1, 2, 3, 4, 5].map((value) => <Button key={value} size="sm"
+      variant={rating.stars != null && value <= rating.stars ? "primary" : "secondary"}
+      aria-pressed={rating.stars === value} disabled={busy || !rating.can_rate}
+      aria-label={`${value} ${value === 1 ? "estrella" : "estrellas"}`} onClick={() => onRate(value)}>
+      {rating.stars != null && value <= rating.stars ? "★" : "☆"}</Button>)}</div>
+    <p className="muted" role="status">{!rating.can_rate
+      ? "Podrás valorar cuando termine la imitación."
+      : rating.stars == null
+      ? "Marca de 1 a 5 estrellas para seguir con el paso siguiente."
+      : `Marcaste ${rating.stars} de 5. Puedes cambiarla mientras sigue este paso.`}</p>
+  </fieldset>;
+}
+
+/** «Reconoce y luego muéstrala», solo en esta pantalla: la emoción pedida, el nivel
+ * en vivo y lo que estimó la cámara. La persona ve solo un mensaje amable. */
+function GameFaceCard({ face, target, busy, last, onNext }: {
+  face: GuidedGameFace; target: string; busy: boolean; last: boolean; onNext: () => void;
+}) {
+  return <>
+    <p>Se le pide poner la cara: {target}.{face.showing && face.remaining_seconds != null
+      ? ` Quedan ${Math.ceil(face.remaining_seconds)} s.` : ""}</p>
+    <label>Nivel en vivo
+      <meter min={0} max={1} value={face.level}>{Math.round(face.level * 100)} %</meter>
+    </label>
+    <p role="status">{face.showing
+      ? "Es una estimación de la cámara, no una valoración."
+      : face.achieved
+      ? "La cámara estimó la expresión pedida. La persona ve «¡Gracias por intentarlo!»."
+      : "Terminó el tiempo para mostrarla. La persona ve «¡Gracias por intentarlo!»."}</p>
+    <Button disabled={busy} onClick={onNext}>{face.showing ? "Pasar sin esperar" : last ? "Terminar el juego" : "Siguiente ronda"}</Button>
+  </>;
+}
+
+/**
+ * «Responde con la cara», solo para quien conduce: el nivel en vivo de cada opción
+ * mientras la persona pone la cara. La que sostiene unos segundos queda marcada.
+ */
+function FaceAnswerLevels({ levels, name }: { levels: { key: string; level: number }[]; name: (key: string) => string }) {
+  return <div className="form-stack face-answer-levels" aria-label="Nivel de cada opción">
+    {levels.length === 0
+      ? <p className="muted">Esperando la cara de la persona: los primeros segundos de cada intento no cuentan.</p>
+      : levels.map((item) => <label key={item.key}>{name(item.key)}
+        <meter min={0} max={1} value={item.level}>{Math.round(item.level * 100)} %</meter>
+      </label>)}
+    <p className="muted">Es una estimación de la cámara, no una valoración.</p>
+  </div>;
+}
+
 function StepTimer({ seconds: remaining }: { seconds: number | null | undefined }) {
   return remaining == null
     ? <p className="readout-md">Sin límite de tiempo</p>
@@ -174,12 +234,22 @@ export function GuidedConductorPage() {
   // Con la pantalla en Android, el enlace web guardado ya no vale.
   const viewUrl = viewToken && !onAndroid ? `${window.location.origin}${paths.participantView(viewToken)}` : null;
   const step = state?.step_index != null ? state.steps[state.step_index] : null;
+  // Pasos en los que se analiza la cámara: ahí quien conduce ve lo que estima.
+  // Con cámara, todos los pasos la analizan para la lectura en vivo de quien conduce.
+  const readingStep = state?.phase === "live" || state?.phase === "stimuli";
+  const withCamera = state?.uses_camera !== false && !state?.camera_off;
+  const cameraNote = withCamera
+    ? "La cámara solo estima en vivo para ti; en este paso no se guarda ninguna captura."
+    : "No se analiza la cámara.";
   const stepCaptures = state && step ? state.captures.filter((item) => item.step_index === step.index) : [];
   const child = state?.audience === "infantil";
   const isPractice = step?.step_kind === "practice";
   const isRecognition = step?.step_kind === "recognition";
   const isDrawing = step?.step_kind === "drawing";
   const isGame = step?.step_kind === "game";
+  const isAnalyzer = step?.step_kind === "analyzer";
+  // «Usar el analizador»: la última expresión estimada primero.
+  const latestCaptures = isAnalyzer ? [...stepCaptures].reverse().slice(0, 6) : [];
   const gameResults = state?.game_results ?? [];
   const recognitionResults = state?.recognition_results ?? [];
   const drawingResults = state?.drawing_results ?? [];
@@ -194,7 +264,7 @@ export function GuidedConductorPage() {
         ? `${gameOutcomeNames[item.outcome as GameOutcome]}. ${gameSentence({ rounds_total: item.rounds_total ?? 0, rounds_done: item.rounds_done ?? 0, matched: item.matched ?? 0, first_try: item.first_try ?? 0, help_used: item.help_used ?? 0 })}`
         : kind === "practice"
         ? `${outcomeNames[item.outcome as GuidedPracticeResult["outcome"]]}${item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}`
-        : `${recognitionOutcomeNames[item.outcome as keyof typeof recognitionOutcomeNames]}${item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}${item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}${item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}`}</span>
+        : `${(kind === "drawing" ? drawingOutcomeNames : recognitionOutcomeNames)[item.outcome as keyof typeof recognitionOutcomeNames]}${item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}${item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}${item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}`}</span>
     </li>);
   const targetName = (key?: string | null) => practiceTargetNames[key ?? ""] ?? "";
   const similarGame = state?.game?.game_type === "similar";
@@ -203,8 +273,9 @@ export function GuidedConductorPage() {
     const detail = state?.game?.option_details?.find((item) => item.key === key);
     return similarGame && detail ? `Cara ${key} (${targetName(detail.expression)})` : targetName(key);
   };
-  const cameraStep = (state?.phase === "stimuli" && (isPractice || step?.step_kind === "stimulus")) || state?.phase === "calibration";
-  // Seguir sin cámara: en la calibración o en un paso que la usa, si la sesión todavía la usa.
+  const cameraStep = (state?.phase === "stimuli" && (isPractice || isAnalyzer || step?.step_kind === "stimulus"))
+    || state?.phase === "ready" || state?.phase === "calibration";
+  // Seguir sin cámara: antes de empezar o en un paso que la usa, si la sesión todavía la usa.
   const canContinueWithoutCamera = active && state?.has_protocol && state.uses_camera !== false && !state.camera_off && cameraStep;
 
   return <section>
@@ -247,6 +318,12 @@ export function GuidedConductorPage() {
         onClick={() => { void act("/continue-without-camera"); }}>Continuar sin cámara</Button>
     </div>}
 
+    {/* La lectura en vivo va junto a la vista previa, en la misma tarjeta. */}
+    {state && active && state.uses_camera !== false && !state.camera_off && !onAndroid && <ConductorCameraPreview
+      reading={readingStep ? <ConductorLiveReading embedded reading={state.live_reading} /> : undefined} />}
+    {state && active && state.uses_camera !== false && !state.camera_off && onAndroid
+      && readingStep && <ConductorLiveReading reading={state.live_reading} />}
+
     {(state?.phase === "pre_questionnaire" || state?.phase === "post_questionnaire") && <div className="card">
       {questionnaire
         ? <SessionQuestionnaire sessionId={sessionId} moment={state.phase === "pre_questionnaire" ? "pre" : "post"}
@@ -254,34 +331,35 @@ export function GuidedConductorPage() {
         : <Button variant="primary" disabled={busy} onClick={() => { void act("/advance"); }}>Continuar</Button>}
     </div>}
 
-    {state?.phase === "calibration" && <div className="card form-stack">
-      <h2>Calibración neutral</h2>
-      <p>Pide a la persona que mire la pantalla con el rostro relajado unos segundos.</p>
-      {state.calibration.notice && <Callout variant="warning">{state.calibration.notice}</Callout>}
-      {state.calibration.state === "calibrating"
-        ? <p role="status">Calibrando… {Math.round(state.calibration.progress * 100)} %</p>
-        : <Button variant="primary" disabled={busy} onClick={() => { void act("/calibration"); }}>Iniciar calibración</Button>}
-    </div>}
-
-    {state?.phase === "ready" && (state.uses_camera === false || state.camera_off) && <div className="card form-stack">
+    {(state?.phase === "ready" || state?.phase === "calibration") && <div className="card form-stack">
       <h2>Lista para empezar</h2>
-      <p>{state.camera_off ? "La sesión sigue sin cámara" : "Esta sesión no usa la cámara"}: no hay calibración. El tiempo del primer paso corre desde que pulses «Empezar».</p>
-      <p className="muted">Si la persona usa su pantalla, ábrela antes de empezar.</p>
+      <p>{state.camera_off ? "La sesión sigue sin cámara. " : state.uses_camera === false ? "Esta sesión no usa la cámara. " : ""}El tiempo del primer paso corre desde que pulses «Empezar».</p>
+      <p className="muted">{state.uses_camera === false || state.camera_off
+        ? "Si la persona usa su pantalla, ábrela antes de empezar."
+        : "Abre antes la pantalla de la persona: ahí pide permiso para la cámara. Para acomodar a la persona frente a ella, mira la vista previa aquí; la persona no se ve a sí misma."}</p>
       <Button variant="primary" disabled={busy} onClick={() => { void act("/start"); }}>Empezar</Button>
     </div>}
 
     {step && state && isPractice && <div className="card form-stack">
-      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · ejercicio de práctica{attemptCaption(state)}{supportsCaption(state)}</p>
-      <h2>{step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · {state.practice?.camera_game
+        ? `juego con cámara · ronda ${state.practice.camera_game.round} de ${state.practice.camera_game.rounds}`
+        : "ejercicio de práctica"}{attemptCaption(state)}{supportsCaption(state)}</p>
+      <h2>{step.conductor_rating ? "Imita la cara" : step.imitate ? "Imitar el modelo" : "Expresión pedida"}: {targetName(step.target_expression)}</h2>
+      {state.practice?.camera_game && <p className="muted">«Muestra la emoción»: la persona ve una estrella por cada ronda lograda. Sin puntos.</p>}
       {step.imitate && <p className="muted">La persona ve la imagen y lee «Haz la misma cara».</p>}
+      {state.practice?.rating && <ConductorRating rating={state.practice.rating} busy={busy}
+        onRate={(stars) => { void act("/rating", { stars }); }} />}
       <StepTimer seconds={state.remaining_seconds} />
       {state.practice && <>
         <label>Nivel en vivo
           <meter min={0} max={1} value={state.practice.level ?? 0}>{Math.round((state.practice.level ?? 0) * 100)} %</meter>
         </label>
-        <p role="status">{state.practice.achieved
+        <p role="status">{state.practice.rating?.can_rate
+          ? `${state.practice.achieved ? "La cámara estimó la expresión pedida." : "Terminó el tiempo."} Tu valoración es aparte.`
+          : state.practice.achieved
           ? `Logró la expresión pedida. ${state.waiting_for_conductor ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El ejercicio avanza en un momento."}`
           : `Se registra como lograda cuando la sostiene ${step.hold_seconds} s.`}</p>
+        {state.practice.camera_game?.summary && <p role="status">{state.practice.camera_game.summary}</p>}
       </>}
       {state.waiting_for_conductor && <Button variant="primary" disabled={busy} onClick={() => { void act("/continue"); }}>Seguir</Button>}
       {state.can_repeat && <Button disabled={busy} onClick={() => { void act("/repeat"); }}>Repetir este ejercicio</Button>}
@@ -293,7 +371,7 @@ export function GuidedConductorPage() {
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · reconocimiento{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>{state.recognition?.situation ? "¿Qué emoción muestra la cara?" : "¿Qué emoción es?"} · {step.title}</h2>
       {state.recognition?.situation && <p>Situación: {state.recognition.situation}</p>}
-      <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. No se analiza la cámara en este paso.</p>
+      <p className="muted">Emoción de la imagen: {targetName(step.target_expression)}. {cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.recognition && (state.recognition.outcome
         ? <p role="status">{state.recognition.chosen_expression
@@ -313,17 +391,16 @@ export function GuidedConductorPage() {
     {step && state && isDrawing && <div className="card form-stack">
       <p className="step-caption">Paso {step.index + 1} de {state.step_count} · dibujo{attemptCaption(state)}{supportsCaption(state)}</p>
       <h2>Dibujo: una cara con una emoción</h2>
-      <p className="muted">La persona dibuja en su pantalla y después elige qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda; no se analiza la cámara.</p>
+      <p className="muted">La persona dibuja en su pantalla y pulsa «Terminé». No se le pregunta qué emoción quiso dibujar. El dibujo no llega aquí ni se guarda. {cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.drawing && (state.drawing.outcome
         ? <p role="status">{state.drawing.chosen_expression
           ? `Señaló ${targetName(state.drawing.chosen_expression)}.`
-          : "Terminó el tiempo sin respuesta."} {state.waiting_for_conductor
+          : drawingOutcomeNames[state.drawing.outcome]}. {state.waiting_for_conductor
           ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El paso avanza en un momento."}</p>
         : <>
-          <p>La persona elige la emoción en su pantalla. Si la señala o la dice, regístrala aquí:</p>
-          <div className="inline-actions">{state.drawing.options.map((key) => <Button key={key} disabled={busy}
-            onClick={() => { void act("/recognition", { expression: key }); }}>{targetName(key)}</Button>)}</div>
+          <p>Si la persona terminó pero no pulsó «Terminé», márcalo aquí:</p>
+          <div className="inline-actions"><Button disabled={busy} onClick={() => { void act("/drawing-done"); }}>Terminó de dibujar</Button></div>
         </>)}
       {state.waiting_for_conductor && <Button variant="primary" disabled={busy} onClick={() => { void act("/continue"); }}>Seguir</Button>}
       {state.can_repeat && <Button disabled={busy} onClick={() => { void act("/repeat"); }}>Repetir este dibujo</Button>}
@@ -335,7 +412,11 @@ export function GuidedConductorPage() {
       <h2>{similarGame ? "Busca la misma emoción" : "Empareja la emoción"}{state.game ? ` · ronda ${state.game.round} de ${state.game.rounds}` : ""}</h2>
       <p className="muted">{similarGame
         ? "La persona ve una cara arriba y elige, entre otras caras, la que muestra la misma emoción. La pareja es otra imagen, no la misma repetida."
-        : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. No se analiza la cámara.</p>
+        : "La persona relaciona cada imagen con el nombre de su emoción."} Sin puntaje: si no la encuentra, se le muestra con su explicación. {state.game?.show_expression
+        ? "Al terminar cada ronda, se le pide poner esa cara y la cámara la estima; la persona solo ve un mensaje amable."
+        : state.game?.answer_by_face
+        ? "La persona responde poniendo la cara de la emoción: la cámara marca la opción cuya emoción sostiene unos segundos. Sin cámara, responde con botones."
+        : cameraNote}</p>
       <StepTimer seconds={state.remaining_seconds} />
       {state.game && (state.game.outcome
         ? <p role="status">{state.game.outcome === "completed" ? "Terminó el juego." : "Terminó el tiempo del juego."} {gameSentence({
@@ -344,9 +425,16 @@ export function GuidedConductorPage() {
           ? "Pulsa «Seguir» cuando quieras pasar al siguiente." : "El paso avanza en un momento."}</p>
         : <>
           <p>{similarGame ? "Emoción de la cara de arriba" : "Emoción de la imagen"}: {targetName(state.game.target_expression)}.{state.game.tried.length > 0 ? ` Ya eligió: ${state.game.tried.map(optionName).join(", ")}.` : ""}{state.game.helped ? " Pidió ayuda." : ""}</p>
-          {state.game.state === "playing" || state.game.state === "retry"
+          {state.game.face
+            ? <GameFaceCard face={state.game.face} target={targetName(state.game.target_expression)} busy={busy}
+              last={state.game.round === state.game.rounds}
+              onNext={() => { void act("/game", { action: "next" }); }} />
+            : state.game.state === "playing" || state.game.state === "retry"
             ? <>
-              <p>{similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
+              {state.game.answers_by_face && <FaceAnswerLevels levels={state.game.face_levels ?? []} name={optionName} />}
+              <p>{state.game.answers_by_face
+                ? "Si la cámara no la marca, registra aquí lo que la persona señala o dice:"
+                : similarGame ? "La persona toca una cara en su pantalla. Si la señala, regístrala aquí:" : "La persona toca una emoción en su pantalla. Si la señala o la dice, regístrala aquí:"}</p>
               <div className="inline-actions">{state.game.options.filter((key) => !state.game?.tried.includes(key) && key !== state.game?.removed)
                 .map((key) => <Button key={key} disabled={busy}
                   onClick={() => { void act("/game", { action: "answer", expression: key }); }}>{optionName(key)}</Button>)}
@@ -364,7 +452,26 @@ export function GuidedConductorPage() {
       <Button disabled={busy} onClick={() => { void act("/skip"); }}>Saltar el juego</Button>
     </div>}
 
-    {step && state && !isPractice && !isRecognition && !isDrawing && !isGame && <div className="card form-stack">
+    {step && state && isAnalyzer && <div className="card form-stack">
+      <p className="step-caption">Paso {step.index + 1} de {state.step_count} · usar el analizador{supportsCaption(state)}</p>
+      <h2>Usar el analizador</h2>
+      <p className="muted">Pide de palabra la expresión que quieras («muestra alegría», «ahora sorpresa»). La cámara estima la expresión facial cada pocos segundos; la persona no ve lo que estima. Es una estimación, no un diagnóstico.</p>
+      <p className="readout-md" role="timer">Quedan {Math.ceil(state.remaining_seconds ?? 0)} s como máximo</p>
+      <p role="status">{state.capture_status.length > 0
+        ? `Reintentando la captura: ${state.capture_status.map((item) => issueNames[item] ?? item).join(", ")}.`
+        : latestCaptures[0]?.emotion
+        ? `Expresión estimada ahora: ${expressionLabel(latestCaptures[0].emotion)}.`
+        : "Esperando la primera estimación."}</p>
+      {latestCaptures.length > 0 && <ul className="card-list" aria-label="Últimas estimaciones">{latestCaptures.map((item) => <li key={item.id} className="row-card">
+        <span>{item.seconds_since_stimulus} s · {item.emotion ? `${expressionLabel(item.emotion)} (estimada)` : "Sin expresión estimada"}</span>
+        {item.quality === "good" ? <StatusChip tone="success">Buena calidad</StatusChip>
+          : <StatusChip tone="neutral">Marcada: {item.quality_issues.map((issue) => issueNames[issue] ?? issue).join(", ")}</StatusChip>}
+      </li>)}</ul>}
+      <p className="muted">Usa los marcadores o una nota breve para anotar qué pediste en cada momento.</p>
+      <Button variant="primary" disabled={busy} onClick={() => { void act("/analyzer-done"); }}>Siguiente paso</Button>
+    </div>}
+
+    {step && state && !isPractice && !isRecognition && !isDrawing && !isGame && !isAnalyzer && <div className="card form-stack">
       <p className="step-caption">Imagen {step.index + 1} de {state.step_count}{state.phase === "before_analyzer" ? " · antes del analizador, sin capturas" : ""}</p>
       <h2>{step.title}</h2>
       <p className="readout-md" role="timer">{Math.ceil(state.remaining_seconds ?? 0)} s</p>
@@ -411,9 +518,10 @@ export function GuidedConductorPage() {
       <h2>Ejercicios de práctica</h2>
       <p>Logró la expresión pedida en {practiceResults.filter((item) => item.outcome === "achieved").length} de {practiceResults.length} {practiceResults.length === 1 ? "ejercicio" : "ejercicios"}{repeated.some((item) => item.step_kind === "practice") ? " (primer intento de cada uno)" : ""}.</p>
       <ul className="card-list">{practiceResults.map((item) => <li key={item.step_index} className="row-card">
-        <span>Paso {item.step_index + 1} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
+        <span>Paso {item.step_index + 1}{state?.steps[item.step_index]?.game_round ? ` · juego con cámara, ronda ${state.steps[item.step_index].game_round}` : ""} · {targetName(item.target_expression)} · {outcomeNames[item.outcome]}
           {item.seconds_to_achieve != null ? ` a los ${seconds(item.seconds_to_achieve)} s` : ""}
-          {item.feedback_visible ? "" : " · sin la señal visible"}</span>
+          {item.feedback_visible ? "" : " · sin la señal visible"}
+          {item.conductor_stars != null ? ` · tu valoración: ${item.conductor_stars} de 5 estrellas` : ""}</span>
         {repeatsOf(item.step_index, "practice").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "practice")}</ul>}
       </li>)}</ul>
     </section>}
@@ -431,9 +539,9 @@ export function GuidedConductorPage() {
 
     {drawingResults.length > 0 && <section className="card">
       <h2>Dibujos</h2>
-      <p className="muted">Solo la emoción que la persona señaló: EMOtv no ve ni interpreta los dibujos.</p>
+      <p className="muted">Solo si terminó y en cuánto tiempo: EMOtv no ve ni interpreta los dibujos.</p>
       <ul className="card-list">{drawingResults.map((item) => <li key={item.step_index} className="row-card">
-        <span>Paso {item.step_index + 1} · {recognitionOutcomeNames[item.outcome]}
+        <span>Paso {item.step_index + 1} · {drawingOutcomeNames[item.outcome]}
           {item.chosen_expression ? `: ${targetName(item.chosen_expression)}` : ""}
           {item.seconds_to_answer != null ? ` a los ${seconds(item.seconds_to_answer)} s` : ""}
           {item.answered_by === "conductor" ? " · registrado por quien conduce" : ""}</span>
@@ -446,7 +554,8 @@ export function GuidedConductorPage() {
       <p className="muted">Describe lo que ocurrió; no es un puntaje.</p>
       <ul className="card-list">{gameResults.map((item) => <li key={item.step_index} className="row-card">
         <span>Paso {item.step_index + 1} · {gameTypeNames[item.game_type] ?? gameTypeNames.matching} · {gameOutcomeNames[item.outcome]}. {gameSentence(item)}
-          {item.by_conductor > 0 ? ` · ${item.by_conductor} registrada${item.by_conductor === 1 ? "" : "s"} por quien conduce` : ""}</span>
+          {item.by_conductor > 0 ? ` · ${item.by_conductor} registrada${item.by_conductor === 1 ? "" : "s"} por quien conduce` : ""}
+          {item.face_sentence ? ` ${item.face_sentence}` : ""}</span>
         {repeatsOf(item.step_index, "game").length > 0 && <ul className="card-list">{repeatsOf(item.step_index, "game")}</ul>}
       </li>)}</ul>
     </section>}

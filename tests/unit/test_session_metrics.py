@@ -29,7 +29,7 @@ def capture(step, emotion, seconds, issues=(), confidence=0.7):
 
 
 def sample():
-    expected = ["happiness", "sadness", "fear", "fear", "surprise"]
+    expected = ["happiness", "sadness", "anger", "sadness", "surprise"]
     steps = [ProtocolStep(f"e{index}", 6, 2) for index in range(5)] + [ProtocolStep("a1", 8, 2, True)]
     stimuli = {f"e{index}": stimulus(f"e{index}", value) for index, value in enumerate(expected)}
     stimuli["a1"] = stimulus("a1", kind="abstract")
@@ -37,7 +37,7 @@ def sample():
         capture(0, "happiness", 2),                         # coincide
         capture(1, "happiness", 2, issues=("off_center",)),  # marcada: se muestra, no cuenta
         capture(1, "sadness", 4),                           # la primera buena decide: coincide
-        capture(2, "fear", 2, issues=("too_dark",)),        # solo marcada: el estímulo no cuenta
+        capture(2, "anger", 2, issues=("too_dark",)),       # solo marcada: el estímulo no cuenta
         capture(3, "anger", 2),                             # no coincide
         # Estímulo 4 saltado, sin capturas.
         capture(5, "neutral", 2), capture(5, "surprise", 5),
@@ -48,7 +48,8 @@ def sample():
 
 def test_metrics_count_only_good_captures_and_describe_without_valuing():
     metrics = sample()
-    assert metrics["totals"] == {"emotional_stimuli": 5, "counted": 3, "matched": 2, "excluded_captures": 2,
+    assert metrics["totals"] == {"emotional_stimuli": 5, "not_comparable": 0, "counted": 3, "matched": 2,
+                                 "excluded_captures": 2,
                                  "sentence": "En 2 de 3 estímulos la expresión estimada coincidió con la esperada."}
     by_step = {item["step_index"]: item for item in metrics["emotional"]}
     assert by_step[0]["matches_expected"] is True and by_step[1]["matches_expected"] is True
@@ -60,6 +61,20 @@ def test_metrics_count_only_good_captures_and_describe_without_valuing():
     assert by_step[4]["skipped"] is True and by_step[4]["captures"] == []
     assert by_step[0]["captures"][0]["probability"] == 0.7 and by_step[0]["captures"][0]["seconds_since_stimulus"] == 2
     assert not VALUATIONS.search(json.dumps(metrics, ensure_ascii=False))
+
+
+def test_images_of_expressions_that_are_not_estimated_are_not_compared():
+    # EMOtv estima cinco expresiones: una imagen de miedo, asco o desprecio se muestra
+    # con sus capturas, pero no entra en la coincidencia.
+    steps = [ProtocolStep(f"e{index}", 6, 2) for index in range(3)]
+    stimuli = {"e0": stimulus("e0", "happiness"), "e1": stimulus("e1", "fear"), "e2": stimulus("e2", "disgust")}
+    captures = [capture(0, "happiness", 2), capture(1, "surprise", 2), capture(2, "anger", 2)]
+    metrics = stimulus_metrics(steps, stimuli, captures)
+    assert metrics["totals"]["not_comparable"] == 2 and metrics["totals"]["counted"] == 1
+    assert metrics["totals"]["sentence"] == "En 1 de 1 estímulo la expresión estimada coincidió con la esperada."
+    fear = metrics["emotional"][1]
+    assert fear["comparable"] is False and fear["counted"] is False and fear["matches_expected"] is None
+    assert "matches_expected" not in fear["captures"][0]
 
 
 def test_abstract_images_have_no_coincidence_metrics_and_always_the_notice():

@@ -230,8 +230,16 @@ class UserImageService:
             updated.append(changed)
         return tuple(updated)
 
+    def delete_own(self, user: User, image_id: str) -> None:
+        """Quien subió la imagen la elimina: se borra el archivo. Un protocolo
+        que la usa pide elegir otra."""
+        image = self._get(user, image_id)
+        if image.owner_user_id != user.id:
+            raise PermissionError("Solo quien subió la imagen puede eliminarla")
+        self._delete(user, image, self.clock(), None, notify_owner=False)
+
     def _delete(self, actor: User | None, image: Stimulus, now: datetime, reason: str | None,
-                message: str | None = None) -> None:
+                message: str | None = None, notify_owner: bool = True) -> None:
         affected = tuple(self.protocols_using(image.id))
         self.repository.remove(image.id, now)
         self.audit.record(actor, AuditAction.DELETE if actor else AuditAction.RETENTION_PURGE, RESOURCE, image.id)
@@ -239,7 +247,8 @@ class UserImageService:
             message = f"Tu docente eliminó la imagen «{image.title}»."
             if reason:
                 message += f" Motivo: {reason}"
-        self._notify(image.owner_user_id, message)
+        if notify_owner:
+            self._notify(image.owner_user_id, message)
         for protocol in affected:
             self._notify(protocol.owner_user_id,
                          f"El protocolo «{protocol.name}» necesita una imagen: «{image.title}» fue eliminada. "

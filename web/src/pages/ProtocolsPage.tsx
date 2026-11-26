@@ -1,21 +1,26 @@
-import { useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { DragEvent, FormEvent } from "react";
 import { apiRequest } from "../api/http";
 import type { GameType, PauseMode, Protocol, ProtocolStep, ProtocolSupports, Questionnaire, Stimulus } from "../api/types";
 import { useApiQuery } from "../api/useApiQuery";
 import { useAuth } from "../auth/useAuth";
 import { Button, ButtonLink } from "../components/Button";
 import { Callout } from "../components/Callout";
+import { ActionsMenu } from "../components/ActionsMenu";
+import type { ActionsMenuItem } from "../components/ActionsMenu";
 import { Checkbox } from "../components/Checkbox";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, practiceProblem, practiceTargetNames, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, ANALYZER_SECONDS, MAX_ANALYZER_SECONDS, DEFAULT_GAME, DEFAULT_PRACTICE, FACE_GAME_SECONDS, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
+import { toast } from "../components/Toaster";
+import { CAMERA_GAME, cameraGameSteps, insertItems, itemRange, moveItem, moveItemTo, removeItem, replaceItem } from "../stimuli/cameraGame";
 
 interface Draft {
   name: string;
@@ -40,6 +45,39 @@ const pauseNames: Record<PauseMode, string> = {
 function accessibleOn(supports: ProtocolSupports) { return supports.pictograms && supports.large_controls; }
 function anySupport(supports: ProtocolSupports) {
   return supports.pictograms || supports.large_controls || supports.read_aloud || supports.no_time_limit || supports.pause !== "normal";
+}
+
+/** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
+// «Ejercicio de práctica» ya no se ofrece: para pedir expresiones de palabra está
+// «Usar el analizador». Los ejercicios que ya tiene un protocolo se siguen editando.
+type StepChoice = "matching" | "similar" | "face-matching" | "face-similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "imitation" | "stimulus";
+/** Lo que se está arrastrando en el editor: un paso de la lista o una tarjeta de «Agregar un paso». */
+type Dragging = { from: "step"; index: number } | { from: "catalog"; key: StepChoice };
+type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
+const stepCatalog: { group: string; hint: string; items: { key: StepChoice; title: string; text: string; image?: boolean }[] }[] = [
+  { group: "Juegos", hint: "Se juegan con botones. Puedes pedir que, tras cada ronda, muestre la emoción a la cámara.", items: [
+    { key: "matching", title: "Juego: empareja la emoción", text: "Relaciona cada imagen con el nombre de su emoción." },
+    { key: "similar", title: "Juego: busca la misma emoción", text: "Ve una cara y elige otra que muestre la misma emoción." },
+  ] },
+  { group: "Reconocer y dibujar", hint: "Sin cámara.", items: [
+    { key: "recognition", title: "¿Qué emoción es?", text: "Ve una imagen y elige qué emoción muestra.", image: true },
+    { key: "drawing", title: "Dibujo", text: "Dibuja una cara y pulsa «Terminé». No se pregunta qué emoción quiso dibujar y el dibujo no se guarda." },
+  ] },
+  { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
+    { key: "analyzer", title: "Usar el analizador", text: "La cámara estima la expresión mientras tú pides de palabra las emociones que quieras. Pasas al siguiente paso cuando terminas." },
+    { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
+    { key: "face-matching", title: "Juego con cámara: empareja la emoción", text: "Ve una cara y pone la cara de esa emoción; la cámara marca el nombre que coincide. Sin cámara, responde con botones." },
+    { key: "face-similar", title: "Juego con cámara: busca la misma emoción", text: "Ve una cara y pone la cara de esa emoción; la cámara marca la otra cara que muestra la misma emoción. Sin cámara, responde con botones." },
+    { key: "rated", title: "Juego: imita la cara", text: "Ve una imagen y hace la misma cara. La cámara estima la expresión y tú la valoras de 1 a 5 estrellas; la persona no ve tu valoración.", image: true },
+    { key: "imitation", title: "Haz la misma cara", text: "Ve una imagen y hace la misma cara.", image: true },
+    { key: "stimulus", title: "Mostrar una imagen", text: "Se muestra una imagen mientras se estima la expresión facial.", image: true },
+  ] },
+];
+const imageChoiceTitle: Record<ImageChoice, string> = { recognition: "¿Qué emoción es?", imitation: "Haz la misma cara", rated: "Juego: imita la cara", stimulus: "Mostrar una imagen" };
+
+/** Una ronda del juego sin imagen elegida la completa EMOtv al guardar: no se envía el hueco. */
+function withoutEmptyImages(step: ProtocolStep): ProtocolStep {
+  return step.game_stimulus_ids ? { ...step, game_stimulus_ids: step.game_stimulus_ids.filter(Boolean) } : step;
 }
 
 /** Con niños solo imágenes «Para niños» (leves) y aprobadas; el servidor aplica la misma regla. */
@@ -70,9 +108,18 @@ export function ProtocolsPage() {
   // Cuestionario nuevo creado sin salir del protocolo: se elige como previo o posterior.
   const [questionnaireFor, setQuestionnaireFor] = useState<Moment | null>(null);
   const [choice, setChoice] = useState("");
+  // Tipo de paso con imagen que se está agregando: muestra el selector de imagen.
+  const [picking, setPicking] = useState<ImageChoice | null>(null);
+  // Dónde va el paso con imagen al elegirla: donde se soltó la tarjeta, o al final.
+  const [pickAt, setPickAt] = useState<number | null>(null);
+  // Arrastrar y soltar: qué se arrastra y en qué posición caería (índice de pasos).
+  const [dragging, setDragging] = useState<Dragging | null>(null);
+  const [dropAt, setDropAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  // Protocolo que se mira sin editar y protocolo que se va a eliminar.
+  const [preview, setPreview] = useState<Protocol | null>(null);
+  const [removing, setRemoving] = useState<Protocol | null>(null);
   const offered = stimuli.filter((item) => item.active && (!draft.for_children || suitableForChildren(item)));
   const unsuitableSteps = draft.for_children
     ? draft.steps.filter((step) => { const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined; return stimulus != null && !suitableForChildren(stimulus); }).length
@@ -85,82 +132,157 @@ export function ProtocolsPage() {
   const recognitionProblems = stimuliQuery.loading ? 0 : draft.steps.filter((step) => step.kind === "recognition"
     && (!recognizable(step.stimulus_id ? byId.get(step.stimulus_id) : undefined)
       || step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
-  const drawingProblems = draft.steps.filter((step) => (step.kind === "drawing" || step.kind === "game")
-    && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS)).length;
+  const drawingProblems = draft.steps.filter((step) => ((step.kind === "drawing" || step.kind === "game")
+    && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_STEP_SECONDS))
+    || (step.kind === "analyzer" && (step.exposure_seconds < 1 || step.exposure_seconds > MAX_ANALYZER_SECONDS))).length;
   const chosen = choice ? byId.get(choice) : undefined;
+  // Imágenes para una ronda de «Empareja la emoción»: emocionales con su expresión esperada.
+  const matchable = offered.filter((item) => recognizable(item));
   // «Haz la misma cara»: la imagen es el modelo y su expresión esperada es la pedida.
-  const imitable = recognizable(chosen) && (chosen?.expected_expression ?? "") in practiceTargetNames;
+  const imitable = recognizable(chosen) && isCameraTarget(chosen?.expected_expression);
+  // Imágenes que sirven para el tipo elegido: reconocer e imitar necesitan una expresión esperada.
+  const pickable = picking === "stimulus" ? offered : offered.filter((item) => recognizable(item)
+    && ((picking !== "imitation" && picking !== "rated") || isCameraTarget(item.expected_expression)));
+  const missing = [
+    draft.name.trim() === "" && "el nombre",
+    draft.for_children === null && "para quién es",
+    draft.steps.length === 0 && "al menos un paso",
+  ].filter(Boolean) as string[];
+  const stepProblems = unsuitableSteps + missingSteps + practiceProblems + recognitionProblems + drawingProblems;
   const ready = draft.for_children !== null && draft.name.trim() !== "" && draft.steps.length > 0 && unsuitableSteps === 0
     && missingSteps === 0 && practiceProblems === 0 && recognitionProblems === 0 && drawingProblems === 0;
+
+  // Al agregar un paso, se muestra en la lista sin tener que buscarlo.
+  const stepsRef = useRef<HTMLOListElement>(null);
+  const stepCount = useRef(0);
+  useEffect(() => {
+    if (draft.steps.length > stepCount.current) {
+      stepsRef.current?.lastElementChild?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    }
+    stepCount.current = draft.steps.length;
+  }, [draft.steps.length]);
 
   function update(changes: Partial<Draft>) { setDraft((current) => ({ ...current, ...changes })); }
   function updateStep(index: number, changes: Partial<ProtocolStep>) {
     update({ steps: draft.steps.map((step, position) => position === index ? { ...step, ...changes } : step) });
   }
-  function move(index: number, offset: number) {
-    const steps = [...draft.steps];
-    const [step] = steps.splice(index, 1);
-    steps.splice(index + offset, 0, step);
-    update({ steps });
+  // Un juego con cámara se mueve y se quita entero: sus rondas van seguidas.
+  function move(index: number, offset: -1 | 1) { update({ steps: moveItem(draft.steps, index, offset) }); }
+  function cameraGameSeconds() {
+    return accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, CAMERA_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : CAMERA_GAME.exposure_seconds;
+  }
+  /** Agrega pasos en la posición at (al final por omisión). */
+  function insert(items: ProtocolStep[], at: number | null = null) {
+    update({ steps: insertItems(draft.steps, at ?? draft.steps.length, items) });
   }
   function addStep() {
     if (!choice) return;
-    update({ steps: [...draft.steps, { stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice("");
+    insert([{ stimulus_id: choice, exposure_seconds: 8, capture_after_seconds: 4, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
   function addRecognition() {
     if (!recognizable(chosen)) return;
     const defaults = accessibleOn(draft.supports) ? ACCESSIBLE_RECOGNITION : DEFAULT_RECOGNITION;
-    update({ steps: [...draft.steps, { kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
-      exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice("");
+    insert([{ kind: "recognition", stimulus_id: choice, option_count: defaults.option_count,
+      exposure_seconds: defaults.max_seconds, capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
-  function addImitation() {
+  function addImitation(rated = false) {
     if (!imitable || !chosen) return;
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: choice, imitate: true,
+    insert([{ kind: "practice", stimulus_id: choice, imitate: true, conductor_rating: rated,
       target_expression: chosen.expected_expression, hold_seconds: practiceDefaults.hold_seconds,
       exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-    setChoice("");
+      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }], pickAt);
+    setChoice(""); setPicking(null); setPickAt(null);
   }
-  function addPractice() {
-    update({ steps: [...draft.steps, { kind: "practice", stimulus_id: null, target_expression: "happiness",
-      hold_seconds: practiceDefaults.hold_seconds,
-      exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, practiceDefaults.max_seconds * ACCESSIBLE_TIME_FACTOR) : practiceDefaults.max_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-  }
-  function addDrawing() {
-    // Sin imagen ni opciones: la persona dibuja y señala la emoción que quiso representar.
-    update({ steps: [...draft.steps, { kind: "drawing", stimulus_id: null,
-      exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
-  }
-  function addGame(gameType: GameType) {
+  /** Los pasos que agrega una tarjeta sin imagen. */
+  function newSteps(key: Exclude<StepChoice, ImageChoice>): ProtocolStep[] {
+    const base = { capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false };
+    // Sin imagen ni expresión pedida: quien conduce pide de palabra y pasa al siguiente cuando termina.
+    if (key === "analyzer") return [{ ...base, kind: "analyzer", stimulus_id: null, exposure_seconds: ANALYZER_SECONDS }];
+    // Sin imagen ni opciones: la persona dibuja y pulsa «Terminé».
+    if (key === "drawing") return [{ ...base, kind: "drawing", stimulus_id: null,
+      exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS }];
     // Pocas opciones al empezar. Las imágenes las elige el servidor del banco aprobado.
-    update({ steps: [...draft.steps, { kind: "game", game_type: gameType, stimulus_id: null,
-      rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
-      exposure_seconds: accessibleOn(draft.supports)
-        ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds,
-      capture_after_seconds: 0, record_verbal_response: false, shown_before_analyzer: false }] });
+    // «Juego con cámara»: el mismo juego, respondido poniendo la cara (solo las cinco expresiones).
+    if (key === "matching" || key === "similar" || key === "face-matching" || key === "face-similar") {
+      const byFace = key === "face-matching" || key === "face-similar";
+      const seconds = byFace ? FACE_GAME_SECONDS : DEFAULT_GAME.exposure_seconds;
+      return [{ ...base, kind: "game", game_type: (byFace ? key.slice("face-".length) : key) as GameType, stimulus_id: null,
+        rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
+        ...(byFace ? { answer_by_face: true } : {}),
+        exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, seconds * ACCESSIBLE_TIME_FACTOR) : seconds }];
+    }
+    return cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds());
+  }
+  function isImageChoice(key: StepChoice): key is ImageChoice {
+    return key === "recognition" || key === "imitation" || key === "rated" || key === "stimulus";
+  }
+  /** Tocar o soltar una tarjeta: los pasos con imagen piden elegirla y van donde se soltó. */
+  function choose(key: StepChoice, at: number | null = null) {
+    setChoice("");
+    if (isImageChoice(key)) { setPicking(key); setPickAt(at); return; }
+    setPicking(null); setPickAt(null);
+    insert(newSteps(key), at);
+  }
+
+  // --- Arrastrar y soltar -------------------------------------------------------------
+  function startDrag(event: DragEvent<HTMLElement>, item: Dragging, image?: Element | null) {
+    setDragging(item);
+    try {
+      event.dataTransfer.effectAllowed = item.from === "step" ? "move" : "copy";
+      event.dataTransfer.setData("text/plain", item.from === "step" ? `paso ${item.index + 1}` : item.key);
+      if (image) event.dataTransfer.setDragImage(image, 24, 24);
+    } catch { /* sin dataTransfer (pruebas): basta el estado */ }
+  }
+  function endDrag() { setDragging(null); setDropAt(null); }
+  /** Sobre un paso: cae antes o después de él según la mitad que se señale. */
+  function overStep(event: DragEvent<HTMLLIElement>, index: number) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const [start, end] = itemRange(draft.steps, index);
+    const box = event.currentTarget.getBoundingClientRect();
+    setDropAt(box.height > 0 && event.clientY > box.top + box.height / 2 ? end : start);
+  }
+  function overList(event: DragEvent<HTMLElement>) {
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.target === event.currentTarget) setDropAt(draft.steps.length);
+  }
+  function drop(event: DragEvent<HTMLElement>) {
+    if (!dragging) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const at = dropAt ?? draft.steps.length;
+    if (dragging.from === "step") update({ steps: moveItemTo(draft.steps, dragging.index, at) });
+    else choose(dragging.key, at);
+    endDrag();
+  }
+  function addPicked() {
+    if (picking === "recognition") addRecognition();
+    else if (picking === "imitation") addImitation();
+    else if (picking === "rated") addImitation(true);
+    else addStep();
   }
   function openEditor(item: Protocol | null) {
-    setEditing(item); setChoice(""); setMessage(""); setError(""); setEditorOpen(true);
+    setEditing(item); setChoice(""); setPicking(null); setPickAt(null); endDrag(); setError(""); setEditorOpen(true);
     setDraft(item ? { name: item.name, description: item.description, for_children: item.for_children,
       supports: item.supports ?? (item.accessible ? { ...noSupports, pictograms: true, large_controls: true, pause: "long" } : noSupports), steps: item.steps,
       pre_questionnaire_id: item.pre_questionnaire_id ?? "", post_questionnaire_id: item.post_questionnaire_id ?? "" } : emptyDraft);
   }
-  function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setEditorOpen(false); }
+  function close() { setEditing(null); setDraft(emptyDraft); setChoice(""); setPicking(null); setPickAt(null); endDrag(); setEditorOpen(false); }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       const saved = await apiRequest<Protocol>(editing ? `/protocols/${encodeURIComponent(editing.id)}` : "/protocols", {
-        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
+        method: editing ? "PUT" : "POST", token, body: JSON.stringify({ ...draft, steps: draft.steps.map(withoutEmptyImages), accessible: anySupport(draft.supports), pre_questionnaire_id: draft.pre_questionnaire_id || null,
           post_questionnaire_id: draft.post_questionnaire_id || null }),
       });
-      setMessage(editing && saved.id !== editing.id
+      toast.success(editing && saved.id !== editing.id
         ? `Se creó la versión ${saved.version}: la anterior ya se usó en una sesión y se conserva sin cambios.`
         : editing ? "Protocolo actualizado." : "Protocolo guardado. Úsalo cuando quieras desde el Analizador.");
       close();
@@ -171,17 +293,54 @@ export function ProtocolsPage() {
 
   /** Copiar una plantilla del docente (o duplicar uno propio) y compartir uno propio con el grupo. */
   async function run(action: () => Promise<string>) {
-    setBusy(true); setError(""); setMessage("");
-    try { setMessage(await action()); await query.reload(); }
+    setBusy(true); setError("");
+    try { toast.success(await action()); await query.reload(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo completar la acción."); }
     finally { setBusy(false); }
   }
 
+  function questionnaireTitle(id: string | null) {
+    if (!id) return null;
+    const found = questionnaires.find((item) => item.id === id);
+    return found ? `«${found.title}»` : "un cuestionario";
+  }
+
+  async function remove() {
+    const item = removing;
+    if (!item) return;
+    await run(async () => {
+      await apiRequest(`/protocols/${encodeURIComponent(item.id)}`, { method: "DELETE", token });
+      return `Se eliminó «${item.name}». Las sesiones que lo usaron conservan su registro.`;
+    });
+    setRemoving(null);
+  }
+
+  function actions(item: Protocol): ActionsMenuItem[] {
+    const items: ActionsMenuItem[] = [{ label: "Vista previa", onSelect: () => setPreview(item) }];
+    if (item.owned_by_me) items.push({ label: "Editar", onSelect: () => openEditor(item) });
+    if (item.owned_by_me || item.shared_with_group) items.push({
+      label: item.owned_by_me ? "Duplicar" : "Copiar y modificar", disabled: busy,
+      onSelect: () => { void run(async () => {
+        await apiRequest(`/protocols/${encodeURIComponent(item.id)}/copy`, { method: "POST", token });
+        return `Se agregó una copia de «${item.name}» a tus protocolos. Puedes editarla y usarla en el Analizador.`;
+      }); },
+    });
+    if (isDocente && item.owned_by_me) items.push({
+      label: item.shared_with_group ? "Dejar de compartir" : "Compartir con mi grupo", disabled: busy,
+      onSelect: () => { void run(async () => {
+        await apiRequest(`/protocols/${encodeURIComponent(item.id)}/share`, { method: "PUT", token, body: JSON.stringify({ shared: !item.shared_with_group }) });
+        return item.shared_with_group ? "Tu grupo ya no ve este protocolo como plantilla." : "Tu grupo puede copiar este protocolo como plantilla.";
+      }); },
+    });
+    if (item.owned_by_me) items.push({ label: "Eliminar", danger: true, disabled: busy, onSelect: () => setRemoving(item) });
+    return items;
+  }
+
   async function addValidation() {
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       await apiRequest("/practice-validation/protocol", { method: "POST", token });
-      setMessage("Se agregó el protocolo «Validación con adultos». Úsalo desde el Analizador.");
+      toast.success("Se agregó el protocolo «Validación con adultos». Úsalo desde el Analizador.");
       await Promise.all([query.reload(), validationQuery.reload()]);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo agregar el protocolo."); }
     finally { setBusy(false); }
@@ -212,7 +371,6 @@ export function ProtocolsPage() {
     <p className="muted">La plantilla inicial «Emociones básicas 4 a 6 años» es para niños y en modo accesible: seis dibujos
       del banco inicial, cada uno con dos opciones para elegir qué emoción es.</p>
     <NoticeList />
-    {message && <Callout variant="success">{message}</Callout>}
     {error && !editorOpen && <Callout variant="error">{error}</Callout>}
     {validation?.available && !validation.protocol_id && <Callout variant="info" role="note">
       <p>Cuenta de voluntario: puedes agregar el protocolo «Validación con adultos», con un ejercicio por cada expresión.
@@ -220,258 +378,400 @@ export function ProtocolsPage() {
       <Button disabled={busy} onClick={() => { void addValidation(); }}>Agregar «Validación con adultos»</Button>
     </Callout>}
 
-    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy}
+    <Modal open={editorOpen} title={editing ? `Editar «${editing.name}»` : "Nuevo protocolo"} onClose={close} busy={busy} wide
       footer={<>
         <Button disabled={busy} onClick={close}>Cancelar</Button>
         <Button variant="primary" type="submit" form="protocol-editor" disabled={busy || !ready}>
           {busy ? "Guardando…" : editing ? "Guardar cambios" : "Guardar protocolo"}
         </Button>
       </>}>
-    <form id="protocol-editor" className="form-stack" onSubmit={(event) => { void submit(event); }}>
+    <form id="protocol-editor" className="form-stack protocol-editor" onSubmit={(event) => { void submit(event); }}>
       {error && <Callout variant="error">{error}</Callout>}
       {editing?.used && <Callout variant="info" role="note">
         Este protocolo ya se usó en una sesión: al guardar se crea la versión {editing.version + 1} y la actual se conserva.
       </Callout>}
-      <fieldset className="audience-choice">
-        <legend>¿Para adultos o para niños?</legend>
-        <label className={`audience-option${draft.for_children === false ? " is-selected" : ""}`}>
-          <input type="radio" name="protocol-audience" checked={draft.for_children === false} required
-            onChange={() => update({ for_children: false })} />
-          <strong>Para adultos</strong>
-          <span>Para sesiones propias o con una persona adulta.</span>
-        </label>
-        <label className={`audience-option${draft.for_children === true ? " is-selected" : ""}`}>
-          <input type="radio" name="protocol-audience" checked={draft.for_children === true}
-            onChange={() => update({ for_children: true })} />
-          <strong>Para niños</strong>
-          <span>Solo imágenes «Para niños» aprobadas.</span>
-        </label>
-      </fieldset>
 
-      {draft.for_children !== null && <>
+      <section className="protocol-section" aria-labelledby="protocol-data-title">
+        <h3 id="protocol-data-title"><span className="protocol-section-number" aria-hidden="true">1</span>Datos</h3>
+        <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
+        <fieldset className="audience-choice">
+          <legend>¿Para adultos o para niños?</legend>
+          <label className={`audience-option${draft.for_children === false ? " is-selected" : ""}`}>
+            <input type="radio" name="protocol-audience" checked={draft.for_children === false} required
+              onChange={() => update({ for_children: false })} />
+            <strong>Para adultos</strong>
+            <span>Para sesiones propias o con una persona adulta.</span>
+          </label>
+          <label className={`audience-option${draft.for_children === true ? " is-selected" : ""}`}>
+            <input type="radio" name="protocol-audience" checked={draft.for_children === true}
+              onChange={() => update({ for_children: true })} />
+            <strong>Para niños</strong>
+            <span>Solo imágenes «Para niños» aprobadas.</span>
+          </label>
+        </fieldset>
+        <label>Descripción (opcional)<textarea rows={2} maxLength={2000} value={draft.description}
+          onChange={(event) => update({ description: event.target.value })} /></label>
+      </section>
+
+      <section className="protocol-section" aria-labelledby="protocol-supports-title">
+        <h3 id="protocol-supports-title"><span className="protocol-section-number" aria-hidden="true">2</span>Apoyos para la persona (opcional)</h3>
         <Checkbox checked={accessibleOn(draft.supports)} onChange={(event) => update({ supports: event.target.checked
           ? { ...draft.supports, pictograms: true, large_controls: true, pause: "long" }
           : { ...draft.supports, pictograms: false, large_controls: false, pause: "normal" } })}>
           Modo accesible
         </Checkbox>
         <p className="muted">Para quienes se saturan con facilidad: pictogramas junto a cada emoción, botones grandes, nada que se mueva y pausas más largas. Los pasos nuevos proponen menos opciones y más tiempo.</p>
-        <fieldset className="form-stack">
-          <legend>Apoyos uno por uno</legend>
-          <Checkbox checked={draft.supports.pictograms} onChange={(event) => update({ supports: { ...draft.supports, pictograms: event.target.checked } })}>
-            Pictogramas junto a cada emoción
-          </Checkbox>
-          <Checkbox checked={draft.supports.large_controls} onChange={(event) => update({ supports: { ...draft.supports, large_controls: event.target.checked } })}>
-            Botones y letra grandes, sin animaciones
-          </Checkbox>
-          <Checkbox checked={draft.supports.read_aloud} onChange={(event) => update({ supports: { ...draft.supports, read_aloud: event.target.checked } })}>
-            Leer la consigna en voz alta al empezar cada paso
-          </Checkbox>
-          <Checkbox checked={draft.supports.no_time_limit} onChange={(event) => update({ supports: { ...draft.supports, no_time_limit: event.target.checked } })}>
-            Sin límite de tiempo en «¿Qué emoción es?» y en la práctica
-          </Checkbox>
-          <label>Pausa tras cada paso<select value={draft.supports.pause}
-            onChange={(event) => update({ supports: { ...draft.supports, pause: event.target.value as PauseMode } })}>
-            {(Object.keys(pauseNames) as PauseMode[]).map((key) => <option key={key} value={key}>{pauseNames[key]}</option>)}
-          </select></label>
-          <p className="muted">Sin límite de tiempo, el paso termina al responder, al lograrlo o cuando lo saltas. Cambian el ritmo y la pantalla, no lo que se registra.</p>
-        </fieldset>
-        <label>Nombre<input value={draft.name} maxLength={120} required onChange={(event) => update({ name: event.target.value })} /></label>
-        <label>Descripción (opcional)<textarea rows={2} maxLength={2000} value={draft.description}
-          onChange={(event) => update({ description: event.target.value })} /></label>
-        {questionnaireSelect("pre")}
-        <p className="muted">El previo se responde antes de la calibración; el posterior, al terminar. Se aplica la versión vigente de cada cuestionario.</p>
+        <details className="protocol-details" open={anySupport(draft.supports) && !accessibleOn(draft.supports)}>
+          <summary>Elegir los apoyos uno por uno</summary>
+          <fieldset className="form-stack">
+            <legend>Apoyos uno por uno</legend>
+            <Checkbox checked={draft.supports.pictograms} onChange={(event) => update({ supports: { ...draft.supports, pictograms: event.target.checked } })}>
+              Pictogramas junto a cada emoción
+            </Checkbox>
+            <Checkbox checked={draft.supports.large_controls} onChange={(event) => update({ supports: { ...draft.supports, large_controls: event.target.checked } })}>
+              Botones y letra grandes, sin animaciones
+            </Checkbox>
+            <Checkbox checked={draft.supports.read_aloud} onChange={(event) => update({ supports: { ...draft.supports, read_aloud: event.target.checked } })}>
+              Leer la consigna en voz alta al empezar cada paso
+            </Checkbox>
+            <Checkbox checked={draft.supports.no_time_limit} onChange={(event) => update({ supports: { ...draft.supports, no_time_limit: event.target.checked } })}>
+              Sin límite de tiempo en «¿Qué emoción es?» y en la práctica
+            </Checkbox>
+            <label>Pausa tras cada paso<select value={draft.supports.pause}
+              onChange={(event) => update({ supports: { ...draft.supports, pause: event.target.value as PauseMode } })}>
+              {(Object.keys(pauseNames) as PauseMode[]).map((key) => <option key={key} value={key}>{pauseNames[key]}</option>)}
+            </select></label>
+            <p className="muted">Sin límite de tiempo, el paso termina al responder, al lograrlo o cuando lo saltas. Cambian el ritmo y la pantalla, no lo que se registra.</p>
+          </fieldset>
+        </details>
+      </section>
 
-        <h3>Pasos en orden</h3>
-        {draft.steps.length === 0 && <p className="muted">Agrega al menos una imagen o un ejercicio de práctica.</p>}
-        <ol className="card-list">{draft.steps.map((step, index) => {
-          const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
-          const order = <>
-            <Button size="sm" disabled={index === 0} onClick={() => move(index, -1)}>Subir</Button>
-            <Button size="sm" disabled={index === draft.steps.length - 1} onClick={() => move(index, 1)}>Bajar</Button>
-            <Button size="sm" variant="ghost" onClick={() => update({ steps: draft.steps.filter((_, position) => position !== index) })}>Quitar</Button>
-          </>;
-          if (step.kind === "practice" && step.imitate) {
-            const problem = practiceProblem(step);
-            const unsuitableModel = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
-            const modelName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
-            return <li key={`imitation-${index}`} className="row-card protocol-step">
-              <div>
-                <strong>{index + 1}. Haz la misma cara: {stimulus?.title ?? "Imagen no disponible"}</strong>
-                {modelName && <span>La persona ve la imagen y hace la misma cara. Expresión pedida: {modelName} (la expresión esperada de la imagen).</span>}
-                {problem && <span role="alert">{problem}.</span>}
-                {unsuitableModel && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
-                {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
-              </div>
-              <div className="inline-actions">
-                <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
-                  onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
-                <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
-                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-                {order}
-              </div>
-            </li>;
-          }
-          if (step.kind === "practice") {
-            const problem = practiceProblem(step);
-            const unsuitableIllustration = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
-            return <li key={`practice-${index}`} className="row-card protocol-step">
-              <div>
-                <strong>{index + 1}. Ejercicio de práctica: {practiceTargetNames[step.target_expression ?? ""] ?? "elige la expresión"}</strong>
-                <span>Se pide la expresión y se espera que la persona la sostenga.</span>
-                {problem && <span role="alert">{problem}.</span>}
-                {unsuitableIllustration && <span>La ilustración no se puede usar con niños: quítala o elige una «Para niños».</span>}
-                {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La ilustración ya no está disponible: elige otra o quítala.</span>}
-              </div>
-              <div className="inline-actions">
-                <label>Expresión pedida<select value={step.target_expression ?? ""}
-                  onChange={(event) => updateStep(index, { target_expression: event.target.value })}>
-                  {Object.entries(practiceTargetNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-                </select></label>
-                <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
-                  onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
-                <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
-                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-                <label>Ilustración (opcional)<select value={step.stimulus_id ?? ""}
-                  onChange={(event) => updateStep(index, { stimulus_id: event.target.value || null })}>
-                  <option value="">Sin ilustración</option>
-                  {step.stimulus_id && !offered.some((item) => item.id === step.stimulus_id) &&
-                    <option value={step.stimulus_id}>{stimulus?.title ?? "Imagen no disponible"}</option>}
-                  {offered.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-                </select></label>
-                {order}
-              </div>
-            </li>;
-          }
-          if (step.kind === "drawing") {
-            return <li key={`drawing-${index}`} className="row-card protocol-step">
-              <div>
-                <strong>{index + 1}. Dibujo: una cara con una emoción</strong>
-                <span>La persona dibuja en su pantalla y después señala qué emoción quiso dibujar. El dibujo no se envía ni se guarda.</span>
-              </div>
-              <div className="inline-actions">
-                <label>Tiempo para dibujar (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
-                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-                {order}
-              </div>
-            </li>;
-          }
-          if (step.kind === "game") {
-            const rounds = step.rounds ?? DEFAULT_GAME.rounds;
-            const similar = step.game_type === "similar";
-            const children = draft.for_children ? " «Para niños»" : "";
-            return <li key={`game-${index}`} className="row-card protocol-step">
-              <div>
-                <strong>{index + 1}. Juego: {similar ? "busca la misma emoción" : "empareja la emoción"}</strong>
-                <span>{similar
-                  ? "En cada ronda la persona ve una cara y elige, entre otras caras, la que muestra la misma emoción, con botones."
-                  : "En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones."} Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
-                <span className="muted">{similar
-                  ? `EMOtv elige las imágenes emocionales aprobadas${children} al guardar. En cada ronda, la pareja es otra imagen de la misma emoción que se ve distinta (nunca la misma imagen repetida), y las demás caras son de otras emociones y se parecen más a la de arriba: así se elige por la emoción y no por el parecido. Necesita al menos dos imágenes distintas por emoción.`
-                  : `EMOtv elige una imagen emocional aprobada por ronda${children}, de emociones distintas, al guardar.`}</span>
-              </div>
-              <div className="inline-actions">
-                <label>Rondas<select value={rounds} onChange={(event) => {
-                  const next = Number(event.target.value);
-                  updateStep(index, { rounds: next, game_stimulus_ids: (step.game_stimulus_ids ?? []).slice(0, next) });
-                }}>
-                  {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
-                    .map((count) => <option key={count} value={count}>{count}</option>)}
-                </select></label>
-                <label>{similar ? "Caras para elegir" : "Opciones por ronda"}<select value={step.option_count ?? DEFAULT_GAME.option_count}
-                  onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
-                  {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
-                </select></label>
-                <label>Tiempo por ronda (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
-                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-                {order}
-              </div>
-            </li>;
-          }
-          const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
-          if (step.kind === "recognition") {
-            const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
-            return <li key={`recognition-${index}`} className="row-card protocol-step">
-              <div>
-                <strong>{index + 1}. {step.situation ? "Situación" : "¿Qué emoción es?"} {stimulus?.title ?? "Imagen no disponible"}</strong>
-                {answerName && <span>La persona elige entre varias emociones. Respuesta: {answerName} (la expresión esperada de la imagen).</span>}
-                {stimulus && !recognizable(stimulus) && <span role="alert">Esta imagen no indica una expresión esperada: elige una imagen emocional que la tenga.</span>}
-                {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
-                {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
-                {/* Con una historia, se pregunta por la cara de la imagen: una situación no tiene una única emoción posible. */}
-                <label>Situación (opcional)<textarea rows={2} maxLength={MAX_SITUATION_CHARS} value={step.situation ?? ""}
-                  placeholder="A Lucía se le cayó su helado al piso."
-                  onChange={(event) => updateStep(index, { situation: event.target.value || null })} /></label>
-                <span className="muted">Con una situación, la pregunta es «¿Qué emoción muestra la cara?» y al final se aclara que cada persona puede sentir algo distinto. Usa nombres inventados.</span>
-              </div>
-              <div className="inline-actions">
-                <label>Opciones<select value={step.option_count ?? DEFAULT_RECOGNITION.option_count}
-                  onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
-                  {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
-                </select></label>
-                <label>Tiempo para responder (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
-                  onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-                {order}
-              </div>
-            </li>;
-          }
-          return <li key={`${step.stimulus_id}-${index}`} className="row-card protocol-step">
-            <div>
-              <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
-              {stimulus && <span>{stimulusSummary(stimulus)}</span>}
-              {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
-              {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+      <section className="protocol-section" aria-labelledby="protocol-flow-title">
+        <h3 id="protocol-flow-title"><span className="protocol-section-number" aria-hidden="true">3</span>Qué se aplica en la sesión</h3>
+        <p className="muted">La sesión sigue este orden, de arriba abajo.</p>
+        <ol className="protocol-flow">
+          <li className="protocol-moment">
+            <h4>Antes de empezar</h4>
+            {questionnaireSelect("pre")}
+            <p className="muted">Se responde antes de los pasos. Se aplica la versión vigente del cuestionario.</p>
+          </li>
+          <li className="protocol-moment">
+            <h4>Pasos{draft.steps.length > 0 ? ` (${draft.steps.length})` : ""}</h4>
+            <div className="protocol-steps-layout">
+            <div className="protocol-steps-column">
+            {draft.steps.length === 0 ? <p className={`muted step-drop-empty${dragging ? " is-drop-target" : ""}`}
+              onDragOver={(event) => { if (dragging) { event.preventDefault(); setDropAt(0); } }} onDrop={drop}>
+              Todavía no hay pasos. Toca una tarjeta de «Agregar un paso» o arrástrala aquí.</p>
+              : <p className="muted">Arrastra un paso por su asa o usa las flechas. También puedes arrastrar una tarjeta de «Agregar un paso» al lugar donde la quieras.</p>}
+            <ol ref={stepsRef} className="card-list protocol-steps" onDragOver={overList} onDrop={drop}
+              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null); }}>{draft.steps.map((step, index) => {
+              const stimulus = step.stimulus_id ? byId.get(step.stimulus_id) : undefined;
+              const [itemStart, itemEnd] = itemRange(draft.steps, index);
+              // Línea donde caería lo que se arrastra, y el paso que se mueve, atenuado.
+              const stepClass = (position: number) => {
+                const [start, end] = itemRange(draft.steps, position);
+                const moving = dragging?.from === "step" && itemRange(draft.steps, dragging.index)[0] === start;
+                return ["row-card protocol-step", moving && "is-dragging",
+                  dragging && dropAt === start && "is-drop-before",
+                  dragging && dropAt === end && end === draft.steps.length && "is-drop-after"].filter(Boolean).join(" ");
+              };
+              // Arriba a la derecha de cada paso: subir, bajar y quitar, sin desplazarse.
+              const order = <span className="step-order" role="group" aria-label={`Orden del paso ${index + 1}`}>
+                <span className="step-order-button step-drag-handle" draggable title="Arrastrar para mover"
+                  data-testid={`arrastrar-paso-${index + 1}`}
+                  onDragStart={(event) => startDrag(event, { from: "step", index }, event.currentTarget.closest("li"))}
+                  onDragEnd={endDrag}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.4" /><circle cx="13" cy="5" r="1.4" /><circle cx="7" cy="10" r="1.4" /><circle cx="13" cy="10" r="1.4" /><circle cx="7" cy="15" r="1.4" /><circle cx="13" cy="15" r="1.4" /></svg>
+                </span>
+                <button type="button" className="step-order-button" aria-label={`Subir el paso ${index + 1}`} title="Subir"
+                  disabled={itemStart === 0} onClick={() => move(index, -1)}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 12 5-5 5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <button type="button" className="step-order-button" aria-label={`Bajar el paso ${index + 1}`} title="Bajar"
+                  disabled={itemEnd >= draft.steps.length} onClick={() => move(index, 1)}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 8 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+                <button type="button" className="step-order-button step-order-remove" aria-label={`Quitar el paso ${index + 1}`} title="Quitar"
+                  onClick={() => update({ steps: removeItem(draft.steps, index) })}>
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m6 6 8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+                </button>
+              </span>;
+              if (step.game_round) {
+                // Las rondas de un juego con cámara se muestran como un solo paso, en la primera.
+                if (itemStart !== index) return null;
+                const block = draft.steps.slice(itemStart, itemEnd);
+                const hold = step.hold_seconds ?? CAMERA_GAME.hold_seconds;
+                const updateBlock = (changes: Partial<ProtocolStep>) => update({ steps: replaceItem(draft.steps, index,
+                  block.map((round) => ({ ...round, ...changes }))) });
+                const problem = block.map(practiceProblem).find((item) => item !== null);
+                return <li key={`camera-game-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}–{itemEnd}. Juego con cámara: muestra la emoción</strong>
+                    <span>En cada ronda se pide una emoción y una barra crece al acercarse. Si la sostiene, gana una estrella; al final se ve «Lograste X de {block.length} caras». Sin puntos.</span>
+                    <span className="muted">Emociones: {block.map((round) => practiceTargetNames[round.target_expression ?? ""] ?? "—").join(", ")}.</span>
+                    {problem && <span role="alert">{problem}.</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Rondas<select value={block.length} onChange={(event) => update({ steps: replaceItem(draft.steps, index,
+                      cameraGameSteps(Number(event.target.value), hold, step.exposure_seconds)) })}>
+                      {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
+                        .map((count) => <option key={count} value={count}>{count}</option>)}
+                    </select></label>
+                    <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={hold}
+                      onChange={(event) => updateBlock({ hold_seconds: Number(event.target.value) })} /></label>
+                    <label>Tiempo por ronda (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateBlock({ exposure_seconds: Number(event.target.value) })} /></label>
+                    <Button size="sm" onClick={() => update({ steps: replaceItem(draft.steps, index,
+                      cameraGameSteps(block.length, hold, step.exposure_seconds)) })}>Otras emociones</Button>
+                    {order}
+                  </div>
+                </li>;
+              }
+              if (step.kind === "practice" && step.imitate) {
+                const problem = practiceProblem(step);
+                const unsuitableModel = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+                const modelName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
+                return <li key={`imitation-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. {step.conductor_rating ? "Juego: imita la cara" : "Haz la misma cara"}: {stimulus?.title ?? "Imagen no disponible"}</strong>
+                    {modelName && <span>La persona ve la imagen y hace la misma cara. Expresión pedida: {modelName} (la expresión esperada de la imagen).</span>}
+                    {step.conductor_rating && <span className="muted">Al terminar, tú la valoras de 1 a 5 estrellas y el paso espera tu valoración. La persona no la ve; EMOtv no la calcula ni la suma.</span>}
+                    {problem && <span role="alert">{problem}.</span>}
+                    {unsuitableModel && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+                    {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
+                      onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
+                    <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              if (step.kind === "practice") {
+                const problem = practiceProblem(step);
+                const unsuitableIllustration = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+                return <li key={`practice-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. Ejercicio de práctica: {practiceTargetNames[step.target_expression ?? ""] ?? "elige la expresión"}</strong>
+                    <span>Se pide la expresión y se espera que la persona la sostenga.</span>
+                    {problem && <span role="alert">{problem}.</span>}
+                    {unsuitableIllustration && <span>La ilustración no se puede usar con niños: quítala o elige una «Para niños».</span>}
+                    {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La ilustración ya no está disponible: elige otra o quítala.</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Expresión pedida<select value={step.target_expression ?? ""}
+                      onChange={(event) => updateStep(index, { target_expression: event.target.value })}>
+                      {cameraTargets.map((key) => <option key={key} value={key}>{practiceTargetNames[key]}</option>)}
+                    </select></label>
+                    <label>Sostener (s)<input type="number" min={1} max={MAX_HOLD_SECONDS} value={step.hold_seconds ?? ""}
+                      onChange={(event) => updateStep(index, { hold_seconds: Number(event.target.value) })} /></label>
+                    <label>Tiempo máximo (s)<input type="number" min={2} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    <label>Ilustración (opcional)<select value={step.stimulus_id ?? ""}
+                      onChange={(event) => updateStep(index, { stimulus_id: event.target.value || null })}>
+                      <option value="">Sin ilustración</option>
+                      {step.stimulus_id && !offered.some((item) => item.id === step.stimulus_id) &&
+                        <option value={step.stimulus_id}>{stimulus?.title ?? "Imagen no disponible"}</option>}
+                      {offered.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                    </select></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              if (step.kind === "analyzer") {
+                return <li key={`analyzer-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. Usar el analizador</strong>
+                    <span>La cámara estima la expresión facial mientras tú pides de palabra las emociones que quieras. Tú ves la expresión estimada; la persona no. Pulsas «Siguiente paso» cuando terminas.</span>
+                    <span className="muted">El protocolo no fija ninguna expresión: EMOtv registra lo que estima cada pocos segundos, sin calificarlo.</span>
+                  </div>
+                  <div className="inline-actions">
+                    <label>Tiempo máximo (s)<input type="number" min={1} max={MAX_ANALYZER_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              if (step.kind === "drawing") {
+                return <li key={`drawing-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. Dibujo: {stimulus ? `la emoción que siente al ver «${stimulus.title}»` : "una cara con una emoción"}</strong>
+                    <span>{stimulus
+                      ? "La persona mira la imagen, dibuja una cara con la emoción que siente y pulsa «Terminé»."
+                      : "La persona dibuja una cara en su pantalla y pulsa «Terminé»."} El dibujo no se envía ni se guarda, y EMOtv no lo compara con la imagen.</span>
+                    {step.stimulus_id && !stimulus && !stimuliQuery.loading && <span>La imagen ya no está disponible: elige otra o quítala.</span>}
+                    {draft.for_children && stimulus != null && !suitableForChildren(stimulus) && <span>La imagen no se puede usar con niños: quítala o elige una «Para niños».</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Imagen para mirar (opcional)<select value={step.stimulus_id ?? ""}
+                      onChange={(event) => updateStep(index, { stimulus_id: event.target.value || null })}>
+                      <option value="">Sin imagen</option>
+                      {step.stimulus_id && !offered.some((item) => item.id === step.stimulus_id) &&
+                        <option value={step.stimulus_id}>{stimulus?.title ?? "Imagen no disponible"}</option>}
+                      {offered.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                    </select></label>
+                    <label>Tiempo para dibujar (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              if (step.kind === "game") {
+                const rounds = step.rounds ?? DEFAULT_GAME.rounds;
+                const similar = step.game_type === "similar";
+                const children = draft.for_children ? " «Para niños»" : "";
+                return <li key={`game-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. Juego: {similar ? "busca la misma emoción" : "empareja la emoción"}</strong>
+                    <span>{similar
+                      ? "En cada ronda la persona ve una cara y elige, entre otras caras, la que muestra la misma emoción, con botones."
+                      : "En cada ronda la persona relaciona una imagen con el nombre de su emoción, con botones."} Puede pedir ayuda; si no la encuentra, se le muestra con su explicación. Sin puntaje.</span>
+                    <span className="muted">{similar
+                      ? `EMOtv elige las imágenes emocionales aprobadas${children} al guardar. En cada ronda, la pareja es otra imagen de la misma emoción que se ve distinta (nunca la misma imagen repetida), y las demás caras son de otras emociones y se parecen más a la de arriba: así se elige por la emoción y no por el parecido. Necesita al menos dos imágenes distintas por emoción.`
+                      : `Elige la imagen de cada ronda, o deja «La elige EMOtv» y se completa al guardar con una imagen emocional aprobada${children}. Puedes usar las imágenes que subiste y aprobó tu docente; las fotografías de personas las agrega el docente.`}</span>
+                    {!similar && <div className="inline-actions game-round-images">{Array.from({ length: rounds }, (_, round) => {
+                      const ids = step.game_stimulus_ids ?? [];
+                      const current = ids[round] ?? "";
+                      const known = current ? byId.get(current) : undefined;
+                      return <label key={round}>Imagen de la ronda {round + 1}<select value={current} onChange={(event) => {
+                        const next = Array.from({ length: rounds }, (_, position) => ids[position] ?? "");
+                        next[round] = event.target.value;
+                        updateStep(index, { game_stimulus_ids: next });
+                      }}>
+                        <option value="">La elige EMOtv</option>
+                        {current && !matchable.some((item) => item.id === current) &&
+                          <option value={current}>{known?.title ?? "Imagen no disponible"}</option>}
+                        {/* «Responde con la cara»: solo las cinco expresiones que estima EMOtv. */}
+                        {(step.answer_by_face ? matchable.filter((item) => isCameraTarget(item.expected_expression)) : matchable)
+                          .map((item) => <option key={item.id} value={item.id}
+                          disabled={item.id !== current && ids.includes(item.id)}>{item.title} — {practiceTargetNames[item.expected_expression ?? ""] ?? ""}</option>)}
+                      </select></label>;
+                    })}</div>}
+                    <Checkbox checked={Boolean(step.answer_by_face)}
+                      onChange={(event) => updateStep(index, { answer_by_face: event.target.checked,
+                        ...(event.target.checked ? { show_expression: false } : {}) })}>
+                      Responder poniendo la cara (usa la cámara)
+                    </Checkbox>
+                    {step.answer_by_face && <span className="muted">«Responde con la cara»: en vez de tocar, la persona pone la cara de la emoción y la cámara marca la opción cuya emoción sostiene unos segundos. Solo usa imágenes de neutral, felicidad, sorpresa, tristeza y enojo. Los niveles los ves tú; la persona ve la opción marcada. Sin cámara, responde con botones.</span>}
+                    <Checkbox checked={Boolean(step.show_expression)} disabled={Boolean(step.answer_by_face)}
+                      onChange={(event) => updateStep(index, { show_expression: event.target.checked })}>
+                      Después de cada ronda, pedir que muestre la emoción (usa la cámara)
+                    </Checkbox>
+                    {step.show_expression && <span className="muted">«Reconoce y luego muéstrala»: tras cada ronda, la persona pone esa cara unos segundos mientras la cámara la estima. Ella solo ve un mensaje amable; el nivel y el resultado los ves tú. Asco, miedo y desprecio no se piden, y sin cámara el juego sigue igual.</span>}
+                  </div>
+                  <div className="inline-actions">
+                    <label>Rondas<select value={rounds} onChange={(event) => {
+                      const next = Number(event.target.value);
+                      updateStep(index, { rounds: next, game_stimulus_ids: (step.game_stimulus_ids ?? []).slice(0, next) });
+                    }}>
+                      {Array.from({ length: MAX_GAME_ROUNDS - MIN_GAME_ROUNDS + 1 }, (_, offset) => MIN_GAME_ROUNDS + offset)
+                        .map((count) => <option key={count} value={count}>{count}</option>)}
+                    </select></label>
+                    <label>{similar ? "Caras para elegir" : "Opciones por ronda"}<select value={step.option_count ?? DEFAULT_GAME.option_count}
+                      onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
+                      {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
+                    </select></label>
+                    <label>Tiempo por ronda (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              const unsuitable = draft.for_children && stimulus != null && !suitableForChildren(stimulus);
+              if (step.kind === "recognition") {
+                const answerName = stimulus?.expected_expression ? practiceTargetNames[stimulus.expected_expression] : null;
+                return <li key={`recognition-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                  <div>
+                    <strong>{index + 1}. {step.situation ? "Situación" : "¿Qué emoción es?"} {stimulus?.title ?? "Imagen no disponible"}</strong>
+                    {answerName && <span>La persona elige entre varias emociones. Respuesta: {answerName} (la expresión esperada de la imagen).</span>}
+                    {stimulus && !recognizable(stimulus) && <span role="alert">Esta imagen no indica una expresión esperada: elige una imagen emocional que la tenga.</span>}
+                    {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+                    {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+                    {/* Con una historia, se pregunta por la cara de la imagen: una situación no tiene una única emoción posible. */}
+                    <label>Situación (opcional)<textarea rows={2} maxLength={MAX_SITUATION_CHARS} value={step.situation ?? ""}
+                      placeholder="A Lucía se le cayó su helado al piso."
+                      onChange={(event) => updateStep(index, { situation: event.target.value || null })} /></label>
+                    <span className="muted">Con una situación, la pregunta es «¿Qué emoción muestra la cara?» y al final se aclara que cada persona puede sentir algo distinto. Usa nombres inventados.</span>
+                  </div>
+                  <div className="inline-actions">
+                    <label>Opciones<select value={step.option_count ?? DEFAULT_RECOGNITION.option_count}
+                      onChange={(event) => updateStep(index, { option_count: Number(event.target.value) })}>
+                      {RECOGNITION_OPTION_COUNTS.map((count) => <option key={count} value={count}>{count}</option>)}
+                    </select></label>
+                    <label>Tiempo para responder (s)<input type="number" min={1} max={MAX_STEP_SECONDS} value={step.exposure_seconds}
+                      onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                    {order}
+                  </div>
+                </li>;
+              }
+              return <li key={`${step.stimulus_id}-${index}`} className={stepClass(index)} onDragOver={(event) => overStep(event, index)} onDrop={drop}>
+                <div>
+                  <strong>{index + 1}. {stimulus?.title ?? "Imagen no disponible"}</strong>
+                  {stimulus && <span>{stimulusSummary(stimulus)}</span>}
+                  {unsuitable && <span>No se puede usar con niños: quítala o elige una «Para niños».</span>}
+                  {!stimulus && !stimuliQuery.loading && <span>Necesita una imagen: quítala y elige otra.</span>}
+                </div>
+                <div className="inline-actions">
+                  <label>Segundos en pantalla<input type="number" min={1} max={120} value={step.exposure_seconds}
+                    onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
+                  <label>Captura a los (s)<input type="number" min={0} max={step.exposure_seconds} value={step.capture_after_seconds}
+                    onChange={(event) => updateStep(index, { capture_after_seconds: Number(event.target.value) })} /></label>
+                  {stimulus?.kind === "abstract" && <Checkbox checked={step.record_verbal_response}
+                    onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
+                  {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
+                    onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
+                  {order}
+                </div>
+              </li>;
+            })}</ol>
             </div>
-            <div className="inline-actions">
-              <label>Segundos en pantalla<input type="number" min={1} max={120} value={step.exposure_seconds}
-                onChange={(event) => updateStep(index, { exposure_seconds: Number(event.target.value) })} /></label>
-              <label>Captura a los (s)<input type="number" min={0} max={step.exposure_seconds} value={step.capture_after_seconds}
-                onChange={(event) => updateStep(index, { capture_after_seconds: Number(event.target.value) })} /></label>
-              {stimulus?.kind === "abstract" && <Checkbox checked={step.record_verbal_response}
-                onChange={(event) => updateStep(index, { record_verbal_response: event.target.checked })}>Registrar lo que dice ver</Checkbox>}
-              {stimulus?.kind === "abstract" && <Checkbox checked={step.shown_before_analyzer}
-                onChange={(event) => updateStep(index, { shown_before_analyzer: event.target.checked })}>Mostrar antes del analizador (sin capturas)</Checkbox>}
-              {order}
+            <div className="step-catalog" role="region" aria-labelledby="step-catalog-title">
+              <h5 id="step-catalog-title">Agregar un paso</h5>
+              {stepCatalog.map((group) => <div key={group.group} className="step-catalog-group">
+                <p className="step-catalog-head"><strong>{group.group}</strong> <span className="muted">{group.hint}</span></p>
+                <div className="step-catalog-grid">{group.items.map((item) => <button key={item.key} type="button"
+                  className={`step-option${picking === item.key ? " is-selected" : ""}`}
+                  aria-labelledby={`step-option-${item.key}-title`} aria-describedby={`step-option-${item.key}`}
+                  aria-pressed={item.image ? picking === item.key : undefined} onClick={() => choose(item.key)}
+                  draggable onDragStart={(event) => startDrag(event, { from: "catalog", key: item.key })} onDragEnd={endDrag}>
+                  <strong id={`step-option-${item.key}-title`}>{item.title}</strong>
+                  <span id={`step-option-${item.key}`}>{item.text}{item.image ? " Lleva una imagen." : ""}</span>
+                </button>)}</div>
+              </div>)}
+              {picking && pickable.length > 0 ? <div className="step-picker">
+                {pickAt != null && pickAt < draft.steps.length && <p className="muted">Se agrega como paso {pickAt + 1}.</p>}
+                <label>Imagen para «{imageChoiceTitle[picking]}»<select value={choice} onChange={(event) => setChoice(event.target.value)}>
+                  <option value="">Elige una imagen</option>
+                  {pickable.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
+                </select></label>
+                <div className="inline-actions">
+                  <Button variant="primary" disabled={!choice} onClick={addPicked}>Agregar paso</Button>
+                  <Button variant="ghost" onClick={() => { setPicking(null); setChoice(""); setPickAt(null); }}>Cancelar</Button>
+                </div>
+                {picking !== "stimulus" && <p className="muted">Solo aparecen imágenes emocionales con una expresión esperada: es la respuesta del paso.</p>}
+              </div> : !stimuliQuery.loading && (offered.length === 0 || picking) && <div className="empty-state step-picker">
+                <p>{offered.length === 0
+                  ? `${draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."} Los juegos, el dibujo y «Usar el analizador» no las necesitan.`
+                  : "Ninguna imagen disponible indica una expresión esperada."}
+                  {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
+                <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>
+                  {isDocente ? "Ir a Estímulos" : "Ir a Imágenes"}</ButtonLink></div>
+              </div>}
             </div>
-          </li>;
-        })}</ol>
-        {offered.length > 0 ? <div className="inline-actions">
-          <label>Imagen<select value={choice} onChange={(event) => setChoice(event.target.value)}>
-            <option value="">Elige una imagen</option>
-            {offered.map((item) => <option key={item.id} value={item.id}>{item.title} — {stimulusSummary(item)}</option>)}
-          </select></label>
-          <Button disabled={!choice} onClick={addStep}>Agregar al protocolo</Button>
-          <Button disabled={!recognizable(chosen)} onClick={addRecognition}>Agregar como «¿Qué emoción es?»</Button>
-          <Button disabled={!imitable} onClick={addImitation}>Agregar como «Haz la misma cara»</Button>
-        </div> : !stimuliQuery.loading && <div className="empty-state">
-          <p>{draft.for_children ? "No hay imágenes «Para niños» aprobadas." : "No hay imágenes disponibles."}
-            {isDocente ? " Sube una en Estímulos." : " Sube las tuyas en Imágenes: se usan cuando tu docente las aprueba."}</p>
-          <div className="inline-actions"><ButtonLink variant="secondary" to={isDocente ? paths.stimuli : paths.images}>
-            {isDocente ? "Ir a Estímulos" : "Ir a Imágenes"}</ButtonLink></div>
-        </div>}
-        <div className="inline-actions">
-          <Button onClick={addPractice}>Agregar ejercicio de práctica</Button>
-          <Button onClick={addDrawing}>Agregar dibujo</Button>
-          <Button onClick={() => addGame("matching")}>Agregar juego de emparejar</Button>
-          <Button onClick={() => addGame("similar")}>Agregar juego: busca la misma emoción</Button>
-        </div>
-        <p className="muted">En un ejercicio de práctica se pide una expresión (por ejemplo, «Muestra alegría») y la persona ve
-          una señal simple que crece al acercarse. Se registra si la logró y en cuánto tiempo; no evalúa a nadie.</p>
-        <p className="muted">En «¿Qué emoción es?» se muestra una imagen emocional y la persona elige entre varias emociones;
-          después lee el nombre de la emoción de la imagen. Las opciones se eligen solas. Se registra qué eligió; no evalúa a nadie.</p>
-        <p className="muted">En «Haz la misma cara» la imagen es un modelo: la persona la ve y hace la misma cara, con la misma
-          señal simple de la práctica. La expresión pedida es la de la imagen. Se registra si la logró; no evalúa a nadie.</p>
-        <p className="muted">En un dibujo la persona dibuja una cara en su pantalla y después señala qué emoción quiso
-          representar. El dibujo se queda en su pantalla y se borra al terminar el paso: solo se registra la emoción que
-          señaló. EMOtv no mira ni interpreta el dibujo.</p>
-        <p className="muted">En el juego de emparejar la persona relaciona cada imagen con el nombre de su emoción, tocando
-          un botón. Empieza con pocas opciones; sube las rondas o las opciones cuando quieras más dificultad. Se registra
-          cuántas rondas jugó, cuántas emparejó y si pidió ayuda; no es un puntaje ni evalúa a nadie.</p>
-        <p className="muted">En «Busca la misma emoción» la persona ve una cara y elige otra cara que muestre la misma
-          emoción. La pareja siempre es otra imagen, para que se resuelva por la emoción y no por reconocer el mismo
-          dibujo. La emoción de cada imagen es la que indicó quien la subió; revisa que se entienda antes de aplicarlo.</p>
+            </div>
+          </li>
+          <li className="protocol-moment">
+            <h4>Al terminar</h4>
+            {questionnaireSelect("post")}
+          </li>
+        </ol>
+      </section>
 
-        {questionnaireSelect("post")}
-      </>}
+      {!ready && <p className="protocol-missing" role="status">{missing.length > 0
+        ? `Para guardar falta: ${missing.join(", ")}.`
+        : stepProblems > 0 ? "Para guardar, corrige los pasos marcados." : ""}</p>}
     </form>
     </Modal>
 
@@ -501,17 +801,23 @@ export function ProtocolsPage() {
       </div>
       <div className="inline-actions">
         {item.owned_by_me && !item.needs_image && <ButtonLink variant="secondary" to={paths.analysisWithProtocol(item.id)}>Usar en el Analizador</ButtonLink>}
-        {item.owned_by_me && <Button onClick={() => openEditor(item)}>Editar</Button>}
-        {(item.owned_by_me || item.shared_with_group) && <Button variant={item.owned_by_me ? "secondary" : "primary"} disabled={busy}
-          onClick={() => { void run(async () => {
-            await apiRequest(`/protocols/${encodeURIComponent(item.id)}/copy`, { method: "POST", token });
-            return `Se agregó una copia de «${item.name}» a tus protocolos. Puedes editarla y usarla en el Analizador.`;
-          }); }}>{item.owned_by_me ? "Duplicar" : "Copiar y modificar"}</Button>}
-        {isDocente && item.owned_by_me && <Button disabled={busy} onClick={() => { void run(async () => {
-          await apiRequest(`/protocols/${encodeURIComponent(item.id)}/share`, { method: "PUT", token, body: JSON.stringify({ shared: !item.shared_with_group }) });
-          return item.shared_with_group ? "Tu grupo ya no ve este protocolo como plantilla." : "Tu grupo puede copiar este protocolo como plantilla.";
-        }); }}>{item.shared_with_group ? "Dejar de compartir" : "Compartir con mi grupo"}</Button>}
+        <ActionsMenu name={item.name} items={actions(item)} />
       </div>
     </li>)}</ul>}
+
+    <Modal open={preview !== null} title={preview ? `Vista previa: ${preview.name}` : "Vista previa"} onClose={() => setPreview(null)}>
+      {preview && <div className="protocol-preview">
+        <p className="muted">{preview.for_children ? "Para niños" : "Para adultos"} · Versión {preview.version}{preview.description ? ` · ${preview.description}` : ""}</p>
+        <ol>
+          {questionnaireTitle(preview.pre_questionnaire_id) && <li>Antes de empezar: cuestionario {questionnaireTitle(preview.pre_questionnaire_id)}</li>}
+          {protocolStepLines(preview.steps, (id) => byId.get(id)?.title).map((line, index) => <li key={index}>{line}</li>)}
+          {questionnaireTitle(preview.post_questionnaire_id) && <li>Al terminar: cuestionario {questionnaireTitle(preview.post_questionnaire_id)}</li>}
+        </ol>
+      </div>}
+    </Modal>
+
+    <ConfirmDialog open={removing !== null} title="Eliminar protocolo" confirmLabel="Eliminar" confirming={busy}
+      message={removing ? `Se eliminará «${removing.name}» de tus protocolos y ya no se podrá usar en el Analizador. Las sesiones que lo usaron conservan su registro${removing.shared_with_group ? ", y tu grupo deja de verlo como plantilla" : ""}.` : ""}
+      onConfirm={() => { void remove(); }} onCancel={() => setRemoving(null)} />
   </section>;
 }

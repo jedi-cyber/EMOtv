@@ -463,7 +463,13 @@ HSEMOTION_MODEL_URL = (
     "https://github.com/sb-ai-lab/EmotiEffLib/raw/af833487321c3efdcb1768a91a6c656a1986fdf6/"
     "models/affectnet_emotions/onnx/enet_b0_8_best_afew.onnx"
 )
-HARDLYHUMANS_MODEL_DIR = WEIGHTS_DIR / "hardlyhumans_vit"
+# EmotiEffLib enet_b2_8 (mismo repositorio y commit); más preciso en AffectNet y
+# más pesado. Licencia y origen en docs/licencias-modelos.md.
+EMOTIEFFLIB_B2_MODEL_PATH = WEIGHTS_DIR / "emotion" / "enet_b2_8.onnx"
+EMOTIEFFLIB_B2_MODEL_URL = (
+    "https://github.com/sb-ai-lab/EmotiEffLib/raw/af833487321c3efdcb1768a91a6c656a1986fdf6/"
+    "models/affectnet_emotions/onnx/enet_b2_8.onnx"
+)
 
 # --- Configuracion de Estimacion de Pose ---
 POSE_MODEL_PATH = WEIGHTS_DIR / "pose" / "pose_landmarker_lite.task"

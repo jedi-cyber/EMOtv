@@ -7,7 +7,7 @@ import pytest
 
 from tests.integration.test_guided_sessions import frame, guided, post, state, view, wait
 from tests.integration.test_practice_sessions import HAPPY, NEUTRAL, send
-from tests.integration.test_privacy_accounts import env, headers  # noqa: F401
+from tests.integration.test_privacy_accounts import accept_commitment, env, headers  # noqa: F401
 from tests.integration.test_protocols_and_stimuli import approve, upload_stimulus
 
 
@@ -28,17 +28,12 @@ def create(env, *steps, for_children=False, user=None):  # noqa: F811
 
 
 def start(env, *steps):  # noqa: F811
-    """Sesión con protocolo de prácticas armado por la API, ya calibrada y en el primer ejercicio."""
+    """Sesión con protocolo de prácticas armado por la API, ya en el primer ejercicio."""
     response = create(env, *steps)
     assert response.status_code == 201, response.text
     session_id, token = guided(env, response.json())
     env.frame_result = NEUTRAL
-    assert post(env, session_id, "calibration").status_code == 200
-    for _ in range(5):
-        frame(env, token)
-        wait(env, 0.6)
-    wait(env, 0.5)
-    frame(env, token)
+    assert post(env, session_id, "start").status_code == 200
     assert state(env, session_id)["phase"] == "stimuli"
     return session_id, token
 
@@ -51,7 +46,7 @@ def test_el_editor_recibe_lo_que_propone_el_servidor(env):  # noqa: F811
         response = env.client.get("/protocols/practice-defaults", headers=headers(env, user))
         assert response.status_code == 200
         assert response.json() == {"hold_seconds": 2, "max_seconds": 20, "targets": [
-            "neutral", "happiness", "surprise", "sadness", "anger", "disgust", "fear", "contempt"]}
+            "neutral", "happiness", "surprise", "sadness", "anger"]}
     for user in (env.admin, env.superadmin):
         assert env.client.get("/protocols/practice-defaults", headers=headers(env, user)).status_code == 403
     assert env.client.get("/protocols/practice-defaults").status_code == 401
@@ -92,6 +87,27 @@ def test_las_reglas_del_dominio_llegan_como_mensajes_en_espanol(env, step, messa
     response = create(env, step)
     assert response.status_code == 422
     assert message in response.json()["detail"]
+
+
+@pytest.mark.parametrize("target", ["fear", "disgust", "contempt"])
+def test_la_practica_solo_pide_las_cinco_expresiones_que_estima_emotv(env, target):  # noqa: F811
+    response = create(env, practice(target))
+    assert response.status_code == 422
+    assert "cinco expresiones que estima EMOtv" in response.json()["detail"]
+
+
+def test_un_protocolo_antiguo_con_miedo_se_edita_antes_de_aplicarlo(env):  # noqa: F811
+    from dataclasses import replace
+    response = create(env, practice())
+    assert response.status_code == 201, response.text
+    stored = env.protocols.repository.get(response.json()["id"])
+    # Armado antes de limitar la estimación: el ejercicio pedía miedo.
+    env.protocols.repository.replace(replace(stored, steps=(replace(stored.steps[0], target_expression="fear"),)))
+    accept_commitment(env, env.user_1)
+    started = env.client.post("/sessions", headers=headers(env, env.user_1),
+                              json={"authorization_confirmed": True, "protocol_id": stored.id, "session_type": "propia"})
+    assert started.status_code in (409, 422), started.text
+    assert "Edita el protocolo" in started.json()["detail"]
 
 
 def test_un_protocolo_para_ninos_solo_admite_ilustraciones_para_ninos(env):  # noqa: F811

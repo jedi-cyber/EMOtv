@@ -30,6 +30,10 @@ class QuestionnaireRepository(Interface):
         """Si alguna sesión aplicó esta versión."""
         ...
 
+    def protocols_using(self, family_id: str) -> tuple[str, ...]:
+        """Nombres de los protocolos vigentes que aplican alguna versión del cuestionario."""
+        ...
+
 
 class QuestionnaireResponseRepository(Interface):
     """Las respuestas se cifran antes de llegar a la base."""

@@ -72,6 +72,22 @@ describe("imágenes del usuario", () => {
     expect(screen.getByText(/se eliminará/)).toBeInTheDocument();
     expect(screen.getByText("Aprobada")).toBeInTheDocument();
   });
+
+  it("el menú de tres puntos muestra la imagen en grande y la elimina tras confirmar", async () => {
+    state.data["/own-stimuli"] = [image("1")];
+    vi.mocked(apiRequest).mockResolvedValue(undefined as never);
+    withUser("student", <ImagesPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Imagen 1»" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Vista previa", "Eliminar"]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Vista previa" }));
+    expect(screen.getByRole("dialog", { name: "Imagen 1" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Más acciones para «Imagen 1»" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Eliminar" }));
+    expect(screen.getByRole("alertdialog", { name: "Eliminar imagen" })).toHaveTextContent("te pedirá elegir otra imagen");
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    expect(apiRequest).toHaveBeenCalledWith("/own-stimuli/1", expect.objectContaining({ method: "DELETE" }));
+  });
 });
 
 describe("imágenes por revisar", () => {
@@ -81,33 +97,51 @@ describe("imágenes por revisar", () => {
     approved: [],
   };
 
-  it("agrupa por lote, preselecciona lo que eligió el usuario y recuerda eliminar si hay una persona", () => {
-    state.data["/own-stimuli/review"] = review;
+  it("agrupa por lote, dice si cada imagen está sin revisar y ofrece aprobar lo que propuso el usuario", () => {
+    state.data["/own-stimuli/review"] = { ...review, approved: [image("3", { status: "approved", audience: "children" })] };
     withUser("psychologist", <ImageReviewPage />);
     expect(screen.getByRole("heading", { name: /usuario1@example\.com/ })).toBeInTheDocument();
     expect(screen.getByText("Revisar: posible persona")).toBeInTheDocument();
     expect(screen.getAllByText("Si ves a una persona, elimina la imagen.").length).toBeGreaterThanOrEqual(2);
-    const [first, second] = screen.getAllByRole("group", { name: "Decisión" });
-    expect(within(first).getByRole("radio", { name: "Para niños" })).toBeChecked();
-    expect(within(second).getByRole("radio", { name: "Para adultos" })).toBeChecked();
+    expect(screen.getAllByText("Sin revisar: aún no se usa")).toHaveLength(2);
+    expect(screen.getByText("Aprobada para niños")).toBeInTheDocument();
+    const [first, second, third] = screen.getAllByRole("group", { name: /^Decisión sobre/ });
+    expect(within(first).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Aprobar para niños", "Aprobar para adultos", "Eliminar"]);
+    expect(within(second).getAllByRole("button")[0]).toHaveTextContent("Aprobar para adultos");
+    expect(within(third).getAllByRole("button").map((button) => button.textContent))
+      .toEqual(["Cambiar a para adultos", "Eliminar"]);
   });
 
-  it("aplica decisiones a varias imágenes y pide un motivo opcional al eliminar", async () => {
+  it("aprueba con un clic, avisa con un toast y pide un motivo opcional al eliminar", async () => {
     state.data["/own-stimuli/review"] = review;
     vi.mocked(apiRequest).mockResolvedValue([] as never);
     withUser("psychologist", <ImageReviewPage />);
-    await userEvent.click(screen.getByRole("checkbox", { name: "Seleccionar las 2 del lote" }));
-    const [first] = screen.getAllByRole("group", { name: "Decisión" });
-    await userEvent.click(within(first).getByRole("radio", { name: "Eliminar" }));
-    await userEvent.click(screen.getByRole("button", { name: "Aplicar a 2 imágenes" }));
-    const dialog = screen.getByRole("dialog", { name: "Eliminar imágenes" });
+    const [first, second] = screen.getAllByRole("group", { name: /^Decisión sobre/ });
+    await userEvent.click(within(second).getByRole("button", { name: "Aprobar para adultos" }));
+    expect(await screen.findByText("«Imagen 2» quedó aprobada para adultos.")).toBeInTheDocument();
+    await userEvent.click(within(first).getByRole("button", { name: "Eliminar" }));
+    const dialog = screen.getByRole("dialog", { name: "Eliminar imagen" });
     await userEvent.type(within(dialog).getByLabelText(/Motivo/), "Se ve una persona");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Eliminar y aplicar" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Eliminar" }));
+    const bodies = vi.mocked(apiRequest).mock.calls.map(([, options]) => JSON.parse((options as RequestInit).body as string));
+    expect(bodies).toEqual([
+      { image_ids: ["2"], decision: "adults", reason: null },
+      { image_ids: ["1"], decision: "delete", reason: "Se ve una persona" },
+    ]);
+  });
+
+  it("aprueba todo un lote como lo propuso el usuario", async () => {
+    state.data["/own-stimuli/review"] = review;
+    vi.mocked(apiRequest).mockResolvedValue([] as never);
+    withUser("psychologist", <ImageReviewPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Aprobar las 2 como las propuso" }));
     const bodies = vi.mocked(apiRequest).mock.calls.map(([, options]) => JSON.parse((options as RequestInit).body as string));
     expect(bodies).toEqual(expect.arrayContaining([
-      { image_ids: ["1"], decision: "delete", reason: "Se ve una persona" },
+      { image_ids: ["1"], decision: "children", reason: null },
       { image_ids: ["2"], decision: "adults", reason: null },
     ]));
+    expect(await screen.findByText("Se aprobaron 2 imágenes como las propuso el usuario.")).toBeInTheDocument();
   });
 });
 
@@ -120,7 +154,8 @@ describe("imágenes propias en los protocolos", () => {
     withUser("student", <ProtocolsPage />);
     await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
-    const options = within(screen.getByLabelText("Imagen")).getAllByRole("option").map((option) => option.textContent);
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar una imagen" }));
+    const options = within(screen.getByLabelText(/^Imagen para/)).getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["Elige una imagen", "Para todos — Imagen propia · Para niños"]);
   });
 

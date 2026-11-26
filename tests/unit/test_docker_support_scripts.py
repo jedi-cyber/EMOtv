@@ -127,13 +127,18 @@ def test_missing_optional_weight_warns_without_failing(tmp_path, monkeypatch, ca
     optional = download_models.ModelWeight("HSEmotion", "https://invalid.example", tmp_path / "missing.onnx", "0" * 64)
     monkeypatch.setattr(download_models, "REQUIRED_WEIGHTS", (required,))
     monkeypatch.setattr(download_models, "OPTIONAL_WEIGHTS", (optional,))
-    # --check no descarga; la falta del opcional solo es un aviso (la API usa FER+).
+    # --check no descarga; la falta del opcional solo es un aviso (la API usa otro modelo admitido).
     assert download_models.main(["--check"]) == 0
-    assert "usará FER+" in capsys.readouterr().out
+    assert "otro modelo admitido" in capsys.readouterr().out
 
 
-def test_hsemotion_weight_is_pinned_and_optional():
-    weight, = download_models.OPTIONAL_WEIGHTS
-    assert "af833487321c3efdcb1768a91a6c656a1986fdf6" in weight.url
-    assert weight.sha256 == "7aa2ea31c1311f4f8aa9d3fdb085d418dd4e7a48c4b9ed41df8c044f91d0213f"
-    assert weight not in download_models.REQUIRED_WEIGHTS
+def test_emotiefflib_weights_are_pinned_and_optional():
+    weights = {weight.name: weight for weight in download_models.OPTIONAL_WEIGHTS}
+    assert set(weights) == {"HSEmotion enet_b0_8_best_afew", "EmotiEffLib enet_b2_8"}
+    hsemotion, b2 = weights["HSEmotion enet_b0_8_best_afew"], weights["EmotiEffLib enet_b2_8"]
+    for weight in (hsemotion, b2):
+        assert "sb-ai-lab/EmotiEffLib/raw/af833487321c3efdcb1768a91a6c656a1986fdf6/" in weight.url
+        assert weight not in download_models.REQUIRED_WEIGHTS
+    assert hsemotion.sha256 == "7aa2ea31c1311f4f8aa9d3fdb085d418dd4e7a48c4b9ed41df8c044f91d0213f"
+    assert b2.sha256 == "180a9d4845b59393de4511598a0d1d34b705034691ea32959ce5009db7cf52b7"
+    assert b2.url.endswith("/enet_b2_8.onnx")

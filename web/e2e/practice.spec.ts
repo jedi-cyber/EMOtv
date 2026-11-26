@@ -19,7 +19,7 @@ async function practiceProtocol(account: Account, maxSeconds: number): Promise<s
 /** Desde el Analizador, con el protocolo elegido y la única confirmación, hasta la pantalla de quien conduce. */
 async function startFromAnalyzer(page: Page, protocolId: string) {
   await page.goto(`/analysis?protocol=${encodeURIComponent(protocolId)}`);
-  await expect(page.getByText(/Sigue sus pasos: calibración, 1 ejercicio de práctica\./)).toBeVisible();
+  await expect(page.getByText(/Sigue sus pasos: 1 ejercicio de práctica\./)).toBeVisible();
   await page.getByRole("button", { name: "Probar cámara" }).first().click();
   const requirements = page.getByRole("list", { name: "Requisitos para empezar" });
   await expect(requirements.getByRole("listitem").filter({ hasText: "Cámara" }).getByText("Listo")).toBeVisible();
@@ -53,7 +53,7 @@ async function prepare(page: Page, maxSeconds: number) {
 
 test("una sesión con un ejercicio de práctica empieza en el Analizador y se puede terminar", async ({ page, context }) => {
   await prepare(page, 6);
-  await expect(page.getByRole("heading", { name: "Calibración neutral" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lista para empezar" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Mostrar la señal a la persona en los ejercicios de práctica" })).toBeChecked();
   const participant = await openParticipant(context, page);
   await page.getByRole("button", { name: "Terminar la sesión" }).click();
@@ -62,22 +62,19 @@ test("una sesión con un ejercicio de práctica empieza en el Analizador y se pu
 });
 
 test.describe("ejercicio de práctica con la cámara simulada", () => {
-  test.skip(!camera.has_face, "Sin imágenes de rostro la calibración no termina: genera el video con scripts/e2e/make_fake_video.py (ver web/e2e/fixtures/README.md).");
+  test.skip(!camera.has_face, "Sin imágenes de rostro el ejercicio no recibe cuadros útiles: genera el video con scripts/e2e/make_fake_video.py (ver web/e2e/fixtures/README.md).");
 
-  test("recorre la calibración y el ejercicio hasta que la sesión termina", async ({ page, context }) => {
+  test("con la vista previa, «Empezar» abre el ejercicio y la sesión termina", async ({ page, context }) => {
     // Al vencer el tiempo el ejercicio termina igual: no depende de que la imagen muestre alegría.
     const maxSeconds = 6;
     await prepare(page, maxSeconds);
     const participant = await openParticipant(context, page);
 
-    // La calibración necesita el tramo con rostro; si cae en el tramo sin persona, se repite.
+    // Sin calibración: la persona se ve en la vista previa y quien conduce pulsa «Empezar».
+    await expect(participant.getByLabel("Vista previa de la cámara")).toBeVisible();
+    await page.getByRole("button", { name: "Empezar" }).click();
     const practiceHeading = page.getByRole("heading", { name: "Expresión pedida: Alegría" });
-    await expect(async () => {
-      if (await practiceHeading.isVisible()) return;
-      const start = page.getByRole("button", { name: "Iniciar calibración" });
-      if (await start.isVisible()) await start.click();
-      await expect(practiceHeading).toBeVisible({ timeout: 8_000 });
-    }).toPass({ timeout: (camera.face_seconds + camera.empty_seconds + 30) * 1000 });
+    await expect(practiceHeading).toBeVisible();
 
     // La persona ve solo la instrucción y la señal; nunca la expresión detectada ni probabilidades.
     await expect(participant.getByText("Muestra alegría")).toBeVisible();

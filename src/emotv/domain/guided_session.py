@@ -46,6 +46,18 @@ PRACTICE_INSTRUCTIONS = {
 # Imitar un modelo: la ilustración muestra la cara que se pide.
 IMITATION_INSTRUCTION = "Haz la misma cara"
 PRACTICE_ACHIEVED_MESSAGE = "¡Lo lograste!"
+# Juego con cámara: al terminar la última ronda se dice cuántas caras se
+# lograron. Describe lo ocurrido; no es un puntaje ni valora a la persona.
+CAMERA_GAME_NAME = "Muestra la emoción"
+# «Juego: imita la cara»: imita la imagen y, al terminar, quien conduce la valora
+# de 1 a 5 estrellas. La persona no ve la valoración: solo este mensaje.
+RATED_IMITATION_NAME = "Imita la cara"
+# «Usar el analizador»: quien conduce pide de palabra las expresiones. La pantalla
+# de la persona no muestra ninguna expresión estimada.
+ANALYZER_NAME = "Expresiones con la cámara"
+ANALYZER_MESSAGE = "Mira a la cámara y haz la expresión que te pidan."
+RATED_IMITATION_WAIT = "¡Gracias! Espera un momento."
+CAMERA_GAME_SUMMARY = "Lograste {achieved} de {rounds} caras."
 # Aviso fijo junto a todo resultado de práctica.
 PRACTICE_NOTICE = ("Los modelos de expresión se entrenaron principalmente con rostros de adultos y su "
                    "precisión con niños no está validada. El resultado describe el ejercicio, no el "
@@ -97,14 +109,18 @@ SITUATION_NOTE = "En una situación así, cada persona puede sentir algo distint
 # Distractoras: las básicas y la cara tranquila. Desprecio solo aparece cuando
 # es la respuesta correcta: es poco común y difícil de nombrar para un niño.
 RECOGNITION_DISTRACTORS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
-# Paso de dibujo: la persona dibuja en su pantalla y después señala qué emoción
-# quiso representar. El dibujo no sale del dispositivo y no se interpreta: solo
-# se registra la emoción que señaló y los tiempos.
+# Paso de dibujo: la persona dibuja en su pantalla y pulsa «Terminé». No se le
+# pregunta qué emoción quiso dibujar (desde 20261124_48). El dibujo no sale del
+# dispositivo y no se interpreta: solo se registra si terminó y los tiempos.
 DRAWING_INSTRUCTION = "Dibuja una cara que muestre una emoción."
-DRAWING_QUESTION = "¿Qué emoción quisiste dibujar?"
+# Con una imagen: la persona la mira y dibuja la emoción que siente. EMOtv no
+# relaciona el dibujo ni la emoción elegida con la imagen.
+DRAWING_IMAGE_INSTRUCTION = "Mira la imagen y dibuja una cara con la emoción que sientes."
+DRAWING_FINISHED = "Terminaste el dibujo."
 # Aviso fijo junto a todo resultado de dibujo.
-DRAWING_NOTICE = ("Describe la emoción que la persona señaló en cada dibujo. EMOtv no ve ni interpreta los "
+DRAWING_NOTICE = ("Describe si la persona terminó cada dibujo y en cuánto tiempo. EMOtv no ve ni interpreta los "
                   "dibujos: se quedan en la pantalla de la persona y se borran al terminar el paso.")
+# Solo para sesiones anteriores, en las que la persona señalaba una emoción.
 DRAWING_OPTIONS = ("happiness", "sadness", "anger", "fear", "surprise", "disgust", "neutral")
 # Juego de emparejar: la persona relaciona cada imagen con el nombre de su
 # emoción. Sin puntaje: si no la encuentra, se le muestra con su explicación y
@@ -122,12 +138,20 @@ SIMILAR_RETRY_HELPED = "Mira otra vez la cara de arriba."
 SIMILAR_FOUND = "Lo encontraste: las dos caras muestran la misma emoción, {answer}."
 SIMILAR_SHOWN = "Esta cara muestra la misma emoción: {answer}."
 GAME_FINISHED = "Terminaste el juego."
+# «Reconoce y luego muéstrala»: la persona solo ve estos mensajes, nunca si la cámara
+# estimó la expresión. El de cierre es el mismo, la sostenga o no.
+GAME_SHOW_PROMPT = "Ahora pon tú esa cara: {answer}. Mira a la cámara."
+# «Responde con la cara»: la persona responde poniendo la cara; la cámara marca la opción.
+GAME_FACE_PROMPT = "Mira la imagen y pon la cara de esa emoción. Sostenla y la cámara marcará la opción."
+SIMILAR_FACE_PROMPT = ("Pon la cara de la emoción de la cara de arriba. Sostenla y la cámara marcará la cara "
+                       "que muestra la misma emoción.")
+GAME_SHOW_THANKS = "¡Gracias por intentarlo! Sigamos jugando."
 GAME_TIME_UP = "Terminó el tiempo del juego."
 # Tras este número de opciones distintas a la de la imagen, se muestra la respuesta.
 GAME_MISSES_BEFORE_ANSWER = 2
 GAME_NOTICE = ("Describe lo que ocurrió en el juego. Una sesión breve no permite sacar conclusiones sobre cómo "
                "reconoce emociones la persona.")
-# Describe lo que la persona eligió; no se compara con el dibujo.
+# Sesiones anteriores: describe lo que la persona eligió; no se compara con el dibujo.
 DRAWING_ANSWERS = {
     "happiness": "Dibujaste alegría.",
     "sadness": "Dibujaste tristeza.",
@@ -158,7 +182,7 @@ class GuidedPhase(str, Enum):
     POST_QUESTIONNAIRE = "post_questionnaire"
     LIVE = "live"                         # sin protocolo (móvil): registro periódico hasta terminar
     WAITING = "waiting"                   # estación de examen sin consentimiento: no se analiza nada
-    READY = "ready"                       # estación calibrada, o sesión sin cámara: espera que se inicie
+    READY = "ready"                       # estación calibrada, o sesión guiada: espera que se inicie
     EXAM = "exam"                         # examen en curso: una fila cada medio segundo
     FINISHED = "finished"
     STOPPED = "stopped"
@@ -411,12 +435,19 @@ class PracticeResult:
     seconds_to_achieve: float | None = None
     # 1 es el primero; las métricas y las estadísticas cuentan solo ese.
     attempt: int = 1
+    # «Juego: imita la cara»: las estrellas (1 a 5) que marcó quien conduce. Es
+    # su valoración, no la de EMOtv; la persona no la ve.
+    conductor_stars: int | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "session_id"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} es obligatorio")
+        if self.conductor_stars is not None and (
+                isinstance(self.conductor_stars, bool) or not isinstance(self.conductor_stars, int)
+                or not 1 <= self.conductor_stars <= 5):
+            raise ValueError("La valoración de quien conduce va de 1 a 5 estrellas")
         outcome = PracticeOutcome(self.outcome)
         object.__setattr__(self, "outcome", outcome)
         if self.target_expression not in PRACTICE_TARGETS:
@@ -512,7 +543,12 @@ class GameResult:
     intento. rounds_done son las rondas terminadas (encontrada o mostrada);
     matched, las que la persona emparejó; first_try, las emparejadas sin elegir
     antes otra opción; help_used, las rondas en que pidió ayuda; by_conductor,
-    las respuestas que registró quien conduce. No es un puntaje."""
+    las respuestas que registró quien conduce. No es un puntaje.
+
+    Con «Reconoce y luego muéstrala», faces_asked son las rondas en que se pidió
+    poner la cara (con cámara y una emoción que EMOtv estima) y faces_shown, en
+    cuántas la cámara estimó que la sostuvo. Nulos si el juego no lo pide. Solo
+    los ve quien conduce."""
 
     id: str
     session_id: str
@@ -528,8 +564,19 @@ class GameResult:
     help_used: int = 0
     by_conductor: int = 0
     attempt: int = 1
+    faces_asked: int | None = None
+    faces_shown: int | None = None
 
     def __post_init__(self) -> None:
+        if (self.faces_asked is None) != (self.faces_shown is None):
+            raise ValueError("Las caras pedidas y las mostradas van juntas")
+        if self.faces_asked is not None:
+            for name in ("faces_asked", "faces_shown"):
+                value = getattr(self, name)
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    raise ValueError(f"{name} debe ser un entero no negativo")
+            if not self.faces_shown <= self.faces_asked <= self.rounds_done:
+                raise ValueError("Los contadores de las caras mostradas no cuadran")
         for name in ("id", "session_id", "game_type"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -554,9 +601,10 @@ class GameResult:
 
 @dataclass(frozen=True, slots=True)
 class DrawingResult:
-    """Resultado de un paso de dibujo: la emoción que la persona señaló y en
-    cuánto tiempo. El dibujo nunca llega al servidor; no hay respuesta correcta
-    ni se compara la emoción elegida con el dibujo."""
+    """Resultado de un paso de dibujo: si la persona terminó y en cuánto
+    tiempo. El dibujo nunca llega al servidor. chosen_expression solo existe en
+    sesiones anteriores, cuando se preguntaba qué emoción quiso dibujar; nunca se
+    compara con el dibujo."""
 
     id: str
     session_id: str
@@ -580,9 +628,9 @@ class DrawingResult:
         if isinstance(self.step_index, bool) or not isinstance(self.step_index, int) or self.step_index < 0:
             raise ValueError("step_index debe ser un entero no negativo")
         answered = outcome is RecognitionOutcome.ANSWERED
-        if answered != (self.chosen_expression is not None) or answered != (self.seconds_to_answer is not None) \
-                or answered != (self.answered_by is not None):
-            raise ValueError("Solo un paso respondido registra la emoción, los segundos y quién respondió")
+        if answered != (self.seconds_to_answer is not None) or answered != (self.answered_by is not None) \
+                or (not answered and self.chosen_expression is not None):
+            raise ValueError("Solo un dibujo terminado registra los segundos y quién lo terminó")
         if self.chosen_expression is not None and self.chosen_expression not in DRAWING_OPTIONS:
             raise ValueError("La emoción elegida está entre las que se muestran")
         if self.answered_by is not None:

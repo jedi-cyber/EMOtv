@@ -37,8 +37,9 @@ describe("modo accesible", () => {
     await userEvent.click(screen.getByRole("radio", { name: /Para niños/ }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Modo accesible" }));
     await userEvent.type(screen.getByLabelText("Nombre"), "Emociones con apoyo");
-    await userEvent.selectOptions(screen.getByLabelText("Imagen"), "sad");
-    await userEvent.click(screen.getByRole("button", { name: "Agregar como «¿Qué emoción es?»" }));
+    await userEvent.click(screen.getByRole("button", { name: "¿Qué emoción es?" }));
+    await userEvent.selectOptions(screen.getByLabelText(/^Imagen para/), "sad");
+    await userEvent.click(screen.getByRole("button", { name: "Agregar paso" }));
     vi.mocked(apiRequest).mockResolvedValue({ id: "p1", version: 1 } as never);
     await userEvent.click(screen.getByRole("button", { name: "Guardar protocolo" }));
     const [, init] = vi.mocked(apiRequest).mock.calls.find(([path]) => path === "/protocols")!;

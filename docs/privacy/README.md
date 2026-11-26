@@ -197,8 +197,8 @@ sesión puede enviar su cámara o cancelarla.
   interpreta respuestas; una nota fija bajo cada cuestionario lo dice.
 - Un cuestionario usado en una sesión no se edita: se crea una versión nueva.
   Cada respuesta queda asociada a la versión exacta que se respondió.
-- Se aplican solo dentro de un protocolo. El previo se responde antes de la
-  calibración (el servidor no la permite sin él); el posterior, si lo hay, al
+- Se aplican solo dentro de un protocolo. El previo se responde antes de empezar los
+  pasos (el servidor no permite «Empezar» sin él); el posterior, si lo hay, al
   terminar. Responde la persona en su pantalla, o quien conduce registra las
   respuestas a mano; queda anotado cuál de las dos.
 - Las respuestas se guardan **cifradas** con `SENSITIVE_DATA_KEY`. Las ven quien

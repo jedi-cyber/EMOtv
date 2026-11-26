@@ -16,6 +16,7 @@ import { PolicyDocument } from "../components/PolicyDocument";
 import { StatusChip } from "../components/StatusChip";
 import { formatLongDate, policyKey, useConsentStatus, versionLabel, type ConsentRecord } from "../consent/useConsentStatus";
 import { paths } from "../routes/paths";
+import { toast } from "../components/Toaster";
 
 const REVOKE_MESSAGE = "Si lo revocas, no podrás iniciar nuevos análisis faciales hasta que vuelvas a aceptar la política. "
   + "Tus sesiones ya registradas se conservan y puedes seguir consultando las demás secciones.";
@@ -31,7 +32,6 @@ export function ConsentPage() {
   const [revoking, setRevoking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   const accepted = state === "active";
   const canAccept = Boolean(student && policy?.available && !accepted);
@@ -61,7 +61,7 @@ export function ConsentPage() {
       await apiRequest(`/students/${encodeURIComponent(student.id)}/consents/revoke`, { method: "POST", token });
       setRevoking(false);
       await Promise.all([consent.reload(), history.reload()]);
-      setNotice("Consentimiento revocado. No se iniciarán nuevos análisis.");
+      toast.success("Consentimiento revocado. No se iniciarán nuevos análisis.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "No se pudo revocar el consentimiento."); setRevoking(false); }
     finally { setBusy(false); }
   }
@@ -75,7 +75,6 @@ export function ConsentPage() {
     <PageHeader title="Consentimiento"
       description="Tú decides si deseas usar el analizador. No aceptar no impide consultar las demás secciones." />
     {error && <Callout variant="error">{error}</Callout>}
-    {notice && <Callout variant="success">{notice}</Callout>}
     {state === "loading" && <PageState loading error="" onRetry={() => undefined} />}
     {state === "error" && <PageState loading={false} error={consent.error} onRetry={consent.reload} />}
     {state === "no_student" && <Callout variant="warning">Tu cuenta no tiene un perfil de usuario asociado. Contacta con el administrador.</Callout>}

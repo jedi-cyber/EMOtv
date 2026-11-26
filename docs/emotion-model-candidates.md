@@ -1,5 +1,12 @@
 # Revisión de candidatos y adaptador experimental
 
+> **Actualización del 23 de noviembre de 2026.** EmotiEffLib `enet_b2_8` quedó
+> integrado como `emotiefflib_enet_b2_8`. Se toma del mismo repositorio y commit
+> que HSEmotion, que ya se usaba bajo la licencia Apache-2.0 del repositorio.
+> HardlyHumans ViT se quitó: no se usaba y exigía PyTorch. Lo que sigue se
+> conserva como registro de la revisión de septiembre. La situación vigente
+> está en [licencias de los modelos](licencias-modelos.md).
+
 Revisión: 16 de septiembre de 2026. Público no equivale a dominio público ni
 a ausencia de obligaciones. Se interpreta «libre» como licencia de uso permisiva;
 ninguno de estos modelos se presenta como libre de toda licencia. Para exigir
@@ -8,9 +15,9 @@ literalmente dominio público habría que seleccionar otro artefacto verificable
 | Candidato | Compatibilidad y licencia observada | Decisión de esta etapa |
 | --- | --- | --- |
 | mo-thecreator/vit-Facial-Expression-Recognition | 7 clases, ViT, Safetensors; ficha sin licencia declarada | Descartado para incorporación hasta aclarar permisos de pesos |
-| EmotiEffLib enet_b2_8 | 8 clases y ONNX oficial; Apache-2.0 declarada para código | Compatible técnicamente; no integrado hasta aclarar alcance de licencia sobre pesos |
+| EmotiEffLib enet_b2_8 | 8 clases y ONNX oficial; Apache-2.0 del repositorio que distribuye los pesos | Integrado el 23-11-2026 (`emotiefflib_enet_b2_8`): alternativa en vivo, 260×260 |
 | HSEmotion enet_b0_8_best_afew | 8 clases, ONNX oficial; código y repositorio de pesos con Apache-2.0 | Integrado (`hsemotion_enet_b0_8_best_afew`): lectura en vivo predeterminada si su admisión es válida; si no, FER+ |
-| HardlyHumans/Facial-expression-detection | 8 clases, ViT/Safetensors; ficha declara MIT para el modelo | Adaptador experimental y selector web; no predeterminado |
+| HardlyHumans/Facial-expression-detection | 8 clases, ViT/Safetensors; ficha declara MIT para el modelo | Quitado el 23-11-2026 por no usarse |
 
 Fuentes primarias:
 [mo-thecreator](https://huggingface.co/mo-thecreator/vit-Facial-Expression-Recognition),
