@@ -52,7 +52,7 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <section className="login-card" aria-labelledby="login-title">
-
+        <img className="login-logo" src="/emotv-logo.png" alt="" width="72" height="72" />
         <h1 id="login-title">Ingresa a EMOtv</h1>
         <p className="muted">Accede con las credenciales proporcionadas por la institución.</p>
         {notice && <Callout variant="info">{notice}</Callout>}

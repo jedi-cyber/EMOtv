@@ -127,7 +127,7 @@ export function AppLayout() {
       {menuOpen && <button type="button" className="sidebar-backdrop" aria-label="Cerrar panel de navegación" onClick={() => setMenuOpen(false)} />}
       <aside ref={sidebarRef} className={`sidebar${menuOpen ? " is-open" : ""}`}>
         <div className="sidebar-head">
-          <Link className="brand" to={paths.dashboard}>EMOtv</Link>
+          <Link className="brand" to={paths.dashboard}><img className="brand-logo" src="/emotv-logo.png" alt="" width="32" height="32" />EMOtv</Link>
           {menuOpen && <button type="button" className="sidebar-close" aria-label="Cerrar navegación" onClick={closeMenu}>
             <svg aria-hidden="true" focusable="false" viewBox="0 0 20 20" fill="none"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
           </button>}

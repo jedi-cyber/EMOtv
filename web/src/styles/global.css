@@ -75,7 +75,10 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .app-shell { display: grid; min-height: 100dvh; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100dvh; overflow-y: auto; padding: var(--space-lg) var(--space-sm); color: var(--color-on-dark); background: var(--color-navy); }
 .sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin: 0 0 var(--space-xl); padding: 0 var(--space-sm); }
-.brand { font-size: var(--text-section-title); font-weight: var(--weight-bold); letter-spacing: var(--tracking-page-title); text-decoration: none; }
+.brand { display: inline-flex; align-items: center; gap: var(--space-sm); font-size: var(--text-section-title); font-weight: var(--weight-bold); letter-spacing: var(--tracking-page-title); text-decoration: none; }
+/* El ícono de EMOtv, el mismo del aplicativo móvil. */
+.brand-logo { display: block; width: 2rem; height: 2rem; border-radius: 50%; }
+.login-logo { display: block; width: 4.5rem; height: 4.5rem; border-radius: 50%; }
 .sidebar-close { display: inline-grid; place-items: center; width: var(--control-height); height: var(--control-height); border: 1px solid var(--color-navy-mid); border-radius: var(--radius-md); background: transparent; color: var(--color-on-dark); cursor: pointer; }
 .sidebar-close svg { width: 20px; height: 20px; }
 .sidebar nav { display: flex; flex: 1; flex-direction: column; gap: var(--space-lg); }
