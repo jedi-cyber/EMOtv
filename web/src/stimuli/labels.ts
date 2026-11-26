@@ -51,6 +51,8 @@ export const ANALYZER_SECONDS = 180;
 export const MAX_ANALYZER_SECONDS = 600;
 /** Juego de emparejar: pocas opciones al empezar; quien arma el protocolo sube la dificultad. */
 export const DEFAULT_GAME = { rounds: 3, option_count: 2, exposure_seconds: 30 };
+/** Juego con cámara (se responde con la cara): cada ronda da tiempo para unos intentos. */
+export const FACE_GAME_SECONDS = 45;
 export const MIN_GAME_ROUNDS = 2;
 export const MAX_GAME_ROUNDS = 6;
 

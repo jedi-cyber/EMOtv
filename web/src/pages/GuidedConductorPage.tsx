@@ -108,7 +108,7 @@ function GameFaceCard({ face, target, busy, last, onNext }: {
  * mientras la persona pone la cara. La que sostiene unos segundos queda marcada.
  */
 function FaceAnswerLevels({ levels, name }: { levels: { key: string; level: number }[]; name: (key: string) => string }) {
-  return <div className="form-stack" aria-label="Nivel de cada opción">
+  return <div className="form-stack face-answer-levels" aria-label="Nivel de cada opción">
     {levels.length === 0
       ? <p className="muted">Esperando la cara de la persona: los primeros segundos de cada intento no cuentan.</p>
       : levels.map((item) => <label key={item.key}>{name(item.key)}

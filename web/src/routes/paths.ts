@@ -11,6 +11,8 @@ export const paths = {
   analysis: "/analysis",
   analysisWithProtocol: (id: string) => `/analysis?protocol=${encodeURIComponent(id)}`,
   analysisForActivity: (id: string) => `/analysis?activity=${encodeURIComponent(id)}`,
+  /** Juego con cámara ya elegido en el Analizador. */
+  analysisWithCameraGame: (kind: string) => `/analysis?game=${encodeURIComponent(kind)}`,
   deletionCertificate: (id: string) => `/sessions/deletions/${encodeURIComponent(id)}`,
   deletionCertificatePattern: "/sessions/deletions/:certificateId",
   stimuli: "/stimuli",

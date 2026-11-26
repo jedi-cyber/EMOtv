@@ -16,7 +16,7 @@ import { PageState } from "../components/PageState";
 import { StatusChip } from "../components/StatusChip";
 import { QuestionnaireEditor } from "../questionnaires/QuestionnaireEditor";
 import { paths } from "../routes/paths";
-import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, ANALYZER_SECONDS, MAX_ANALYZER_SECONDS, DEFAULT_GAME, DEFAULT_PRACTICE, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
+import { ACCESSIBLE_RECOGNITION, ACCESSIBLE_TIME_FACTOR, ANALYZER_SECONDS, MAX_ANALYZER_SECONDS, DEFAULT_GAME, DEFAULT_PRACTICE, FACE_GAME_SECONDS, DRAWING_SECONDS, MAX_GAME_ROUNDS, MIN_GAME_ROUNDS, DEFAULT_RECOGNITION, MAX_HOLD_SECONDS, MAX_SITUATION_CHARS, MAX_STEP_SECONDS, cameraTargets, isCameraTarget, practiceProblem, practiceTargetNames, protocolStepLines, protocolStepParts,
   RECOGNITION_OPTION_COUNTS, recognizable, stimulusSummary } from "../stimuli/labels";
 import { NoticeList } from "../components/NoticeList";
 import { toast } from "../components/Toaster";
@@ -50,7 +50,7 @@ function anySupport(supports: ProtocolSupports) {
 /** Tipos de paso que se pueden agregar. Los que llevan imagen piden elegirla después de tocar la tarjeta. */
 // «Ejercicio de práctica» ya no se ofrece: para pedir expresiones de palabra está
 // «Usar el analizador». Los ejercicios que ya tiene un protocolo se siguen editando.
-type StepChoice = "matching" | "similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "imitation" | "stimulus";
+type StepChoice = "matching" | "similar" | "face-matching" | "face-similar" | "recognition" | "drawing" | "analyzer" | "camera" | "rated" | "imitation" | "stimulus";
 /** Lo que se está arrastrando en el editor: un paso de la lista o una tarjeta de «Agregar un paso». */
 type Dragging = { from: "step"; index: number } | { from: "catalog"; key: StepChoice };
 type ImageChoice = Extract<StepChoice, "recognition" | "imitation" | "rated" | "stimulus">;
@@ -66,6 +66,8 @@ const stepCatalog: { group: string; hint: string; items: { key: StepChoice; titl
   { group: "Expresión con la cámara", hint: "EMOtv estima la expresión facial; no evalúa a nadie.", items: [
     { key: "analyzer", title: "Usar el analizador", text: "La cámara estima la expresión mientras tú pides de palabra las emociones que quieras. Pasas al siguiente paso cuando terminas." },
     { key: "camera", title: "Juego con cámara: muestra la emoción", text: "En cada ronda se pide una emoción; una estrella por cada cara lograda. Sin puntos." },
+    { key: "face-matching", title: "Juego con cámara: empareja la emoción", text: "Ve una cara y pone la cara de esa emoción; la cámara marca el nombre que coincide. Sin cámara, responde con botones." },
+    { key: "face-similar", title: "Juego con cámara: busca la misma emoción", text: "Ve una cara y pone la cara de esa emoción; la cámara marca la otra cara que muestra la misma emoción. Sin cámara, responde con botones." },
     { key: "rated", title: "Juego: imita la cara", text: "Ve una imagen y hace la misma cara. La cámara estima la expresión y tú la valoras de 1 a 5 estrellas; la persona no ve tu valoración.", image: true },
     { key: "imitation", title: "Haz la misma cara", text: "Ve una imagen y hace la misma cara.", image: true },
     { key: "stimulus", title: "Mostrar una imagen", text: "Se muestra una imagen mientras se estima la expresión facial.", image: true },
@@ -202,10 +204,15 @@ export function ProtocolsPage() {
     if (key === "drawing") return [{ ...base, kind: "drawing", stimulus_id: null,
       exposure_seconds: accessibleOn(draft.supports) ? MAX_STEP_SECONDS : DRAWING_SECONDS }];
     // Pocas opciones al empezar. Las imágenes las elige el servidor del banco aprobado.
-    if (key === "matching" || key === "similar") return [{ ...base, kind: "game", game_type: key as GameType, stimulus_id: null,
-      rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
-      exposure_seconds: accessibleOn(draft.supports)
-        ? Math.min(MAX_STEP_SECONDS, DEFAULT_GAME.exposure_seconds * ACCESSIBLE_TIME_FACTOR) : DEFAULT_GAME.exposure_seconds }];
+    // «Juego con cámara»: el mismo juego, respondido poniendo la cara (solo las cinco expresiones).
+    if (key === "matching" || key === "similar" || key === "face-matching" || key === "face-similar") {
+      const byFace = key === "face-matching" || key === "face-similar";
+      const seconds = byFace ? FACE_GAME_SECONDS : DEFAULT_GAME.exposure_seconds;
+      return [{ ...base, kind: "game", game_type: (byFace ? key.slice("face-".length) : key) as GameType, stimulus_id: null,
+        rounds: DEFAULT_GAME.rounds, option_count: DEFAULT_GAME.option_count, game_stimulus_ids: [],
+        ...(byFace ? { answer_by_face: true } : {}),
+        exposure_seconds: accessibleOn(draft.supports) ? Math.min(MAX_STEP_SECONDS, seconds * ACCESSIBLE_TIME_FACTOR) : seconds }];
+    }
     return cameraGameSteps(CAMERA_GAME.rounds, CAMERA_GAME.hold_seconds, cameraGameSeconds());
   }
   function isImageChoice(key: StepChoice): key is ImageChoice {

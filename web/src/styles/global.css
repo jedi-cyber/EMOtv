@@ -295,6 +295,19 @@ legend { padding: 0 var(--space-xs); color: var(--color-ink); font-weight: var(-
 .matching-game-round { margin: 0; color: var(--color-ink); font-weight: var(--weight-semibold); }
 .matching-game-actions { justify-content: center; }
 .matching-game-actions .button { min-height: 3rem; touch-action: manipulation; }
+/* Juegos: usan el ancho de la pantalla. En pantallas anchas, la cara a la izquierda
+   y la pregunta, las opciones y los botones a la derecha, como el dibujo. */
+.participant-practice.matching-game { width: min(100%, 72rem); }
+.matching-game .similar-game-options { grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
+.face-answer-levels meter { display: block; width: min(100%, 24rem); height: 1rem; }
+.matching-game-body { display: grid; justify-items: center; gap: var(--space-lg); width: 100%; min-width: 0; }
+@media (min-width: 56rem) {
+  .matching-game.has-image { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "round round" "figure body";
+    align-items: center; column-gap: var(--space-xl); }
+  .matching-game.has-image > .matching-game-round { grid-area: round; }
+  .matching-game.has-image > .matching-game-figure { grid-area: figure; width: 100%; max-height: 65dvh; }
+  .matching-game.has-image > .matching-game-body { grid-area: body; }
+}
 /* Resultados educativos: una fila por tipo de actividad. */
 .educational-summary { display: grid; gap: var(--space-xs); margin: 0; }
 .educational-summary > div { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: var(--space-sm); }

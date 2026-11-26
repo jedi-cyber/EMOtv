@@ -165,6 +165,8 @@ export interface Protocol {
   needs_image: boolean;
   /** Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara. Si falta, se asume verdadero. */
   uses_camera?: boolean;
+  /** Juego con cámara que arma el Analizador; null en los demás protocolos. */
+  camera_game?: GameType | null;
 }
 
 /** Imagen propia de un usuario: pendiente («En revisión») hasta que su docente la revisa. */

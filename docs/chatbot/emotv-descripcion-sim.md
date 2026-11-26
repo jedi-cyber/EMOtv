@@ -135,7 +135,13 @@ parar en cualquier momento («Quiero parar»). Emi no aparece en esa pantalla.
   si la hubiera tocado. Solo usa neutral, felicidad, sorpresa, tristeza y enojo.
   La persona ve la opción marcada; el nivel de cada opción lo ve quien conduce.
   Sin cámara, se responde con botones. Es una estimación de la cámara: no dice
-  cómo se siente la persona.
+  cómo se siente la persona. En el editor de protocolos, las tarjetas «Juego con
+  cámara: empareja la emoción» y «Juego con cámara: busca la misma emoción» (en
+  «Expresión con la cámara») lo agregan con esta opción ya marcada. Sin armar un
+  protocolo, el Analizador ofrece «Juegos con cámara»: se elige el juego y con
+  quién es la sesión, y EMOtv prepara las rondas con imágenes aprobadas. En la
+  página «Juegos», «Jugar con la cámara» abre el Analizador con ese juego. Siempre
+  es una sesión, con su autorización y su código.
 - **Juego con cámara «Muestra la emoción»** (tarjeta en «Expresión con la
   cámara»), de 2 a 6 rondas: en cada ronda se pide una de las cinco expresiones
   que estima EMOtv y una barra crece al acercarse. Si la sostiene unos segundos,

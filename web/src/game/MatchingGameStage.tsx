@@ -70,10 +70,14 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
     try { await onAction(action, expression); } catch { /* el estado siguiente lo dice */ } finally { setSending(false); }
   }
 
-  return <div className="participant-practice matching-game">
+  // En pantallas anchas, al emparejar, la cara a la izquierda y la pregunta con las
+  // opciones a la derecha. Al buscar la misma emoción la modelo queda arriba (así lo
+  // dice la consigna) y las caras ocupan el ancho en una fila.
+  return <div className={`participant-practice matching-game${imageUrl && !similar ? " has-image" : ""}`}>
     <p className="matching-game-round">Ronda {game.number} de {game.total}</p>
-    {imageUrl && <img className="participant-illustration" src={imageUrl}
+    {imageUrl && <img className="participant-illustration matching-game-figure" src={imageUrl}
       alt={similar ? "Cara de arriba, la que hay que comparar" : "Cara de la ronda"} />}
+    <div className="matching-game-body">
     {!facing && <p className="participant-instruction">{game.question}</p>}
     {!facing && <div className={similar ? "recognition-options similar-game-options" : "recognition-options"}
       aria-label={byFace ? "Opciones: las marca la cámara" : undefined}>
@@ -117,6 +121,7 @@ export function MatchingGameStage({ game, imageUrl, onAction, loadOption, pictog
         void send("help");
       }}>Ayuda</Button>}
       {speechAvailable() && <Button variant="secondary" onClick={() => { speakText(spokenText); }}>Escuchar</Button>}
+    </div>
     </div>
   </div>;
 }

@@ -51,3 +51,20 @@ describe("Responde con la cara", () => {
     expect(screen.getByRole("button", { name: /Alegría/ })).toHaveAttribute("aria-pressed", "true");
   });
 });
+
+describe("el módulo «Expresión con la cámara» del editor", () => {
+  it("ofrece los dos juegos con cámara y los agrega respondidos con la cara", async () => {
+    const { ProtocolsPage } = await import("../src/pages/ProtocolsPage");
+    const { AuthContext } = await import("../src/auth/AuthContext");
+    const { MemoryRouter } = await import("react-router-dom");
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const { within } = await import("@testing-library/react");
+    render(<AuthContext.Provider value={{ user: { id: "u", email: "u@example.com", role: "student", is_active: true }, token: "t", loading: false, notice: "", login: vi.fn(), logout: vi.fn() }}>
+      <MemoryRouter><ProtocolsPage /></MemoryRouter></AuthContext.Provider>);
+    await userEvent.click(screen.getAllByRole("button", { name: "Nuevo protocolo" })[0]);
+    const group = screen.getByText("Expresión con la cámara").closest(".step-catalog-group") as HTMLElement;
+    expect(within(group).getByRole("button", { name: "Juego con cámara: busca la misma emoción" })).toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: "Juego con cámara: empareja la emoción" }));
+    expect(screen.getByRole("checkbox", { name: /Responder poniendo la cara/ })).toBeChecked();
+  });
+});

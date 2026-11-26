@@ -94,6 +94,17 @@ STARTER_EXPRESSIONS = ("happiness", "sadness", "anger", "fear", "surprise", "dis
 STARTER_SECONDS = 30
 STARTER_OPTIONS = 2
 
+# Juegos con cámara del Analizador: se responden poniendo la cara. Cada ronda da
+# tiempo para unos intentos (los primeros segundos y el sostener no cuentan).
+CAMERA_GAME_NAMES = {"matching": "Juego con cámara: empareja la emoción",
+                     GAME_SIMILAR: "Juego con cámara: busca la misma emoción"}
+CAMERA_GAME_DESCRIPTIONS = {
+    "matching": "Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca el nombre que coincide.",
+    GAME_SIMILAR: ("Se muestra una cara y la persona pone la cara de esa emoción; la cámara marca, entre otras caras, "
+                   "la que muestra la misma emoción."),
+}
+CAMERA_GAME_ROUND_SECONDS = 45
+
 
 class ProtocolService:
     def __init__(
@@ -506,6 +517,35 @@ class ProtocolService:
                       for expression in STARTER_EXPRESSIONS if expression in drawings)
         return self.create(user, ProtocolDraft(name=STARTER_NAME, description=STARTER_DESCRIPTION,
                                                for_children=True, steps=steps, accessible=True))
+
+    @staticmethod
+    def is_camera_game(protocol: Protocol, game_type: str | None = None) -> bool:
+        """El protocolo de un juego con cámara del Analizador: un solo juego que se
+        responde con la cara, con el nombre que le pone EMOtv."""
+        if len(protocol.steps) != 1:
+            return False
+        step = protocol.steps[0]
+        return (step.is_game and step.answer_by_face and step.game_type in CAMERA_GAME_NAMES
+                and (game_type is None or step.game_type == game_type)
+                and protocol.name == CAMERA_GAME_NAMES[step.game_type])
+
+    def ensure_camera_game(self, user: User, game_type: str, for_children: bool) -> Protocol:
+        """Juego con cámara elegido en el Analizador sin protocolo: devuelve el de la
+        cuenta para ese juego y ese público, o lo arma con imágenes aprobadas de las
+        cinco expresiones que estima EMOtv. Después la sesión sigue como con
+        cualquier protocolo, con su autorización y su código."""
+        self._require_conductor(user)
+        if game_type not in CAMERA_GAME_NAMES:
+            raise ValueError("Ese juego no se juega con la cámara")
+        for item in self.repository.list_current((user.id,)):
+            if (item.owner_user_id == user.id and item.deleted_at is None and item.for_children == for_children
+                    and self.is_camera_game(item, game_type)):
+                return item
+        step = (ProtocolStep.matching_game if game_type == "matching" else ProtocolStep.similar_game)(
+            round_seconds=CAMERA_GAME_ROUND_SECONDS)
+        return self.create(user, ProtocolDraft(
+            name=CAMERA_GAME_NAMES[game_type], description=CAMERA_GAME_DESCRIPTIONS[game_type],
+            for_children=for_children, steps=(replace(step, answer_by_face=True),)))
 
     # --- Uso en una sesión ---------------------------------------------------
 

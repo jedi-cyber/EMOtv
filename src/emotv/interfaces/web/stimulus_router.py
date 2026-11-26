@@ -130,6 +130,11 @@ class ProtocolShareRequest(BaseModel):
     shared: bool
 
 
+class CameraGameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    for_children: bool
+
+
 class ProtocolResponse(BaseModel):
     id: str
     family_id: str
@@ -151,6 +156,8 @@ class ProtocolResponse(BaseModel):
     # Falso si todos sus pasos son reconocimientos: la sesión no pide la cámara.
     uses_camera: bool = True
     supports: SupportsModel = Field(default_factory=SupportsModel)
+    # Juego con cámara que arma el Analizador («matching» o «similar»); null en los demás.
+    camera_game: str | None = None
 
 
 def create_stimulus_router(
@@ -214,7 +221,8 @@ def create_stimulus_router(
             created_at=item.created_at, owned_by_me=item.owner_user_id == user.id,
             shared_with_group=item.shared_with_group, used=service.is_used(item),
             needs_image=service.needs_image(item), uses_camera=item.uses_camera,
-            supports=SupportsModel.of(item.supports))
+            supports=SupportsModel.of(item.supports),
+            camera_game=item.steps[0].game_type if service.is_camera_game(item) else None)
 
     def draft(request: ProtocolRequest) -> ProtocolDraft:
         try:
@@ -318,6 +326,14 @@ def create_stimulus_router(
     def create_starter_protocol(user: User = Depends(current_user)):
         """Copia a la cuenta la plantilla «Emociones básicas 4 a 6 años» (banco inicial)."""
         return protocol_response(guarded(lambda: protocol_service().create_starter(user)), user)
+
+    @router.post("/camera-games/{game_type}/protocol", response_model=ProtocolResponse)
+    def camera_game_protocol(game_type: str, request: CameraGameRequest, user: User = Depends(current_user)):
+        """Juego con cámara del Analizador: el protocolo de la cuenta para ese juego y
+        ese público, armado la primera vez. La sesión se crea después, con su
+        autorización, como con cualquier protocolo."""
+        return protocol_response(guarded(lambda: protocol_service().ensure_camera_game(
+            user, game_type, request.for_children)), user)
 
     @router.get("/protocols/practice-defaults")
     def practice_defaults(user: User = Depends(current_user)) -> dict[str, Any]:
